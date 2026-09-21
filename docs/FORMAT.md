@@ -215,7 +215,74 @@ above with no trailing newline:
 printf '%s' "$(cat canonical.txt)" | openssl dgst -sha256
 ```
 
-## 8. Test vectors
+## 8. The export
+
+An export is what an auditor is handed. In this version it is a directory (the
+zip archive with the report and the timestamp tokens comes later) holding two
+files.
+
+### 8.1 `receipts.jsonl`
+
+One receipt per line, as a JSON object, in ascending `seq` order, each line
+terminated by a line feed. sigillo writes each line in canonical form so the
+file is reproducible byte for byte, but a verifier must not require that: it
+re-derives the canonical form itself, so an export that reorders members or adds
+whitespace still verifies.
+
+### 8.2 `manifest.json`
+
+```json
+{
+  "sigillo_version": "0.1.0",
+  "receipt_version": 1,
+  "system_id": "acme-support-bot",
+  "exported_at": "2026-03-29T15:00:00.000Z",
+  "range": {
+    "from_seq": 0,
+    "to_seq": 24,
+    "from_ts": "2026-03-29T14:30:00.000Z",
+    "to_ts": "2026-03-29T14:30:24.000Z"
+  },
+  "counts": { "receipts": 25 },
+  "keys": [
+    { "key_id": "3f2a1c9d8e7b6a5f", "public_key_base64": "HKjeiu4CwSUn2i6yK8lul5MBgAiclTh8XoiSDJo759g=" }
+  ]
+}
+```
+
+- `range.from_ts` and `range.to_ts` are the `ts_received` of the first and last
+  receipt in the export.
+- `keys` carries the raw 32-byte public keys in standard base64, one entry per
+  key that signed anything in the export.
+
+The manifest is not trusted. It is a claim about what the export contains, and
+every part of that claim is checked against the receipts themselves. In
+particular a key published under an identifier that is not its own `key_id` is
+rejected, because `key_id` is derived from the key (section 5) and cannot be
+chosen.
+
+### 8.3 What a verifier checks, in order
+
+1. The manifest is well formed, and every published key matches its own `key_id`.
+2. Every line is a receipt of a schema version the verifier implements.
+3. Every receipt carries the `system_id` the manifest declares.
+4. Sequence numbers start at `range.from_seq` and rise by one, with no gap, no
+   repeat and no reordering.
+5. If the export starts at `seq` 0, that receipt is a genesis receipt: kind
+   `genesis`, `action.name` equal to `system_id`, `prev_hash` of 64 zeros.
+6. Every `prev_hash` equals the recomputed hash of the preceding receipt.
+7. Every receipt names a key the manifest publishes, and its signature verifies
+   under that key.
+8. `range.to_seq` and `counts.receipts` describe the receipts actually present.
+
+A verifier stops at the first failure and names the receipt and the check. Any
+failure means the export is not evidence of anything.
+
+Note what step 4 and step 8 do together: deleting the last receipt of an export
+leaves a chain that is internally consistent, and is caught only because the
+manifest says how far the export was supposed to run.
+
+## 9. Test vectors
 
 `packages/core/test/vectors.json` carries a set of receipts with their canonical
 form and digest recorded alongside. They cover the genesis receipt, every action
@@ -231,7 +298,7 @@ the file using only the Python standard library, with no sigillo code involved.
 It runs in CI. If it ever disagrees with the Node implementation, this document
 is what decides which one is wrong.
 
-## 9. Relationship to draft-sharif-agent-audit-trail
+## 10. Relationship to draft-sharif-agent-audit-trail
 
 The IETF Internet-Draft "Agent Audit Trail: A Standard Logging Format for
 Autonomous AI Systems" (`draft-sharif-agent-audit-trail`) addresses the same

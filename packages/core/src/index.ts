@@ -8,7 +8,12 @@ export {
   toHex,
 } from "./canonical.js";
 
+export { SIGILLO_VERSION } from "./version.js";
+
 export { keyIdFromRawPublicKey, publicKeyFromRaw, rawPublicKeyBytes } from "./keys.js";
+
+export { manifestKeySchema, manifestSchema, safeParseManifest } from "./manifest.js";
+export type { Manifest, ManifestKey, ManifestParseResult } from "./manifest.js";
 
 export {
   signDigest,

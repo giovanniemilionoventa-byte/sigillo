@@ -4,6 +4,8 @@ import type { SigningService } from "../../src/storage/store.js";
 
 export interface TestSigner extends SigningService {
   readonly publicKey: KeyObject;
+  /** The raw 32 bytes of the public key, base64, as an export manifest carries it. */
+  readonly publicKeyBase64: string;
   /** Number of signatures produced, to show the store asks for exactly one per receipt. */
   readonly calls: () => number;
 }
@@ -15,10 +17,12 @@ export interface TestSigner extends SigningService {
  */
 export function createTestSigner(): TestSigner {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const raw = rawPublicKeyBytes(publicKey);
   let calls = 0;
   return {
-    keyId: keyIdFromRawPublicKey(rawPublicKeyBytes(publicKey)),
+    keyId: keyIdFromRawPublicKey(raw),
     publicKey,
+    publicKeyBase64: Buffer.from(raw).toString("base64"),
     calls: () => calls,
     sign: async (digest: Uint8Array): Promise<string> => {
       calls += 1;

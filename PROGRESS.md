@@ -9,7 +9,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | M1 | Formato e impronta | fatto | 14 vettori, 91 test verdi, cross-check Python indipendente in CI |
 | M2 | Catena e storage | fatto | Trigger append-only, transazione IMMEDIATE, 1000 append concorrenti senza buchi |
 | M3 | Firmatario | fatto | Processo separato su socket Unix, keygen 0600, e2e a due processi |
-| M4 | Verificatore v1 | todo | Export minimale + CLI verifica, test di manomissione |
+| M4 | Verificatore v1 | fatto | CLI `sigillo-verify`, 8 controlli, manomissioni + property test |
 | M5 | Ingest OTLP e API nativa | todo | `/v1/traces` protobuf+JSON, adattatore due dialetti, API key |
 | M6 | SDK Python | todo | Pacchetto `sigillo`, esempio LangGraph, test e2e |
 | M7 | Merkle e marca temporale | todo | RFC 6962, checkpoint firmati, RFC 3161 con retry |
@@ -146,6 +146,47 @@ Verifiche eseguite (171 test verdi in totale):
 Nota sul test: `tsx` lancia il programma in un processo figlio, quindi uccidere il wrapper lasciava vivo
 il firmatario. I test ora usano un gruppo di processi; senza questa correzione il test "il firmatario muore"
 passava per il motivo sbagliato.
+
+#### M4 — Verificatore v1 (fatto)
+
+- `packages/verifier/src/verify.ts` — 8 controlli nell'ordine della SPEC, codice esplicito, nessuna
+  astrazione. Si ferma al primo errore e indica **quale ricevuta** (file:riga e `seq`) e **quale controllo**.
+- `packages/verifier/src/cli.ts` — `sigillo-verify <cartella>`; exit 0 se valido, 1 se manomesso,
+  2 se l'archivio non è leggibile. In caso di successo stampa l'elenco di ciò che ha verificato.
+- `apps/server/src/export/bundle.ts` — export minimale: `receipts.jsonl` (forma canonica, una per riga)
+  + `manifest.json`.
+- `packages/core/src/manifest.ts` — schema del manifest, documentato in `docs/FORMAT.md` §8.
+
+Dimensione: **697 righe** fra verificatore e le parti di core che usa (obiettivo SPEC: sotto 1000).
+
+Test di manomissione, tutti rilevati con il controllo giusto (205 test verdi in totale):
+- byte modificato a metà catena → `chain-link`, nominando entrambe le ricevute coinvolte;
+- byte modificato **nell'ultima** ricevuta (dove nessun link la copre) → `signature`;
+- ricevuta cancellata → `sequence`; cancellata **l'ultima** → `range` (la catena resterebbe coerente:
+  se ne accorge solo perché il manifest dichiara dove doveva arrivare);
+- due ricevute scambiate → `sequence`; ricevuta duplicata → `sequence`;
+- firma con altra chiave → `signature`; `key_id` assente dal manifest → `key`;
+- genesi falsificata → `genesis`; ricevute di un altro sistema infilate dentro → `system`;
+- manifest non JSON, campo mancante, conteggio sbagliato, `system_id` sbagliato.
+
+Property test con `fast-check`:
+- ogni catena ben formata di lunghezza 1..12 verifica;
+- **qualsiasi singolo carattere** cambiato in `receipts.jsonl` fa fallire la verifica (300 casi);
+- la rimozione di qualsiasi ricevuta fallisce; la duplicazione di qualsiasi ricevuta fallisce;
+- qualsiasi riordino diverso dall'originale fallisce.
+
+Verifica end-to-end: il server scrive la catena, la esporta su disco, e il comando `sigillo-verify`
+lanciato come processo separato la accetta; manomettendo un byte esce con codice 1 e stampa
+`chain-link at receipts.jsonl:6`.
+
+Lacuna trovata da un test e corretta: il verificatore non controllava che il `key_id` pubblicato nel
+manifest corrispondesse davvero alla chiave pubblica accanto. Dato che `key_id` è **derivato** dalla
+chiave, ora lo verifica: una chiave pubblicata sotto l'identificativo di un'altra viene respinta subito,
+invece di emergere più tardi come una firma inspiegabilmente non valida.
+
+Decisione: il verificatore **non** richiede che le righe siano in forma canonica. Ricalcola lui la forma
+canonica, quindi un export che riordina i campi o aggiunge spazi verifica lo stesso. È il comportamento
+corretto: l'evidenza sta nel contenuto, non nella serializzazione del file.
 
 ## Checklist di verifica finale M9 (da eseguire fuori dalla sessione cloud)
 

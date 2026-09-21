@@ -19,7 +19,7 @@ const hexString = (length: number) =>
     .string()
     .regex(new RegExp(`^[0-9a-f]{${length}}$`), `must be ${length} lowercase hex characters`);
 
-const isoUtcTimestamp = z
+export const isoUtcTimestampSchema = z
   .string()
   .regex(
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
@@ -79,8 +79,8 @@ export const unsignedReceiptSchema = z
     }),
     system_id: z.string().min(1).max(MAX_SYSTEM_ID),
     seq: z.number().int().nonnegative(),
-    ts_event: isoUtcTimestamp,
-    ts_received: isoUtcTimestamp,
+    ts_event: isoUtcTimestampSchema,
+    ts_received: isoUtcTimestampSchema,
     actor: actorSchema,
     action: actionSchema,
     input_hash: hexString(64).nullable(),

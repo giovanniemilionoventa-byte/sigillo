@@ -138,7 +138,17 @@ for (const file of tsFiles) {
     });
 }
 
-// 6. Private key material must never be committed.
+// 6. The version stamped into exports must match the repository's version.
+{
+  const rootVersion = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version;
+  const versionFile = join(ROOT, "packages/core/src/version.ts");
+  const declared = /SIGILLO_VERSION = "([^"]+)"/.exec(readFileSync(versionFile, "utf8"))?.[1];
+  if (declared !== rootVersion) {
+    fail("packages/core/src/version.ts", null, `declares ${declared} but package.json says ${rootVersion}`);
+  }
+}
+
+// 7. Private key material must never be committed.
 for (const file of allFiles) {
   if (/\.(key|pem)$/.test(file)) {
     fail(rel(file), null, "key material must not live in the repository");
