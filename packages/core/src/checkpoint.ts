@@ -1,5 +1,6 @@
 import { type KeyObject } from "node:crypto";
 import { z } from "zod";
+import { CANONICAL_BASE64_MESSAGE, isCanonicalBase64 } from "./base64.js";
 import { canonicalBytes, sha256, sha256Hex } from "./canonical.js";
 import { isoUtcTimestampSchema, RECEIPT_VERSION } from "./receipt.js";
 import { signDigest, verifyDigestSignature } from "./signing.js";
@@ -37,7 +38,8 @@ export const checkpointSchema = unsignedCheckpointSchema
   .extend({
     sig: z
       .string()
-      .regex(/^[A-Za-z0-9+\/]{86}==$/, "must be a 64-byte Ed25519 signature in standard base64"),
+      .regex(/^[A-Za-z0-9+\/]{86}==$/, "must be a 64-byte Ed25519 signature in standard base64")
+      .refine(isCanonicalBase64, CANONICAL_BASE64_MESSAGE),
   })
   .strict();
 

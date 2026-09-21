@@ -10,6 +10,8 @@ export {
 
 export { SIGILLO_VERSION } from "./version.js";
 
+export { CANONICAL_BASE64_MESSAGE, isCanonicalBase64 } from "./base64.js";
+
 export {
   checkpointEntrySchema,
   exportTimestampSchema,

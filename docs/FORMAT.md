@@ -146,6 +146,13 @@ two separable steps.
   `crypto.sign(null, receiptHash, privateKey)`.
 - `sig` is the 64-byte signature in standard base64 with padding (RFC 4648
   section 4): 88 characters, ending in `==`. Not base64url.
+- The encoding must be **canonical**: the four bits the final character carries
+  beyond the last byte must be zero, as RFC 4648 section 3.5 requires of a
+  canonical encoding. Several spellings decode to the same 64 bytes, and only
+  the one a canonical encoder produces is valid. Without this rule one signature
+  would have many valid forms, an evidence file would have many valid forms for
+  one content, and comparing two exports byte for byte would prove nothing. The
+  same rule applies to a checkpoint's `sig` and to a public key in a manifest.
 - `key_id` is the first 16 characters of the lowercase hex SHA-256 digest of the
   **raw 32-byte public key**, that is, the key without any DER or PEM framing.
 

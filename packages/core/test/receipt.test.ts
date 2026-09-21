@@ -136,6 +136,28 @@ describe("receipt schema", () => {
     }
   });
 
+  it("rejects a signature in a non-canonical spelling of the same bytes", () => {
+    // The last base64 character before the padding carries four bits that
+    // decoding ignores, so several spellings decode to the same 64 bytes.
+    // Without this rule an evidence file would have more than one valid form
+    // for one signature, and a byte comparison of two exports would be
+    // meaningless.
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const signed = Buffer.from(SIG, "base64");
+
+    const equivalents = [...alphabet]
+      .map((character) => `${SIG.slice(0, 85)}${character}==`)
+      .filter(
+        (candidate) => candidate !== SIG && Buffer.from(candidate, "base64").equals(signed),
+      );
+
+    expect(equivalents.length).toBeGreaterThan(0);
+    for (const restyled of equivalents) {
+      expectRejected(withField("sig", restyled), "sig");
+    }
+    expect(safeParseReceipt(withField("sig", SIG)).ok).toBe(true);
+  });
+
   it("rejects timestamps that are not ISO-8601 UTC with milliseconds", () => {
     for (const bad of [
       "2026-03-29T14:30:00Z",

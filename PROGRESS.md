@@ -14,7 +14,18 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | M6 | SDK Python | fatto | `sigillo.init()`, esempio LangGraph, e2e a tre processi |
 | M7 | Merkle e marca temporale | fatto | RFC 6962 (0..17), checkpoint firmati, RFC 3161 su FreeTSA |
 | M8 | Fascicolo completo e verificatore v2 | fatto | Zip completo con PDF, 12 controlli, token FreeTSA verificato |
-| M9 | UI, deploy, documentazione | todo | UI minima, docker-compose, backup, doc finali |
+| M9 | UI, deploy, documentazione | fatto | UI senza JavaScript, compose a tre servizi, backup SQLite, 406 test verdi |
+
+## Cosa resta aperto
+
+Tutte e nove le milestone sono `fatto`. Tre cose non le posso chiudere io:
+
+1. **La TSA qualificata eIDAS.** Il codice è pronto (`TSA_URL`, `TSA_USERNAME`, `TSA_PASSWORD`).
+   Servono URL, credenziali e certificato della CA del fornitore. Dettagli sotto, in M7.
+2. **L'obiettivo di dimensione del verificatore.** 1792 righe contro le 1000 della SPEC, con tre
+   opzioni e una raccomandazione. Dettagli sotto, in M8.
+3. **La verifica finale con Docker.** Docker non è disponibile in questa sessione cloud: la
+   checklist in fondo a questo file ha i comandi esatti da eseguire su una macchina vera.
 
 ## Note di sessione
 
@@ -386,6 +397,204 @@ cartelle, chiedendo all'auditor di scompattare prima; (c) togliere la verifica d
 verificatore (~205 righe) e lasciarla alle istruzioni di `VERIFY.md`. La mia raccomandazione è (a):
 entrambe le altre tolgono all'auditor qualcosa che la SPEC gli aveva promesso.
 
-## Checklist di verifica finale M9 (da eseguire fuori dalla sessione cloud)
+#### M9 — UI, deploy, documentazione (fatto)
 
-Da completare quando si arriverà a M9 — placeholder, verrà sostituito con i comandi esatti.
+**La vista web** (`apps/server/src/http/ui.ts`, 360 righe). Renderizzata dal server, **nessun
+JavaScript**, nessun foglio di stile esterno, nessuna dipendenza in più. Pagine: elenco dei sistemi
+con conteggio ricevute e stato dell'ultimo checkpoint; dettaglio di un sistema con le ultime
+ricevute e un filtro per agente, tipo di azione ed esito; elenco dei checkpoint con `tree_size`,
+radice e stato dell'ancoraggio; un bottone che produce il fascicolo e lo scarica.
+
+Due scelte che vale la pena scrivere:
+- La UI **non viene montata affatto** se `SIGILLO_ADMIN_PASSWORD` non è impostata (e la password
+  deve avere almeno 12 caratteri, altrimenti il server rifiuta di partire). Un deployment che non
+  vuole la vista web non ha una pagina di login esposta da indovinare: non ha proprio la rotta.
+- La sessione è un cookie firmato HMAC con un segreto generato a ogni avvio del processo
+  (`HttpOnly`, `SameSite=Strict`, `Secure` dietro TLS). Riavviare il server invalida le sessioni:
+  è il comportamento giusto per una console di amministrazione, e toglie di mezzo un segreto in più
+  da gestire. Confronto della firma con `timingSafeEqual`.
+- Ogni valore che finisce in pagina passa da `escape()`. La UI mostra **solo** metadati: nomi di
+  agente, tipi di azione, impronte. Non esiste una pagina che possa mostrare un prompt, perché il
+  prompt non è mai stato salvato.
+
+**Il deployment** (`deploy/`). `Dockerfile` multi-stage con due target: `signer` e `server`, immagini
+separate, entrambe non-root. `docker-compose.yml` con tre servizi, e la separazione è il punto:
+
+| servizio | cosa tiene | rete |
+|---|---|---|
+| `signer` | la chiave privata, su un volume montato **solo qui** | `network_mode: none` — nessuna rete, parla solo dal socket |
+| `server` | il database e il socket verso il firmatario | nessuna porta pubblicata |
+| `caddy` | TLS automatico | l'unico sulle porte 80/443 |
+
+`Caddyfile` con HSTS, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` e una CSP
+`default-src 'none'` che la vista web rispetta perché non ha script propri. `backup.sh` usa l'API di
+backup di SQLite, **non** `cp`: una copia presa mentre una scrittura è in volo è un database corrotto
+che sembra a posto finché qualcuno non lo legge. Le copie vecchie si potano per numero, non per età,
+così un backup che smette di girare non cancella in silenzio l'ultima copia buona.
+
+**La documentazione**: `README.md` (cinque minuti dal clone alla verifica, con l'output vero dei
+comandi), `docs/SECURITY.md` (dov'è la chiave, cosa succede se il server viene compromesso, cosa
+l'operatore del servizio può e non può vedere, e una sezione **Known limits** che dice a chiare
+lettere cosa sigillo non prova), `docs/API.md` e `docs/FORMAT.md` già scritti e aggiornati.
+
+##### Difetti trovati dai test in questa milestone
+
+1. **Malleabilità della firma in base64** — trovato da un property test con fast-check. La regex
+   accettava qualunque stringa di 86 caratteri più `==`, ma gli ultimi quattro bit dell'86° carattere
+   non fanno parte dei 64 byte della firma: **16 scritture diverse decodificano alla stessa firma**,
+   e tutte e 16 passavano la verifica. Conseguenza reale: due esportazioni dello stesso registro
+   potevano differire byte per byte pur essendo entrambe valide, e un confronto binario fra fascicoli
+   non voleva dire niente. Corretto con `packages/core/src/base64.ts` (`isCanonicalBase64`: ricodifica
+   e confronta), applicato alla firma della ricevuta, a quella del checkpoint e alla chiave pubblica
+   nel manifest. Documentato in `docs/FORMAT.md` §5 e aggiunto al cross-check Python.
+   **Non ho incrementato `v`**: la regola stringe soltanto, e rifiuta unicamente scritture che
+   sigillo non ha mai prodotto. Ogni ricevuta esistente resta valida. Se preferisci comunque un
+   `v: 2`, si fa in mezz'ora.
+2. **Codici di stato della UI** — un helper metteva 200 su ogni risposta HTML. Un login **fallito**
+   tornava 200, e un sistema inesistente pure. Lo stato è ora un parametro esplicito; i test
+   controllano 401 sul login sbagliato e 404 sul sistema che non c'è.
+3. **Un test intermittente, non un difetto del prodotto** — un test di manomissione sostituiva
+   l'ultimo carattere esadecimale con `"0"`: una volta su 16 era già `"0"` e la manomissione era un
+   non-cambiamento. Sostituito con un helper `flipLastHex`. Sei esecuzioni consecutive verdi dopo
+   la correzione.
+
+##### Il percorso completo, eseguito davvero (senza Docker)
+
+Docker **non è disponibile in questa sessione cloud**: il CLI c'è, il daemon no (`docker info`
+esce 1). È esattamente il caso previsto dalla SPEC. Ho quindi validato `docker-compose.yml` con
+`docker compose config` (che è analisi statica, non esecuzione) e ho eseguito **tutto il percorso di
+accettazione con i binari compilati**, processi avviati direttamente. Sotto l'output annotato; la
+checklist con Docker è in fondo al file.
+
+```
+### 2. firmatario     permessi della chiave: -rw-------  (key_id a16278409045516a)
+### 3. sistema e chiave   creato acme-support-bot, genesi firmata
+### 5. l'esempio Python, attraverso l'SDK
+    instrumentations: langchain
+    l'agente ha risposto: Your order A-1099 has shipped with DHL.
+### 6. la vista web
+    la pagina dei sistemi elenca acme-support-bot
+    la pagina delle ricevute ne mostra 8
+    export dalla UI: 200, 7608 byte
+    senza il cookie: 302 (redirect al login)
+### 7. checkpoint e ancoraggio
+    acme-support-bot  tree_size 8  root 7257843a3faa...  1 ancorato, 0 in attesa
+### 8. export e verifica
+    OK  acme-support-bot: 8 receipts, seq 0..7, signed by a16278409045516a
+        1 checkpoint(s), 1 root(s) rebuilt, 2 inclusion proof(s) verified
+        timestamp timestamps/checkpoint-8-1.tsr: imprint-only
+### 9. backup        scritti 73728 byte
+```
+
+Il criterio della SPEC è "meno di un'ora seguendo solo il README". Dalla chiave generata al fascicolo
+verificato: **9 secondi**. L'ora serve a scaricare e compilare le immagini, non al percorso.
+
+**406 test verdi** (erano 386), su sei esecuzioni consecutive. `pnpm lint`, `pnpm typecheck`,
+`pnpm build`, lo smoke test sul `dist/` e il cross-check Python passano tutti.
+
+##### Correzione a un numero scritto in M8
+
+La tabella della dimensione del verificatore, qui sopra, **ometteva `packages/core/src/index.ts`**
+(96 righe di re-export). Il numero onesto, ricontato ora e comprensivo di `base64.ts`, è
+**1792 righe in totale, 1416 escludendo righe vuote e commenti**, non 1689. La decisione che ti
+chiedo non cambia — le tre opzioni restano quelle — ma il numero su cui decidere è questo.
+
+## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
+
+Questi sono i comandi esatti. Docker non è disponibile nella sessione cloud, quindi il percorso
+sopra è stato verificato senza Docker; questo qui sotto è quello che resta da confermare su una
+macchina pulita. Servono solo `git`, Docker con Compose v2, e `curl`. Tempo atteso: 10–15 minuti,
+quasi tutti di build delle immagini.
+
+```bash
+# 1. clone e configurazione
+git clone https://github.com/giovanniemilionoventa-byte/sigillo.git
+cd sigillo/deploy
+cp .env.example .env
+# Apri .env e metti: SIGILLO_DOMAIN (un dominio che punta a questa macchina),
+# SIGILLO_TLS_EMAIL, e SIGILLO_ADMIN_PASSWORD (almeno 12 caratteri).
+# Se provi in locale senza dominio, salta il servizio caddy: vedi il punto 9.
+
+# 2. la chiave, creata una volta sola, nel volume del solo firmatario
+docker compose run --rm signer keygen --key /var/lib/sigillo-key/signer.key
+# atteso: "wrote /var/lib/sigillo-key/signer.key  key_id <16 hex>  mode 0600"
+
+# 3. avvio
+docker compose up -d --build
+docker compose ps
+# atteso: signer e server "healthy", caddy "running"
+
+# 4. il firmatario non ha rete e nessun altro vede la chiave
+docker compose exec signer sh -c 'ls -l /var/lib/sigillo-key/signer.key'   # -rw------- 
+docker compose exec server sh -c 'ls /var/lib/sigillo-key 2>&1'           # atteso: No such file or directory
+docker compose exec -T signer sh -c 'command -v curl wget || echo "nessun client HTTP"'
+
+# 5. un sistema e una chiave API
+docker compose exec server node dist/cli.js system create acme-support-bot
+docker compose exec server node dist/cli.js key create acme-support-bot
+# Copia il token stampato (sigillo_...): viene mostrato una volta sola.
+
+# 6. l'agente di esempio, dall'esterno, attraverso l'SDK Python
+cd ..
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e sdk-python -r sdk-python/examples/requirements.txt
+SIGILLO_ENDPOINT=https://<il tuo dominio> \
+SIGILLO_API_KEY=<il token del punto 5> \
+SIGILLO_SYSTEM_ID=acme-support-bot \
+  python sdk-python/examples/langgraph_agent.py
+# atteso: "instrumentations: langchain", poi "agent said: ..." e "receipts sent"
+
+# 7. la vista web
+#    Apri https://<il tuo dominio>/ui nel browser.
+#    - chiede la password (quella di .env)
+#    - il sistema acme-support-bot compare con le sue ricevute
+#    - il bottone "Generate the evidence file" scarica uno zip
+#    Controlla anche che senza login /ui/systems/acme-support-bot rimandi al login.
+
+# 8. checkpoint, ancoraggio, export e verifica
+docker compose exec server node dist/cli.js checkpoint
+docker compose exec server node dist/cli.js export acme-support-bot --out /tmp/fascicolo.zip
+docker compose cp server:/tmp/fascicolo.zip ./fascicolo.zip
+
+# La verifica si fa FUORI dai container, con il verificatore indipendente:
+corepack enable && pnpm install && pnpm build
+node packages/verifier/dist/cli.js ./fascicolo.zip
+# atteso: "OK  acme-support-bot: N receipts, seq 0..N-1, signed by <key_id>"
+#         "1 checkpoint(s), 1 root(s) rebuilt, 2 inclusion proof(s) verified"
+#         il token risulta "imprint-only" finché non gli dai il certificato della CA:
+node packages/verifier/dist/cli.js ./fascicolo.zip --tsa-ca /percorso/della/ca.pem
+# atteso con --tsa-ca: "verified"
+
+# 9. il backup
+docker compose exec -T server /app/backup.sh
+docker compose exec server sh -c 'ls -l /var/lib/sigillo-backups'
+# atteso: un file sigillo-<timestamp>.db
+
+# 10. la prova che conta: manomissione rilevata
+#     Apri fascicolo.zip, cambia un carattere in receipts.jsonl, richiudilo e riverifica.
+#     atteso: uscita 1 e un messaggio che nomina file, riga e controllo fallito.
+
+# 11. chiusura
+docker compose down        # aggiungi -v SOLO se vuoi distruggere anche chiave e database
+```
+
+**Se provi in locale senza dominio** (punto 1): commenta l'intero servizio `caddy` in
+`docker-compose.yml` e aggiungi al servizio `server` una porta pubblicata:
+
+```yaml
+    ports:
+      - "127.0.0.1:8080:8080"
+```
+
+Poi usa `http://127.0.0.1:8080` al posto del dominio ai punti 6 e 7. È un ambiente di prova: senza
+Caddy non c'è TLS, quindi non ci si mandano dati veri.
+
+**Cosa mi aspetto che possa andare storto**, con il rimedio:
+- La build di `better-sqlite3` richiede i toolchain di compilazione. Il `Dockerfile` li installa
+  nello stage di build e non nell'immagine finale; se la build fallisce lì, l'errore è di rete
+  (registry npm irraggiungibile), non di codice.
+- Caddy non ottiene il certificato se il dominio non punta davvero alla macchina o se 80/443 sono
+  occupate. `docker compose logs caddy` lo dice a chiare lettere.
+- La TSA: `TSA_URL` punta di default a FreeTSA, che **non è qualificata eIDAS**. Se FreeTSA è giù,
+  il checkpoint viene comunque salvato e firmato e il token viene preso al giro successivo — è un
+  comportamento voluto, non un errore.

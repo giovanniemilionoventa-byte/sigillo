@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CANONICAL_BASE64_MESSAGE, isCanonicalBase64 } from "./base64.js";
 import { isoUtcTimestampSchema, RECEIPT_VERSION } from "./receipt.js";
 
 /**
@@ -10,7 +11,8 @@ import { isoUtcTimestampSchema, RECEIPT_VERSION } from "./receipt.js";
 /** 32 raw bytes of an Ed25519 public key are 44 characters of padded base64. */
 const rawPublicKeyBase64 = z
   .string()
-  .regex(/^[A-Za-z0-9+\/]{43}=$/, "must be the raw 32-byte public key in standard base64");
+  .regex(/^[A-Za-z0-9+\/]{43}=$/, "must be the raw 32-byte public key in standard base64")
+  .refine(isCanonicalBase64, CANONICAL_BASE64_MESSAGE);
 
 export const manifestKeySchema = z
   .object({

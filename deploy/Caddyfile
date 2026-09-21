@@ -1,0 +1,36 @@
+# Caddy obtains and renews the certificate on its own. The domain and the
+# contact address come from the environment, so this file is the same on every
+# deployment.
+
+{
+	email {$SIGILLO_TLS_EMAIL}
+}
+
+{$SIGILLO_DOMAIN} {
+	encode zstd gzip
+
+	# The ingest endpoints take protobuf and JSON bodies; an OTLP batch from a
+	# busy agent can be large.
+	request_body {
+		max_size 16MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		# The web view is server-rendered with no scripts of its own.
+		Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+		-Server
+	}
+
+	reverse_proxy server:8080 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	log {
+		output stderr
+		format console
+	}
+}

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { writeFileSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
+import Database from "better-sqlite3";
 import { Command } from "commander";
 import { ApiKeyStore } from "./auth/api-keys.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
@@ -79,7 +80,32 @@ program
     const signer = await SignerClient.connect(options.signerSocket);
     const store = ReceiptStore.open(options.db, signer);
     const keys = ApiKeyStore.open(options.db);
-    const app = buildServer({ store, keys, logger: true });
+
+    // The operator's view is mounted only when a password is set. An audit log
+    // behind no password is worse than an audit log behind no web page.
+    const adminPassword = process.env["SIGILLO_ADMIN_PASSWORD"];
+    if (adminPassword === undefined || adminPassword.length === 0) {
+      process.stdout.write("SIGILLO_ADMIN_PASSWORD is not set: the web view is not served\n");
+    } else if (adminPassword.length < 12) {
+      throw new Error("SIGILLO_ADMIN_PASSWORD must be at least 12 characters");
+    }
+
+    const app = buildServer({
+      store,
+      keys,
+      logger: true,
+      ...(adminPassword === undefined || adminPassword.length === 0
+        ? {}
+        : {
+            ui: {
+              password: adminPassword,
+              signerKey: {
+                key_id: signer.keyId,
+                public_key_base64: signer.publicKeyBase64,
+              },
+            },
+          }),
+    });
 
     const tsa = tsaFromOptions(options.tsaUrl);
     const checkpointer = new Checkpointer({
@@ -193,6 +219,24 @@ key
       }
     } finally {
       keys.close();
+    }
+  });
+
+program
+  .command("backup")
+  .description("Write a consistent copy of the database, safe to take while the server runs")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .requiredOption("--out <path>", "where to write the copy")
+  .action(async (options: DatabaseOption & { out: string }) => {
+    // SQLite's own backup API, not a file copy: a copy taken with cp while a
+    // write is in flight is a corrupt database that looks fine until it is read.
+    const source = new Database(options.db, { readonly: true });
+    try {
+      await source.backup(options.out);
+      const size = statSync(options.out).size;
+      process.stdout.write(`wrote ${size} bytes to ${options.out}\n`);
+    } finally {
+      source.close();
     }
   });
 

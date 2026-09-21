@@ -1,0 +1,93 @@
+# Three services, and the separation between them is the point.
+#
+#   signer  holds the key. Nothing else mounts the key volume.
+#   server  holds the database. It reaches the signer through a socket and has
+#           no way to read a key.
+#   caddy   terminates TLS. It is the only service on a public port.
+#
+# Before the first start:
+#   docker compose run --rm signer keygen --key /var/lib/sigillo-key/signer.key
+#   docker compose up -d
+#   docker compose exec server node dist/cli.js system create <system id>
+#   docker compose exec server node dist/cli.js key create <system id>
+
+name: sigillo
+
+services:
+  signer:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: signer
+    restart: unless-stopped
+    volumes:
+      # The key. Mounted here and nowhere else.
+      - signer-key:/var/lib/sigillo-key
+      # The socket, shared with the server and with nothing else.
+      - signer-socket:/run/sigillo
+    # It speaks only over the socket: no network at all.
+    network_mode: none
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/sigillo/signer.sock"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: server
+    restart: unless-stopped
+    depends_on:
+      signer:
+        condition: service_healthy
+    volumes:
+      - sigillo-data:/var/lib/sigillo
+      - signer-socket:/run/sigillo
+      - backups:/var/lib/sigillo-backups
+    environment:
+      SIGILLO_DB: /var/lib/sigillo/sigillo.db
+      SIGILLO_SIGNER_SOCKET: /run/sigillo/signer.sock
+      SIGILLO_HOST: 0.0.0.0
+      SIGILLO_PORT: 8080
+      SIGILLO_CHECKPOINT_MINUTES: ${SIGILLO_CHECKPOINT_MINUTES:-60}
+      # In production this points at a qualified eIDAS provider, with
+      # TSA_USERNAME and TSA_PASSWORD where the provider authenticates.
+      TSA_URL: ${TSA_URL:-https://freetsa.org/tsr}
+      TSA_USERNAME: ${TSA_USERNAME:-}
+      TSA_PASSWORD: ${TSA_PASSWORD:-}
+      # Without this the web view is not served at all.
+      SIGILLO_ADMIN_PASSWORD: ${SIGILLO_ADMIN_PASSWORD:?set an administrator password}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    # No published port: Caddy is the way in.
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      SIGILLO_DOMAIN: ${SIGILLO_DOMAIN:?set the domain to serve}
+      SIGILLO_TLS_EMAIL: ${SIGILLO_TLS_EMAIL:-}
+
+volumes:
+  signer-key:
+  signer-socket:
+  sigillo-data:
+  backups:
+  caddy-data:
+  caddy-config:

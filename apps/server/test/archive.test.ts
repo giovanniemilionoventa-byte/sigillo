@@ -104,6 +104,11 @@ function rebuild(files: Map<string, Uint8Array>, changes: Record<string, Uint8Ar
   return bundleFrom(copy);
 }
 
+/** Changes the last character of a digest to one that is certainly different. */
+function flipLastHex(hex: string): string {
+  return `${hex.slice(0, -1)}${hex.endsWith("0") ? "1" : "0"}`;
+}
+
 function expectFailure(bundle: Bundle, check: VerificationCheck): string {
   const result = verifyBundle(bundle);
   expect(result.ok, `expected the ${check} check to fail`).toBe(false);
@@ -241,7 +246,7 @@ describe("tampering with the archive", () => {
     const entry = JSON.parse(decode(files.get("checkpoints.jsonl")).trim()) as {
       checkpoint: { root_hash: string };
     };
-    entry.checkpoint.root_hash = `${entry.checkpoint.root_hash.slice(0, 63)}0`;
+    entry.checkpoint.root_hash = flipLastHex(entry.checkpoint.root_hash);
 
     expectFailure(
       rebuild(files, {
@@ -280,7 +285,7 @@ describe("tampering with the archive", () => {
     const step = entry.proofs[0]?.path[0];
     expect(step).toBeDefined();
     if (step === undefined) return;
-    if (entry.proofs[0] !== undefined) entry.proofs[0].path[0] = `${step.slice(0, 63)}0`;
+    if (entry.proofs[0] !== undefined) entry.proofs[0].path[0] = flipLastHex(step);
 
     const detail = expectFailure(
       rebuild(files, {

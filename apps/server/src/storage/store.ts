@@ -275,6 +275,46 @@ export class ReceiptStore {
     }));
   }
 
+  /** Receipts matching a filter, newest first, for the operator's view. */
+  searchReceipts(query: {
+    systemId: string;
+    from?: string;
+    to?: string;
+    kind?: string;
+    name?: string;
+    limit?: number;
+  }): Receipt[] {
+    const clauses = ["system_id = @system_id"];
+    const parameters: Record<string, string | number> = { system_id: query.systemId };
+
+    if (query.from !== undefined && query.from.length > 0) {
+      clauses.push("ts_received >= @from");
+      parameters["from"] = query.from;
+    }
+    if (query.to !== undefined && query.to.length > 0) {
+      clauses.push("ts_received <= @to");
+      parameters["to"] = query.to;
+    }
+    if (query.kind !== undefined && query.kind.length > 0) {
+      clauses.push("action_kind = @kind");
+      parameters["kind"] = query.kind;
+    }
+    if (query.name !== undefined && query.name.length > 0) {
+      clauses.push("action_name LIKE @name");
+      parameters["name"] = `%${query.name}%`;
+    }
+    parameters["limit"] = Math.min(Math.max(query.limit ?? 100, 1), 1000);
+
+    const rows = this.read
+      .prepare(
+        `SELECT canonical, sig FROM receipts
+         WHERE ${clauses.join(" AND ")}
+         ORDER BY seq DESC LIMIT @limit`,
+      )
+      .all(parameters) as StoredRow[];
+    return rows.map(rowToReceipt);
+  }
+
   listSystems(): string[] {
     const rows = this.read
       .prepare("SELECT system_id FROM systems ORDER BY system_id")

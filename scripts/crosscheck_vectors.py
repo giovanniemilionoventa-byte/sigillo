@@ -12,6 +12,7 @@ are ASCII, so sorting by code point and sorting by UTF-16 code unit agree.
 
 Usage: python3 scripts/crosscheck_vectors.py
 """
+import base64
 import hashlib
 import json
 import pathlib
@@ -62,7 +63,13 @@ def check_shape(name, receipt):
         check(value is None or HEX64.match(value) is not None, where + f"{field} must be null or 64 hex characters")
     check(HEX64.match(receipt.get("prev_hash", "")) is not None, where + "prev_hash format")
     check(HEX16.match(receipt.get("key_id", "")) is not None, where + "key_id format")
-    check(SIGNATURE.match(receipt.get("sig", "")) is not None, where + "sig format")
+    signature = receipt.get("sig", "")
+    check(SIGNATURE.match(signature) is not None, where + "sig format")
+    if SIGNATURE.match(signature):
+        # Canonical base64: the bits the last character carries beyond the final
+        # byte must be zero, so one signature has exactly one spelling.
+        canonical = base64.b64encode(base64.b64decode(signature)).decode()
+        check(canonical == signature, where + "sig must be canonical base64")
     check(receipt.get("outcome") in OUTCOMES, where + "outcome value")
 
     actor = receipt.get("actor", {})

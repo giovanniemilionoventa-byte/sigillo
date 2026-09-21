@@ -5,6 +5,7 @@ import type { ApiKeyStore } from "../auth/api-keys.js";
 import { adaptSpans } from "../ingest/adapter.js";
 import { decodeJsonTraces, decodeProtobufTraces, OtlpDecodeError } from "../ingest/otlp.js";
 import type { ReceiptStore } from "../storage/store.js";
+import { registerUi } from "./ui.js";
 
 /**
  * The ingest surface.
@@ -22,6 +23,14 @@ export interface ServerOptions {
   now?: () => Date;
   bodyLimitBytes?: number;
   logger?: boolean;
+  /**
+   * The operator's view. Without a password it is not mounted at all: an
+   * unguarded window onto an audit log is worse than no window.
+   */
+  ui?: {
+    password: string;
+    signerKey: { key_id: string; public_key_base64: string };
+  };
 }
 
 const hex64 = z.string().regex(/^[0-9a-f]{64}$/, "must be 64 lowercase hex characters");
@@ -93,6 +102,29 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   };
 
   app.get("/healthz", async () => ({ status: "ok" }));
+
+  if (options.ui !== undefined) {
+    // The login form posts a urlencoded body, which fastify does not parse by
+    // default. A null-prototype object, because the field names come from
+    // outside.
+    app.addContentTypeParser(
+      "application/x-www-form-urlencoded",
+      { parseAs: "string" },
+      (_request, body, done) => {
+        const fields: Record<string, string> = Object.create(null) as Record<string, string>;
+        for (const [key, value] of new URLSearchParams(body as string)) {
+          fields[key] = value;
+        }
+        done(null, fields);
+      },
+    );
+    registerUi(app, {
+      store,
+      password: options.ui.password,
+      signerKey: options.ui.signerKey,
+      now,
+    });
+  }
 
   app.post("/v1/traces", async (request, reply) => {
     const systemId = authenticate(request);
