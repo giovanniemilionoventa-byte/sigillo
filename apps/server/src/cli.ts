@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { ApiKeyStore } from "./auth/api-keys.js";
+import { Checkpointer } from "./checkpoint/checkpointer.js";
 import { exportSystem, writeExportBundle } from "./export/bundle.js";
 import { buildServer } from "./http/server.js";
 import { SignerClient } from "./signer/client.js";
 import { ReceiptStore } from "./storage/store.js";
+import type { TsaOptions } from "./timestamp/rfc3161.js";
 
 /**
  * Administration and the server itself. Every command takes the database path
@@ -16,6 +18,20 @@ interface DatabaseOption {
 }
 
 const now = (): string => new Date().toISOString();
+
+/**
+ * The authority to anchor checkpoints with. In development this is FreeTSA,
+ * which is not qualified under eIDAS; a production deployment points TSA_URL at
+ * a qualified provider and supplies its credentials.
+ */
+function tsaFromOptions(url: string | undefined): TsaOptions | undefined {
+  if (url === undefined || url.length === 0) return undefined;
+  const username = process.env["TSA_USERNAME"];
+  const password = process.env["TSA_PASSWORD"];
+  return username !== undefined && password !== undefined
+    ? { url, username, password }
+    : { url };
+}
 
 async function withSigner<T>(
   socketPath: string,
@@ -46,13 +62,36 @@ program
   .requiredOption("--signer-socket <path>", "the signer's socket", process.env["SIGILLO_SIGNER_SOCKET"])
   .option("--host <host>", "address to bind", process.env["SIGILLO_HOST"] ?? "127.0.0.1")
   .option("--port <port>", "port to bind", process.env["SIGILLO_PORT"] ?? "8080")
-  .action(async (options: DatabaseOption & { signerSocket: string; host: string; port: string }) => {
+  .option("--tsa-url <url>", "RFC 3161 authority to anchor checkpoints with", process.env["TSA_URL"])
+  .option(
+    "--checkpoint-minutes <minutes>",
+    "how often to check point each chain",
+    process.env["SIGILLO_CHECKPOINT_MINUTES"] ?? "60",
+  )
+  .action(async (options: DatabaseOption & {
+    signerSocket: string;
+    host: string;
+    port: string;
+    tsaUrl?: string;
+    checkpointMinutes: string;
+  }) => {
     const signer = await SignerClient.connect(options.signerSocket);
     const store = ReceiptStore.open(options.db, signer);
     const keys = ApiKeyStore.open(options.db);
     const app = buildServer({ store, keys, logger: true });
 
+    const tsa = tsaFromOptions(options.tsaUrl);
+    const checkpointer = new Checkpointer({
+      store,
+      now: () => new Date(),
+      ...(tsa === undefined ? {} : { tsa }),
+      intervalMinutes: Number(options.checkpointMinutes),
+      onError: (message) => process.stderr.write(`${message}\n`),
+    });
+    checkpointer.start();
+
     const shutdown = (): void => {
+      checkpointer.stop();
       void app.close().then(() => {
         keys.close();
         store.close();
@@ -65,6 +104,9 @@ program
 
     await app.listen({ host: options.host, port: Number(options.port) });
     process.stdout.write(`signing with key ${signer.keyId}\n`);
+    process.stdout.write(
+      `checkpointing every ${options.checkpointMinutes} minutes, anchoring with ${tsa?.url ?? "no authority"}\n`,
+    );
   });
 
 const system = program.command("system").description("Manage AI systems and their chains");
@@ -150,6 +192,38 @@ key
       }
     } finally {
       keys.close();
+    }
+  });
+
+program
+  .command("checkpoint")
+  .description("Check point every chain now, and anchor what is still unanchored")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .requiredOption("--signer-socket <path>", "the signer's socket", process.env["SIGILLO_SIGNER_SOCKET"])
+  .option("--tsa-url <url>", "RFC 3161 authority", process.env["TSA_URL"])
+  .action(async (options: DatabaseOption & { signerSocket: string; tsaUrl?: string }) => {
+    const signer = await SignerClient.connect(options.signerSocket);
+    const store = ReceiptStore.open(options.db, signer);
+    try {
+      const tsa = tsaFromOptions(options.tsaUrl);
+      const checkpointer = new Checkpointer({
+        store,
+        now: () => new Date(),
+        ...(tsa === undefined ? {} : { tsa }),
+        onError: (message) => process.stderr.write(`${message}\n`),
+      });
+      const run = await checkpointer.runOnce();
+      for (const written of run.checkpoints) {
+        process.stdout.write(
+          `${written.checkpoint.system_id}\ttree_size ${written.checkpoint.tree_size}\troot ${written.checkpoint.root_hash}\n`,
+        );
+      }
+      process.stdout.write(
+        `${run.checkpoints.length} new checkpoint(s), ${run.timestamped} anchored, ${run.pending} still waiting\n`,
+      );
+    } finally {
+      store.close();
+      signer.close();
     }
   });
 

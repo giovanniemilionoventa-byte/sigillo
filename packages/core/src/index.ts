@@ -10,6 +10,27 @@ export {
 
 export { SIGILLO_VERSION } from "./version.js";
 
+export {
+  canonicalCheckpointBytes,
+  checkpointHash,
+  checkpointHashHex,
+  checkpointSchema,
+  parseCheckpoint,
+  safeParseCheckpoint,
+  signCheckpoint,
+  unsignedCheckpointSchema,
+  verifyCheckpointSignature,
+} from "./checkpoint.js";
+export type { Checkpoint, CheckpointParseResult, UnsignedCheckpoint } from "./checkpoint.js";
+
+export {
+  inclusionProof,
+  merkleLeafHash,
+  merkleNodeHash,
+  merkleRoot,
+  rootFromInclusionProof,
+} from "./merkle.js";
+
 export { keyIdFromRawPublicKey, publicKeyFromRaw, rawPublicKeyBytes } from "./keys.js";
 
 export { manifestKeySchema, manifestSchema, safeParseManifest } from "./manifest.js";

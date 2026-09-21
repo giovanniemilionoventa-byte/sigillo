@@ -1,13 +1,19 @@
 import Database from "better-sqlite3";
 import {
   canonicalReceiptBytes,
+  checkpointHash,
+  fromHex,
   GENESIS_PREV_HASH,
+  merkleRoot,
+  parseCheckpoint,
   parseReceipt,
   parseUnsignedReceipt,
   receiptHash,
   RECEIPT_VERSION,
+  toHex,
   type Action,
   type Actor,
+  type Checkpoint,
   type Outcome,
   type Receipt,
   type Source,
@@ -38,6 +44,18 @@ export interface ChainTip {
   hash: string;
 }
 
+/** A checkpoint as stored, with the row id that timestamp tokens hang from. */
+export interface StoredCheckpoint {
+  id: number;
+  checkpoint: Checkpoint;
+}
+
+export interface StoredTimestamp {
+  tsaUrl: string;
+  tokenBase64: string;
+  obtainedAt: string;
+}
+
 export class StorageError extends Error {
   constructor(message: string) {
     super(message);
@@ -48,6 +66,31 @@ export class StorageError extends Error {
 interface StoredRow {
   canonical: string;
   sig: string;
+}
+
+interface CheckpointRow {
+  id: number;
+  system_id: string;
+  tree_size: number;
+  root_hash: string;
+  ts: string;
+  key_id: string;
+  sig: string;
+}
+
+function rowToCheckpoint(row: CheckpointRow): StoredCheckpoint {
+  return {
+    id: row.id,
+    checkpoint: parseCheckpoint({
+      v: RECEIPT_VERSION,
+      system_id: row.system_id,
+      tree_size: row.tree_size,
+      root_hash: row.root_hash,
+      ts: row.ts,
+      key_id: row.key_id,
+      sig: row.sig,
+    }),
+  };
 }
 
 function rowToReceipt(row: StoredRow): Receipt {
@@ -157,6 +200,81 @@ export class ReceiptStore {
     return rows.map(rowToReceipt);
   }
 
+  /** Every receipt hash of a chain, in order: the leaves of its Merkle tree. */
+  readReceiptHashes(systemId: string): string[] {
+    const rows = this.read
+      .prepare("SELECT hash FROM receipts WHERE system_id = ? ORDER BY seq")
+      .all(systemId) as { hash: string }[];
+    return rows.map((row) => row.hash);
+  }
+
+  /**
+   * Signs and stores a checkpoint over everything the chain holds right now.
+   * Returns null when the last checkpoint already covered the same receipts:
+   * a chain with nothing new does not need another statement about it.
+   */
+  async createCheckpoint(systemId: string, ts: string): Promise<StoredCheckpoint | null> {
+    return this.enqueue(() => this.writeCheckpoint(systemId, ts));
+  }
+
+  readCheckpoints(systemId: string): StoredCheckpoint[] {
+    const rows = this.read
+      .prepare("SELECT * FROM checkpoints WHERE system_id = ? ORDER BY tree_size")
+      .all(systemId) as CheckpointRow[];
+    return rows.map(rowToCheckpoint);
+  }
+
+  latestCheckpoint(systemId: string): StoredCheckpoint | null {
+    const row = this.read
+      .prepare("SELECT * FROM checkpoints WHERE system_id = ? ORDER BY tree_size DESC LIMIT 1")
+      .get(systemId) as CheckpointRow | undefined;
+    return row === undefined ? null : rowToCheckpoint(row);
+  }
+
+  /** Checkpoints that no token from this authority covers yet. */
+  checkpointsAwaitingTimestamp(tsaUrl: string): StoredCheckpoint[] {
+    const rows = this.read
+      .prepare(
+        `SELECT c.* FROM checkpoints c
+         WHERE NOT EXISTS (
+           SELECT 1 FROM timestamps t WHERE t.checkpoint_id = c.id AND t.tsa_url = ?
+         )
+         ORDER BY c.id`,
+      )
+      .all(tsaUrl) as CheckpointRow[];
+    return rows.map(rowToCheckpoint);
+  }
+
+  recordTimestamp(
+    checkpointId: number,
+    tsaUrl: string,
+    tokenBase64: string,
+    obtainedAt: string,
+  ): void {
+    this.write
+      .prepare(
+        `INSERT INTO timestamps (checkpoint_id, tsa_url, token_base64, obtained_at)
+         VALUES (@checkpoint_id, @tsa_url, @token_base64, @obtained_at)`,
+      )
+      .run({
+        checkpoint_id: checkpointId,
+        tsa_url: tsaUrl,
+        token_base64: tokenBase64,
+        obtained_at: obtainedAt,
+      });
+  }
+
+  readTimestamps(checkpointId: number): StoredTimestamp[] {
+    const rows = this.read
+      .prepare("SELECT * FROM timestamps WHERE checkpoint_id = ? ORDER BY obtained_at")
+      .all(checkpointId) as { tsa_url: string; token_base64: string; obtained_at: string }[];
+    return rows.map((row) => ({
+      tsaUrl: row.tsa_url,
+      tokenBase64: row.token_base64,
+      obtainedAt: row.obtained_at,
+    }));
+  }
+
   listSystems(): string[] {
     const rows = this.read
       .prepare("SELECT system_id FROM systems ORDER BY system_id")
@@ -173,6 +291,67 @@ export class ReceiptStore {
   close(): void {
     this.read.close();
     this.write.close();
+  }
+
+  private async writeCheckpoint(systemId: string, ts: string): Promise<StoredCheckpoint | null> {
+    const signer = this.signer;
+    if (signer === undefined) {
+      throw new StorageError("this store was opened for reading only: it has no signer");
+    }
+    this.write.exec("BEGIN IMMEDIATE");
+    try {
+      const hashes = (
+        this.write.prepare("SELECT hash FROM receipts WHERE system_id = ? ORDER BY seq").all(
+          systemId,
+        ) as { hash: string }[]
+      ).map((row) => row.hash);
+
+      if (hashes.length === 0) {
+        throw new StorageError(`unknown system ${systemId}: it has no receipts to check point`);
+      }
+
+      const covered = this.write
+        .prepare("SELECT tree_size FROM checkpoints WHERE system_id = ? ORDER BY tree_size DESC LIMIT 1")
+        .get(systemId) as { tree_size: number } | undefined;
+      if (covered !== undefined && covered.tree_size === hashes.length) {
+        this.write.exec("COMMIT");
+        return null;
+      }
+
+      const unsigned = {
+        v: RECEIPT_VERSION,
+        system_id: systemId,
+        tree_size: hashes.length,
+        root_hash: toHex(merkleRoot(hashes.map((hash) => fromHex(hash)))),
+        ts,
+        key_id: signer.keyId,
+      } as const;
+
+      const sig = await signer.sign(checkpointHash(unsigned));
+      const checkpoint = parseCheckpoint({ ...unsigned, sig });
+
+      const result = this.write
+        .prepare(
+          `INSERT INTO checkpoints (system_id, tree_size, root_hash, ts, key_id, sig)
+           VALUES (@system_id, @tree_size, @root_hash, @ts, @key_id, @sig)`,
+        )
+        .run({
+          system_id: checkpoint.system_id,
+          tree_size: checkpoint.tree_size,
+          root_hash: checkpoint.root_hash,
+          ts: checkpoint.ts,
+          key_id: checkpoint.key_id,
+          sig: checkpoint.sig,
+        });
+
+      this.write.exec("COMMIT");
+      return { id: Number(result.lastInsertRowid), checkpoint };
+    } catch (error) {
+      if (this.write.inTransaction) {
+        this.write.exec("ROLLBACK");
+      }
+      throw error;
+    }
   }
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {

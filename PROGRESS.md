@@ -12,7 +12,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | M4 | Verificatore v1 | fatto | CLI `sigillo-verify`, 8 controlli, manomissioni + property test |
 | M5 | Ingest OTLP e API nativa | fatto | protobuf+JSON, due dialetti, API key scrypt, CLI admin |
 | M6 | SDK Python | fatto | `sigillo.init()`, esempio LangGraph, e2e a tre processi |
-| M7 | Merkle e marca temporale | todo | RFC 6962, checkpoint firmati, RFC 3161 con retry |
+| M7 | Merkle e marca temporale | fatto | RFC 6962 (0..17), checkpoint firmati, RFC 3161 su FreeTSA |
 | M8 | Fascicolo completo e verificatore v2 | todo | Export zip completo, tutti i controlli del verificatore |
 | M9 | UI, deploy, documentazione | todo | UI minima, docker-compose, backup, doc finali |
 
@@ -267,6 +267,59 @@ Servono solo all'esempio e stanno in `sdk-python/examples/requirements.txt`. Li 
 SPEC §8 richiede esplicitamente un esempio LangGraph.
 
 CI: aggiunto un terzo job che compila i pacchetti Node e poi esegue i test Python, end-to-end incluso.
+
+#### M7 — Merkle e marca temporale (fatto)
+
+- `packages/core/src/merkle.ts` — albero RFC 6962: foglia `SHA-256(0x00‖impronta)`, nodo
+  `SHA-256(0x01‖sx‖dx)`, split alla massima potenza di 2 sotto n. Prove di inclusione **senza**
+  marcatori sinistra/destra: i lati derivano da indice e dimensione, quindi la prova non può
+  contraddire sé stessa.
+- `packages/core/src/checkpoint.ts` — checkpoint (`v`, `system_id`, `tree_size`, `root_hash`, `ts`,
+  `key_id`, `sig`), stesse regole di forma canonica e firma della ricevuta: chi sa verificare una
+  ricevuta sa verificare un checkpoint.
+- `apps/server/src/timestamp/rfc3161.ts` — richiesta costruita con `openssl ts -query -sha256
+  -digest <root> -cert -no_nonce`, POST `application/timestamp-query`, token salvato **così com'è**
+  (DER, base64), retry con ritardo che raddoppia, credenziali Basic opzionali.
+- `apps/server/src/checkpoint/checkpointer.ts` — scheduler: un checkpoint per catena con ricevute
+  nuove, poi ancoraggio di tutti i checkpoint ancora senza token.
+- CLI: `sigillo-server checkpoint` per eseguire un giro a mano; `serve` avvia lo scheduler
+  (`--checkpoint-minutes`, default 60; `--tsa-url` o `TSA_URL`).
+- `docs/FORMAT.md` §8 e §9 — albero, prove di inclusione e ancoraggio documentati per intero.
+
+Vettori Merkle: `scripts/gen_merkle_vectors.py` li deriva **dal testo della RFC 6962**, in Python,
+senza usare il nostro codice, e calcola ogni radice **due volte** con due algoritmi diversi
+(split ricorsivo e costruzione per livelli con promozione del nodo dispari). Se i due non
+coincidono i vettori non vengono scritti. Coperte le dimensioni **0..17**, e per ogni dimensione
+la prova di inclusione di **ogni** foglia.
+
+Controlli a mano: radice dell'albero vuoto = `sha256("")`, radice di una foglia = `sha256(0x00‖e)`,
+radice di due foglie = `sha256(0x01‖l0‖l1)`. Tutti verificati.
+
+358 test verdi. Tra i controlli:
+- ogni prova di inclusione ricostruisce la radice; alterando **qualsiasi passo** non la ricostruisce;
+- una prova presentata per la ricevuta sbagliata o la posizione sbagliata fallisce;
+- il checkpoint viene **salvato e firmato anche se la TSA non risponde**, e il token viene preso al
+  giro successivo (requisito esplicito della SPEC);
+- il retry rispetta i ritardi 100ms, 200ms, ... verificati senza attendere davvero;
+- risposte non valide della TSA (500, corpo vuoto, pagina HTML, byte che non sono DER) rifiutate;
+- i trigger append-only valgono anche per i checkpoint.
+
+Difetto trovato da un test e corretto: una prova di inclusione **troppo lunga** non veniva
+rifiutata — raggiunta la radice, i passi in più continuavano a produrre hash e restituivano la
+radice di un altro albero. Ora la lunghezza attesa viene calcolata da indice e dimensione e
+confrontata prima di iniziare.
+
+**Test di rete eseguito davvero** contro `https://freetsa.org/tsr`: token ottenuto, `openssl ts
+-reply -text` mostra `Status: Granted.` e il digest nel token coincide con la `root_hash` del
+checkpoint. Il test si salta da solo se la TSA non è raggiungibile.
+
+### Serve una decisione: la TSA qualificata eIDAS
+
+La SPEC dice di fermarsi e chiedere quando si arriva al fornitore di produzione. Il codice è pronto:
+`TSA_URL`, più `TSA_USERNAME`/`TSA_PASSWORD` per i fornitori che autenticano la richiesta.
+**FreeTSA non è qualificata eIDAS**, quindi va bene solo per sviluppo e test. Per la produzione
+servono: URL del fornitore qualificato, eventuali credenziali, e il certificato della sua CA per
+la verifica offline (da includere nel fascicolo).
 
 ## Checklist di verifica finale M9 (da eseguire fuori dalla sessione cloud)
 

@@ -4,9 +4,9 @@ This document defines the receipt: the unit of evidence sigillo produces. It is
 written so that a second implementation can verify a sigillo log without reading
 the sigillo source. Everything a verifier must check is stated here.
 
-Status: receipt schema version `1`. Merkle checkpoints, RFC 3161 timestamp
-anchoring and the export archive are defined in later sections of this document
-as those parts of the system are built (milestones M7 and M8).
+Status: receipt schema version `1`. The export archive with its report and
+timestamp tokens is described as far as it is built; the rest of this document
+is complete.
 
 ## 1. What a receipt is
 
@@ -215,13 +215,144 @@ above with no trailing newline:
 printf '%s' "$(cat canonical.txt)" | openssl dgst -sha256
 ```
 
-## 8. The export
+## 8. Checkpoints and the Merkle tree
+
+A chain proves its own order. A checkpoint proves its own size, at a moment
+somebody else can vouch for.
+
+### 8.1 What a checkpoint is
+
+```json
+{
+  "v": 1,
+  "system_id": "acme-support-bot",
+  "tree_size": 17,
+  "root_hash": "84b39fd0350001ad0ef1d6886db35abfa3241db8139941892b8341c5d6c6207a",
+  "ts": "2026-03-29T15:00:00.000Z",
+  "key_id": "3f2a1c9d8e7b6a5f",
+  "sig": "..."
+}
+```
+
+| member | type | constraint |
+|---|---|---|
+| `v` | integer | exactly `1` |
+| `system_id` | string | the chain this covers |
+| `tree_size` | integer | `>= 1`; how many receipts the tree holds, so `seq` 0 to `tree_size - 1` |
+| `root_hash` | string | 64 lowercase hex characters; the Merkle root over those receipts |
+| `ts` | string | ISO-8601 UTC with milliseconds, as in section 2.1 |
+| `key_id` | string | 16 lowercase hex characters |
+| `sig` | string | 88 characters of standard base64 |
+
+Its canonical form, its hash and its signature follow exactly the rules of
+sections 3, 4 and 5, with `sig` removed before canonicalising. A verifier that
+can check a receipt can check a checkpoint with the same code.
+
+### 8.2 The tree
+
+The tree is the one RFC 6962 defines, over the receipt hashes of section 4 in
+`seq` order:
+
+```
+leaf(i)        = SHA-256(0x00 || receipt_hash(i))
+node(l, r)     = SHA-256(0x01 || l || r)
+root(n = 0)    = SHA-256("")
+root(n = 1)    = leaf(0)
+root(n > 1)    = node(root(entries[0:k]), root(entries[k:n]))
+                 where k is the largest power of two strictly below n
+```
+
+Two things matter here and are worth stating plainly:
+
+- The `0x00` and `0x01` prefixes put leaves and internal nodes in different
+  domains. Without them, a leaf whose content happened to be two concatenated
+  hashes would hash identically to the node above them, and an internal node
+  could be passed off as a record.
+- Splitting at the largest power of two below `n`, rather than duplicating the
+  last node to make the level even, is what makes the tree append-only: adding
+  receipts never rewrites a subtree that already existed, so an old inclusion
+  proof stays valid in every later tree that shares its prefix.
+
+Building the tree level by level, pairing nodes and promoting a lone odd node
+unchanged, produces the same root. `scripts/gen_merkle_vectors.py` computes both
+ways and refuses to write the vectors if they ever disagree.
+
+### 8.3 Inclusion proofs
+
+An inclusion proof is the RFC 6962 audit path: the sibling hashes from a leaf up
+to the root, closest sibling first, as a list of 64-character lowercase hex
+strings. It carries **no left-or-right markers**. The side of each step follows
+from the leaf's index and the tree size, so there is nothing in a proof that can
+contradict itself.
+
+To check that receipt `i` of a chain is covered by a checkpoint:
+
+1. Compute `leaf = SHA-256(0x00 || receipt_hash(i))`.
+2. Walk the path per RFC 6962 section 2.1.1, with `fn = i` and `sn = tree_size - 1`:
+   for each sibling, if `fn == sn` or `fn` is odd, the sibling is on the left
+   (`node = node(sibling, node)`) and then `fn` and `sn` are halved while `fn` is
+   even and non-zero; otherwise the sibling is on the right. Halve `fn` and `sn`
+   at the end of every step.
+3. The result must equal `root_hash`, and the checkpoint's own signature must
+   verify.
+
+A path must have exactly as many steps as the position requires. A verifier
+computes that length from `i` and `tree_size` and rejects any other length:
+once the walk reaches the root, extra steps would keep hashing and produce some
+other tree's root rather than an error.
+
+`packages/core/test/merkle-vectors.json` carries roots and audit paths for every
+tree size from 0 to 17 and every position in each, derived from the RFC by the
+Python script above rather than by sigillo's code.
+
+## 9. Timestamp anchoring
+
+Every checkpoint is anchored with an RFC 3161 timestamp token over its
+`root_hash`. That is what turns "these receipts are in this order" into "these
+receipts existed no later than this time", attested by someone who is not the
+operator of the log.
+
+The request is the one this command produces:
+
+```sh
+openssl ts -query -sha256 -digest <root_hash> -cert -no_nonce
+```
+
+sent by HTTP POST with `Content-Type: application/timestamp-query`. `-cert` asks
+the authority to include its certificate, which is what lets the token be
+verified later without fetching anything. `-no_nonce` keeps the request
+reproducible: anyone holding the checkpoint can rebuild the exact request bytes.
+
+The response is stored as it arrives, in DER, base64-encoded in the database and
+written out as a `.tsr` file in an export. sigillo neither re-encodes it nor
+re-signs it.
+
+To verify a token:
+
+```sh
+openssl ts -verify -digest <root_hash> -in <token>.tsr -CAfile <authority ca>.pem
+```
+
+What it proves: the 32 bytes of `root_hash` were shown to that authority at that
+time. What it does not prove: anything about what the tree contained. That comes
+from the checkpoint's signature and the chain.
+
+If the authority is unreachable, the checkpoint is still written and signed, and
+the token is fetched later. A checkpoint with no token yet is a checkpoint
+waiting for an anchor, not a gap.
+
+sigillo uses `https://freetsa.org/tsr` in development and in its tests.
+FreeTSA is **not** a qualified trust service provider under eIDAS: a deployment
+that needs qualified timestamps points `TSA_URL` at a qualified provider and
+supplies its credentials.
+
+## 10. The export
 
 An export is what an auditor is handed. In this version it is a directory (the
 zip archive with the report and the timestamp tokens comes later) holding two
 files.
 
-### 8.1 `receipts.jsonl`
+### 10.1 `receipts.jsonl`
 
 One receipt per line, as a JSON object, in ascending `seq` order, each line
 terminated by a line feed. sigillo writes each line in canonical form so the
@@ -229,7 +360,7 @@ file is reproducible byte for byte, but a verifier must not require that: it
 re-derives the canonical form itself, so an export that reorders members or adds
 whitespace still verifies.
 
-### 8.2 `manifest.json`
+### 10.2 `manifest.json`
 
 ```json
 {
@@ -261,7 +392,7 @@ particular a key published under an identifier that is not its own `key_id` is
 rejected, because `key_id` is derived from the key (section 5) and cannot be
 chosen.
 
-### 8.3 What a verifier checks, in order
+### 10.3 What a verifier checks, in order
 
 1. The manifest is well formed, and every published key matches its own `key_id`.
 2. Every line is a receipt of a schema version the verifier implements.
@@ -282,7 +413,7 @@ Note what step 4 and step 8 do together: deleting the last receipt of an export
 leaves a chain that is internally consistent, and is caught only because the
 manifest says how far the export was supposed to run.
 
-## 9. Test vectors
+## 11. Test vectors
 
 `packages/core/test/vectors.json` carries a set of receipts with their canonical
 form and digest recorded alongside. They cover the genesis receipt, every action
@@ -298,7 +429,7 @@ the file using only the Python standard library, with no sigillo code involved.
 It runs in CI. If it ever disagrees with the Node implementation, this document
 is what decides which one is wrong.
 
-## 10. Relationship to draft-sharif-agent-audit-trail
+## 12. Relationship to draft-sharif-agent-audit-trail
 
 The IETF Internet-Draft "Agent Audit Trail: A Standard Logging Format for
 Autonomous AI Systems" (`draft-sharif-agent-audit-trail`) addresses the same
