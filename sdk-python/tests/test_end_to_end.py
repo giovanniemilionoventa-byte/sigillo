@@ -23,6 +23,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 SIGNER_CLI = ROOT / "apps" / "signer" / "dist" / "cli.js"
@@ -136,15 +137,23 @@ class EndToEndTest(unittest.TestCase):
         self.assertEqual(example.returncode, 0, f"{example.stdout}\n{example.stderr}")
         self.assertIn("A-1099", example.stdout)
 
-        export = self.work / "fascicolo"
+        export = self.work / "fascicolo.zip"
         self._run(["node", str(SERVER_CLI), "export", SYSTEM, "--db", str(self.db_path),
                    "--signer-socket", str(self.socket_path), "--out", str(export)])
 
-        receipts = [
-            json.loads(line)
-            for line in (export / "receipts.jsonl").read_text().splitlines()
-            if line
-        ]
+        # Python's zipfile is an independent reader: if it opens the archive,
+        # the archive is a real one and not merely one sigillo can read.
+        with zipfile.ZipFile(export) as archive:
+            self.assertIsNone(archive.testzip(), "the archive fails its own CRC checks")
+            names = set(archive.namelist())
+            self.assertIn("receipts.jsonl", names)
+            self.assertIn("manifest.json", names)
+            self.assertIn("report.pdf", names)
+            self.assertIn("VERIFY.md", names)
+            receipts_text = archive.read("receipts.jsonl").decode()
+            self.assertTrue(archive.read("report.pdf").startswith(b"%PDF-"))
+
+        receipts = [json.loads(line) for line in receipts_text.splitlines() if line]
 
         # The genesis receipt, plus one for every span the agent produced.
         self.assertGreater(len(receipts), 1)
@@ -164,10 +173,9 @@ class EndToEndTest(unittest.TestCase):
         self.assertRegex(tool_call["input_hash"], r"^[0-9a-f]{64}$")
 
         # Whatever the agent actually said must not be in the record.
-        whole_export = (export / "receipts.jsonl").read_text()
-        self.assertNotIn("A-1099", whole_export)
-        self.assertNotIn("where is my order", whole_export)
-        self.assertNotIn("DHL", whole_export)
+        self.assertNotIn("A-1099", receipts_text)
+        self.assertNotIn("where is my order", receipts_text)
+        self.assertNotIn("DHL", receipts_text)
 
         verdict = self._run(["node", str(VERIFY_CLI), str(export), "--quiet"])
         self.assertIn("OK", verdict)
@@ -184,16 +192,23 @@ class EndToEndTest(unittest.TestCase):
         subprocess.run(["python", str(EXAMPLE)], capture_output=True, env=environment,
                        cwd=ROOT, timeout=180, check=True)
 
-        export = self.work / "fascicolo"
+        export = self.work / "fascicolo.zip"
         self._run(["node", str(SERVER_CLI), "export", SYSTEM, "--db", str(self.db_path),
                    "--signer-socket", str(self.socket_path), "--out", str(export)])
 
-        receipts_file = export / "receipts.jsonl"
-        lines = [line for line in receipts_file.read_text().splitlines() if line]
+        # Rebuild the archive with one receipt altered, as an attacker would.
+        with zipfile.ZipFile(export) as archive:
+            contents = {name: archive.read(name) for name in archive.namelist()}
+
+        lines = [line for line in contents["receipts.jsonl"].decode().splitlines() if line]
         altered = json.loads(lines[1])
         altered["outcome"] = "ok" if altered["outcome"] != "ok" else "error"
         lines[1] = json.dumps(altered, separators=(",", ":"), sort_keys=True)
-        receipts_file.write_text("\n".join(lines) + "\n")
+        contents["receipts.jsonl"] = ("\n".join(lines) + "\n").encode()
+
+        with zipfile.ZipFile(export, "w", zipfile.ZIP_DEFLATED) as archive:
+            for name, data in contents.items():
+                archive.writestr(name, data)
 
         result = subprocess.run(["node", str(VERIFY_CLI), str(export)],
                                 capture_output=True, text=True, cwd=ROOT, timeout=120)

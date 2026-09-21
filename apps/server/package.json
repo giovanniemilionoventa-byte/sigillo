@@ -14,16 +14,18 @@
   },
   "dependencies": {
     "@sigillo/core": "workspace:*",
+    "@sigillo/verifier": "workspace:*",
     "better-sqlite3": "^11.7.0",
     "commander": "^12.1.0",
     "fastify": "^5.2.0",
+    "pdfkit": "^0.15.0",
     "protobufjs": "^7.4.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@sigillo/signer": "workspace:*",
-    "@sigillo/verifier": "workspace:*",
-    "@types/better-sqlite3": "^7.6.12"
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/pdfkit": "^0.13.5"
   },
   "bin": {
     "sigillo-server": "./dist/cli.js"

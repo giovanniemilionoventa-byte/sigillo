@@ -11,6 +11,22 @@ export {
 export { SIGILLO_VERSION } from "./version.js";
 
 export {
+  checkpointEntrySchema,
+  exportTimestampSchema,
+  inclusionProofSchema,
+  safeParseCheckpointEntry,
+} from "./export.js";
+export type {
+  CheckpointEntry,
+  CheckpointEntryParseResult,
+  ExportTimestamp,
+  InclusionProofEntry,
+} from "./export.js";
+
+export { createZip, crc32, readZip, ZipError } from "./zip.js";
+export type { ZipEntry } from "./zip.js";
+
+export {
   canonicalCheckpointBytes,
   checkpointHash,
   checkpointHashHex,

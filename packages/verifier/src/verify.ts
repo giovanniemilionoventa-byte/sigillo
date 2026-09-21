@@ -1,11 +1,18 @@
 import {
+  fromHex,
   GENESIS_PREV_HASH,
   keyIdFromRawPublicKey,
+  merkleRoot,
   publicKeyFromRaw,
   receiptHashHex,
+  rootFromInclusionProof,
+  safeParseCheckpointEntry,
   safeParseManifest,
   safeParseReceipt,
+  toHex,
+  verifyCheckpointSignature,
   verifyReceiptSignature,
+  type CheckpointEntry,
   type Manifest,
   type Receipt,
 } from "@sigillo/core";
@@ -21,6 +28,8 @@ import {
 export interface Bundle {
   manifestJson: string;
   receiptsJsonl: string;
+  /** Present in a full export; absent in the minimal one. */
+  checkpointsJsonl?: string;
 }
 
 export type VerificationCheck =
@@ -33,7 +42,12 @@ export type VerificationCheck =
   | "chain-link"
   | "key"
   | "signature"
-  | "range";
+  | "range"
+  | "checkpoint-json"
+  | "checkpoint-schema"
+  | "checkpoint-signature"
+  | "merkle-root"
+  | "inclusion-proof";
 
 export interface VerificationSummary {
   system_id: string;
@@ -41,6 +55,10 @@ export interface VerificationSummary {
   first_seq: number;
   last_seq: number;
   key_ids: string[];
+  checkpoints: number;
+  inclusion_proofs: number;
+  /** Checkpoints whose root this verifier could rebuild from the receipts present. */
+  roots_recomputed: number;
 }
 
 export type Verification =
@@ -53,6 +71,14 @@ function fail(check: VerificationCheck, location: string, detail: string): Verif
 
 function at(lineNumber: number): string {
   return `receipts.jsonl:${lineNumber}`;
+}
+
+function atCheckpoint(lineNumber: number): string {
+  return `checkpoints.jsonl:${lineNumber}`;
+}
+
+function jsonLines(text: string): string[] {
+  return text.split("\n").filter((line) => line.trim().length > 0);
 }
 
 export function verifyBundle(bundle: Bundle): Verification {
@@ -198,7 +224,117 @@ export function verifyBundle(bundle: Bundle): Verification {
     }
   }
 
-  // 9. The manifest describes the receipts that are actually here.
+  // 9. Every checkpoint is a signed statement about a tree these receipts build.
+  const checkpoints: CheckpointEntry[] = [];
+  let rootsRecomputed = 0;
+  let proofsChecked = 0;
+
+  for (const [index, line] of jsonLines(bundle.checkpointsJsonl ?? "").entries()) {
+    let value: unknown;
+    try {
+      value = JSON.parse(line);
+    } catch (error) {
+      return fail("checkpoint-json", atCheckpoint(index + 1), `is not valid JSON: ${String(error)}`);
+    }
+
+    const parsed = safeParseCheckpointEntry(value);
+    if (!parsed.ok) {
+      return fail("checkpoint-schema", atCheckpoint(index + 1), parsed.error);
+    }
+    const { checkpoint, proofs } = parsed.entry;
+
+    if (checkpoint.system_id !== manifest.system_id) {
+      return fail(
+        "system",
+        atCheckpoint(index + 1),
+        `the checkpoint covers system ${checkpoint.system_id}, but the manifest declares ${manifest.system_id}`,
+      );
+    }
+
+    const key = keysById.get(checkpoint.key_id);
+    if (key === undefined) {
+      return fail(
+        "key",
+        atCheckpoint(index + 1),
+        `the checkpoint is signed by key ${checkpoint.key_id}, which the manifest does not publish`,
+      );
+    }
+    if (!verifyCheckpointSignature(checkpoint, key)) {
+      return fail(
+        "checkpoint-signature",
+        atCheckpoint(index + 1),
+        `the checkpoint over ${checkpoint.tree_size} receipts is not signed by key ${checkpoint.key_id}`,
+      );
+    }
+
+    // 10. Where the export holds the receipts the tree was built from, the root
+    //     is rebuilt from them rather than taken on the checkpoint's word.
+    if (first.seq === 0 && receipts.length >= checkpoint.tree_size) {
+      const leaves = receipts
+        .slice(0, checkpoint.tree_size)
+        .map((receipt) => fromHex(receiptHashHex(receipt)));
+      const recomputed = toHex(merkleRoot(leaves));
+      if (recomputed !== checkpoint.root_hash) {
+        return fail(
+          "merkle-root",
+          atCheckpoint(index + 1),
+          `the checkpoint claims root ${checkpoint.root_hash} over ${checkpoint.tree_size} receipts, but those receipts build ${recomputed}`,
+        );
+      }
+      rootsRecomputed += 1;
+    }
+
+    // 11. Each inclusion proof ties a receipt in this export to that root.
+    for (const proof of proofs) {
+      const receipt = receipts.find((candidate) => candidate.seq === proof.seq);
+      if (receipt === undefined) {
+        return fail(
+          "inclusion-proof",
+          atCheckpoint(index + 1),
+          `the proof is for seq ${proof.seq}, which this export does not contain`,
+        );
+      }
+      const hash = receiptHashHex(receipt);
+      if (hash !== proof.receipt_hash) {
+        return fail(
+          "inclusion-proof",
+          atCheckpoint(index + 1),
+          `the proof for seq ${proof.seq} is over ${proof.receipt_hash}, but that receipt hashes to ${hash}`,
+        );
+      }
+
+      let rebuilt: string;
+      try {
+        rebuilt = toHex(
+          rootFromInclusionProof(
+            fromHex(hash),
+            proof.seq,
+            checkpoint.tree_size,
+            proof.path.map((step) => fromHex(step)),
+          ),
+        );
+      } catch (error) {
+        return fail(
+          "inclusion-proof",
+          atCheckpoint(index + 1),
+          `the proof for seq ${proof.seq} is malformed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+
+      if (rebuilt !== checkpoint.root_hash) {
+        return fail(
+          "inclusion-proof",
+          atCheckpoint(index + 1),
+          `the proof for seq ${proof.seq} rebuilds ${rebuilt}, not the checkpoint's root ${checkpoint.root_hash}`,
+        );
+      }
+      proofsChecked += 1;
+    }
+
+    checkpoints.push(parsed.entry);
+  }
+
+  // 12. The manifest describes the receipts and checkpoints that are actually here.
   const last = receipts[receipts.length - 1];
   if (last === undefined) {
     return fail("range", "receipts.jsonl", "the export contains no receipts");
@@ -217,6 +353,21 @@ export function verifyBundle(bundle: Bundle): Verification {
       `the manifest declares ${manifest.counts.receipts} receipts, but the export holds ${receipts.length}`,
     );
   }
+  if (manifest.counts.checkpoints !== checkpoints.length) {
+    return fail(
+      "range",
+      "manifest.json",
+      `the manifest declares ${manifest.counts.checkpoints} checkpoints, but the export holds ${checkpoints.length}`,
+    );
+  }
+  const tokens = checkpoints.reduce((total, entry) => total + entry.timestamps.length, 0);
+  if (manifest.counts.timestamps !== tokens) {
+    return fail(
+      "range",
+      "manifest.json",
+      `the manifest declares ${manifest.counts.timestamps} timestamp tokens, but the checkpoints reference ${tokens}`,
+    );
+  }
 
   return {
     ok: true,
@@ -226,6 +377,9 @@ export function verifyBundle(bundle: Bundle): Verification {
       first_seq: first.seq,
       last_seq: last.seq,
       key_ids: [...keysById.keys()],
+      checkpoints: checkpoints.length,
+      inclusion_proofs: proofsChecked,
+      roots_recomputed: rootsRecomputed,
     },
   };
 }

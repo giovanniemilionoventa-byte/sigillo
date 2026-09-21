@@ -4,9 +4,9 @@ This document defines the receipt: the unit of evidence sigillo produces. It is
 written so that a second implementation can verify a sigillo log without reading
 the sigillo source. Everything a verifier must check is stated here.
 
-Status: receipt schema version `1`. The export archive with its report and
-timestamp tokens is described as far as it is built; the rest of this document
-is complete.
+Status: receipt schema version `1`. This document is complete: receipts, the
+chain, checkpoints, timestamp anchoring and the export archive are all specified
+here.
 
 ## 1. What a receipt is
 
@@ -348,9 +348,22 @@ supplies its credentials.
 
 ## 10. The export
 
-An export is what an auditor is handed. In this version it is a directory (the
-zip archive with the report and the timestamp tokens comes later) holding two
-files.
+An export is what an auditor is handed: a `.zip` archive, or the same files in a
+directory. Both are accepted by a verifier; the directory is simply what you get
+after unzipping.
+
+```
+receipts.jsonl      one receipt per line, in canonical form, ordered by seq
+checkpoints.jsonl   one checkpoint per line, with its proofs and its tokens
+timestamps/         the RFC 3161 tokens, in DER, exactly as the authority sent
+manifest.json       the public keys, the range, the counts
+report.pdf          the same facts for a reader
+VERIFY.md           how to check all of it without this software
+```
+
+The archive uses only stored and deflated entries, no ZIP64 and no encryption,
+so any unzip program opens it. Entries are written in a fixed order with no
+timestamps, so exporting the same chain twice produces the same bytes.
 
 ### 10.1 `receipts.jsonl`
 
@@ -360,58 +373,88 @@ file is reproducible byte for byte, but a verifier must not require that: it
 re-derives the canonical form itself, so an export that reorders members or adds
 whitespace still verifies.
 
-### 10.2 `manifest.json`
+### 10.2 `checkpoints.jsonl`
+
+One line per checkpoint:
+
+```json
+{
+  "checkpoint": { "v": 1, "system_id": "acme-support-bot", "tree_size": 12, "root_hash": "...", "ts": "...", "key_id": "...", "sig": "..." },
+  "proofs": [
+    { "seq": 0, "receipt_hash": "...", "path": ["...", "..."] },
+    { "seq": 11, "receipt_hash": "...", "path": ["..."] }
+  ],
+  "timestamps": [
+    { "tsa_url": "https://freetsa.org/tsr", "obtained_at": "2026-03-29T15:00:05.000Z", "file": "timestamps/checkpoint-12-1.tsr" }
+  ]
+}
+```
+
+- `proofs` carries the audit path (section 8.3) for the first and the last
+  receipt the export holds. Those two anchor the whole range to the checkpoint's
+  root; the receipts between them are tied to each other by the chain.
+- An export that does not start at `seq` 0 cannot build proofs against a tree it
+  does not hold in full. It carries the checkpoint with an empty `proofs` rather
+  than a proof it cannot support.
+- `file` names the token inside the archive. The token is not inlined: it is
+  binary, and an auditor needs it as a file to hand to `openssl`.
+
+### 10.3 `manifest.json`
 
 ```json
 {
   "sigillo_version": "0.1.0",
   "receipt_version": 1,
   "system_id": "acme-support-bot",
-  "exported_at": "2026-03-29T15:00:00.000Z",
-  "range": {
-    "from_seq": 0,
-    "to_seq": 24,
-    "from_ts": "2026-03-29T14:30:00.000Z",
-    "to_ts": "2026-03-29T14:30:24.000Z"
-  },
-  "counts": { "receipts": 25 },
-  "keys": [
-    { "key_id": "3f2a1c9d8e7b6a5f", "public_key_base64": "HKjeiu4CwSUn2i6yK8lul5MBgAiclTh8XoiSDJo759g=" }
-  ]
+  "exported_at": "2026-03-29T16:00:00.000Z",
+  "range": { "from_seq": 0, "to_seq": 11, "from_ts": "...", "to_ts": "..." },
+  "counts": { "receipts": 12, "checkpoints": 1, "timestamps": 1 },
+  "keys": [{ "key_id": "3f2a1c9d8e7b6a5f", "public_key_base64": "HKjeiu4CwSUn2i6yK8lul5MBgAiclTh8XoiSDJo759g=" }]
 }
 ```
 
-- `range.from_ts` and `range.to_ts` are the `ts_received` of the first and last
-  receipt in the export.
-- `keys` carries the raw 32-byte public keys in standard base64, one entry per
-  key that signed anything in the export.
+`range.from_ts` and `range.to_ts` are the `ts_received` of the first and last
+receipt. `keys` carries the raw 32-byte public keys in standard base64.
 
 The manifest is not trusted. It is a claim about what the export contains, and
-every part of that claim is checked against the receipts themselves. In
-particular a key published under an identifier that is not its own `key_id` is
-rejected, because `key_id` is derived from the key (section 5) and cannot be
-chosen.
+every part of that claim is checked against the files themselves. A key
+published under an identifier that is not its own `key_id` is rejected, because
+`key_id` is derived from the key (section 5) and cannot be chosen.
 
-### 10.3 What a verifier checks, in order
+### 10.4 What a verifier checks, in order
 
 1. The manifest is well formed, and every published key matches its own `key_id`.
-2. Every line is a receipt of a schema version the verifier implements.
+2. Every line of `receipts.jsonl` is a receipt of a schema version it implements.
 3. Every receipt carries the `system_id` the manifest declares.
 4. Sequence numbers start at `range.from_seq` and rise by one, with no gap, no
    repeat and no reordering.
-5. If the export starts at `seq` 0, that receipt is a genesis receipt: kind
-   `genesis`, `action.name` equal to `system_id`, `prev_hash` of 64 zeros.
+5. If the export starts at `seq` 0, that receipt is a genesis receipt.
 6. Every `prev_hash` equals the recomputed hash of the preceding receipt.
-7. Every receipt names a key the manifest publishes, and its signature verifies
-   under that key.
-8. `range.to_seq` and `counts.receipts` describe the receipts actually present.
+7. Every receipt names a key the manifest publishes, and its signature verifies.
+8. Every checkpoint names a published key, and its signature verifies.
+9. Every checkpoint's Merkle root is rebuilt from the receipts present, where
+   the export holds them all, and must match.
+10. Every inclusion proof rebuilds its checkpoint's root, and the
+    `receipt_hash` it names is the hash of the receipt actually at that `seq`.
+11. `range`, `counts.receipts`, `counts.checkpoints` and `counts.timestamps`
+    describe what the archive actually holds.
+12. Every RFC 3161 token is checked with `openssl` (section 9). With the
+    authority's certificate, its signature is verified; without it, only the
+    digest it carries is compared with the checkpoint root, and the verifier
+    says which of the two it did.
 
-A verifier stops at the first failure and names the receipt and the check. Any
-failure means the export is not evidence of anything.
+A verifier stops at the first failure and names the file, the line and the
+check. Any failure means the export is not evidence of anything.
 
-Note what step 4 and step 8 do together: deleting the last receipt of an export
-leaves a chain that is internally consistent, and is caught only because the
-manifest says how far the export was supposed to run.
+Three of these deserve a note, because they catch what the others miss:
+
+- Step 4 and step 11 together catch a deleted *last* receipt. Removing it
+  leaves a chain that is internally consistent; only the manifest's declared
+  range shows that the export was supposed to run further.
+- Step 9 catches a receipt altered at the end of the range, where no later
+  `prev_hash` covers it, because the Merkle root over the whole tree does.
+- Step 12 failing is a verification failure, not a warning. A sound chain with
+  a token that is not a token is an archive whose anchor does not hold.
 
 ## 11. Test vectors
 

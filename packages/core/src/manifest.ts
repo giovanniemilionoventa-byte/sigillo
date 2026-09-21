@@ -33,7 +33,13 @@ export const manifestSchema = z
         to_ts: isoUtcTimestampSchema,
       })
       .strict(),
-    counts: z.object({ receipts: z.number().int().nonnegative() }).strict(),
+    counts: z
+      .object({
+        receipts: z.number().int().nonnegative(),
+        checkpoints: z.number().int().nonnegative().default(0),
+        timestamps: z.number().int().nonnegative().default(0),
+      })
+      .strict(),
     keys: z.array(manifestKeySchema).min(1),
   })
   .strict();

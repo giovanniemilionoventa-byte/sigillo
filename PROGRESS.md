@@ -13,7 +13,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | M5 | Ingest OTLP e API nativa | fatto | protobuf+JSON, due dialetti, API key scrypt, CLI admin |
 | M6 | SDK Python | fatto | `sigillo.init()`, esempio LangGraph, e2e a tre processi |
 | M7 | Merkle e marca temporale | fatto | RFC 6962 (0..17), checkpoint firmati, RFC 3161 su FreeTSA |
-| M8 | Fascicolo completo e verificatore v2 | todo | Export zip completo, tutti i controlli del verificatore |
+| M8 | Fascicolo completo e verificatore v2 | fatto | Zip completo con PDF, 12 controlli, token FreeTSA verificato |
 | M9 | UI, deploy, documentazione | todo | UI minima, docker-compose, backup, doc finali |
 
 ## Note di sessione
@@ -320,6 +320,71 @@ La SPEC dice di fermarsi e chiedere quando si arriva al fornitore di produzione.
 **FreeTSA non è qualificata eIDAS**, quindi va bene solo per sviluppo e test. Per la produzione
 servono: URL del fornitore qualificato, eventuali credenziali, e il certificato della sua CA per
 la verifica offline (da includere nel fascicolo).
+
+#### M8 — Fascicolo completo e verificatore v2 (fatto)
+
+- `packages/core/src/zip.ts` — lettore e scrittore ZIP **senza dipendenze** (`node:zlib`, CRC-32
+  scritto a mano). Solo voci stored e deflated, niente ZIP64, niente cifratura: rifiuta quello che
+  non capisce invece di indovinare. Archivio riproducibile (nessun timestamp, ordine fisso).
+- `apps/server/src/export/archive.ts` — l'archivio: `receipts.jsonl`, `checkpoints.jsonl` (con prove
+  di inclusione di prima e ultima ricevuta), `timestamps/*.tsr` (DER grezzo), `manifest.json`,
+  `report.pdf`, `VERIFY.md`.
+- `apps/server/src/export/report.ts` — PDF con pdfkit: sistema, periodo, conteggi per tipo di azione,
+  esito della verifica, elenco dei checkpoint con le loro marche, istruzioni, e le **tre finalità
+  dell'art. 12(2) AI Act** (testo verificato sulla fonte, non citato a memoria).
+- `apps/server/src/export/verify-instructions.ts` — `VERIFY.md` autosufficiente: come verificare col
+  verificatore, come verificare **una ricevuta a mano con openssl**, come verificare un token, e
+  cosa il fascicolo **non** prova.
+- `packages/verifier/src/timestamps.ts` — verifica dei token con openssl, su **due livelli distinti**
+  mai confusi: `verified` (certificato della CA fornito, firma controllata) e `imprint-only`
+  (solo l'impronta confrontata). Senza openssl: `not-checked` e avviso esplicito. Un controllo
+  mancante è riportato come mancante, mai come superato.
+
+Il verificatore ora esegue **12 controlli** (era 8): aggiunti firma dei checkpoint, ricalcolo delle
+radici Merkle dalle ricevute presenti, validità delle prove di inclusione, coerenza dei conteggi di
+checkpoint e token, e verifica dei token RFC 3161.
+
+386 test verdi. Manomissione di **ogni** componente, ciascuna rilevata col controllo giusto:
+ricevuta a metà catena (`chain-link`), **ultima** ricevuta (`signature`, e la radice Merkle la
+coprirebbe comunque), `root_hash` di un checkpoint (`checkpoint-signature`), checkpoint rifirmato con
+altra chiave (`checkpoint-signature`), passo di una prova alterato (`inclusion-proof`), prova per una
+ricevuta assente (`inclusion-proof`), conteggi del manifest (`range`), checkpoint rimosso (`range`),
+file rimosso dallo zip (`range`), byte cambiato dentro lo zip (fallisce il CRC), token che non è un
+token (fallimento della verifica, **non** un avviso).
+
+Verifica incrociata dello ZIP: l'archivio viene aperto da `unzip` di sistema e da `zipfile` di Python
+(che ne ricontrolla i CRC) nei test, non solo dal nostro lettore.
+
+**Percorso completo eseguito con i binari compilati e una TSA vera**:
+ingest protobuf + JSON → 11 ricevute → `checkpoint` con ancoraggio su `https://freetsa.org/tsr`
+→ `export` → zip di 6 file → `sigillo-verify` → `OK, 1 root rebuilt, 2 inclusion proof(s)`,
+token `imprint-only` con l'avviso; con `--tsa-ca` scaricato dalla CA di FreeTSA il token passa a
+**`verified`**.
+
+### Serve una decisione: la dimensione del verificatore
+
+La SPEC pone come obiettivo "meno di 1000 righe tra verifier e la parte di core che usa".
+Siamo a **1689 righe** (1320 escludendo vuote e commenti). Dettaglio:
+
+| parte | righe | codice |
+|---|---|---|
+| verificatore: i controlli | 386 | 329 |
+| verificatore: token RFC 3161 via openssl | 205 | 164 |
+| verificatore: CLI | 189 | 164 |
+| core: formato, canonicalizzazione, hash | 248 | 177 |
+| core: chiavi e firme | 94 | 64 |
+| core: Merkle e checkpoint | 227 | 163 |
+| core: schemi dell'export | 123 | 89 |
+| core: lettore/scrittore ZIP | 217 | 170 |
+
+L'obiettivo era stato fissato quando il verificatore faceva 8 controlli su due file; ora ne fa 12,
+legge archivi ZIP e verifica token RFC 3161, tutto richiesto dalla SPEC stessa (§8). Non c'è grasso
+da togliere: comprimere i commenti farebbe scendere il numero peggiorando proprio la leggibilità che
+l'obiettivo voleva proteggere. **Tre opzioni, decidi tu**: (a) alzare l'obiettivo a ~1700 righe e
+lasciare com'è; (b) togliere la lettura degli ZIP dal verificatore (~217 righe) e far verificare solo
+cartelle, chiedendo all'auditor di scompattare prima; (c) togliere la verifica dei token dal
+verificatore (~205 righe) e lasciarla alle istruzioni di `VERIFY.md`. La mia raccomandazione è (a):
+entrambe le altre tolgono all'auditor qualcosa che la SPEC gli aveva promesso.
 
 ## Checklist di verifica finale M9 (da eseguire fuori dalla sessione cloud)
 

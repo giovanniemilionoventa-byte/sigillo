@@ -1,8 +1,9 @@
 #!/usr/bin/env node
+import { writeFileSync } from "node:fs";
 import { Command } from "commander";
 import { ApiKeyStore } from "./auth/api-keys.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
-import { exportSystem, writeExportBundle } from "./export/bundle.js";
+import { buildArchive } from "./export/archive.js";
 import { buildServer } from "./http/server.js";
 import { SignerClient } from "./signer/client.js";
 import { ReceiptStore } from "./storage/store.js";
@@ -229,22 +230,38 @@ program
 
 program
   .command("export")
-  .description("Write the minimal export of a system's chain to a directory")
+  .description("Write the evidence file of a system's chain")
   .argument("<system_id>")
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
   .requiredOption("--signer-socket <path>", "the signer's socket", process.env["SIGILLO_SIGNER_SOCKET"])
-  .requiredOption("--out <directory>", "where to write the export")
+  .requiredOption("--out <file>", "where to write the .zip archive")
   .action(async (systemId: string, options: DatabaseOption & { signerSocket: string; out: string }) => {
     const signer = await SignerClient.connect(options.signerSocket);
     const store = ReceiptStore.open(options.db, signer);
     try {
-      const bundle = exportSystem(store, {
+      const archive = await buildArchive({
         systemId,
+        receipts: store.readChain(systemId),
+        checkpoints: store.readCheckpoints(systemId).map((stored) => ({
+          stored,
+          timestamps: store.readTimestamps(stored.id),
+        })),
         keys: [{ key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 }],
         exportedAt: now(),
       });
-      writeExportBundle(options.out, bundle);
-      process.stdout.write(`wrote the export of ${systemId} to ${options.out}\n`);
+
+      writeFileSync(options.out, archive.zip);
+      process.stdout.write(
+        `wrote ${archive.manifest.counts.receipts} receipts, ` +
+          `${archive.manifest.counts.checkpoints} checkpoint(s) and ` +
+          `${archive.manifest.counts.timestamps} timestamp token(s) to ${options.out}\n`,
+      );
+      process.stdout.write(
+        archive.verification.ok
+          ? "the archive verifies\n"
+          : `WARNING: the archive does not verify: ${archive.verification.check} at ${archive.verification.location}: ${archive.verification.detail}\n`,
+      );
+      if (!archive.verification.ok) process.exitCode = 1;
     } finally {
       store.close();
       signer.close();

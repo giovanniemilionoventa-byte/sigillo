@@ -52,8 +52,10 @@ const tsFiles = allFiles.filter((f) => f.endsWith(".ts") || f.endsWith(".mjs"));
 
 // 1. packages/core stays pure: no I/O, no clock, no environment, no randomness.
 const IMPURE_PATTERNS = [
-  [/from\s+["']node:(?!crypto)([a-z/]+)["']/, "core may only import node:crypto"],
-  [/require\(\s*["']node:(?!crypto)/, "core may only import node:crypto"],
+  // zlib is computation, not I/O: it turns bytes into bytes, which is what the
+  // export archive needs and what core is allowed to do.
+  [/from\s+["']node:(?!crypto|zlib)([a-z/]+)["']/, "core may only import node:crypto and node:zlib"],
+  [/require\(\s*["']node:(?!crypto|zlib)/, "core may only import node:crypto and node:zlib"],
   [/\bprocess\.(env|argv|cwd|exit)\b/, "core must not read the environment or process state"],
   [/\bDate\.now\s*\(/, "core must not read the clock; pass time in as a parameter"],
   [/\bnew Date\s*\(\s*\)/, "core must not read the clock; pass time in as a parameter"],

@@ -87,7 +87,7 @@ export function buildManifest(receipts: Receipt[], identity: SigningIdentity): M
       from_ts: first.ts_received,
       to_ts: last.ts_received,
     },
-    counts: { receipts: receipts.length },
+    counts: { receipts: receipts.length, checkpoints: 0, timestamps: 0 },
     keys: [{ key_id: identity.keyId, public_key_base64: identity.publicKeyBase64 }],
   };
 }
