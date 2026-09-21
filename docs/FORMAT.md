@@ -4,9 +4,15 @@ This document defines the receipt: the unit of evidence sigillo produces. It is
 written so that a second implementation can verify a sigillo log without reading
 the sigillo source. Everything a verifier must check is stated here.
 
-Status: receipt schema version `1`. This document is complete: receipts, the
-chain, checkpoints, timestamp anchoring and the export archive are all specified
-here.
+Status: receipt schema version `1`, **confirmed as final by the project owner on
+2026-09-21**. This document is complete: receipts, the chain, checkpoints,
+timestamp anchoring and the export archive are all specified here.
+
+The canonical-base64 rule of section 5 was added after version 1 was already in
+use, and the version was deliberately not incremented: the rule only rejects
+spellings sigillo never produced, so every receipt ever written by sigillo
+remains valid under it. A future change that a previously valid receipt could
+fail must increment `v`.
 
 ## 1. What a receipt is
 

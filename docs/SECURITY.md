@@ -133,6 +133,14 @@ keys that decide where a request writes.
 and the append-only triggers actively prevent it. A deployment with an erasure
 obligation needs a design for it that this version does not have.
 
+**The default timestamp authority is not qualified under eIDAS.** `TSA_URL`
+points at FreeTSA unless a deployment changes it. A FreeTSA token is a genuine
+RFC 3161 token and a verifier checks it as one, but it carries no qualified
+status: it shows *when*, attested by an authority that no eIDAS supervisory body
+stands behind. A deployment that needs qualified timestamps points `TSA_URL` at
+a qualified provider and ships that provider's CA certificate with the evidence
+file, so the token can be checked offline. Nothing else changes.
+
 **No HSM or KMS.** The key is a file. Moving it into hardware would change the
 signer and nothing else, which is part of why the signer is a separate process.
 

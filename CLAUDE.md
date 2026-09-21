@@ -8,7 +8,7 @@ This file collects the permanent rules for anyone (human or AI) working on this 
 2. **Never persist plaintext** of agent prompts, tool arguments, or outputs. Only their SHA-256 hashes are ever stored or logged.
 3. **Never change the receipt format** without incrementing the schema version `v`, and keep older versions verifiable.
 4. **`packages/core` stays pure.** No network I/O, no filesystem I/O, no internal `Date.now()`, no reading of environment variables. Everything (time, randomness where relevant, keys) is passed in as a parameter by the caller.
-5. **The verifier stays small and readable.** Prefer explicit code over abstraction. Target: fewer than 1000 lines across `packages/verifier` plus the parts of `core` it uses.
+5. **The verifier stays small and readable.** Prefer explicit code over abstraction. The SPEC's original target was fewer than 1000 lines across `packages/verifier` plus the parts of `core` it uses; the project owner accepted the actual size on 2026-09-21, when it stood at 1792 lines (1416 excluding blanks and comments). The operative rule is therefore: **readability first, and no growth without a reason a reader would accept**. A change that adds more than about 100 lines to that total is worth a note in `PROGRESS.md` saying what it bought.
 6. **No dependencies outside the approved list** (see "Approved dependencies" below) without asking first.
 7. Code, comments, commit messages, and technical documentation are written in **English**. Status updates to the project owner are written in **Italian**.
 8. At the end of every milestone: tests green, `PROGRESS.md` updated, commit and push to the `sigillo` GitHub repository.

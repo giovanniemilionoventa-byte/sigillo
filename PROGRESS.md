@@ -16,16 +16,39 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | M8 | Fascicolo completo e verificatore v2 | fatto | Zip completo con PDF, 12 controlli, token FreeTSA verificato |
 | M9 | UI, deploy, documentazione | fatto | UI senza JavaScript, compose a tre servizi, backup SQLite, 406 test verdi |
 
-## Cosa resta aperto
+## Decisioni prese dal committente — 2026-09-21
 
-Tutte e nove le milestone sono `fatto`. Tre cose non le posso chiudere io:
+Tutte e nove le milestone sono `fatto`. Le tre domande aperte sono state decise così:
 
-1. **La TSA qualificata eIDAS.** Il codice è pronto (`TSA_URL`, `TSA_USERNAME`, `TSA_PASSWORD`).
-   Servono URL, credenziali e certificato della CA del fornitore. Dettagli sotto, in M7.
-2. **L'obiettivo di dimensione del verificatore.** 1792 righe contro le 1000 della SPEC, con tre
-   opzioni e una raccomandazione. Dettagli sotto, in M8.
-3. **La verifica finale con Docker.** Docker non è disponibile in questa sessione cloud: la
-   checklist in fondo a questo file ha i comandi esatti da eseguire su una macchina vera.
+1. **Il formato è confermato come v1, definitivo.** Nessun `v: 2`. La regola del base64 canonico
+   (§5 di `docs/FORMAT.md`) resta dentro la versione 1, perché stringe soltanto e non invalida
+   nessuna ricevuta mai prodotta da sigillo. `docs/FORMAT.md` lo dichiara ora esplicitamente, e
+   dice anche cosa obbligherebbe invece a incrementare `v`: **una modifica sotto la quale una
+   ricevuta prima valida possa fallire**.
+2. **La marca temporale qualificata eIDAS: si aspetta.** Nessuna azione ora. Il codice resta
+   pronto (`TSA_URL`, `TSA_USERNAME`, `TSA_PASSWORD`); il default resta FreeTSA, che **non è
+   qualificata** e va bene solo per prove e sviluppo. Quando si deciderà il fornitore serviranno
+   URL, eventuali credenziali e il certificato della sua CA per la verifica offline. Finché si
+   aspetta, i fascicoli prodotti hanno marche non qualificate: provano *quando*, con un'autorità
+   non riconosciuta eIDAS.
+3. **La dimensione del verificatore va bene così.** L'obiettivo delle 1000 righe della SPEC è
+   superato dalla decisione del committente; `CLAUDE.md` regola 5 riporta ora la regola operativa
+   (leggibilità prima di tutto, nessuna crescita senza una ragione che un lettore accetterebbe, e
+   una nota in questo file se il totale cresce di più di ~100 righe). Nessuna riga tolta: né gli
+   ZIP né la verifica dei token sono stati amputati.
+
+### Cosa resta da fare, e non posso farlo io
+
+- **La pull request verso `main`.** `main` non esiste sul remote: il repository è stato creato
+  vuoto e GitHub ha reso il branch di lavoro quello di default. Senza una base non si apre una PR.
+  Il rimedio è un comando solo — `git push origin d87981a:refs/heads/main`, dove `d87981a` è il
+  commit iniziale con solo SPEC/CLAUDE/PROGRESS e zero codice — ma crea un branch condiviso, e
+  l'ambiente me l'ha bloccato. Serve il via libera del committente.
+- **La verifica finale con Docker.** Docker non è disponibile nella sessione cloud: la checklist in
+  fondo a questo file ha i comandi esatti da eseguire su una macchina vera.
+- **La visibilità del repository.** È pubblico. Non c'è nulla di sensibile dentro (il lint rifiuta
+  file `.key` e `.pem`, e non c'è materiale di chiave nell'albero), ma è una scelta da fare
+  consapevolmente.
 
 ## Note di sessione
 
@@ -324,7 +347,7 @@ confrontata prima di iniziare.
 -reply -text` mostra `Status: Granted.` e il digest nel token coincide con la `root_hash` del
 checkpoint. Il test si salta da solo se la TSA non è raggiungibile.
 
-### Serve una decisione: la TSA qualificata eIDAS
+### Serve una decisione: la TSA qualificata eIDAS — *decisa il 2026-09-21: si aspetta*
 
 La SPEC dice di fermarsi e chiedere quando si arriva al fornitore di produzione. Il codice è pronto:
 `TSA_URL`, più `TSA_USERNAME`/`TSA_PASSWORD` per i fornitori che autenticano la richiesta.
@@ -372,7 +395,7 @@ ingest protobuf + JSON → 11 ricevute → `checkpoint` con ancoraggio su `https
 token `imprint-only` con l'avviso; con `--tsa-ca` scaricato dalla CA di FreeTSA il token passa a
 **`verified`**.
 
-### Serve una decisione: la dimensione del verificatore
+### Serve una decisione: la dimensione del verificatore — *decisa il 2026-09-21: opzione (a), si lascia com'è*
 
 La SPEC pone come obiettivo "meno di 1000 righe tra verifier e la parte di core che usa".
 Siamo a **1689 righe** (1320 escludendo vuote e commenti). Dettaglio:
@@ -448,8 +471,8 @@ lettere cosa sigillo non prova), `docs/API.md` e `docs/FORMAT.md` già scritti e
    e confronta), applicato alla firma della ricevuta, a quella del checkpoint e alla chiave pubblica
    nel manifest. Documentato in `docs/FORMAT.md` §5 e aggiunto al cross-check Python.
    **Non ho incrementato `v`**: la regola stringe soltanto, e rifiuta unicamente scritture che
-   sigillo non ha mai prodotto. Ogni ricevuta esistente resta valida. Se preferisci comunque un
-   `v: 2`, si fa in mezz'ora.
+   sigillo non ha mai prodotto. Ogni ricevuta esistente resta valida. *Il committente ha
+   confermato questa scelta il 2026-09-21: il formato resta v1, definitivo.*
 2. **Codici di stato della UI** — un helper metteva 200 su ogni risposta HTML. Un login **fallito**
    tornava 200, e un sistema inesistente pure. Lo stato è ora un parametro esplicito; i test
    controllano 401 sul login sbagliato e 404 sul sistema che non c'è.
