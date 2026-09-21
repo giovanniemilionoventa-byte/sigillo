@@ -7,7 +7,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | # | Nome | Stato | Note |
 |---|------|-------|------|
 | M1 | Formato e impronta | fatto | 14 vettori, 91 test verdi, cross-check Python indipendente in CI |
-| M2 | Catena e storage | todo | SQLite append-only, transazioni IMMEDIATE, trigger |
+| M2 | Catena e storage | fatto | Trigger append-only, transazione IMMEDIATE, 1000 append concorrenti senza buchi |
 | M3 | Firmatario | todo | Processo signer su socket Unix, keygen, protocollo |
 | M4 | Verificatore v1 | todo | Export minimale + CLI verifica, test di manomissione |
 | M5 | Ingest OTLP e API nativa | todo | `/v1/traces` protobuf+JSON, adattatore due dialetti, API key |
@@ -78,6 +78,41 @@ Note operative:
 - La libreria `canonicalize` pubblica tipi TypeScript errati (dichiara un default ESM in un pacchetto
   CommonJS). Aggirato con un cast circoscritto e documentato in `canonical.ts`; i test fissano i byte
   di output, quindi una regressione della libreria verrebbe rilevata subito.
+
+#### M2 — Catena e storage (fatto)
+
+- `apps/server/src/storage/schema.ts` — tabelle `receipts`, `checkpoints`, `timestamps` (SQLite STRICT),
+  `UNIQUE(system_id, seq)`, indici per ricerca, e trigger `BEFORE UPDATE`/`BEFORE DELETE` su tutte e tre
+  che fanno `RAISE(ABORT, 'append-only: ...')`.
+- `apps/server/src/storage/store.ts` — `ReceiptStore`: `seq` e `prev_hash` letti e scritti dentro **una sola**
+  transazione `BEGIN IMMEDIATE`, mai in due passi. WAL attivo, `synchronous = FULL`.
+- `packages/core/src/keys.ts` — derivazione del `key_id` (primi 16 hex di SHA-256 della chiave pubblica raw),
+  verificata contro il vettore RFC 8032 TEST 1 calcolato a parte con `hashlib` e `openssl`.
+
+Verifiche eseguite (117 test verdi):
+- UPDATE e DELETE su `receipts`, `checkpoints`, `timestamps` falliscono **da una seconda connessione**,
+  cioè il vincolo protegge il file, non solo la nostra API.
+- 1000 append concorrenti sulla stessa catena → `seq` 0..999 contigui, ogni `prev_hash` corretto,
+  1000 hash distinti, nessun nome d'azione perso o duplicato.
+- Controprova: disattivando la serializzazione delle scritture i due test di concorrenza falliscono.
+  Il test ha mordente, non passa per caso.
+- Catene di sistemi diversi restano indipendenti sotto append interlacciati.
+- Riapertura del database da un nuovo processo: la catena prosegue dal tip memorizzato, non biforca.
+- Le firme sono **vere firme Ed25519** generate con `node:crypto` e verificate con la chiave pubblica:
+  nessuna primitiva crittografica è mockata.
+
+Decisioni prese:
+- **Due connessioni**: scritture su una connessione, letture su una connessione read-only, così una query
+  non può mai vedere righe di una transazione di scrittura ancora aperta.
+- **Scrittore unico per processo**: le scritture sono serializzate in-process; il firmatario viene chiamato
+  mentre la transazione è aperta, quindi due scrittori nello stesso processo si bloccherebbero a vicenda.
+  È coerente con la SPEC ("scrittore unico") ed è documentato nel codice.
+- La ricevuta viene validata **prima** di chiedere la firma (non si fa firmare una ricevuta malformata)
+  **e di nuovo dopo**, perché ciò che torna dal firmatario non è preso per buono.
+- In tabella si salva la forma canonica esatta che è stata firmata, non una ri-serializzazione.
+
+Limite noto, da scrivere in `SECURITY.md` (M9): i trigger fermano UPDATE/DELETE via SQL, non un
+`DROP TABLE` né la sostituzione del file. Contro quello valgono firme, catena e marche temporali.
 
 ## Checklist di verifica finale M9 (da eseguire fuori dalla sessione cloud)
 

@@ -1,0 +1,343 @@
+import { verify } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import Database from "better-sqlite3";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  canonicalReceiptBytes,
+  fromHex,
+  GENESIS_PREV_HASH,
+  parseReceipt,
+  receiptHash,
+  receiptHashHex,
+  type Receipt,
+} from "@sigillo/core";
+import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
+import { createTestSigner, type TestSigner } from "./helpers/signer.js";
+
+const SYSTEM = "acme-support-bot";
+const OTHER_SYSTEM = "acme-billing-bot";
+
+let directory: string;
+let databasePath: string;
+let signer: TestSigner;
+let store: ReceiptStore;
+
+beforeEach(() => {
+  directory = mkdtempSync(join(tmpdir(), "sigillo-store-"));
+  databasePath = join(directory, "sigillo.db");
+  signer = createTestSigner();
+  store = ReceiptStore.open(databasePath, signer);
+});
+
+afterEach(() => {
+  store.close();
+  rmSync(directory, { recursive: true, force: true });
+});
+
+function event(overrides: Partial<ChainEvent> = {}): ChainEvent {
+  return {
+    system_id: SYSTEM,
+    ts_event: "2026-03-29T14:30:01.000Z",
+    ts_received: "2026-03-29T14:30:01.005Z",
+    actor: { agent: "planner" },
+    action: { kind: "tool_call", name: "search_orders" },
+    input_hash: null,
+    output_hash: null,
+    outcome: "ok",
+    source: { type: "sdk" },
+    ...overrides,
+  };
+}
+
+function signatureIsValid(receipt: Receipt, key = signer.publicKey): boolean {
+  return verify(null, receiptHash(receipt), key, Buffer.from(receipt.sig, "base64"));
+}
+
+/** A second connection to the same file, to attack the data rather than the API. */
+function openRawConnection(): Database.Database {
+  return new Database(databasePath);
+}
+
+describe("opening the database", () => {
+  it("uses write-ahead logging", () => {
+    const raw = openRawConnection();
+    expect(raw.pragma("journal_mode", { simple: true })).toBe("wal");
+    raw.close();
+  });
+});
+
+describe("creating a chain", () => {
+  it("writes a genesis receipt that matches the format", async () => {
+    const genesis = await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+    expect(genesis.seq).toBe(0);
+    expect(genesis.action).toEqual({ kind: "genesis", name: SYSTEM });
+    expect(genesis.actor).toEqual({ agent: SYSTEM });
+    expect(genesis.prev_hash).toBe(GENESIS_PREV_HASH);
+    expect(genesis.input_hash).toBeNull();
+    expect(genesis.output_hash).toBeNull();
+    expect(genesis.key_id).toBe(signer.keyId);
+    expect(parseReceipt(genesis)).toEqual(genesis);
+    expect(signatureIsValid(genesis)).toBe(true);
+  });
+
+  it("refuses to create the same chain twice", async () => {
+    await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+    await expect(store.createChain(SYSTEM, "2026-03-29T14:30:02.000Z")).rejects.toThrow(
+      /already exists/i,
+    );
+    expect(store.readChain(SYSTEM)).toHaveLength(1);
+  });
+});
+
+describe("appending to a chain", () => {
+  beforeEach(async () => {
+    await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+  });
+
+  it("assigns the next sequence number and links to the previous receipt", async () => {
+    const genesis = store.readChain(SYSTEM)[0];
+    expect(genesis).toBeDefined();
+    if (!genesis) return;
+
+    const first = await store.append(event());
+    expect(first.seq).toBe(1);
+    expect(first.prev_hash).toBe(receiptHashHex(genesis));
+
+    const second = await store.append(event());
+    expect(second.seq).toBe(2);
+    expect(second.prev_hash).toBe(receiptHashHex(first));
+    expect(signatureIsValid(second)).toBe(true);
+  });
+
+  it("asks the signer for exactly one signature per receipt", async () => {
+    const before = signer.calls();
+    await store.append(event());
+    await store.append(event());
+    expect(signer.calls() - before).toBe(2);
+  });
+
+  it("refuses to append to a chain that was never created", async () => {
+    await expect(store.append(event({ system_id: "never-created" }))).rejects.toThrow(/unknown/i);
+    expect(store.readChain("never-created")).toHaveLength(0);
+  });
+
+  it("refuses to append a second genesis", async () => {
+    await expect(
+      store.append(event({ action: { kind: "genesis", name: SYSTEM } })),
+    ).rejects.toThrow(/genesis/i);
+  });
+
+  it("refuses an event the format would reject, rather than storing it", async () => {
+    await expect(store.append(event({ ts_event: "2026-03-29 14:30:01Z" }))).rejects.toThrow(
+      /ts_event/,
+    );
+    expect(store.readChain(SYSTEM)).toHaveLength(1);
+  });
+
+  it("stores the canonical bytes that were hashed, not a re-serialisation", async () => {
+    const receipt = await store.append(event({ actor: { agent: "café-agent ☕" } }));
+    const raw = openRawConnection();
+    const row = raw
+      .prepare("SELECT canonical, hash, sig FROM receipts WHERE system_id = ? AND seq = ?")
+      .get(SYSTEM, receipt.seq) as { canonical: string; hash: string; sig: string };
+    raw.close();
+
+    expect(row.canonical).toBe(new TextDecoder().decode(canonicalReceiptBytes(receipt)));
+    expect(row.hash).toBe(receiptHashHex(receipt));
+    expect(row.sig).toBe(receipt.sig);
+  });
+});
+
+describe("append-only storage", () => {
+  beforeEach(async () => {
+    await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+    await store.append(event());
+  });
+
+  it("refuses an UPDATE on receipts, from any connection", () => {
+    const raw = openRawConnection();
+    expect(() => raw.exec("UPDATE receipts SET outcome = 'error'")).toThrow(/append-only/);
+    expect(() => raw.exec("UPDATE receipts SET hash = 'x' WHERE seq = 0")).toThrow(/append-only/);
+    raw.close();
+  });
+
+  it("refuses a DELETE on receipts, from any connection", () => {
+    const raw = openRawConnection();
+    expect(() => raw.exec("DELETE FROM receipts")).toThrow(/append-only/);
+    expect(() => raw.exec("DELETE FROM receipts WHERE seq = 1")).toThrow(/append-only/);
+    raw.close();
+  });
+
+  it("leaves the chain intact after a rejected attempt", () => {
+    const raw = openRawConnection();
+    expect(() => raw.exec("DELETE FROM receipts")).toThrow(/append-only/);
+    raw.close();
+    const chain = store.readChain(SYSTEM);
+    expect(chain.map((receipt) => receipt.seq)).toEqual([0, 1]);
+  });
+
+  it("refuses an UPDATE or a DELETE on checkpoints and timestamps", () => {
+    const raw = openRawConnection();
+    raw.exec(
+      `INSERT INTO checkpoints (system_id, tree_size, root_hash, ts, key_id, sig)
+       VALUES ('${SYSTEM}', 2, '${"a".repeat(64)}', '2026-03-29T15:00:00.000Z', '${signer.keyId}', 'sig')`,
+    );
+    raw.exec(
+      `INSERT INTO timestamps (checkpoint_id, tsa_url, token_base64, obtained_at)
+       VALUES (1, 'https://freetsa.org/tsr', 'dG9rZW4=', '2026-03-29T15:00:01.000Z')`,
+    );
+    expect(() => raw.exec("UPDATE checkpoints SET tree_size = 3")).toThrow(/append-only/);
+    expect(() => raw.exec("DELETE FROM checkpoints")).toThrow(/append-only/);
+    expect(() => raw.exec("UPDATE timestamps SET tsa_url = 'x'")).toThrow(/append-only/);
+    expect(() => raw.exec("DELETE FROM timestamps")).toThrow(/append-only/);
+    raw.close();
+  });
+
+  it("refuses a second receipt at an existing position", () => {
+    const raw = openRawConnection();
+    expect(() =>
+      raw.exec(
+        `INSERT INTO receipts (system_id, seq, hash, prev_hash, canonical, sig, key_id,
+                               ts_event, ts_received, action_kind, action_name, outcome)
+         VALUES ('${SYSTEM}', 1, '${"b".repeat(64)}', '${"c".repeat(64)}', '{}', 'sig',
+                 '${signer.keyId}', '2026-03-29T14:30:01.000Z', '2026-03-29T14:30:01.005Z',
+                 'tool_call', 'forged', 'ok')`,
+      ),
+    ).toThrow(/UNIQUE/i);
+    raw.close();
+  });
+});
+
+describe("concurrent writers on one chain", () => {
+  it(
+    "produces a contiguous chain with no gaps and no fork",
+    async () => {
+      await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+
+      const total = 1000;
+      const pending = Array.from({ length: total - 1 }, (_unused, index) =>
+        store.append(
+          event({
+            action: { kind: "tool_call", name: `call-${index}` },
+            ts_event: "2026-03-29T14:30:01.000Z",
+          }),
+        ),
+      );
+      await Promise.all(pending);
+
+      const chain = store.readChain(SYSTEM);
+      expect(chain).toHaveLength(total);
+      expect(chain.map((receipt) => receipt.seq)).toEqual(
+        Array.from({ length: total }, (_unused, index) => index),
+      );
+
+      const hashes = new Set<string>();
+      let previous = GENESIS_PREV_HASH;
+      for (const receipt of chain) {
+        expect(receipt.prev_hash).toBe(previous);
+        expect(parseReceipt(receipt)).toEqual(receipt);
+        previous = receiptHashHex(receipt);
+        hashes.add(previous);
+      }
+      expect(hashes.size).toBe(total);
+
+      // Spot-check signatures rather than all 1000: signing is covered above.
+      for (const index of [0, 1, 499, total - 1]) {
+        const receipt = chain[index];
+        expect(receipt).toBeDefined();
+        if (receipt) expect(signatureIsValid(receipt)).toBe(true);
+      }
+
+      // Every action name was used exactly once: nothing was dropped or duplicated.
+      const names = chain.slice(1).map((receipt) => receipt.action.name).sort();
+      const expected = Array.from({ length: total - 1 }, (_unused, index) => `call-${index}`).sort();
+      expect(names).toEqual(expected);
+    },
+    120_000,
+  );
+});
+
+describe("a new process taking over the database", () => {
+  it("continues the chain from the stored tip instead of forking it", async () => {
+    await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+    const first = await store.append(event());
+    store.close();
+
+    const reopened = ReceiptStore.open(databasePath, signer);
+    try {
+      expect(reopened.tip(SYSTEM)).toEqual({ seq: 1, hash: receiptHashHex(first) });
+      const second = await reopened.append(event());
+      expect(second.seq).toBe(2);
+      expect(second.prev_hash).toBe(receiptHashHex(first));
+      expect(reopened.readChain(SYSTEM).map((receipt) => receipt.seq)).toEqual([0, 1, 2]);
+    } finally {
+      reopened.close();
+    }
+
+    // afterEach closes `store` again, which must stay harmless.
+    store = ReceiptStore.open(databasePath, signer);
+  });
+});
+
+describe("chains of different systems", () => {
+  it("keeps sequence numbers and links independent", async () => {
+    await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+    await store.createChain(OTHER_SYSTEM, "2026-03-29T14:30:00.100Z");
+
+    await Promise.all([
+      store.append(event({ system_id: SYSTEM, action: { kind: "tool_call", name: "a1" } })),
+      store.append(event({ system_id: OTHER_SYSTEM, action: { kind: "tool_call", name: "b1" } })),
+      store.append(event({ system_id: SYSTEM, action: { kind: "tool_call", name: "a2" } })),
+      store.append(event({ system_id: OTHER_SYSTEM, action: { kind: "tool_call", name: "b2" } })),
+    ]);
+
+    const first = store.readChain(SYSTEM);
+    const second = store.readChain(OTHER_SYSTEM);
+    expect(first.map((receipt) => receipt.seq)).toEqual([0, 1, 2]);
+    expect(second.map((receipt) => receipt.seq)).toEqual([0, 1, 2]);
+    expect(first.every((receipt) => receipt.system_id === SYSTEM)).toBe(true);
+    expect(second.every((receipt) => receipt.system_id === OTHER_SYSTEM)).toBe(true);
+
+    for (const chain of [first, second]) {
+      let previous = GENESIS_PREV_HASH;
+      for (const receipt of chain) {
+        expect(receipt.prev_hash).toBe(previous);
+        previous = receiptHashHex(receipt);
+      }
+    }
+
+    expect(store.listSystems().sort()).toEqual([OTHER_SYSTEM, SYSTEM].sort());
+  });
+});
+
+describe("reading back", () => {
+  it("returns receipts that a verifier would accept", async () => {
+    await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+    await store.append(event({ input_hash: "a".repeat(64), output_hash: "b".repeat(64) }));
+    await store.append(
+      event({
+        actor: { agent: "executor", on_behalf_of: "urn:operator:night-shift" },
+        source: { type: "otlp", trace_id: "4bf92f3577b34da6a3ce929d0e0e4736" },
+        outcome: "blocked",
+      }),
+    );
+
+    for (const receipt of store.readChain(SYSTEM)) {
+      expect(parseReceipt(receipt)).toEqual(receipt);
+      expect(signatureIsValid(receipt)).toBe(true);
+      expect(receipt.sig).toMatch(/^[A-Za-z0-9+/]{86}==$/);
+      expect(fromHex(receipt.prev_hash)).toHaveLength(32);
+    }
+
+    const tip = store.tip(SYSTEM);
+    expect(tip).not.toBeNull();
+    expect(tip?.seq).toBe(2);
+  });
+
+  it("reports an empty chain for a system that does not exist", () => {
+    expect(store.readChain("nothing-here")).toEqual([]);
+    expect(store.tip("nothing-here")).toBeNull();
+  });
+});

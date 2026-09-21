@@ -1,0 +1,22 @@
+{
+  "name": "@sigillo/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@sigillo/core": "workspace:*",
+    "better-sqlite3": "^11.7.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12"
+  }
+}

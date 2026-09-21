@@ -114,6 +114,10 @@ export type ReceiptParseResult =
   | { ok: true; receipt: Receipt }
   | { ok: false; error: string };
 
+export type UnsignedReceiptParseResult =
+  | { ok: true; receipt: UnsignedReceipt }
+  | { ok: false; error: string };
+
 function describeIssues(issues: readonly z.ZodIssue[]): string {
   return issues
     .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "<receipt>"}: ${issue.message}`)
@@ -131,6 +135,26 @@ export function safeParseReceipt(value: unknown): ReceiptParseResult {
 
 export function parseReceipt(value: unknown): Receipt {
   const result = safeParseReceipt(value);
+  if (!result.ok) {
+    throw new ReceiptFormatError(result.error);
+  }
+  return result.receipt;
+}
+
+/**
+ * Validates a receipt that has not been signed yet, so that a malformed one is
+ * rejected before a signer is ever asked to put its key behind it.
+ */
+export function safeParseUnsignedReceipt(value: unknown): UnsignedReceiptParseResult {
+  const parsed = unsignedReceiptSchema.safeParse(value);
+  if (parsed.success) {
+    return { ok: true, receipt: parsed.data };
+  }
+  return { ok: false, error: describeIssues(parsed.error.issues) };
+}
+
+export function parseUnsignedReceipt(value: unknown): UnsignedReceipt {
+  const result = safeParseUnsignedReceipt(value);
   if (!result.ok) {
     throw new ReceiptFormatError(result.error);
   }
