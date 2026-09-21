@@ -11,7 +11,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | M3 | Firmatario | fatto | Processo separato su socket Unix, keygen 0600, e2e a due processi |
 | M4 | Verificatore v1 | fatto | CLI `sigillo-verify`, 8 controlli, manomissioni + property test |
 | M5 | Ingest OTLP e API nativa | fatto | protobuf+JSON, due dialetti, API key scrypt, CLI admin |
-| M6 | SDK Python | todo | Pacchetto `sigillo`, esempio LangGraph, test e2e |
+| M6 | SDK Python | fatto | `sigillo.init()`, esempio LangGraph, e2e a tre processi |
 | M7 | Merkle e marca temporale | todo | RFC 6962, checkpoint firmati, RFC 3161 con retry |
 | M8 | Fascicolo completo e verificatore v2 | todo | Export zip completo, tutti i controlli del verificatore |
 | M9 | UI, deploy, documentazione | todo | UI minima, docker-compose, backup, doc finali |
@@ -230,6 +230,43 @@ Percorso completo eseguito davvero con i binari compilati, non solo nei test:
 firmatario avviato → `system create` → `key create` → `serve` → POST protobuf (5 accettate, 1 ignorata)
 → POST JSON (5 accettate, 1 ignorata) → POST API nativa → 401 senza chiave → `export` →
 `sigillo-verify` → `OK acme-support-bot: 12 receipts, seq 0..11`.
+
+#### M6 — SDK Python (fatto)
+
+- `sdk-python/src/sigillo/__init__.py` — **una sola funzione pubblica**, `sigillo.init(endpoint, api_key,
+  system_id, instrument=["langchain","crewai"])`. Configura `TracerProvider` + `OTLPSpanExporter` HTTP
+  con l'API key come Bearer, e attiva le instrumentazioni OpenInference richieste **se installate**
+  (se mancano: warning, non errore).
+- `sdk-python/examples/langgraph_agent.py` — agente LangGraph minimo, **modello fittizio**
+  (`GenericFakeChatModel`) e tool finto: nessuna chiamata a un modello reale, quindi costo zero
+  e comportamento deterministico.
+- `sdk-python/README.md` — installazione, cosa fa `init`, cosa **non** viene registrato.
+- Il pacchetto dipende solo da `opentelemetry-sdk` e `opentelemetry-exporter-otlp-proto-http`;
+  le instrumentazioni sono extra opzionali, come da SPEC §3.
+
+Test: **niente pytest**, solo `unittest` della libreria standard, così non serve alcuna dipendenza
+fuori dalla lista consentita. 12 test verdi (9 unitari + 3 end-to-end), con `ResourceWarning`
+trattati come errori.
+
+Il test end-to-end fa girare **tre processi reali**: firmatario (con chiave vera, permessi 0600
+verificati), server, ed esempio. Poi esporta e verifica con il verificatore open source.
+Controlla che: la catena parta dalla genesi con `seq` contigui; ci siano `llm_call`, `tool_call` e
+`agent_step`; ogni firma abbia la forma giusta; il `sigillo-verify` dia OK. Un secondo test manomette
+l'export e pretende exit code 1.
+
+Controllo di privacy nel test e2e: cerca `A-1099`, `where is my order` e `DHL` dentro
+`receipts.jsonl` e pretende di **non trovarli**. L'agente ha detto quelle cose; il registro conserva
+solo le impronte.
+
+Difetto trovato da un test e corretto: il modulo ri-esportava i nomi importati
+(`sigillo.TracerProvider`, `sigillo.Resource`, ...), cioè la superficie pubblica non era affatto
+"una sola funzione". Ora gli import sono sotto nomi privati e un test lo verifica.
+
+Nota sulle dipendenze: `langgraph` e `langchain-core` **non** sono dipendenze del pacchetto `sigillo`.
+Servono solo all'esempio e stanno in `sdk-python/examples/requirements.txt`. Li ho usati perché la
+SPEC §8 richiede esplicitamente un esempio LangGraph.
+
+CI: aggiunto un terzo job che compila i pacchetti Node e poi esegue i test Python, end-to-end incluso.
 
 ## Checklist di verifica finale M9 (da eseguire fuori dalla sessione cloud)
 

@@ -1,0 +1,6 @@
+# Only the example needs these. The sigillo package itself does not depend on
+# LangGraph: it depends on OpenTelemetry, and on the OpenInference
+# instrumentation for whichever framework you actually use.
+langgraph>=0.2
+langchain-core>=0.3
+openinference-instrumentation-langchain>=0.1

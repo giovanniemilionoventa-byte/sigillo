@@ -27,6 +27,25 @@ jobs:
       - run: pnpm test
       - run: node scripts/smoke-dist.mjs
 
+  python:
+    name: python sdk, including the end-to-end path
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # The end-to-end test runs the built signer, server and verifier for real.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pip install -e sdk-python -r sdk-python/examples/requirements.txt
+      - run: python -m unittest discover -s sdk-python/tests -t sdk-python -v
+
   vectors:
     name: independent cross-check of the test vectors
     runs-on: ubuntu-latest

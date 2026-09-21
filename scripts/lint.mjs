@@ -155,7 +155,9 @@ for (const file of allFiles) {
   }
 }
 
+// py.typed is a marker whose contents are irrelevant, and conventionally empty.
 for (const file of allFiles.filter((f) => statSync(f).size === 0)) {
+  if (rel(file).endsWith("py.typed")) continue;
   fail(rel(file), null, "empty file");
 }
 
