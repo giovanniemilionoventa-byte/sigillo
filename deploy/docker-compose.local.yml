@@ -1,0 +1,93 @@
+# A local trial on one computer. NOT a deployment.
+#
+# The real deployment is docker-compose.yml beside this file: three services,
+# Caddy terminating TLS on a real domain. This one drops Caddy, publishes the
+# server on 127.0.0.1 only, and adds a container that runs the Python example,
+# so that trying sigillo out needs no domain, no certificate and no Python
+# installed on the computer.
+#
+# There is no TLS here. The password travels in clear text over the loopback
+# interface, which never leaves the machine. Do not put real data in it and do
+# not expose port 8080 to a network.
+#
+# Step-by-step instructions, for someone who does not use a terminal:
+# see PROVA-LOCALE.md in the root of this repository.
+
+name: sigillo-locale
+
+services:
+  signer:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: signer
+    restart: unless-stopped
+    volumes:
+      # The key. Mounted here and nowhere else, exactly as in production.
+      - signer-key:/var/lib/sigillo-key
+      - signer-socket:/run/sigillo
+    # It speaks only over the socket: no network at all.
+    network_mode: none
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/sigillo/signer.sock"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: server
+    restart: unless-stopped
+    depends_on:
+      signer:
+        condition: service_healthy
+    volumes:
+      - sigillo-data:/var/lib/sigillo
+      - signer-socket:/run/sigillo
+    environment:
+      SIGILLO_DB: /var/lib/sigillo/sigillo.db
+      SIGILLO_SIGNER_SOCKET: /run/sigillo/signer.sock
+      SIGILLO_HOST: 0.0.0.0
+      SIGILLO_PORT: 8080
+      SIGILLO_CHECKPOINT_MINUTES: ${SIGILLO_CHECKPOINT_MINUTES:-60}
+      TSA_URL: ${TSA_URL:-https://freetsa.org/tsr}
+      SIGILLO_ADMIN_PASSWORD: ${SIGILLO_ADMIN_PASSWORD:?set SIGILLO_ADMIN_PASSWORD in deploy/.env, at least 12 characters}
+    # Loopback only. Binding to 0.0.0.0 here would put an unencrypted admin
+    # page on every network the computer is attached to.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  # Not started by `up`: it is run on demand with
+  #   docker compose -f docker-compose.local.yml run --rm esempio
+  esempio:
+    profiles: ["strumenti"]
+    image: python:3.12-slim
+    depends_on:
+      - server
+    volumes:
+      - ..:/work
+    working_dir: /work
+    environment:
+      # By service name, on the compose network: the example does not go
+      # through the published port.
+      SIGILLO_ENDPOINT: http://server:8080
+      # Not required here: Compose interpolates the whole file before it
+      # selects services, so a `:?` on this would stop `up` from starting the
+      # server at all — and the API key does not exist until the server is up
+      # and `key create` has run. Unset, the example says so itself and exits.
+      SIGILLO_API_KEY: ${SIGILLO_API_KEY:-}
+      SIGILLO_SYSTEM_ID: ${SIGILLO_SYSTEM_ID:-acme-support-bot}
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    command:
+      - sh
+      - -c
+      - |
+        pip install --quiet ./sdk-python -r sdk-python/examples/requirements.txt
+        python sdk-python/examples/langgraph_agent.py
+
+volumes:
+  signer-key:
+  signer-socket:
+  sigillo-data:

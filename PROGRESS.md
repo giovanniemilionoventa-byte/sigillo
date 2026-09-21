@@ -481,6 +481,51 @@ lettere cosa sigillo non prova), `docs/API.md` e `docs/FORMAT.md` già scritti e
    non-cambiamento. Sostituito con un helper `flipLastHex`. Sei esecuzioni consecutive verdi dopo
    la correzione.
 
+#### Dopo M9 — la guida per chi non usa il terminale, e un difetto nel Dockerfile
+
+Scritto `PROVA-LOCALE.md`: guida passo per passo, in italiano, separata per Windows e Mac, che
+porta una persona che non ha mai usato un terminale da zero a un fascicolo verificato. Ogni
+comando ha sotto una frase che dice cosa fa, e c'è una sezione "se qualcosa va storto" con gli
+errori più probabili e il rimedio.
+
+Per non costringere quella persona a modificare a mano dello YAML — che è esattamente ciò che una
+persona non tecnica sbaglia — ho aggiunto `deploy/docker-compose.local.yml`: niente Caddy, porta
+pubblicata **solo** su `127.0.0.1`, e un servizio `esempio` che fa girare l'agente Python in un
+container, così non serve installare Python. `COMPOSE_FILE` scritto nel `.env` accorcia tutti i
+comandi successivi a `docker compose ...`.
+
+Due cose notate mentre lo scrivevo, entrambe corrette:
+
+- `deploy/.env` **non era in `.gitignore`**, e la guida dice di scriverci dentro la password di
+  amministrazione e una chiave API. Su un repository pubblico era una trappola. Ora è ignorato.
+- Un `:?` su `SIGILLO_API_KEY` avrebbe bloccato `docker compose up`: Compose interpola tutto il
+  file **prima** di scegliere i servizi, quindi una variabile obbligatoria su un servizio dietro a
+  un profilo ferma comunque l'avvio — e la chiave API non esiste finché il server non è in piedi.
+  Reso opzionale; se manca, è l'esempio stesso a dirlo.
+
+##### Il difetto: il Dockerfile non ha mai potuto costruire
+
+Provando a verificare il comando di verifica della guida ho eseguito lo stesso `pnpm deploy` che
+il `Dockerfile` usa, e **fallisce**:
+
+```
+ERR_PNPM_DEPLOY_NONINJECTED_WORKSPACE  By default, starting from pnpm v10, we only deploy
+from workspaces that have "inject-workspace-packages=true" set
+```
+
+Esce con 1 **prima di scrivere `node_modules`**. Il `RUN` del Dockerfile sarebbe fallito e
+`docker compose build` — il Passo 5 della guida — non sarebbe mai arrivato in fondo. Il progetto
+fissa pnpm 10.33.0, quindi il difetto era certo, non probabile: semplicemente non era mai stato
+eseguito, perché nella sessione cloud Docker non c'è.
+
+Corretto aggiungendo `--legacy` ai tre comandi `deploy`, che è il rimedio indicato dall'errore
+stesso di pnpm. Verificato: tutti e tre i pacchetti ora si impacchettano con exit 0, con
+`node_modules` e `@sigillo/core` dentro, e i tre eseguibili partono da una cartella qualsiasi —
+che è precisamente il meccanismo su cui si regge `node /verifier/dist/cli.js` dentro il container.
+
+**Resta vero che il giro Docker completo non è mai stato eseguito.** Questo difetto è la prova
+che la checklist in fondo a questo file va eseguita davvero, non data per buona.
+
 ##### Il percorso completo, eseguito davvero (senza Docker)
 
 Docker **non è disponibile in questa sessione cloud**: il CLI c'è, il daemon no (`docker info`
@@ -523,6 +568,11 @@ La tabella della dimensione del verificatore, qui sopra, **ometteva `packages/co
 chiedo non cambia — le tre opzioni restano quelle — ma il numero su cui decidere è questo.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
+
+> Esiste anche una versione **per chi non usa il terminale**: `PROVA-LOCALE.md`, in italiano,
+> separata per Windows e Mac, che usa `deploy/docker-compose.local.yml` (senza dominio, senza
+> Caddy, con l'agente di esempio in un container). Le due procedure verificano la stessa cosa;
+> questa qui sotto è quella breve, per chi il terminale lo usa già.
 
 Questi sono i comandi esatti. Docker non è disponibile nella sessione cloud, quindi il percorso
 sopra è stato verificato senza Docker; questo qui sotto è quello che resta da confermare su una

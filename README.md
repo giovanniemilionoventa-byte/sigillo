@@ -24,6 +24,10 @@ SDK. What it adds is the signature, the chain, the anchor and the export.
 A receipt carries **no content**: no prompt, no tool argument, no model output.
 Only digests of them. See [docs/SECURITY.md](docs/SECURITY.md).
 
+> **Non usi il terminale?** [`PROVA-LOCALE.md`](PROVA-LOCALE.md) è una guida
+> passo per passo, in italiano, per provare sigillo sul tuo computer con Docker
+> Desktop: installazione, avvio, agente di esempio, fascicolo e verifica.
+
 ## Five minutes
 
 Node 22 and pnpm 10. `openssl` on the path.

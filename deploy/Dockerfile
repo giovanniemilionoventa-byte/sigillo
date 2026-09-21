@@ -30,9 +30,16 @@ COPY scripts scripts
 RUN pnpm build
 
 # Only what runs in production, without the toolchain that built it.
-RUN pnpm --filter @sigillo/server --prod deploy /out/server \
- && pnpm --filter @sigillo/signer --prod deploy /out/signer \
- && pnpm --filter @sigillo/verifier --prod deploy /out/verifier
+#
+# --legacy is required from pnpm 10 on: without it `deploy` refuses a workspace
+# that does not set inject-workspace-packages, and exits before writing any
+# node_modules, so the image would be built around three dependency-less
+# directories. pnpm's own error names this flag as the way to keep the previous
+# behaviour, which is what is wanted here: resolve the workspace packages into
+# the deployed tree.
+RUN pnpm --filter @sigillo/server --prod --legacy deploy /out/server \
+ && pnpm --filter @sigillo/signer --prod --legacy deploy /out/signer \
+ && pnpm --filter @sigillo/verifier --prod --legacy deploy /out/verifier
 
 
 FROM node:22-bookworm-slim AS server

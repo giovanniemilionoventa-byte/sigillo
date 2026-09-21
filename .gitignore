@@ -15,6 +15,9 @@ data/
 *.pem
 keys/
 
+# the local configuration holds the admin password and an API key
+.env
+
 # python
 __pycache__/
 *.egg-info/
