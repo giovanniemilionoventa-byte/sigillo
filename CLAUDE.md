@@ -37,13 +37,32 @@ docs/                FORMAT.md, SECURITY.md, API.md
 
 ## Build & test commands
 
-_This section is filled in as the monorepo is scaffolded during M1 onward._
+Run from the repository root. Node 22 and pnpm 10 are required.
 
-- Install: `pnpm install` (root, once `pnpm-workspace.yaml` exists)
-- Build: TBD
-- Test (Node/TS): TBD
-- Test (Python SDK): TBD
-- Lint/typecheck: TBD
+| command | what it does |
+|---|---|
+| `pnpm install` | install workspace dependencies |
+| `pnpm lint` | `scripts/lint.mjs`: architectural invariants, not style (see below) |
+| `pnpm typecheck` | `tsc` over every package, sources and tests, no emit |
+| `pnpm build` | `tsc` per package into `dist/` |
+| `pnpm test` | vitest, run once, across all packages |
+| `pnpm test:watch` | vitest in watch mode |
+| `pnpm check` | lint, typecheck, build and test in sequence |
+| `node scripts/smoke-dist.mjs` | verify the built package under plain Node (run after `pnpm build`) |
+| `python3 scripts/crosscheck_vectors.py` | re-derive the receipt test vectors with an independent Python implementation |
+| `pnpm tsx scripts/gen-vectors.ts` | regenerate `packages/core/test/vectors.json` |
+
+Tests import `@sigillo/core` and resolve to `packages/core/src` through a vitest
+alias, so no build is needed to run them. `scripts/smoke-dist.mjs` is what covers
+the built output.
+
+There is no eslint or prettier: neither is on the approved dependency list.
+`pnpm lint` instead enforces the rules that matter here — core's purity, the
+dependency allowlist, no `.only()` left in tests, no explicit `any`, no key
+material in the tree. Style is left to the author.
+
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, build, test and the dist
+smoke check on Node 22, plus the Python cross-check as a separate job.
 
 ## Workflow reminders (session process)
 

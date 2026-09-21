@@ -1,0 +1,420 @@
+{
+  "format": "sigillo receipt test vectors",
+  "receipt_version": 1,
+  "note": "canonical is the RFC 8785 form of the receipt with the sig field removed; hash is the SHA-256 of those UTF-8 bytes, lowercase hex. The sig values are a fixed placeholder: these vectors pin the wire format, not signatures. Signature vectors arrive with the signer.",
+  "vectors": [
+    {
+      "name": "genesis",
+      "comment": "First receipt of a chain: seq 0, action.kind genesis, action.name repeats the system, prev_hash is 64 zeros.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 0,
+        "ts_event": "2026-03-29T14:30:00.123Z",
+        "ts_received": "2026-03-29T14:30:00.456Z",
+        "actor": {
+          "agent": "acme-support-bot"
+        },
+        "action": {
+          "kind": "genesis",
+          "name": "acme-support-bot"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "api"
+        },
+        "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"genesis\",\"name\":\"acme-support-bot\"},\"actor\":{\"agent\":\"acme-support-bot\"},\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"seq\":0,\"source\":{\"type\":\"api\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:30:00.123Z\",\"ts_received\":\"2026-03-29T14:30:00.456Z\",\"v\":1}",
+      "hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543"
+    },
+    {
+      "name": "tool-call-escapes-and-unicode",
+      "comment": "JSON escaping and UTF-8: quote, backslash, newline and tab are escaped; e-acute and an emoji are emitted literally.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 7,
+        "ts_event": "2026-03-29T14:31:02.000Z",
+        "ts_received": "2026-03-29T14:31:02.004Z",
+        "actor": {
+          "agent": "café-agent ☕",
+          "on_behalf_of": "urn:user:42"
+        },
+        "action": {
+          "kind": "tool_call",
+          "name": "quote\" backslash\\ newline\n tab\t é☕"
+        },
+        "input_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "output_hash": "7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e",
+        "outcome": "ok",
+        "source": {
+          "type": "otlp",
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+          "span_id": "00f067aa0ba902b7"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"tool_call\",\"name\":\"quote\\\" backslash\\\\ newline\\n tab\\t é☕\"},\"actor\":{\"agent\":\"café-agent ☕\",\"on_behalf_of\":\"urn:user:42\"},\"input_hash\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":\"7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e\",\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":7,\"source\":{\"span_id\":\"00f067aa0ba902b7\",\"trace_id\":\"4bf92f3577b34da6a3ce929d0e0e4736\",\"type\":\"otlp\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:02.000Z\",\"ts_received\":\"2026-03-29T14:31:02.004Z\",\"v\":1}",
+      "hash": "7d4c012657b39ef1dcc64c67c53c04343dcadedd59d01c3a8214410c6ddab4e9"
+    },
+    {
+      "name": "llm-call-both-hashes",
+      "comment": "An LLM call with both payload digests present. The prompt itself is never carried.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 8,
+        "ts_event": "2026-03-29T14:31:03.100Z",
+        "ts_received": "2026-03-29T14:31:03.140Z",
+        "actor": {
+          "agent": "planner"
+        },
+        "action": {
+          "kind": "llm_call",
+          "name": "chat.completions"
+        },
+        "input_hash": "7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e",
+        "output_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "outcome": "ok",
+        "source": {
+          "type": "otlp",
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"llm_call\",\"name\":\"chat.completions\"},\"actor\":{\"agent\":\"planner\"},\"input_hash\":\"7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e\",\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":8,\"source\":{\"trace_id\":\"4bf92f3577b34da6a3ce929d0e0e4736\",\"type\":\"otlp\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:03.100Z\",\"ts_received\":\"2026-03-29T14:31:03.140Z\",\"v\":1}",
+      "hash": "7d23ea02e33a3f0c94fc9aa380fe1094ed184f26c010fa6d0707ee1175203996"
+    },
+    {
+      "name": "agent-step-on-behalf-of",
+      "comment": "Human oversight (AI Act art. 14): the operator the agent acted for is recorded.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 9,
+        "ts_event": "2026-03-29T14:31:04.000Z",
+        "ts_received": "2026-03-29T14:31:04.002Z",
+        "actor": {
+          "agent": "executor",
+          "on_behalf_of": "urn:operator:night-shift"
+        },
+        "action": {
+          "kind": "agent_step",
+          "name": "plan.revise"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "sdk"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"agent_step\",\"name\":\"plan.revise\"},\"actor\":{\"agent\":\"executor\",\"on_behalf_of\":\"urn:operator:night-shift\"},\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":9,\"source\":{\"type\":\"sdk\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:04.000Z\",\"ts_received\":\"2026-03-29T14:31:04.002Z\",\"v\":1}",
+      "hash": "67cba620057bf2286aed64a805768dd9594429cc13d4ddb21be4907609297af9"
+    },
+    {
+      "name": "decision-blocked",
+      "comment": "A decision stopped by a guardrail: outcome blocked, no output digest.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 10,
+        "ts_event": "2026-03-29T14:31:05.500Z",
+        "ts_received": "2026-03-29T14:31:05.501Z",
+        "actor": {
+          "agent": "policy"
+        },
+        "action": {
+          "kind": "decision",
+          "name": "refund.approve"
+        },
+        "input_hash": "7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e",
+        "output_hash": null,
+        "outcome": "blocked",
+        "source": {
+          "type": "sdk"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"decision\",\"name\":\"refund.approve\"},\"actor\":{\"agent\":\"policy\"},\"input_hash\":\"7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e\",\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"blocked\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":10,\"source\":{\"type\":\"sdk\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:05.500Z\",\"ts_received\":\"2026-03-29T14:31:05.501Z\",\"v\":1}",
+      "hash": "162a02ade949d211266d879eced504293cefecd2b7b8c6076a3ee9c9dcd4ddaa"
+    },
+    {
+      "name": "tool-call-error",
+      "comment": "A failed tool call: outcome error, input recorded, no output.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 11,
+        "ts_event": "2026-03-29T14:31:06.000Z",
+        "ts_received": "2026-03-29T14:31:06.250Z",
+        "actor": {
+          "agent": "executor"
+        },
+        "action": {
+          "kind": "tool_call",
+          "name": "payments.charge"
+        },
+        "input_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "output_hash": null,
+        "outcome": "error",
+        "source": {
+          "type": "otlp",
+          "span_id": "00f067aa0ba902b7"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"tool_call\",\"name\":\"payments.charge\"},\"actor\":{\"agent\":\"executor\"},\"input_hash\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"error\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":11,\"source\":{\"span_id\":\"00f067aa0ba902b7\",\"type\":\"otlp\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:06.000Z\",\"ts_received\":\"2026-03-29T14:31:06.250Z\",\"v\":1}",
+      "hash": "4a2ff6f6e73ae8804a75873590f9525e938b2af5caae65c9f7003349a7e1817b"
+    },
+    {
+      "name": "outcome-unknown-no-hashes",
+      "comment": "A span that ended without a status and without payloads: nulls stay in the hash.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 12,
+        "ts_event": "2026-03-29T14:31:07.000Z",
+        "ts_received": "2026-03-29T14:31:07.000Z",
+        "actor": {
+          "agent": "executor"
+        },
+        "action": {
+          "kind": "agent_step",
+          "name": "tick"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "unknown",
+        "source": {
+          "type": "otlp"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"agent_step\",\"name\":\"tick\"},\"actor\":{\"agent\":\"executor\"},\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"unknown\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":12,\"source\":{\"type\":\"otlp\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:07.000Z\",\"ts_received\":\"2026-03-29T14:31:07.000Z\",\"v\":1}",
+      "hash": "aa4fc7df087b0cb43f870656d0c4a11a4814715d90968655c384084711853232"
+    },
+    {
+      "name": "source-api-minimal",
+      "comment": "Native API ingest: no trace context at all, the smallest legal source object.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 13,
+        "ts_event": "2026-01-01T00:00:00.000Z",
+        "ts_received": "2026-01-01T00:00:00.000Z",
+        "actor": {
+          "agent": "batch-importer"
+        },
+        "action": {
+          "kind": "tool_call",
+          "name": "import"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "api"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"tool_call\",\"name\":\"import\"},\"actor\":{\"agent\":\"batch-importer\"},\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":13,\"source\":{\"type\":\"api\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-01-01T00:00:00.000Z\",\"ts_received\":\"2026-01-01T00:00:00.000Z\",\"v\":1}",
+      "hash": "38e7ae0cb0a5cf3febb3dd822e05fdeaa78143e3bdb6424fdea451e2f0295583"
+    },
+    {
+      "name": "timestamps-year-boundary",
+      "comment": "Midnight on 1 January and the last millisecond of 31 December, both with .000/.999.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 14,
+        "ts_event": "2025-12-31T23:59:59.999Z",
+        "ts_received": "2026-01-01T00:00:00.000Z",
+        "actor": {
+          "agent": "scheduler"
+        },
+        "action": {
+          "kind": "agent_step",
+          "name": "rollover"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "sdk"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"agent_step\",\"name\":\"rollover\"},\"actor\":{\"agent\":\"scheduler\"},\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":14,\"source\":{\"type\":\"sdk\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2025-12-31T23:59:59.999Z\",\"ts_received\":\"2026-01-01T00:00:00.000Z\",\"v\":1}",
+      "hash": "82f04e03055fecf15db57f044860f2ce048f17cad40d1757c1defaaee2355b36"
+    },
+    {
+      "name": "leap-day",
+      "comment": "29 February 2028 exists; a verifier that normalises dates must not shift it.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 15,
+        "ts_event": "2028-02-29T12:00:00.500Z",
+        "ts_received": "2028-02-29T12:00:00.501Z",
+        "actor": {
+          "agent": "scheduler"
+        },
+        "action": {
+          "kind": "agent_step",
+          "name": "tick"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "sdk"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"agent_step\",\"name\":\"tick\"},\"actor\":{\"agent\":\"scheduler\"},\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":15,\"source\":{\"type\":\"sdk\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2028-02-29T12:00:00.500Z\",\"ts_received\":\"2028-02-29T12:00:00.501Z\",\"v\":1}",
+      "hash": "52c85f1235e129cbecd093e5f5245cd786710a32e0640a32f17d92b6e8a1c428"
+    },
+    {
+      "name": "maximum-length-names",
+      "comment": "Fields at their caps: system_id 128 characters, agent and action name 256 each.",
+      "receipt": {
+        "v": 1,
+        "system_id": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+        "seq": 16,
+        "ts_event": "2026-03-29T14:31:08.000Z",
+        "ts_received": "2026-03-29T14:31:08.001Z",
+        "actor": {
+          "agent": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "on_behalf_of": "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+        },
+        "action": {
+          "kind": "tool_call",
+          "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "sdk"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"tool_call\",\"name\":\"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"},\"actor\":{\"agent\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"on_behalf_of\":\"oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo\"},\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":16,\"source\":{\"type\":\"sdk\"},\"system_id\":\"ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss\",\"ts_event\":\"2026-03-29T14:31:08.000Z\",\"ts_received\":\"2026-03-29T14:31:08.001Z\",\"v\":1}",
+      "hash": "d8f80d8e74f0446e1c53170582a6a5ee2f2c690936f59dd5e56a3f85d749b939"
+    },
+    {
+      "name": "cjk-and-astral-plane",
+      "comment": "Non-Latin text and a character outside the basic plane, to pin UTF-8 output over UTF-16 escapes.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 17,
+        "ts_event": "2026-03-29T14:31:09.000Z",
+        "ts_received": "2026-03-29T14:31:09.001Z",
+        "actor": {
+          "agent": "顧客サポート"
+        },
+        "action": {
+          "kind": "tool_call",
+          "name": "检索订单 🧾"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "sdk"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"tool_call\",\"name\":\"检索订单 🧾\"},\"actor\":{\"agent\":\"顧客サポート\"},\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":17,\"source\":{\"type\":\"sdk\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:09.000Z\",\"ts_received\":\"2026-03-29T14:31:09.001Z\",\"v\":1}",
+      "hash": "8791200019824c599286c2d6afbcb1fe6a1c367dafc686044f5ba5e1a181c12d"
+    },
+    {
+      "name": "control-characters-in-name",
+      "comment": "Control characters are escaped as \\u00XX with lowercase hex digits, per RFC 8785.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 18,
+        "ts_event": "2026-03-29T14:31:10.000Z",
+        "ts_received": "2026-03-29T14:31:10.001Z",
+        "actor": {
+          "agent": "executor"
+        },
+        "action": {
+          "kind": "tool_call",
+          "name": "bell\u0007 null-ish\u0001 del"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "sdk"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"tool_call\",\"name\":\"bell\\u0007 null-ish\\u0001 del\"},\"actor\":{\"agent\":\"executor\"},\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":18,\"source\":{\"type\":\"sdk\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:10.000Z\",\"ts_received\":\"2026-03-29T14:31:10.001Z\",\"v\":1}",
+      "hash": "60ef7f000377b4f3012861a7118d9fbfc0cd746916ea486ea3c6d63579e5c486"
+    },
+    {
+      "name": "large-sequence-number",
+      "comment": "seq at the largest integer JSON can carry exactly, to pin integer serialisation with no exponent.",
+      "receipt": {
+        "v": 1,
+        "system_id": "acme-support-bot",
+        "seq": 9007199254740991,
+        "ts_event": "2026-03-29T14:31:11.000Z",
+        "ts_received": "2026-03-29T14:31:11.001Z",
+        "actor": {
+          "agent": "executor"
+        },
+        "action": {
+          "kind": "agent_step",
+          "name": "tick"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "sdk"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ=="
+      },
+      "canonical": "{\"action\":{\"kind\":\"agent_step\",\"name\":\"tick\"},\"actor\":{\"agent\":\"executor\"},\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":9007199254740991,\"source\":{\"type\":\"sdk\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:11.000Z\",\"ts_received\":\"2026-03-29T14:31:11.001Z\",\"v\":1}",
+      "hash": "5f0224e16b76f676f8038c3b2e67acf6ac6ff3740c9441972eebb8343988b100"
+    }
+  ]
+}

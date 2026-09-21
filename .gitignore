@@ -1,0 +1,25 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# local runtime state
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sock
+
+# key material must never reach the repository
+*.key
+*.pem
+keys/
+
+# python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+
+.DS_Store
+*.log
