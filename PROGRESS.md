@@ -8,7 +8,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 |---|------|-------|------|
 | M1 | Formato e impronta | fatto | 14 vettori, 91 test verdi, cross-check Python indipendente in CI |
 | M2 | Catena e storage | fatto | Trigger append-only, transazione IMMEDIATE, 1000 append concorrenti senza buchi |
-| M3 | Firmatario | todo | Processo signer su socket Unix, keygen, protocollo |
+| M3 | Firmatario | fatto | Processo separato su socket Unix, keygen 0600, e2e a due processi |
 | M4 | Verificatore v1 | todo | Export minimale + CLI verifica, test di manomissione |
 | M5 | Ingest OTLP e API nativa | todo | `/v1/traces` protobuf+JSON, adattatore due dialetti, API key |
 | M6 | SDK Python | todo | Pacchetto `sigillo`, esempio LangGraph, test e2e |
@@ -113,6 +113,39 @@ Decisioni prese:
 
 Limite noto, da scrivere in `SECURITY.md` (M9): i trigger fermano UPDATE/DELETE via SQL, non un
 `DROP TABLE` né la sostituzione del file. Contro quello valgono firme, catena e marche temporali.
+
+#### M3 — Firmatario (fatto)
+
+- `apps/signer/src/key-file.ts` — `keygen` scrive una chiave Ed25519 PKCS#8 PEM con permessi `0600`
+  (verificati nel test), si rifiuta di sovrascrivere una chiave esistente, e al caricamento **rifiuta**
+  una chiave leggibile da altri (`chmod 644` → errore esplicito).
+- `apps/signer/src/daemon.ts` — socket Unix, protocollo JSON a righe, `pubkey` e `sign`.
+  `sign` accetta **solo** 64 caratteri hex minuscoli; tutto il resto è rifiutato. Il socket è `0660`.
+- `apps/signer/src/cli.ts` — `sigillo-signer keygen` e `sigillo-signer serve` (commander).
+- `apps/server/src/signer/client.ts` — il client sta nel server, come da SPEC. Conosce **solo** il path
+  del socket. Verifica che il `key_id` annunciato corrisponda davvero alla chiave pubblica ricevuta,
+  e che la firma abbia la forma richiesta dal formato: quello che arriva dal firmatario non è preso per buono.
+- `packages/core/src/signing.ts` — `signDigest`, `verifyDigestSignature`, `verifyReceiptSignature`.
+
+Verifiche eseguite (171 test verdi in totale):
+- La firma prodotta da core **coincide byte per byte** con quella prodotta dalla CLI openssl sugli stessi
+  32 byte (Ed25519 è deterministico). Vettore in `packages/core/test/fixtures/signing-vector.json`,
+  generato con openssl, non con il nostro codice.
+- Rifiuto di input di lunghezza sbagliata: 63 e 65 caratteri hex, hex maiuscolo, non-hex, prefisso `0x`,
+  numero, null, array, oggetto, campo assente, campi in più, JSON non valido, JSON non oggetto,
+  riga troppo lunga. 24 test sul solo protocollo.
+- **Test end-to-end a due processi reali**: il firmatario gira come processo separato lanciato dalla CLI,
+  il server scrive una catena completa attraverso il socket e tutte le ricevute verificano con la chiave
+  pubblica del firmatario.
+- Se il firmatario muore, l'append **fallisce** e la catena resta al solo genesis: nessuna riga non firmata,
+  nessun buco.
+- "Il server non apre mai il file della chiave": verificato in due modi — un test che ispeziona tutti i
+  sorgenti di `apps/server/src` e fallisce se compare `createPrivateKey`, `generateKeyPair` o `privateKey`,
+  e la stessa regola resa permanente in `pnpm lint`.
+
+Nota sul test: `tsx` lancia il programma in un processo figlio, quindi uccidere il wrapper lasciava vivo
+il firmatario. I test ora usano un gruppo di processi; senza questa correzione il test "il firmatario muore"
+passava per il motivo sbagliato.
 
 ## Checklist di verifica finale M9 (da eseguire fuori dalla sessione cloud)
 

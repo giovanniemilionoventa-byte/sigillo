@@ -1,0 +1,17 @@
+{
+  "note": [
+    "Produced with the openssl command line, not with sigillo code:",
+    "openssl genpkey -algorithm ed25519, then openssl pkeyutl -sign -rawin over digest_hex.",
+    "Ed25519 is deterministic, so signature_base64 is the only correct answer for this key",
+    "and this digest. That is what makes this vector worth having: an implementation that",
+    "signs the wrong bytes cannot reproduce it.",
+    "The private key below exists solely to pin these bytes. It is published here and must",
+    "never be used for anything."
+  ],
+  "seed_hex": "802b01a8b74d34cb61ab79799a518db7fe69ee7c8a0ddc40cf9e57e2b48027ff",
+  "public_key_hex": "1ca8de8aee02c12527da2eb22bc96e97930180089c95387c5e88920c9a3be7d8",
+  "key_id": "720f561b8f10d290",
+  "message": "sigillo signing test vector",
+  "digest_hex": "74a67e081df5c321729640090e63ca95991f9657bfaab0af51e4504cc2056241",
+  "signature_base64": "WQnD95iQ2AE67G94XPl9BGYS8SpkGPDvGk6kBOHAp6M6BUvOvWCfSZYoT1kR5/hWX0d+zCoMJ7COJUnWD/LTAg=="
+}

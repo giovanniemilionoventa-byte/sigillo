@@ -1,8 +1,11 @@
 {
-  "name": "@sigillo/server",
+  "name": "@sigillo/signer",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "sigillo-signer": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -14,10 +17,6 @@
   },
   "dependencies": {
     "@sigillo/core": "workspace:*",
-    "better-sqlite3": "^11.7.0"
-  },
-  "devDependencies": {
-    "@sigillo/signer": "workspace:*",
-    "@types/better-sqlite3": "^7.6.12"
+    "commander": "^12.1.0"
   }
 }

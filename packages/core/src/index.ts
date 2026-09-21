@@ -11,6 +11,13 @@ export {
 export { keyIdFromRawPublicKey, publicKeyFromRaw, rawPublicKeyBytes } from "./keys.js";
 
 export {
+  signDigest,
+  signReceipt,
+  verifyDigestSignature,
+  verifyReceiptSignature,
+} from "./signing.js";
+
+export {
   actionKindSchema,
   actionSchema,
   actorSchema,

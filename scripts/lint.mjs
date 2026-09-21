@@ -71,7 +71,20 @@ for (const file of tsFiles.filter((f) => rel(f).startsWith("packages/core/src/")
   });
 }
 
-// 2. No dependency outside the list approved in SPEC.md section 3.
+// 2. The server must have no way to hold a private key: it asks the signer.
+const PRIVATE_KEY_APIS = ["createPrivateKey", "generateKeyPair", "privateKey"];
+for (const file of tsFiles.filter((f) => rel(f).startsWith("apps/server/src/"))) {
+  const lines = readFileSync(file, "utf8").split("\n");
+  lines.forEach((text, index) => {
+    for (const api of PRIVATE_KEY_APIS) {
+      if (text.includes(api)) {
+        fail(rel(file), index + 1, `the server must not touch private key material (${api})`);
+      }
+    }
+  });
+}
+
+// 3. No dependency outside the list approved in SPEC.md section 3.
 const packageJsonFiles = allFiles.filter((f) => f.endsWith("package.json"));
 for (const file of packageJsonFiles) {
   const name = rel(file);
@@ -101,7 +114,7 @@ for (const file of packageJsonFiles) {
   }
 }
 
-// 3. A stray .only() silently disables the rest of a suite.
+// 4. A stray .only() silently disables the rest of a suite.
 for (const file of tsFiles.filter((f) => rel(f).includes("/test/"))) {
   readFileSync(file, "utf8")
     .split("\n")
@@ -112,7 +125,7 @@ for (const file of tsFiles.filter((f) => rel(f).includes("/test/"))) {
     });
 }
 
-// 4. Explicit any defeats strict mode; opt out per line with `// lint-allow-any`.
+// 5. Explicit any defeats strict mode; opt out per line with `// lint-allow-any`.
 const ANY_PATTERNS = [/:\s*any\b/, /\bas\s+any\b/, /<\s*any\s*[,>]/];
 for (const file of tsFiles) {
   readFileSync(file, "utf8")
@@ -125,7 +138,7 @@ for (const file of tsFiles) {
     });
 }
 
-// 5. Private key material must never be committed.
+// 6. Private key material must never be committed.
 for (const file of allFiles) {
   if (/\.(key|pem)$/.test(file)) {
     fail(rel(file), null, "key material must not live in the repository");
