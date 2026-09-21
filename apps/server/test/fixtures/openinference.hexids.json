@@ -1,0 +1,201 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "telemetry.sdk.language",
+            "value": {
+              "stringValue": "python"
+            }
+          },
+          {
+            "key": "telemetry.sdk.name",
+            "value": {
+              "stringValue": "opentelemetry"
+            }
+          },
+          {
+            "key": "telemetry.sdk.version",
+            "value": {
+              "stringValue": "1.44.0"
+            }
+          },
+          {
+            "key": "service.instance.id",
+            "value": {
+              "stringValue": "caba5762-e04d-45cf-83e5-8b04665bbfdb"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "acme-support-bot"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.4.2"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "sigillo.fixtures"
+          },
+          "spans": [
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e0001",
+              "spanId": "00f067aa0ba90001",
+              "name": "AgentExecutor",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1789971136610141222",
+              "endTimeUnixNano": "1789971136610167553",
+              "attributes": [
+                {
+                  "key": "openinference.span.kind",
+                  "value": {
+                    "stringValue": "AGENT"
+                  }
+                }
+              ],
+              "status": {},
+              "flags": 256
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e0002",
+              "spanId": "00f067aa0ba90002",
+              "name": "ChatAnthropic",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1789971136610219261",
+              "endTimeUnixNano": "1789971136610244104",
+              "attributes": [
+                {
+                  "key": "openinference.span.kind",
+                  "value": {
+                    "stringValue": "LLM"
+                  }
+                },
+                {
+                  "key": "llm.model_name",
+                  "value": {
+                    "stringValue": "claude-sonnet-5"
+                  }
+                },
+                {
+                  "key": "input.value",
+                  "value": {
+                    "stringValue": "{\"messages\":[{\"role\":\"user\",\"content\":\"where is my order\"}]}"
+                  }
+                },
+                {
+                  "key": "output.value",
+                  "value": {
+                    "stringValue": "{\"content\":\"Let me check that for you.\"}"
+                  }
+                }
+              ],
+              "status": {
+                "code": "STATUS_CODE_OK"
+              },
+              "flags": 256
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e0003",
+              "spanId": "00f067aa0ba90003",
+              "name": "search_orders",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1789971136610272868",
+              "endTimeUnixNano": "1789971136610284210",
+              "attributes": [
+                {
+                  "key": "openinference.span.kind",
+                  "value": {
+                    "stringValue": "TOOL"
+                  }
+                },
+                {
+                  "key": "tool.name",
+                  "value": {
+                    "stringValue": "search_orders"
+                  }
+                },
+                {
+                  "key": "input.value",
+                  "value": {
+                    "stringValue": "{\"order_id\":\"A-1099\"}"
+                  }
+                },
+                {
+                  "key": "output.value",
+                  "value": {
+                    "stringValue": "{\"status\":\"shipped\"}"
+                  }
+                }
+              ],
+              "status": {},
+              "flags": 256
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e0004",
+              "spanId": "00f067aa0ba90004",
+              "name": "RunnableSequence",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1789971136610304251",
+              "endTimeUnixNano": "1789971136610310361",
+              "attributes": [
+                {
+                  "key": "openinference.span.kind",
+                  "value": {
+                    "stringValue": "CHAIN"
+                  }
+                }
+              ],
+              "status": {},
+              "flags": 256
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e0005",
+              "spanId": "00f067aa0ba90005",
+              "name": "VectorStoreRetriever",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1789971136610328222",
+              "endTimeUnixNano": "1789971136610334522",
+              "attributes": [
+                {
+                  "key": "openinference.span.kind",
+                  "value": {
+                    "stringValue": "RETRIEVER"
+                  }
+                }
+              ],
+              "status": {},
+              "flags": 256
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e0006",
+              "spanId": "00f067aa0ba90006",
+              "name": "psycopg.query",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1789971136610352928",
+              "endTimeUnixNano": "1789971136610358887",
+              "attributes": [
+                {
+                  "key": "db.system",
+                  "value": {
+                    "stringValue": "postgresql"
+                  }
+                }
+              ],
+              "status": {},
+              "flags": 256
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -72,14 +72,18 @@ export class ReceiptStore {
 
   private readonly tipStatement: Database.Statement;
   private readonly insertStatement: Database.Statement;
+  private readonly registerStatement: Database.Statement;
 
   private constructor(
     private readonly write: Database.Database,
     private readonly read: Database.Database,
-    private readonly signer: SigningService,
+    private readonly signer: SigningService | undefined,
   ) {
     this.tipStatement = this.write.prepare(
       "SELECT seq, hash FROM receipts WHERE system_id = ? ORDER BY seq DESC LIMIT 1",
+    );
+    this.registerStatement = this.write.prepare(
+      "INSERT INTO systems (system_id, created_at) VALUES (@system_id, @created_at)",
     );
     this.insertStatement = this.write.prepare(
       `INSERT INTO receipts (system_id, seq, hash, prev_hash, canonical, sig, key_id,
@@ -93,8 +97,11 @@ export class ReceiptStore {
    * Opens the database at `location`, which must be a file path: reads use a
    * second, read-only connection so that a query can never see rows from a
    * write transaction that is still open.
+   *
+   * Without a signer the store reads but cannot write, which is what a listing
+   * or an export needs.
    */
-  static open(location: string, signer: SigningService): ReceiptStore {
+  static open(location: string, signer?: SigningService): ReceiptStore {
     const write = new Database(location);
     write.pragma("journal_mode = WAL");
     // Evidence is worth an fsync per commit.
@@ -109,8 +116,8 @@ export class ReceiptStore {
     return new ReceiptStore(write, read, signer);
   }
 
-  /** Opens a chain by writing its genesis receipt. */
-  async createChain(systemId: string, ts: string): Promise<Receipt> {
+  /** Registers a system and opens its chain by writing the genesis receipt. */
+  async createSystem(systemId: string, ts: string): Promise<Receipt> {
     return this.enqueue(() =>
       this.writeReceipt(
         {
@@ -131,7 +138,7 @@ export class ReceiptStore {
 
   async append(event: ChainEvent): Promise<Receipt> {
     if (event.action.kind === "genesis") {
-      throw new StorageError("a genesis receipt is written by createChain, not by append");
+      throw new StorageError("a genesis receipt is written by createSystem, not by append");
     }
     return this.enqueue(() => this.writeReceipt(event, "continuation"));
   }
@@ -152,9 +159,15 @@ export class ReceiptStore {
 
   listSystems(): string[] {
     const rows = this.read
-      .prepare("SELECT DISTINCT system_id FROM receipts ORDER BY system_id")
+      .prepare("SELECT system_id FROM systems ORDER BY system_id")
       .all() as { system_id: string }[];
     return rows.map((row) => row.system_id);
+  }
+
+  hasSystem(systemId: string): boolean {
+    return (
+      this.read.prepare("SELECT 1 FROM systems WHERE system_id = ?").get(systemId) !== undefined
+    );
   }
 
   close(): void {
@@ -178,12 +191,19 @@ export class ReceiptStore {
    * must not leave a gap in the chain.
    */
   private async writeReceipt(event: ChainEvent, mode: "genesis" | "continuation"): Promise<Receipt> {
+    const signer = this.signer;
+    if (signer === undefined) {
+      throw new StorageError("this store was opened for reading only: it has no signer");
+    }
     this.write.exec("BEGIN IMMEDIATE");
     try {
       const tip = this.tipStatement.get(event.system_id) as ChainTip | undefined;
 
       if (mode === "genesis" && tip !== undefined) {
         throw new StorageError(`a chain for ${event.system_id} already exists`);
+      }
+      if (mode === "genesis") {
+        this.registerStatement.run({ system_id: event.system_id, created_at: event.ts_received });
       }
       if (mode === "continuation" && tip === undefined) {
         throw new StorageError(`unknown system ${event.system_id}: create its chain first`);
@@ -202,12 +222,12 @@ export class ReceiptStore {
         outcome: event.outcome,
         source: event.source,
         prev_hash: tip === undefined ? GENESIS_PREV_HASH : tip.hash,
-        key_id: this.signer.keyId,
+        key_id: signer.keyId,
       });
 
       const canonical = new TextDecoder().decode(canonicalReceiptBytes(unsigned));
       const digest = receiptHash(unsigned);
-      const sig = await this.signer.sign(digest);
+      const sig = await signer.sign(digest);
       // Validated again after signing: the signer is a separate process, and
       // what it returns is not taken on trust.
       const receipt = parseReceipt({ ...unsigned, sig });

@@ -70,7 +70,7 @@ describe("opening the database", () => {
 
 describe("creating a chain", () => {
   it("writes a genesis receipt that matches the format", async () => {
-    const genesis = await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+    const genesis = await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
     expect(genesis.seq).toBe(0);
     expect(genesis.action).toEqual({ kind: "genesis", name: SYSTEM });
     expect(genesis.actor).toEqual({ agent: SYSTEM });
@@ -83,8 +83,8 @@ describe("creating a chain", () => {
   });
 
   it("refuses to create the same chain twice", async () => {
-    await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
-    await expect(store.createChain(SYSTEM, "2026-03-29T14:30:02.000Z")).rejects.toThrow(
+    await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
+    await expect(store.createSystem(SYSTEM, "2026-03-29T14:30:02.000Z")).rejects.toThrow(
       /already exists/i,
     );
     expect(store.readChain(SYSTEM)).toHaveLength(1);
@@ -93,7 +93,7 @@ describe("creating a chain", () => {
 
 describe("appending to a chain", () => {
   beforeEach(async () => {
-    await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+    await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
   });
 
   it("assigns the next sequence number and links to the previous receipt", async () => {
@@ -152,7 +152,7 @@ describe("appending to a chain", () => {
 
 describe("append-only storage", () => {
   beforeEach(async () => {
-    await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+    await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
     await store.append(event());
   });
 
@@ -214,7 +214,7 @@ describe("concurrent writers on one chain", () => {
   it(
     "produces a contiguous chain with no gaps and no fork",
     async () => {
-      await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+      await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
 
       const total = 1000;
       const pending = Array.from({ length: total - 1 }, (_unused, index) =>
@@ -261,7 +261,7 @@ describe("concurrent writers on one chain", () => {
 
 describe("a new process taking over the database", () => {
   it("continues the chain from the stored tip instead of forking it", async () => {
-    await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+    await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
     const first = await store.append(event());
     store.close();
 
@@ -283,8 +283,8 @@ describe("a new process taking over the database", () => {
 
 describe("chains of different systems", () => {
   it("keeps sequence numbers and links independent", async () => {
-    await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
-    await store.createChain(OTHER_SYSTEM, "2026-03-29T14:30:00.100Z");
+    await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
+    await store.createSystem(OTHER_SYSTEM, "2026-03-29T14:30:00.100Z");
 
     await Promise.all([
       store.append(event({ system_id: SYSTEM, action: { kind: "tool_call", name: "a1" } })),
@@ -314,7 +314,7 @@ describe("chains of different systems", () => {
 
 describe("reading back", () => {
   it("returns receipts that a verifier would accept", async () => {
-    await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+    await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
     await store.append(event({ input_hash: "a".repeat(64), output_hash: "b".repeat(64) }));
     await store.append(
       event({

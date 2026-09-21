@@ -1,0 +1,185 @@
+#!/usr/bin/env node
+import { Command } from "commander";
+import { ApiKeyStore } from "./auth/api-keys.js";
+import { exportSystem, writeExportBundle } from "./export/bundle.js";
+import { buildServer } from "./http/server.js";
+import { SignerClient } from "./signer/client.js";
+import { ReceiptStore } from "./storage/store.js";
+
+/**
+ * Administration and the server itself. Every command takes the database path
+ * and, where a receipt has to be signed, the signer's socket — never a key.
+ */
+
+interface DatabaseOption {
+  db: string;
+}
+
+const now = (): string => new Date().toISOString();
+
+async function withSigner<T>(
+  socketPath: string,
+  databasePath: string,
+  work: (store: ReceiptStore) => Promise<T>,
+): Promise<T> {
+  const signer = await SignerClient.connect(socketPath);
+  const store = ReceiptStore.open(databasePath, signer);
+  try {
+    return await work(store);
+  } finally {
+    store.close();
+    signer.close();
+  }
+}
+
+const program = new Command();
+
+program
+  .name("sigillo-server")
+  .description("Run the sigillo ingest server and administer its systems and keys.")
+  .version("0.1.0");
+
+program
+  .command("serve")
+  .description("Accept OTLP and native receipts over HTTP")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .requiredOption("--signer-socket <path>", "the signer's socket", process.env["SIGILLO_SIGNER_SOCKET"])
+  .option("--host <host>", "address to bind", process.env["SIGILLO_HOST"] ?? "127.0.0.1")
+  .option("--port <port>", "port to bind", process.env["SIGILLO_PORT"] ?? "8080")
+  .action(async (options: DatabaseOption & { signerSocket: string; host: string; port: string }) => {
+    const signer = await SignerClient.connect(options.signerSocket);
+    const store = ReceiptStore.open(options.db, signer);
+    const keys = ApiKeyStore.open(options.db);
+    const app = buildServer({ store, keys, logger: true });
+
+    const shutdown = (): void => {
+      void app.close().then(() => {
+        keys.close();
+        store.close();
+        signer.close();
+        process.exit(0);
+      });
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+
+    await app.listen({ host: options.host, port: Number(options.port) });
+    process.stdout.write(`signing with key ${signer.keyId}\n`);
+  });
+
+const system = program.command("system").description("Manage AI systems and their chains");
+
+system
+  .command("create")
+  .description("Register a system and write the genesis receipt of its chain")
+  .argument("<system_id>")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .requiredOption("--signer-socket <path>", "the signer's socket", process.env["SIGILLO_SIGNER_SOCKET"])
+  .action(async (systemId: string, options: DatabaseOption & { signerSocket: string }) => {
+    const genesis = await withSigner(options.signerSocket, options.db, (store) =>
+      store.createSystem(systemId, now()),
+    );
+    process.stdout.write(`created ${systemId}\n`);
+    process.stdout.write(`genesis signed by key ${genesis.key_id}\n`);
+  });
+
+system
+  .command("list")
+  .description("List the systems that have a chain")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action((options: DatabaseOption) => {
+    const store = ReceiptStore.open(options.db);
+    try {
+      for (const systemId of store.listSystems()) {
+        const tip = store.tip(systemId);
+        process.stdout.write(`${systemId}\t${tip === null ? 0 : tip.seq + 1} receipts\n`);
+      }
+    } finally {
+      store.close();
+    }
+  });
+
+const key = program.command("key").description("Manage ingest API keys");
+
+key
+  .command("create")
+  .description("Issue an API key for a system. The token is shown once and not stored")
+  .argument("<system_id>")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action((systemId: string, options: DatabaseOption) => {
+    const keys = ApiKeyStore.open(options.db);
+    try {
+      const issued = keys.issue(systemId, now());
+      process.stdout.write(`key_id ${issued.keyId}\n`);
+      process.stdout.write(`${issued.token}\n`);
+      process.stderr.write("this token is not recoverable: store it now\n");
+    } finally {
+      keys.close();
+    }
+  });
+
+key
+  .command("revoke")
+  .description("Revoke an API key by its id")
+  .argument("<key_id>")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action((keyId: string, options: DatabaseOption) => {
+    const keys = ApiKeyStore.open(options.db);
+    try {
+      if (!keys.revoke(keyId, now())) {
+        process.stderr.write(`no live key with id ${keyId}\n`);
+        process.exit(1);
+      }
+      process.stdout.write(`revoked ${keyId}\n`);
+    } finally {
+      keys.close();
+    }
+  });
+
+key
+  .command("list")
+  .description("List API keys and whether they are still live")
+  .option("--system <system_id>", "only this system's keys")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action((options: DatabaseOption & { system?: string }) => {
+    const keys = ApiKeyStore.open(options.db);
+    try {
+      for (const record of keys.list(options.system)) {
+        const state = record.revokedAt === null ? "live" : `revoked ${record.revokedAt}`;
+        process.stdout.write(`${record.keyId}\t${record.systemId}\t${state}\n`);
+      }
+    } finally {
+      keys.close();
+    }
+  });
+
+program
+  .command("export")
+  .description("Write the minimal export of a system's chain to a directory")
+  .argument("<system_id>")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .requiredOption("--signer-socket <path>", "the signer's socket", process.env["SIGILLO_SIGNER_SOCKET"])
+  .requiredOption("--out <directory>", "where to write the export")
+  .action(async (systemId: string, options: DatabaseOption & { signerSocket: string; out: string }) => {
+    const signer = await SignerClient.connect(options.signerSocket);
+    const store = ReceiptStore.open(options.db, signer);
+    try {
+      const bundle = exportSystem(store, {
+        systemId,
+        keys: [{ key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 }],
+        exportedAt: now(),
+      });
+      writeExportBundle(options.out, bundle);
+      process.stdout.write(`wrote the export of ${systemId} to ${options.out}\n`);
+    } finally {
+      store.close();
+      signer.close();
+    }
+  });
+
+try {
+  await program.parseAsync(process.argv);
+} catch (error) {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+}

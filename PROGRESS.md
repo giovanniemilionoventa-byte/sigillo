@@ -10,7 +10,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | M2 | Catena e storage | fatto | Trigger append-only, transazione IMMEDIATE, 1000 append concorrenti senza buchi |
 | M3 | Firmatario | fatto | Processo separato su socket Unix, keygen 0600, e2e a due processi |
 | M4 | Verificatore v1 | fatto | CLI `sigillo-verify`, 8 controlli, manomissioni + property test |
-| M5 | Ingest OTLP e API nativa | todo | `/v1/traces` protobuf+JSON, adattatore due dialetti, API key |
+| M5 | Ingest OTLP e API nativa | fatto | protobuf+JSON, due dialetti, API key scrypt, CLI admin |
 | M6 | SDK Python | todo | Pacchetto `sigillo`, esempio LangGraph, test e2e |
 | M7 | Merkle e marca temporale | todo | RFC 6962, checkpoint firmati, RFC 3161 con retry |
 | M8 | Fascicolo completo e verificatore v2 | todo | Export zip completo, tutti i controlli del verificatore |
@@ -187,6 +187,49 @@ invece di emergere più tardi come una firma inspiegabilmente non valida.
 Decisione: il verificatore **non** richiede che le righe siano in forma canonica. Ricalcola lui la forma
 canonica, quindi un export che riordina i campi o aggiunge spazi verifica lo stesso. È il comportamento
 corretto: l'evidenza sta nel contenuto, non nella serializzazione del file.
+
+#### M5 — Ingest OTLP e API nativa (fatto)
+
+- `apps/server/proto/` — i quattro `.proto` ufficiali di `opentelemetry-proto` **tag v1.7.0**, copiati
+  verbatim con licenza Apache-2.0, data, e SHA-256 di ogni file annotati nel README della cartella.
+- `apps/server/src/ingest/otlp.ts` — decodifica protobuf (protobufjs sui `.proto` copiati) **e** JSON.
+  Accetta sia `camelCase` sia `snake_case`, e identificatori sia in hex (come vuole OTLP/JSON) sia in
+  base64 (come produce la mappatura proto3→JSON): entrambe le forme circolano davvero.
+- `apps/server/src/ingest/adapter.ts` — adattatore a due dialetti, modulo isolato con i suoi test.
+- `apps/server/src/auth/api-keys.ts` — una API key per sistema, solo hash scrypt salato.
+- `apps/server/src/http/server.ts` — fastify: `POST /v1/traces`, `POST /api/v1/receipts`, `GET /healthz`.
+- `apps/server/src/cli.ts` — `serve`, `system create|list`, `key create|revoke|list`, `export`.
+- `docs/API.md` — endpoint, formati, comandi.
+
+Fixture: **payload OTLP veri**, non scritti a mano. `scripts/gen_otlp_fixtures.py` avvia l'esportatore
+OTLP ufficiale Python contro un server di cattura e salva il corpo esatto della richiesta. Due dialetti
+× tre codifiche = 6 fixture. Le tre codifiche di uno stesso payload devono produrre le stesse ricevute,
+ed è verificato da un test.
+
+282 test verdi. Tra i controlli:
+- span status → outcome, con **UNSET → `unknown`**: OpenTelemetry lascia lo status non impostato a meno
+  che la sorgente non dica qualcosa, quindi leggere "non impostato" come "successo" sarebbe un'affermazione
+  che la sorgente non ha fatto. È esattamente perché il vocabolario ha `unknown`.
+- convenzioni non stabili: un `gen_ai.operation.name` sconosciuto (`rerank_documents`) e la vecchia
+  convenzione senza operation name vengono **accettati e segnalati** nella risposta, non scartati.
+- span che non sono azioni AI (una richiesta HTTP, una query) → ignorati e contati.
+- i payload non vengono mai memorizzati: un test cerca le stringhe originali (`A-1099`,
+  `where is my order`) dentro la catena serializzata e pretende di non trovarle.
+- un attributo chiamato `__proto__` finisce in una `Map`, non in un prototipo di oggetto.
+- l'ordinamento degli span per tempo di inizio rende l'ingest deterministico: lo stesso payload dà
+  sempre la stessa catena, anche se il batch arriva in ordine inverso.
+
+Difetto trovato da un test e corretto: il segreto delle API key era in base64url, che contiene `_`,
+lo stesso separatore del token — chiunque avesse fatto `split("_")` avrebbe sbagliato. Ora entrambe le
+metà sono esadecimali e il formato è senza ambiguità.
+
+Verifica di sicurezza sulle chiavi: un test legge i **byte grezzi** del file di database (e di `-wal`/`-shm`)
+e pretende che il segreto non compaia da nessuna parte.
+
+Percorso completo eseguito davvero con i binari compilati, non solo nei test:
+firmatario avviato → `system create` → `key create` → `serve` → POST protobuf (5 accettate, 1 ignorata)
+→ POST JSON (5 accettate, 1 ignorata) → POST API nativa → 401 senza chiave → `export` →
+`sigillo-verify` → `OK acme-support-bot: 12 receipts, seq 0..11`.
 
 ## Checklist di verifica finale M9 (da eseguire fuori dalla sessione cloud)
 

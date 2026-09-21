@@ -1,0 +1,240 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "telemetry.sdk.language",
+            "value": {
+              "stringValue": "python"
+            }
+          },
+          {
+            "key": "telemetry.sdk.name",
+            "value": {
+              "stringValue": "opentelemetry"
+            }
+          },
+          {
+            "key": "telemetry.sdk.version",
+            "value": {
+              "stringValue": "1.44.0"
+            }
+          },
+          {
+            "key": "service.instance.id",
+            "value": {
+              "stringValue": "caba5762-e04d-45cf-83e5-8b04665bbfdb"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "acme-support-bot"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.4.2"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "sigillo.fixtures"
+          },
+          "spans": [
+            {
+              "traceId": "S/kvNXezTaajzpKdDg4AAQ==",
+              "spanId": "APBnqgupAAE=",
+              "name": "invoke_agent support-agent",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1789971136101109904",
+              "endTimeUnixNano": "1789971136101143538",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "invoke_agent"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "support-agent"
+                  }
+                },
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "anthropic"
+                  }
+                },
+                {
+                  "key": "user.id",
+                  "value": {
+                    "stringValue": "urn:user:42"
+                  }
+                }
+              ],
+              "status": {},
+              "flags": 256
+            },
+            {
+              "traceId": "S/kvNXezTaajzpKdDg4AAg==",
+              "spanId": "APBnqgupAAI=",
+              "name": "chat claude-sonnet-5",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1789971136101190054",
+              "endTimeUnixNano": "1789971136101213955",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "chat"
+                  }
+                },
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "anthropic"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "claude-sonnet-5"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": "812"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": "210"
+                  }
+                }
+              ],
+              "status": {
+                "code": "STATUS_CODE_OK"
+              },
+              "flags": 256
+            },
+            {
+              "traceId": "S/kvNXezTaajzpKdDg4AAw==",
+              "spanId": "APBnqgupAAM=",
+              "name": "execute_tool search_orders",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1789971136101245759",
+              "endTimeUnixNano": "1789971136101259106",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "search_orders"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.id",
+                  "value": {
+                    "stringValue": "call_9f2a"
+                  }
+                }
+              ],
+              "status": {
+                "message": "upstream timeout",
+                "code": "STATUS_CODE_ERROR"
+              },
+              "flags": 256
+            },
+            {
+              "traceId": "S/kvNXezTaajzpKdDg4ABA==",
+              "spanId": "APBnqgupAAQ=",
+              "name": "openai.chat",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1789971136101409729",
+              "endTimeUnixNano": "1789971136101426201",
+              "attributes": [
+                {
+                  "key": "gen_ai.system",
+                  "value": {
+                    "stringValue": "openai"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "gpt-4o"
+                  }
+                }
+              ],
+              "status": {},
+              "flags": 256
+            },
+            {
+              "traceId": "S/kvNXezTaajzpKdDg4ABQ==",
+              "spanId": "APBnqgupAAU=",
+              "name": "gen_ai.rerank",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1789971136101498128",
+              "endTimeUnixNano": "1789971136101515629",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "rerank_documents"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "support-agent"
+                  }
+                }
+              ],
+              "status": {},
+              "flags": 256
+            },
+            {
+              "traceId": "S/kvNXezTaajzpKdDg4ABg==",
+              "spanId": "APBnqgupAAY=",
+              "name": "GET /healthz",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1789971136101546636",
+              "endTimeUnixNano": "1789971136101554596",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/healthz"
+                  }
+                }
+              ],
+              "status": {},
+              "flags": 256
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

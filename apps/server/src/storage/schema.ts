@@ -8,6 +8,25 @@
  * case — a script, a support query, or a bug quietly rewriting history.
  */
 export const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS systems (
+  system_id  TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL
+) STRICT;
+
+-- Not evidence, and deliberately not append-only: a key must be revocable.
+-- Only the scrypt hash of the secret is stored, so a copy of this database
+-- does not let anyone speak for a system.
+CREATE TABLE IF NOT EXISTS api_keys (
+  key_id      TEXT PRIMARY KEY,
+  system_id   TEXT NOT NULL REFERENCES systems (system_id),
+  salt        TEXT NOT NULL,
+  secret_hash TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  revoked_at  TEXT
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS api_keys_by_system ON api_keys (system_id);
+
 CREATE TABLE IF NOT EXISTS receipts (
   id          INTEGER PRIMARY KEY,
   system_id   TEXT    NOT NULL,

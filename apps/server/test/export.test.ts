@@ -44,7 +44,7 @@ function event(index: number): ChainEvent {
 }
 
 async function writeChain(length: number): Promise<void> {
-  await store.createChain(SYSTEM, "2026-03-29T14:30:00.000Z");
+  await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
   for (let index = 1; index < length; index += 1) {
     await store.append(event(index));
   }

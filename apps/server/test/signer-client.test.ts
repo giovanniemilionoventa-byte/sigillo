@@ -138,7 +138,7 @@ describe("a server talking to a signer in another process", () => {
     const client = await SignerClient.connect(socketPath);
     const store = ReceiptStore.open(join(directory, "sigillo.db"), client);
     try {
-      await store.createChain("acme-support-bot", "2026-03-29T14:30:00.000Z");
+      await store.createSystem("acme-support-bot", "2026-03-29T14:30:00.000Z");
       for (let index = 0; index < 5; index += 1) {
         await store.append({
           system_id: "acme-support-bot",
@@ -182,7 +182,7 @@ describe("a server talking to a signer in another process", () => {
     const client = await SignerClient.connect(socketPath);
     const store = ReceiptStore.open(join(directory, "broken.db"), client);
     try {
-      await store.createChain("acme-support-bot", "2026-03-29T14:30:00.000Z");
+      await store.createSystem("acme-support-bot", "2026-03-29T14:30:00.000Z");
       killSigner(daemon);
       daemon = undefined;
 
