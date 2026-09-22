@@ -18,7 +18,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | N1 | Formato v2 | fatto | Campi `artifacts` e `model`, schema v1/v2 come union discriminata, 20 vettori (8 nuovi v2), 452 test verdi |
 | N2 | SDK Python, fase 2 | fatto | `sigillo.artifact()`, digest Ollama, `instrument=["openai"]`, adattatore server; 465 test Node + 22 Python |
 | N3 | Verifica di un documento | fatto | Hash nel browser, `sigillo-verify doc`, `artifacts-index.jsonl`; 485 test Node |
-| N4 | Interfaccia nuova | todo | Le tre domande del responsabile compliance; semaforo; cronologia in linguaggio naturale |
+| N4 | Interfaccia nuova | fatto | Le tre domande in italiano, semaforo verde/giallo/rosso con parola, cronologia leggibile, pagina sistemi, tema chiaro/scuro/mobile; 537 test Node |
 | N5 | Demo selezione CV | todo | 20 curriculum, Ollama o modello fittizio, ispezione simulata, e2e in CI |
 | N6 | Documentazione non tecnica | todo | `ISPEZIONE.md`, `VIDEO.md`, `PROVA-LOCALE.md` esteso alla fase 2 |
 
@@ -798,6 +798,91 @@ Dimensione di verifier+core: **2064 righe totali (1609 escludendo vuote e commen
 di coerenza simmetrico e l'esposizione di `receipts` in `Verification`, e l'intero sottocomando
 `sigillo-verify doc` (lettura dell'archivio, hashing del file, ricerca, messaggi) — tutti richiesti
 esplicitamente dalla sezione 4 del prompt. Nessuna riga tolta per stare sotto la soglia.
+
+Nessun difetto trovato dai test in questa milestone.
+
+#### N4 — Interfaccia nuova (fatto)
+
+- `apps/server/src/http/strings.ts` (nuovo) — ogni frase italiana della UI in un solo file: la
+  costante `UI` (navigazione, login, le tre domande, pagina sistemi, cronologia, checkpoint,
+  verifica documento) e due generatori di frasi, non solo stringhe fisse — `describeReceipt()`
+  (una frase per ricevuta, diversa per ogni combinazione di `action.kind` × `outcome`: un tentativo
+  fallito non è "completato" con un'etichetta diversa, è un verbo diverso) e `describeArtifact()`.
+  Un domani una seconda lingua vuol dire un secondo file così, non una caccia in ogni pagina.
+- `apps/server/src/health/chain-health.ts` (nuovo) — `ChainHealthMonitor` risponde alla prima
+  domanda, "è tutto a posto?", con un semaforo verde/giallo/rosso **più una parola**, mai il solo
+  colore (sezione 5 del prompt, e un requisito di accessibilità). La verifica è **incrementale**: ad
+  ogni giro controlla solo le ricevute nuove dall'ultimo controllo (`store.readChainFrom`), non
+  l'intera catena da capo — su un registro che cresce indefinitamente è l'unica scelta che resta
+  economica. Un fallimento è **sticky**: una firma o un anello non validi mettono il sistema a
+  rosso finché non lo si guarda di persona, anche se le ricevute successive tornano valide — un
+  problema non deve poter "guarire da solo" scomparendo dalla vista. Giallo copre tre casi diversi
+  con la stessa cautela (nessun checkpoint ancora, checkpoint non ancora marcato, ultima attività
+  più vecchia della soglia `--stale-after-minutes`); rosso è riservato a una violazione crittografica
+  vera. Gira ogni minuto come il `Checkpointer` di M7, stesso schema `start()`/`stop()` con
+  `.unref()`.
+- `apps/server/src/http/ui.ts` — riscritta: resta di sola lettura tranne la creazione di
+  sistemi/chiavi (come già deciso in M9: la UI non scrive mai una ricevuta). Pagina principale
+  (`/ui`) nelle tre domande esatte del prompt: **è tutto a posto?** una tabella semaforo per
+  sistema con `ChainHealthMonitor`; **cosa ha fatto l'AI?** le ricevute più recenti come frasi di
+  `describeReceipt()`, non come tabella tecnica; **mi prepari le prove?** un modulo con intervallo
+  di date che genera lo stesso fascicolo `.zip` di M7/M8, ora anche per un periodo parziale
+  (`GET/POST /ui/export`, riusa `store.readChainInRange` già esistente). La cronologia per sistema
+  (`/ui/systems/:id`) affianca a ogni frase i tag degli eventuali documenti e un `<details>`
+  "Dettagli tecnici" chiuso di default — `seq`, hash, firma, chiave — così chi non serve i dettagli
+  non li vede, e chi li cerca li trova senza dover chiedere. Nuova pagina `/ui/sistemi`: elenco dei
+  sistemi esistenti, la chiave di firma corrente, e un modulo per crearne uno nuovo; dopo la
+  creazione (`systemCreatedPage`) la chiave compare **una sola volta**, con avviso esplicito che non
+  sarà più recuperabile, più l'esempio Python (`sigillo.init(...)`) pronto da copiare — le
+  "istruzioni di collegamento con codice copiabile" della sezione 5. La pagina "verifica un
+  documento" di N3 resta invariata, incluso il suo unico script inline.
+- CSS (`STYLE` in `ui.ts`) — variabili di colore su `:root`, ridefinite sotto
+  `@media (prefers-color-scheme: dark)`: non è un tema scelto a mano, segue l'impostazione del
+  sistema operativo del lettore. `@media (max-width: 640px)` per il telefono. Nessun framework,
+  nessuna build: lo stesso CSS incorporato di M9, esteso. `deploy/Caddyfile` non cambia: la CSP resta
+  quella con l'hash dello script di N3.
+- `docs/screenshots/` (nuovo) — 7 schermate della UI vera, generate con Playwright (strumento
+  globale del sistema, `/opt/node22/lib/node_modules/playwright`, **non** aggiunto alle dipendenze
+  del progetto: non è nella lista approvata di `CLAUDE.md` e non serve a runtime, solo per questa
+  verifica visiva una tantum): home con le tre domande, cronologia, cronologia con un `<details>`
+  aperto, pagina sistemi, pagina verifica documento, home in tema scuro, home da telefono
+  (`devices["iPhone 13"]`). Dati di prova: un sistema `acme-support-bot` con 4 ricevute varie (uno
+  strumento riuscito con `on_behalf_of`, uno strumento bloccato, un passo, una decisione fallita) e
+  un checkpoint marcato davvero da FreeTSA — non dati sintetici a caso, la stessa forma di prova che
+  un ispettore vedrebbe.
+- `apps/server/test/strings.test.ts` (nuovo, 30 test) — copertura esaustiva di `describeReceipt()`
+  per ogni combinazione di tipo azione × esito, più genesi, `on_behalf_of`, le varianti di
+  provenienza del modello, le etichette degli artifact.
+- `apps/server/test/chain-health.test.ts` (nuovo, 9 test) — giallo (nessun checkpoint, checkpoint
+  non marcato, inattività), verde, rosso (ottenuto manomettendo una riga con una seconda connessione
+  diretta al database, aggirando i trigger append-only con `DROP TRIGGER` solo per il test), verifica
+  incrementale, isolamento tra sistemi diversi.
+- `apps/server/test/ui.test.ts` — riscritto: tutte le asserzioni sul testo passano all'italiano;
+  nuovi blocchi per le tre domande della home, la pagina sistemi (elenco, creazione, nome duplicato),
+  la cronologia con artifact e dettagli tecnici, l'accessibilità da tastiera (ogni `<label>` associato
+  al suo campo, nessun `onclick=` o `<div role="button">` al posto di un vero `<button>`/`<a>`), e
+  l'invariante CSP-hash ereditata da N3.
+
+Decisioni prese senza fermarsi (nessuna richiede una lista fuori da quella approvata):
+- Semaforo incrementale e sticky invece che una scansione completa ad ogni richiesta: su un registro
+  che può crescere per anni, ricontrollare tutto ad ogni caricamento pagina non avrebbe retto; sticky
+  perché un cruscotto di conformità che si "auto-assolve" al giro successivo sarebbe peggio di uno
+  che non controlla affatto.
+- L'export a intervallo di date riusa `readChainInRange`, già scritto per M7/M8 e già provato: N4 gli
+  dà solo un modulo HTML davanti, non una seconda implementazione.
+- Playwright resta uno strumento ad hoc per generare gli screenshot, non una dipendenza del
+  repository: rispetta la regola 6 (nessuna dipendenza fuori lista senza chiedere) perché non è mai
+  importato da codice che gira in produzione o nei test automatici.
+
+Verifiche eseguite (**537 test Node**, erano 485 dopo N3): `pnpm lint`, `pnpm typecheck`, `pnpm
+build`, `node scripts/smoke-dist.mjs`, `python3 scripts/crosscheck_vectors.py` tutti verdi; 7
+screenshot generati e controllati a occhio (tre domande visibili in home, semaforo verde con la
+parola oltre al colore, dettagli tecnici correttamente nascosti/espandibili, tema scuro e vista da
+telefono entrambi leggibili).
+
+Dimensione di verifier+core: **invariata, 2064 righe totali (1609 escludendo vuote e commenti)** —
+N4 non tocca `packages/core` né `packages/verifier`, solo `apps/server` e la documentazione; la
+regola 5 non si applica.
 
 Nessun difetto trovato dai test in questa milestone.
 

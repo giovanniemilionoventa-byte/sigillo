@@ -224,6 +224,32 @@ export class ReceiptStore {
     return rows.map(rowToReceipt);
   }
 
+  /** Everything after `afterSeq`, for a checker that does not want to reread what it already saw. */
+  readChainFrom(systemId: string, afterSeq: number): Receipt[] {
+    const rows = this.read
+      .prepare("SELECT canonical, sig FROM receipts WHERE system_id = ? AND seq > ? ORDER BY seq")
+      .all(systemId, afterSeq) as StoredRow[];
+    return rows.map(rowToReceipt);
+  }
+
+  /** The receipts whose ts_received falls in [from, to] (either end optional), in seq order. */
+  readChainInRange(systemId: string, from?: string, to?: string): Receipt[] {
+    const clauses = ["system_id = @system_id"];
+    const parameters: Record<string, string> = { system_id: systemId };
+    if (from !== undefined) {
+      clauses.push("ts_received >= @from");
+      parameters["from"] = from;
+    }
+    if (to !== undefined) {
+      clauses.push("ts_received <= @to");
+      parameters["to"] = to;
+    }
+    const rows = this.read
+      .prepare(`SELECT canonical, sig FROM receipts WHERE ${clauses.join(" AND ")} ORDER BY seq`)
+      .all(parameters) as StoredRow[];
+    return rows.map(rowToReceipt);
+  }
+
   /** Every receipt hash of a chain, in order: the leaves of its Merkle tree. */
   readReceiptHashes(systemId: string): string[] {
     const rows = this.read

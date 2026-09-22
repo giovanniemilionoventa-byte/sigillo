@@ -2,9 +2,11 @@
 import { statSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { Command } from "commander";
+import { publicKeyFromRaw } from "@sigillo/core";
 import { ApiKeyStore } from "./auth/api-keys.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
 import { buildArchive } from "./export/archive.js";
+import { ChainHealthMonitor } from "./health/chain-health.js";
 import { buildServer } from "./http/server.js";
 import { SignerClient } from "./signer/client.js";
 import { ReceiptStore } from "./storage/store.js";
@@ -70,12 +72,18 @@ program
     "how often to check point each chain",
     process.env["SIGILLO_CHECKPOINT_MINUTES"] ?? "60",
   )
+  .option(
+    "--stale-after-minutes <minutes>",
+    "how long without activity before the web view's traffic light turns yellow",
+    process.env["SIGILLO_STALE_AFTER_MINUTES"] ?? "1440",
+  )
   .action(async (options: DatabaseOption & {
     signerSocket: string;
     host: string;
     port: string;
     tsaUrl?: string;
     checkpointMinutes: string;
+    staleAfterMinutes: string;
   }) => {
     const signer = await SignerClient.connect(options.signerSocket);
     const store = ReceiptStore.open(options.db, signer);
@@ -90,11 +98,20 @@ program
       throw new Error("SIGILLO_ADMIN_PASSWORD must be at least 12 characters");
     }
 
+    const uiMounted = adminPassword !== undefined && adminPassword.length > 0;
+    const healthMonitor = uiMounted
+      ? new ChainHealthMonitor(
+          store,
+          publicKeyFromRaw(new Uint8Array(Buffer.from(signer.publicKeyBase64, "base64"))),
+          Number(options.staleAfterMinutes) * 60 * 1000,
+        )
+      : undefined;
+
     const app = buildServer({
       store,
       keys,
       logger: true,
-      ...(adminPassword === undefined || adminPassword.length === 0
+      ...(!uiMounted || healthMonitor === undefined
         ? {}
         : {
             ui: {
@@ -103,9 +120,11 @@ program
                 key_id: signer.keyId,
                 public_key_base64: signer.publicKeyBase64,
               },
+              healthMonitor,
             },
           }),
     });
+    healthMonitor?.start();
 
     const tsa = tsaFromOptions(options.tsaUrl);
     const checkpointer = new Checkpointer({
@@ -119,6 +138,7 @@ program
 
     const shutdown = (): void => {
       checkpointer.stop();
+      healthMonitor?.stop();
       void app.close().then(() => {
         keys.close();
         store.close();
