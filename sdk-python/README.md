@@ -20,7 +20,11 @@ sigillo.init(
 pip install -e sdk-python                 # the package
 pip install -e 'sdk-python[langchain]'    # with the LangChain instrumentation
 pip install -e 'sdk-python[crewai]'       # with the CrewAI instrumentation
+pip install -e 'sdk-python[openai]'       # with the OpenAI-client instrumentation
 ```
+
+The `openai` extra is for agents that call an OpenAI-compatible server directly
+— Ollama, vLLM, llama.cpp — without going through LangChain or CrewAI.
 
 The package itself depends only on the OpenTelemetry SDK and its OTLP/HTTP
 exporter. The instrumentations are optional: one that is not installed is
@@ -60,6 +64,31 @@ Nothing your agent said or received. The server records the digest of an input
 or an output, never the value, and each receipt carries only metadata: which
 agent, what kind of action, its name, whether it succeeded, and where it sits in
 the chain. See [docs/FORMAT.md](../docs/FORMAT.md).
+
+## Documents and model identity
+
+`sigillo.artifact(data, role, label, media_type=None)` fingerprints a document
+your agent used or produced, and attaches the fingerprint to the action being
+recorded right now — call it while the tool call or step it belongs to is
+still the active span. `data` is `bytes`, a `str` of exact text (hashed as its
+UTF-8 bytes), or a path to read from; `role` is `"input"` or `"output"`;
+`label` is a category you choose, such as `"curriculum"` — **never a
+filename**, which can carry a person's name. Hashing happens in this process;
+only the SHA-256 digest leaves it.
+
+```python
+sigillo.artifact(open("cv.pdf", "rb").read(), role="input", label="curriculum")
+# or, with a path:
+sigillo.artifact(pathlib.Path("cv.pdf"), role="input", label="curriculum")
+```
+
+`sigillo.init(..., ollama_url="http://localhost:11434")` reads the installed
+models once, from Ollama's own `GET /api/tags`, and adds the digest of the
+model actually used to each LLM span. If Ollama does not answer, `init` still
+succeeds — the digest is simply absent, and a warning is logged, not raised.
+
+Both are optional, and either can be dropped without changing anything else:
+a receipt with neither is exactly as informative as before phase 2.
 
 ## Example
 

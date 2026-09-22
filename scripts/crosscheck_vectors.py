@@ -32,10 +32,13 @@ SIGNATURE = re.compile(r"^[A-Za-z0-9+/]{86}==$")
 ACTION_KINDS = {"tool_call", "llm_call", "agent_step", "decision", "genesis"}
 OUTCOMES = {"ok", "error", "blocked", "unknown"}
 SOURCE_TYPES = {"otlp", "sdk", "api"}
+ARTIFACT_ROLES = {"input", "output"}
 MANDATORY = {
     "v", "system_id", "seq", "ts_event", "ts_received", "actor", "action",
     "input_hash", "output_hash", "outcome", "source", "prev_hash", "key_id", "sig",
 }
+# Version 2 adds these two, both optional, and nothing else.
+V2_OPTIONAL = {"artifacts", "model"}
 
 failures = []
 
@@ -49,10 +52,44 @@ def canonical_json(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+def check_artifact(where, artifact):
+    check(set(artifact) == {"role", "label", "media_type", "sha256"}, where + "artifact fields")
+    check(artifact.get("role") in ARTIFACT_ROLES, where + "artifact.role value")
+    check(1 <= len(artifact.get("label", "")) <= 256, where + "artifact.label length")
+    check(1 <= len(artifact.get("media_type", "")) <= 128, where + "artifact.media_type length")
+    check(HEX64.match(artifact.get("sha256", "")) is not None, where + "artifact.sha256 format")
+
+
+def check_model(where, model):
+    check(set(model) == {"name", "provider", "digest"}, where + "model fields")
+    check(1 <= len(model.get("name", "")) <= 256, where + "model.name length")
+    for field in ("provider", "digest"):
+        value = model.get(field)
+        check(
+            value is None or (isinstance(value, str) and 1 <= len(value) <= 256),
+            where + f"model.{field} must be null or a 1-256 character string",
+        )
+
+
 def check_shape(name, receipt):
     where = f"{name}: "
-    check(set(receipt) == MANDATORY, where + f"unexpected field set {sorted(set(receipt) ^ MANDATORY)}")
-    check(receipt.get("v") == 1, where + "v must be 1")
+    version = receipt.get("v")
+    check(version in (1, 2), where + "v must be 1 or 2")
+
+    extra = set(receipt) - MANDATORY
+    if version == 1:
+        check(extra == set(), where + f"a v1 receipt must not carry {sorted(extra)}")
+    else:
+        check(extra <= V2_OPTIONAL, where + f"unexpected field set {sorted(extra - V2_OPTIONAL)}")
+        if "artifacts" in receipt:
+            artifacts = receipt["artifacts"]
+            check(isinstance(artifacts, list) and len(artifacts) >= 1, where + "artifacts must be a non-empty array")
+            if isinstance(artifacts, list):
+                for index, artifact in enumerate(artifacts):
+                    check_artifact(f"{where}artifacts[{index}]: ", artifact)
+        if "model" in receipt:
+            check_model(where + "model: ", receipt["model"])
+
     seq = receipt.get("seq")
     check(isinstance(seq, int) and not isinstance(seq, bool) and seq >= 0, where + "seq must be a non-negative integer")
     check(1 <= len(receipt.get("system_id", "")) <= 128, where + "system_id length")
@@ -101,7 +138,10 @@ def main():
     document = json.loads(VECTORS.read_text(encoding="utf-8"))
     vectors = document["vectors"]
     check(len(vectors) >= 10, f"expected at least 10 vectors, found {len(vectors)}")
-    check(document["receipt_version"] == 1, "vector file declares an unexpected receipt version")
+    check(
+        document.get("receipt_versions") == [1, 2],
+        "vector file must declare receipt_versions [1, 2]",
+    )
 
     seen_hashes = {}
     for vector in vectors:

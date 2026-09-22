@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Matteo Rinaldi
+
+Formazione:
+Laurea in Informatica.
+
+Esperienza:
+3 anni di esperienza come sviluppatore backend, con particolare attenzione
+a containerizzazione e orchestrazione dei servizi.
+
+Competenze tecniche:
+Java, Spring, Docker, Kubernetes, SQL, Git, REST.
+
+Disponibilità: un mese di preavviso.

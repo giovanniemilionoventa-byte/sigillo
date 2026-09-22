@@ -70,6 +70,22 @@ CREATE TABLE IF NOT EXISTS timestamps (
   UNIQUE (checkpoint_id, tsa_url)
 ) STRICT;
 
+-- One row per artifact occurrence: a receipt with two artifacts is two rows.
+-- This is what makes "has anyone ever used this document" an index lookup
+-- instead of a scan of every receipt's canonical JSON.
+CREATE TABLE IF NOT EXISTS artifacts (
+  id         INTEGER PRIMARY KEY,
+  system_id  TEXT    NOT NULL,
+  seq        INTEGER NOT NULL,
+  role       TEXT    NOT NULL,
+  label      TEXT    NOT NULL,
+  media_type TEXT    NOT NULL,
+  sha256     TEXT    NOT NULL,
+  FOREIGN KEY (system_id, seq) REFERENCES receipts (system_id, seq)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS artifacts_by_sha256 ON artifacts (sha256);
+
 CREATE TRIGGER IF NOT EXISTS receipts_no_update BEFORE UPDATE ON receipts
 BEGIN SELECT RAISE(ABORT, 'append-only: a receipt cannot be modified'); END;
 
@@ -87,4 +103,10 @@ BEGIN SELECT RAISE(ABORT, 'append-only: a timestamp token cannot be modified'); 
 
 CREATE TRIGGER IF NOT EXISTS timestamps_no_delete BEFORE DELETE ON timestamps
 BEGIN SELECT RAISE(ABORT, 'append-only: a timestamp token cannot be deleted'); END;
+
+CREATE TRIGGER IF NOT EXISTS artifacts_no_update BEFORE UPDATE ON artifacts
+BEGIN SELECT RAISE(ABORT, 'append-only: an artifact entry cannot be modified'); END;
+
+CREATE TRIGGER IF NOT EXISTS artifacts_no_delete BEFORE DELETE ON artifacts
+BEGIN SELECT RAISE(ABORT, 'append-only: an artifact entry cannot be deleted'); END;
 `;

@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Elena Fontana
+
+Formazione:
+Laurea in Informatica.
+
+Esperienza:
+3 anni di esperienza come sviluppatrice backend in ambito editoriale,
+su servizi di pubblicazione e ricerca contenuti.
+
+Competenze tecniche:
+Python, Django, Redis, PostgreSQL, Git.
+
+Disponibilità: un mese di preavviso.

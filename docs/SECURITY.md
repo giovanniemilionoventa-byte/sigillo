@@ -63,11 +63,19 @@ are the ones that existed then.
 ## What the operator of the service can and cannot see
 
 sigillo stores **no content**. Not a prompt, not a tool argument, not a model
-output. Where content existed, the receipt carries its SHA-256 digest and
-nothing else. This is enforced in three places: the ingest adapter reduces
-`input.value` and `output.value` to digests as it reads them; the receipt schema
-has no field that could hold a payload; and a test greps a finished export for
-the strings an example agent actually handled and requires them to be absent.
+output, not a document. Where content existed, the receipt carries its SHA-256
+digest and nothing else. This is enforced in three places: the ingest adapter
+reduces `input.value` and `output.value` to digests as it reads them; the
+receipt schema has no field that could hold a payload; and a test greps a
+finished export for the strings an example agent actually handled and requires
+them to be absent.
+
+A document a receipt names (`sigillo.artifact()` in the Python SDK, or a file
+checked on the "verifica un documento" page) is hashed **before it reaches
+sigillo**: the SDK hashes it in the caller's own process, and the page hashes
+it in the visitor's browser with Web Crypto. Neither ever transmits the
+document itself, only its digest — the same property `input_hash` and
+`output_hash` already had, extended to whole files.
 
 What an operator **can** see:
 
@@ -106,6 +114,14 @@ The web view is guarded by a single administrator password from
 `SIGILLO_ADMIN_PASSWORD`. Without that variable the view is not served at all.
 Its session is an HMAC cookie with a per-process secret, so a restart signs
 everyone out and nothing about the session is stored.
+
+The view is server-rendered with one deliberate exception: "verifica un
+documento" carries a small inline script that computes a file's SHA-256 in the
+browser, so the document itself is never sent to the server. `deploy/Caddyfile`
+allows exactly that script and no other, by its SHA-256 (`script-src
+'sha256-...'`), rather than relaxing the content security policy in general. A
+test recomputes the hash from the actual script and fails if the two ever
+disagree.
 
 ## Known limits
 

@@ -6,12 +6,14 @@ import {
   publicKeyFromRaw,
   receiptHashHex,
   rootFromInclusionProof,
+  safeParseArtifactsIndexEntry,
   safeParseCheckpointEntry,
   safeParseManifest,
   safeParseReceipt,
   toHex,
   verifyCheckpointSignature,
   verifyReceiptSignature,
+  type ArtifactsIndexEntry,
   type CheckpointEntry,
   type Manifest,
   type Receipt,
@@ -30,6 +32,8 @@ export interface Bundle {
   receiptsJsonl: string;
   /** Present in a full export; absent in the minimal one. */
   checkpointsJsonl?: string;
+  /** Present in a full export; absent in the minimal one, or where no v2 receipt names a document. */
+  artifactsIndexJsonl?: string;
 }
 
 export type VerificationCheck =
@@ -47,7 +51,8 @@ export type VerificationCheck =
   | "checkpoint-schema"
   | "checkpoint-signature"
   | "merkle-root"
-  | "inclusion-proof";
+  | "inclusion-proof"
+  | "artifacts-index";
 
 export interface VerificationSummary {
   system_id: string;
@@ -59,10 +64,12 @@ export interface VerificationSummary {
   inclusion_proofs: number;
   /** Checkpoints whose root this verifier could rebuild from the receipts present. */
   roots_recomputed: number;
+  /** Document fingerprints found in artifacts-index.jsonl, confirmed to match the receipts. */
+  artifacts_indexed: number;
 }
 
 export type Verification =
-  | { ok: true; summary: VerificationSummary }
+  | { ok: true; summary: VerificationSummary; receipts: Receipt[] }
   | { ok: false; check: VerificationCheck; location: string; detail: string };
 
 function fail(check: VerificationCheck, location: string, detail: string): Verification {
@@ -224,7 +231,49 @@ export function verifyBundle(bundle: Bundle): Verification {
     }
   }
 
-  // 9. Every checkpoint is a signed statement about a tree these receipts build.
+  // 9. Every artifact a v2 receipt declares is indexed exactly once, and the
+  //    index claims nothing the receipts do not. This is what makes a document
+  //    lookup trustworthy: it is checked against the receipts, not taken as given.
+  const declaredArtifacts: string[] = [];
+  for (const receipt of receipts) {
+    if (receipt.v !== 2 || receipt.artifacts === undefined) continue;
+    for (const artifact of receipt.artifacts) {
+      declaredArtifacts.push(`${receipt.seq}\u0000${artifact.role}\u0000${artifact.label}\u0000${artifact.sha256}`);
+    }
+  }
+
+  const artifactsIndex: ArtifactsIndexEntry[] = [];
+  const indexedArtifacts: string[] = [];
+  for (const [index, line] of jsonLines(bundle.artifactsIndexJsonl ?? "").entries()) {
+    let value: unknown;
+    try {
+      value = JSON.parse(line);
+    } catch (error) {
+      return fail(
+        "artifacts-index",
+        `artifacts-index.jsonl:${index + 1}`,
+        `is not valid JSON: ${String(error)}`,
+      );
+    }
+    const parsed = safeParseArtifactsIndexEntry(value);
+    if (!parsed.ok) {
+      return fail("artifacts-index", `artifacts-index.jsonl:${index + 1}`, parsed.error);
+    }
+    artifactsIndex.push(parsed.entry);
+    indexedArtifacts.push(
+      `${parsed.entry.seq}\u0000${parsed.entry.role}\u0000${parsed.entry.label}\u0000${parsed.entry.sha256}`,
+    );
+  }
+
+  if ([...declaredArtifacts].sort().join("\n") !== [...indexedArtifacts].sort().join("\n")) {
+    return fail(
+      "artifacts-index",
+      "artifacts-index.jsonl",
+      `the index does not match the artifacts the receipts declare: ${declaredArtifacts.length} declared by the receipts, ${indexedArtifacts.length} indexed`,
+    );
+  }
+
+  // 10. Every checkpoint is a signed statement about a tree these receipts build.
   const checkpoints: CheckpointEntry[] = [];
   let rootsRecomputed = 0;
   let proofsChecked = 0;
@@ -267,7 +316,7 @@ export function verifyBundle(bundle: Bundle): Verification {
       );
     }
 
-    // 10. Where the export holds the receipts the tree was built from, the root
+    // 11. Where the export holds the receipts the tree was built from, the root
     //     is rebuilt from them rather than taken on the checkpoint's word.
     if (first.seq === 0 && receipts.length >= checkpoint.tree_size) {
       const leaves = receipts
@@ -284,7 +333,7 @@ export function verifyBundle(bundle: Bundle): Verification {
       rootsRecomputed += 1;
     }
 
-    // 11. Each inclusion proof ties a receipt in this export to that root.
+    // 12. Each inclusion proof ties a receipt in this export to that root.
     for (const proof of proofs) {
       const receipt = receipts.find((candidate) => candidate.seq === proof.seq);
       if (receipt === undefined) {
@@ -334,7 +383,7 @@ export function verifyBundle(bundle: Bundle): Verification {
     checkpoints.push(parsed.entry);
   }
 
-  // 12. The manifest describes the receipts and checkpoints that are actually here.
+  // 13. The manifest describes the receipts and checkpoints that are actually here.
   const last = receipts[receipts.length - 1];
   if (last === undefined) {
     return fail("range", "receipts.jsonl", "the export contains no receipts");
@@ -369,6 +418,21 @@ export function verifyBundle(bundle: Bundle): Verification {
     );
   }
 
+  // A chain may upgrade from v1 to v2 mid-flight, so this is not "the export's
+  // version": it is a claim, like the counts above, checked against what the
+  // receipts actually declare rather than trusted.
+  const highestReceiptVersion = receipts.reduce<number>(
+    (max, receipt) => Math.max(max, receipt.v),
+    0,
+  );
+  if (manifest.receipt_version !== highestReceiptVersion) {
+    return fail(
+      "range",
+      "manifest.json",
+      `the manifest declares receipt_version ${manifest.receipt_version}, but the highest version among the receipts is ${highestReceiptVersion}`,
+    );
+  }
+
   return {
     ok: true,
     summary: {
@@ -380,6 +444,8 @@ export function verifyBundle(bundle: Bundle): Verification {
       checkpoints: checkpoints.length,
       inclusion_proofs: proofsChecked,
       roots_recomputed: rootsRecomputed,
+      artifacts_indexed: artifactsIndex.length,
     },
+    receipts,
   };
 }

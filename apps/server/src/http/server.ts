@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import { hashCanonicalJson, type Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
+import type { ChainHealthMonitor } from "../health/chain-health.js";
 import { adaptSpans } from "../ingest/adapter.js";
 import { decodeJsonTraces, decodeProtobufTraces, OtlpDecodeError } from "../ingest/otlp.js";
 import type { ReceiptStore } from "../storage/store.js";
@@ -30,6 +31,7 @@ export interface ServerOptions {
   ui?: {
     password: string;
     signerKey: { key_id: string; public_key_base64: string };
+    healthMonitor: ChainHealthMonitor;
   };
 }
 
@@ -120,8 +122,10 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     );
     registerUi(app, {
       store,
+      keys,
       password: options.ui.password,
       signerKey: options.ui.signerKey,
+      healthMonitor: options.ui.healthMonitor,
       now,
     });
   }
@@ -160,6 +164,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         output_hash: action.output_hash,
         outcome: action.outcome,
         source: action.source,
+        ...(action.artifacts === undefined ? {} : { artifacts: action.artifacts }),
+        ...(action.model === undefined ? {} : { model: action.model }),
       });
       accepted += 1;
     }

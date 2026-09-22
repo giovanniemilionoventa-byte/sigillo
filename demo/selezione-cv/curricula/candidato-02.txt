@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Giulia Moretti
+
+Formazione:
+Laurea in Informatica.
+
+Esperienza:
+1 anno di esperienza come sviluppatrice backend in un team di quattro persone,
+su un prodotto gestionale per piccole imprese.
+
+Competenze tecniche:
+Java, Spring, SQL, Git, PostgreSQL.
+
+Disponibilità: due settimane di preavviso.

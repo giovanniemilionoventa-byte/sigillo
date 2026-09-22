@@ -111,7 +111,7 @@ model, so running it costs nothing.
 | `packages/verifier` | `sigillo-verify`, open source, depends only on core and `openssl` |
 | `apps/signer` | the separate process that holds the key |
 | `apps/server` | ingest, storage, checkpoints, anchoring, export, the web view |
-| `sdk-python/` | `sigillo.init()` |
+| `sdk-python/` | `sigillo.init()`, `sigillo.artifact()` |
 | `deploy/` | Dockerfile, docker-compose, Caddy, backup |
 
 All the cryptography lives in `core`, and the server and the verifier use the

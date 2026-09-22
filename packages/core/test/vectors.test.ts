@@ -13,7 +13,7 @@ interface Vector {
 
 interface VectorFile {
   format: string;
-  receipt_version: number;
+  receipt_versions: number[];
   vectors: Vector[];
 }
 
@@ -24,6 +24,14 @@ const vectorFile = JSON.parse(
 describe("receipt test vectors", () => {
   it("covers at least ten receipts", () => {
     expect(vectorFile.vectors.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it("declares exactly the versions the vectors actually contain, including both v1 and v2", () => {
+    const actual = [
+      ...new Set(vectorFile.vectors.map((vector) => (vector.receipt as { v: number }).v)),
+    ].sort();
+    expect(vectorFile.receipt_versions).toEqual(actual);
+    expect(actual).toEqual([1, 2]);
   });
 
   it("gives every vector a unique name and a unique hash", () => {

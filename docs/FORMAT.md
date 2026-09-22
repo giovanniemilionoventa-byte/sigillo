@@ -1,18 +1,24 @@
-# The sigillo receipt format, version 1
+# The sigillo receipt format
 
 This document defines the receipt: the unit of evidence sigillo produces. It is
 written so that a second implementation can verify a sigillo log without reading
 the sigillo source. Everything a verifier must check is stated here.
 
-Status: receipt schema version `1`, **confirmed as final by the project owner on
-2026-09-21**. This document is complete: receipts, the chain, checkpoints,
-timestamp anchoring and the export archive are all specified here.
+Status: two schema versions are current, `1` and `2`. Version 1 was **confirmed
+as final by the project owner on 2026-09-21**: no receipt it accepts is ever
+rejected by a later version of this document. Version 2 was added on
+2026-09-22 (phase 2) to carry document fingerprints and model identity; it is
+purely additive, described in section 2.5 and 2.6. A verifier applies the
+rules of the version each receipt actually declares, so one chain, and one
+export, may freely mix `v: 1` and `v: 2` receipts.
 
 The canonical-base64 rule of section 5 was added after version 1 was already in
 use, and the version was deliberately not incremented: the rule only rejects
 spellings sigillo never produced, so every receipt ever written by sigillo
 remains valid under it. A future change that a previously valid receipt could
-fail must increment `v`.
+fail must increment `v`. Version 2 was measured against the same test:
+`artifacts` and `model` are both new and both optional, so nothing that was
+valid under version 1 is affected by version 2 existing.
 
 ## 1. What a receipt is
 
@@ -27,12 +33,14 @@ to be shown to an auditor.
 
 ## 2. The receipt object
 
-A receipt is a JSON object with exactly these members. There are no other
-members: a receipt carrying an unknown member is invalid and MUST be rejected.
+A receipt is a JSON object with exactly these members for the version it
+declares. There are no other members: a receipt carrying an unknown member is
+invalid and MUST be rejected — including a version 1 receipt that carries
+`artifacts` or `model`, which are version 2 members only.
 
 | member | type | constraint |
 |---|---|---|
-| `v` | integer | exactly `1` for this version |
+| `v` | integer | `1` or `2` |
 | `system_id` | string | 1 to 128 characters; identifies the AI system, and therefore the chain |
 | `seq` | integer | `>= 0`; position in the chain, no gaps, no repeats |
 | `ts_event` | string | time declared by the source; see 2.1. Not trusted |
@@ -46,6 +54,8 @@ members: a receipt carrying an unknown member is invalid and MUST be rejected.
 | `prev_hash` | string | 64 lowercase hex characters; digest of the previous receipt, or 64 `0` characters for the first |
 | `key_id` | string | 16 lowercase hex characters; identifies the signing key, see 5 |
 | `sig` | string | 88 characters of standard base64; the signature, see 5 |
+| `artifacts` | array, optional | version 2 only; see 2.5 |
+| `model` | object, optional | version 2 only; see 2.6 |
 
 ### 2.1 Timestamps
 
@@ -103,6 +113,53 @@ from smuggling a prompt into the chain in the clear.
 - `span_id`: optional, exactly 16 lowercase hex characters.
 
 Both identifiers are omitted when absent, never null.
+
+### 2.5 `artifacts` (version 2 only)
+
+```json
+[
+  { "role": "input", "label": "curriculum", "media_type": "text/plain", "sha256": "…" },
+  { "role": "output", "label": "email di risposta", "media_type": "text/plain", "sha256": "…" }
+]
+```
+
+The documents an action touched, as fingerprints only. Optional; when present,
+a non-empty array. A receipt with nothing to attach omits the member entirely,
+never an empty array — the same discipline as `actor.on_behalf_of`.
+
+- `role`: `input` or `output`.
+- `label`: string, 1 to 256 characters. A category the developer chose, such as
+  `"curriculum"` — **never a filename**, which can carry a person's name.
+- `media_type`: string, 1 to 128 characters, such as `"application/pdf"`.
+- `sha256`: 64 lowercase hex characters. The digest of the artifact's **exact
+  raw bytes** — not of any canonical form, since a document is not JSON. For
+  text, this means its exact UTF-8 bytes: one extra space or line ending
+  changes the digest. Computing it is exactly `openssl dgst -sha256 <file>`,
+  nothing more.
+
+Order is preserved: an array is never reordered by canonicalisation (section
+3 sorts object *members*, not array elements), so two artifacts of the same
+receipt keep whatever order the caller gave them.
+
+### 2.6 `model` (version 2 only)
+
+```json
+{ "name": "qwen2.5:3b", "provider": "ollama", "digest": "sha256:…" }
+```
+
+The model identity behind an `llm_call`. Optional at the receipt level, for an
+action where no model information is available at all; when present, `name` is
+required and `provider`/`digest` are **nullable, not optional members** — the
+member is always there, and is `null` when unknown, because unlike
+`on_behalf_of` a model name on its own is still meaningful evidence.
+
+- `name`: string, 1 to 256 characters, such as `"qwen2.5:3b"` or `"gpt-4o"`.
+- `provider`: string, 1 to 256 characters, or `null`, such as `"ollama"`,
+  `"openai"`, `"vllm"`.
+- `digest`: string, 1 to 256 characters, or `null`. The model file's own
+  fingerprint where the runtime exposes one (for instance, an Ollama model's
+  digest from `GET /api/tags`); its exact form is whatever that runtime
+  publishes, so this format does not constrain it to hex.
 
 ## 3. Canonical form
 
@@ -226,6 +283,50 @@ above with no trailing newline:
 
 ```sh
 printf '%s' "$(cat canonical.txt)" | openssl dgst -sha256
+```
+
+### 7.1 Worked example, version 2
+
+A `tool_call` that read a document, with one input artifact attached:
+
+```json
+{
+  "v": 2,
+  "system_id": "acme-support-bot",
+  "seq": 20,
+  "ts_event": "2026-03-29T14:31:13.000Z",
+  "ts_received": "2026-03-29T14:31:13.001Z",
+  "actor": { "agent": "selezione-cv" },
+  "action": { "kind": "tool_call", "name": "leggi_curriculum" },
+  "input_hash": null,
+  "output_hash": null,
+  "outcome": "ok",
+  "source": { "type": "sdk" },
+  "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+  "key_id": "3f2a1c9d8e7b6a5f",
+  "sig": "...",
+  "artifacts": [
+    {
+      "role": "input",
+      "label": "curriculum",
+      "media_type": "text/plain",
+      "sha256": "7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e"
+    }
+  ]
+}
+```
+
+Its canonical form, 552 bytes on one line — `artifacts` sorts alongside every
+other member, and the one artifact's own members are sorted the same way:
+
+```
+{"action":{"kind":"tool_call","name":"leggi_curriculum"},"actor":{"agent":"selezione-cv"},"artifacts":[{"label":"curriculum","media_type":"text/plain","role":"input","sha256":"7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e"}],"input_hash":null,"key_id":"3f2a1c9d8e7b6a5f","outcome":"ok","output_hash":null,"prev_hash":"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543","seq":20,"source":{"type":"sdk"},"system_id":"acme-support-bot","ts_event":"2026-03-29T14:31:13.000Z","ts_received":"2026-03-29T14:31:13.001Z","v":2}
+```
+
+and its hash, reproducible the same way as the version 1 example above, is
+
+```
+b50f22f0f6d1c7332d28f8cece6a5517f04baa85ffcbedb4a62817cb818ecdd6
 ```
 
 ## 8. Checkpoints and the Merkle tree
@@ -366,12 +467,13 @@ directory. Both are accepted by a verifier; the directory is simply what you get
 after unzipping.
 
 ```
-receipts.jsonl      one receipt per line, in canonical form, ordered by seq
-checkpoints.jsonl   one checkpoint per line, with its proofs and its tokens
-timestamps/         the RFC 3161 tokens, in DER, exactly as the authority sent
-manifest.json       the public keys, the range, the counts
-report.pdf          the same facts for a reader
-VERIFY.md           how to check all of it without this software
+receipts.jsonl         one receipt per line, in canonical form, ordered by seq
+checkpoints.jsonl      one checkpoint per line, with its proofs and its tokens
+artifacts-index.jsonl  one line per document fingerprint a receipt names
+timestamps/            the RFC 3161 tokens, in DER, exactly as the authority sent
+manifest.json          the public keys, the range, the counts
+report.pdf             the same facts for a reader
+VERIFY.md              how to check all of it without this software
 ```
 
 The archive uses only stored and deflated entries, no ZIP64 and no encryption,
@@ -412,7 +514,33 @@ One line per checkpoint:
 - `file` names the token inside the archive. The token is not inlined: it is
   binary, and an auditor needs it as a file to hand to `openssl`.
 
-### 10.3 `manifest.json`
+### 10.3 `artifacts-index.jsonl`
+
+One line per artifact **occurrence** — a receipt with two artifacts contributes
+two lines:
+
+```json
+{ "sha256": "7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e", "seq": 20, "role": "input", "label": "curriculum" }
+```
+
+| member | type | constraint |
+|---|---|---|
+| `sha256` | string | 64 lowercase hex characters; matches the artifact's `sha256` (section 2.5) |
+| `seq` | integer | `>= 0`; the receipt that names this artifact |
+| `role` | string | `input` or `output`, copied from the artifact |
+| `label` | string | copied from the artifact |
+
+`system_id` is not repeated here: the archive covers exactly one, named in the
+manifest. This file is what makes "has this document been used" a lookup
+rather than a scan of every receipt, both for the web view (section 5 of the
+phase 2 prompt) and for `sigillo-verify doc` (section 10.5, check 8).
+
+The index is not trusted any more than the manifest is: a verifier rebuilds
+the same list from the receipts' own `artifacts` members and requires the two
+to match exactly, member for member. An index missing an occurrence, or
+claiming one the receipts do not have, fails verification.
+
+### 10.4 `manifest.json`
 
 ```json
 {
@@ -429,12 +557,19 @@ One line per checkpoint:
 `range.from_ts` and `range.to_ts` are the `ts_received` of the first and last
 receipt. `keys` carries the raw 32-byte public keys in standard base64.
 
+`receipt_version` is **not** "the version of this export": a chain may upgrade
+from `v: 1` to `v: 2` partway through, and one export can hold both. It is the
+**highest** version among the receipts the export actually contains — `1` for
+an export that is entirely version 1, `2` as soon as any version 2 receipt is
+present. Like `counts`, it is a claim a verifier checks against the receipts
+themselves, not a value it trusts (section 10.5, check 12).
+
 The manifest is not trusted. It is a claim about what the export contains, and
 every part of that claim is checked against the files themselves. A key
 published under an identifier that is not its own `key_id` is rejected, because
 `key_id` is derived from the key (section 5) and cannot be chosen.
 
-### 10.4 What a verifier checks, in order
+### 10.5 What a verifier checks, in order
 
 1. The manifest is well formed, and every published key matches its own `key_id`.
 2. Every line of `receipts.jsonl` is a receipt of a schema version it implements.
@@ -444,14 +579,21 @@ published under an identifier that is not its own `key_id` is rejected, because
 5. If the export starts at `seq` 0, that receipt is a genesis receipt.
 6. Every `prev_hash` equals the recomputed hash of the preceding receipt.
 7. Every receipt names a key the manifest publishes, and its signature verifies.
-8. Every checkpoint names a published key, and its signature verifies.
-9. Every checkpoint's Merkle root is rebuilt from the receipts present, where
-   the export holds them all, and must match.
-10. Every inclusion proof rebuilds its checkpoint's root, and the
+8. Every artifact a version 2 receipt declares has exactly one matching line in
+   `artifacts-index.jsonl`, and the index claims nothing the receipts do not
+   (section 10.3). Tampering with an artifact needs no separate detection here:
+   it is a member of the receipt like any other, so changing it already fails
+   check 6 or check 7 — this check is what makes the *index* trustworthy for a
+   document lookup, on top of that.
+9. Every checkpoint names a published key, and its signature verifies.
+10. Every checkpoint's Merkle root is rebuilt from the receipts present, where
+    the export holds them all, and must match.
+11. Every inclusion proof rebuilds its checkpoint's root, and the
     `receipt_hash` it names is the hash of the receipt actually at that `seq`.
-11. `range`, `counts.receipts`, `counts.checkpoints` and `counts.timestamps`
-    describe what the archive actually holds.
-12. Every RFC 3161 token is checked with `openssl` (section 9). With the
+12. `range`, `counts.receipts`, `counts.checkpoints`, `counts.timestamps` and
+    `receipt_version` describe what the archive actually holds — the last of
+    these is the highest version actually present, per 10.4.
+13. Every RFC 3161 token is checked with `openssl` (section 9). With the
     authority's certificate, its signature is verified; without it, only the
     digest it carries is compared with the checkpoint root, and the verifier
     says which of the two it did.
@@ -459,23 +601,36 @@ published under an identifier that is not its own `key_id` is rejected, because
 A verifier stops at the first failure and names the file, the line and the
 check. Any failure means the export is not evidence of anything.
 
-Three of these deserve a note, because they catch what the others miss:
+`sigillo-verify doc <archive> <file>` runs all of the above first, exactly as
+the default command does — a document lookup against a tampered archive is
+refused, not merely unreliable — then hashes `<file>` with SHA-256 and reports
+every receipt whose `artifacts` names that digest, or that none does.
 
-- Step 4 and step 11 together catch a deleted *last* receipt. Removing it
+Four of these deserve a note, because they catch what the others miss:
+
+- Step 4 and step 12 together catch a deleted *last* receipt. Removing it
   leaves a chain that is internally consistent; only the manifest's declared
   range shows that the export was supposed to run further.
-- Step 9 catches a receipt altered at the end of the range, where no later
+- Step 8 is symmetric on purpose: an index entry with no matching artifact is
+  rejected exactly like an artifact with no matching index entry. Either
+  direction alone would let a document be found, or not found, incorrectly.
+- Step 10 catches a receipt altered at the end of the range, where no later
   `prev_hash` covers it, because the Merkle root over the whole tree does.
-- Step 12 failing is a verification failure, not a warning. A sound chain with
+- Step 13 failing is a verification failure, not a warning. A sound chain with
   a token that is not a token is an archive whose anchor does not hold.
 
 ## 11. Test vectors
 
 `packages/core/test/vectors.json` carries a set of receipts with their canonical
-form and digest recorded alongside. They cover the genesis receipt, every action
-kind and outcome, present and absent optional members, JSON escaping, non-ASCII
-and astral-plane text, control characters, calendar edge cases, the field length
-caps, and the largest exactly representable integer as a `seq`.
+form and digest recorded alongside. Its `receipt_versions` member lists every
+schema version the file covers — `[1, 2]` — derived from the vectors
+themselves rather than asserted separately. They cover the genesis receipt,
+every action kind and outcome, present and absent optional members, JSON
+escaping, non-ASCII and astral-plane text, control characters, calendar edge
+cases, the field length caps, the largest exactly representable integer as a
+`seq`, and, for version 2, a receipt with neither new member, one artifact,
+two artifacts in a fixed order, a model with a provider and digest, a model
+with both null, and an artifact and a model together.
 
 The `sig` values in that file are a fixed placeholder, chosen so it decodes to
 readable text: the vectors pin the wire format, not signatures.

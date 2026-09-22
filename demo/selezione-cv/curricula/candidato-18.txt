@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Ilaria Sartori
+
+Formazione:
+Laurea in Informatica.
+
+Esperienza:
+1 anno di esperienza come sviluppatrice su un sito di annunci locali,
+principalmente sulla parte di gestione utenti.
+
+Competenze tecniche:
+PHP, MySQL, Git.
+
+Disponibilità: due settimane di preavviso.

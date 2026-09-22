@@ -31,6 +31,7 @@ Nothing here asks you to trust the system that produced it. Every claim in
 |---|---|
 | \`receipts.jsonl\` | one receipt per line, in RFC 8785 canonical form, ordered by position |
 | \`checkpoints.jsonl\` | each signed checkpoint, its inclusion proofs, and the timestamp tokens anchoring it |
+| \`artifacts-index.jsonl\` | one line per document fingerprint a receipt names, pointing back at it |
 | \`timestamps/\` | the RFC 3161 tokens, byte for byte as the authority returned them |
 | \`manifest.json\` | the public keys, the range and the counts this archive claims |
 | \`report.pdf\` | the same facts written for a reader |
@@ -64,6 +65,20 @@ sigillo-verify <this archive> --tsa-ca <authority-ca>.pem
 
 Without it, the tokens are checked only for the digest they carry, and the tool
 says so rather than reporting a pass.
+
+## Checking whether a specific document was used
+
+If a receipt names a document — a curriculum, a reply — the archive can tell
+you whether a file you have is the exact one, without a server:
+
+\`\`\`sh
+sigillo-verify doc <this archive> <the file>
+\`\`\`
+
+It verifies the whole archive first, then hashes the file with SHA-256 and
+looks for that digest in \`artifacts-index.jsonl\`. Changing even one character
+of the file changes its digest, so no near match is possible: it is either
+exactly the file that was used, or the tool reports no match at all.
 
 ## Checking a receipt by hand
 

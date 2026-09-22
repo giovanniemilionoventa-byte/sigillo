@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CANONICAL_BASE64_MESSAGE, isCanonicalBase64 } from "./base64.js";
-import { isoUtcTimestampSchema, RECEIPT_VERSION } from "./receipt.js";
+import { isoUtcTimestampSchema, RECEIPT_VERSION_1, RECEIPT_VERSION_2 } from "./receipt.js";
 
 /**
  * The manifest of an export: what the archive claims to contain, and the public
@@ -24,7 +24,14 @@ export const manifestKeySchema = z
 export const manifestSchema = z
   .object({
     sigillo_version: z.string().min(1),
-    receipt_version: z.literal(RECEIPT_VERSION),
+    /**
+     * The highest receipt schema version among the receipts this export
+     * holds. An export can freely mix v1 and v2 receipts — each is checked
+     * under the rules its own `v` declares — so this is not "the version of
+     * this export" but a declared fact a verifier checks like any other:
+     * against the receipts actually present.
+     */
+    receipt_version: z.union([z.literal(RECEIPT_VERSION_1), z.literal(RECEIPT_VERSION_2)]),
     system_id: z.string().min(1).max(128),
     exported_at: isoUtcTimestampSchema,
     range: z

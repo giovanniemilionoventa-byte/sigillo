@@ -1,4 +1,12 @@
-import { hashCanonicalJson, type Action, type Actor, type Outcome, type Source } from "@sigillo/core";
+import {
+  hashCanonicalJson,
+  type Action,
+  type Actor,
+  type ArtifactEntry,
+  type ModelInfo,
+  type Outcome,
+  type Source,
+} from "@sigillo/core";
 import type { AttributeValue, OtlpSpan } from "./otlp.js";
 
 /**
@@ -23,6 +31,10 @@ export interface AdaptedAction {
   output_hash: string | null;
   source: Source;
   ts_event: string;
+  /** Present only when the span carried at least one `sigillo.artifact` event. */
+  artifacts?: ArtifactEntry[];
+  /** Present only for a recognised llm_call that named a model. */
+  model?: ModelInfo;
 }
 
 /** Ordering keys, kept inside this module: a caller has no use for them. */
@@ -41,6 +53,12 @@ export interface AdaptedBatch {
 
 const GENAI_PREFIX = "gen_ai.";
 const OPENINFERENCE_KIND = "openinference.span.kind";
+const ARTIFACT_EVENT_NAME = "sigillo.artifact";
+const ARTIFACT_ROLES = new Set(["input", "output"]);
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+// Both dialects a model name and its provider arrive under, tried in order.
+const MODEL_NAME_ATTRIBUTES = ["gen_ai.request.model", "gen_ai.response.model", "llm.model_name"];
+const MODEL_PROVIDER_ATTRIBUTES = ["gen_ai.provider.name", "gen_ai.system", "llm.provider", "llm.system"];
 
 function text(attributes: Map<string, AttributeValue>, ...names: string[]): string | null {
   for (const name of names) {
@@ -70,6 +88,44 @@ function isoFromUnixNano(nanos: bigint): string {
 function digestOf(attributes: Map<string, AttributeValue>, ...names: string[]): string | null {
   const value = text(attributes, ...names);
   return value === null ? null : hashCanonicalJson(value);
+}
+
+/**
+ * Turns this span's `sigillo.artifact` events into the receipt's `artifacts`
+ * member. An event that is missing a field or carries a malformed sha256 is
+ * skipped rather than thrown on: the SDK guarantees its own shape, but a
+ * span from anywhere else on the wire does not get to crash ingest.
+ */
+function artifactsOf(span: OtlpSpan): ArtifactEntry[] | undefined {
+  const artifacts: ArtifactEntry[] = [];
+  for (const event of span.events) {
+    if (event.name !== ARTIFACT_EVENT_NAME) continue;
+    const role = text(event.attributes, "sigillo.artifact.role");
+    const label = text(event.attributes, "sigillo.artifact.label");
+    const mediaType = text(event.attributes, "sigillo.artifact.media_type");
+    const sha256 = text(event.attributes, "sigillo.artifact.sha256");
+    if (role === null || !ARTIFACT_ROLES.has(role)) continue;
+    if (label === null || mediaType === null || sha256 === null) continue;
+    if (!SHA256_HEX.test(sha256)) continue;
+    artifacts.push({
+      role: role as "input" | "output",
+      label: cap(label),
+      media_type: cap(mediaType, 128),
+      sha256,
+    });
+  }
+  return artifacts.length > 0 ? artifacts : undefined;
+}
+
+/** Model identity for a recognised llm_call. Absent unless a model name is known. */
+function modelOf(attributes: Map<string, AttributeValue>): ModelInfo | undefined {
+  const name = text(attributes, ...MODEL_NAME_ATTRIBUTES);
+  if (name === null) return undefined;
+  return {
+    name: cap(name),
+    provider: text(attributes, ...MODEL_PROVIDER_ATTRIBUTES),
+    digest: text(attributes, "sigillo.model.digest"),
+  };
 }
 
 /** OpenTelemetry GenAI: gen_ai.operation.name decides what kind of action it was. */
@@ -136,6 +192,7 @@ function adaptGenAi(span: OtlpSpan, unknown: Set<string>): OrderedAction | null 
     ts_event: isoFromUnixNano(span.startUnixNano),
     startUnixNano: span.startUnixNano,
     spanId: span.spanId,
+    ...withArtifactsAndModel(span, kind),
   };
 }
 
@@ -166,6 +223,24 @@ function adaptOpenInference(span: OtlpSpan, unknown: Set<string>): OrderedAction
     ts_event: isoFromUnixNano(span.startUnixNano),
     startUnixNano: span.startUnixNano,
     spanId: span.spanId,
+    ...withArtifactsAndModel(span, kind),
+  };
+}
+
+/**
+ * `exactOptionalPropertyTypes` means an optional member must be omitted, not
+ * set to `undefined`: this builds exactly the members that are actually
+ * present, once, for both adapters to spread into their result.
+ */
+function withArtifactsAndModel(
+  span: OtlpSpan,
+  kind: Action["kind"],
+): Pick<AdaptedAction, "artifacts" | "model"> {
+  const artifacts = artifactsOf(span);
+  const model = kind === "llm_call" ? modelOf(span.attributes) : undefined;
+  return {
+    ...(artifacts === undefined ? {} : { artifacts }),
+    ...(model === undefined ? {} : { model }),
   };
 }
 

@@ -15,6 +15,12 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | M7 | Merkle e marca temporale | fatto | RFC 6962 (0..17), checkpoint firmati, RFC 3161 su FreeTSA |
 | M8 | Fascicolo completo e verificatore v2 | fatto | Zip completo con PDF, 12 controlli, token FreeTSA verificato |
 | M9 | UI, deploy, documentazione | fatto | UI senza JavaScript, compose a tre servizi, backup SQLite, 406 test verdi |
+| N1 | Formato v2 | fatto | Campi `artifacts` e `model`, schema v1/v2 come union discriminata, 20 vettori (8 nuovi v2), 452 test verdi |
+| N2 | SDK Python, fase 2 | fatto | `sigillo.artifact()`, digest Ollama, `instrument=["openai"]`, adattatore server; 465 test Node + 22 Python |
+| N3 | Verifica di un documento | fatto | Hash nel browser, `sigillo-verify doc`, `artifacts-index.jsonl`; 485 test Node |
+| N4 | Interfaccia nuova | fatto | Le tre domande in italiano, semaforo verde/giallo/rosso con parola, cronologia leggibile, pagina sistemi, tema chiaro/scuro/mobile; 537 test Node |
+| N5 | Demo selezione CV | fatto | 20 curriculum, modello fittizio (Ollama scritto ma non eseguibile qui), ispezione simulata, e2e reale; bug corretto in `sigillo.artifact()` |
+| N6 | Documentazione non tecnica | fatto | `ISPEZIONE.md` e `VIDEO.md` (in N5), `PROVA-LOCALE.md` corretto ed esteso alla fase 2 |
 
 ## Decisioni prese dal committente — 2026-09-21
 
@@ -566,6 +572,501 @@ La tabella della dimensione del verificatore, qui sopra, **ometteva `packages/co
 (96 righe di re-export). Il numero onesto, ricontato ora e comprensivo di `base64.ts`, è
 **1792 righe in totale, 1416 escludendo righe vuote e commenti**, non 1689. La decisione che ti
 chiedo non cambia — le tre opzioni restano quelle — ma il numero su cui decidere è questo.
+
+### Sessione 2 — 2026-09-22
+
+Avviata la fase 2. Il prompt che la descrive (sezioni 1–6) è copiato integralmente in fondo a
+`SPEC.md`, sezione "Fase 2"; le milestone della sua sezione 7 sono nella tabella qui sopra
+(N1–N6, tutte `todo`); il fuori-ambito della sua sezione 8 è la nota qui sotto. Branch di lavoro:
+`claude/sigillo-fase-2-illggi`, ripartito da `main` allo stesso commit con cui si era chiusa la
+fase 1 (`7362402` — la PR #1 con le decisioni del committente era nel frattempo stata mergiata,
+quindi il blocco "main non esiste sul remote" annotato in Sessione 1 è superato).
+
+#### Fuori ambito per la fase 2
+
+Non previsti in questa fase: il casello davanti ai modelli locali, la verifica incrociata tra più
+fonti, multi-utente e ruoli, HSM/KMS, cancellazione per retention. Se durante il lavoro dovesse
+emergere che uno di questi è necessario, la decisione si annota qui prima di proseguire.
+
+#### Dipendenze nuove già autorizzate dal committente nel prompt della fase 2
+
+Il prompt nomina esplicitamente due dipendenze non ancora nella lista approvata di `CLAUDE.md`:
+`openinference-instrumentation-openai` (extra opzionale Python, usata in N2) e `langchain-ollama`
+(solo per `demo/selezione-cv`, stesso trattamento di `langgraph`/`langchain-core` in M6: non è una
+dipendenza del pacchetto `sigillo`, serve solo alla demo). Le aggiungo alla lista approvata quando
+le uso davvero, in N2 e N5 rispettivamente, non prima.
+
+#### N1 — Formato v2 (fatto)
+
+- `packages/core/src/receipt.ts` — `v` diventa un'unione discriminata zod fra `unsignedReceiptV1Schema`
+  (invariato bit per bit rispetto a prima) e `unsignedReceiptV2Schema`, che aggiunge `artifacts`
+  (array non vuoto, mai vuoto: un'azione senza documenti omette il campo) e `model` (con `provider`
+  e `digest` **nullable**, non opzionali, perché a differenza di `on_behalf_of` un nome di modello
+  da solo resta un'evidenza significativa). I campi comuni vivono in una sola `receiptCoreShape`
+  condivisa, così ogni versione resta uno `z.object` leggibile per intero, senza `.extend()` da
+  inseguire. `RECEIPT_VERSION` (una sola costante) diventa `RECEIPT_VERSION_1`/`RECEIPT_VERSION_2`
+  (`as const`, altrimenti TypeScript le allarga a `number` e l'unione discriminata smette di
+  distinguere le due forme).
+- `packages/core/src/checkpoint.ts` — disaccoppiato dalla versione della ricevuta: aveva sempre
+  riusato `RECEIPT_VERSION` per il proprio campo `v`, che per puro caso valeva 1 in entrambi i casi.
+  Ora ha una propria `CHECKPOINT_VERSION = 1`, perché la fase 2 non tocca affatto il formato del
+  checkpoint e le due versioni non devono restare accoppiate per un incidente storico.
+- `packages/core/src/manifest.ts` — `receipt_version` accetta `1` o `2` e cambia significato: non è
+  più "la versione di questo export" ma **la versione più alta fra le ricevute presenti**, perché
+  una catena può passare da v1 a v2 a metà strada e un fascicolo può contenerle entrambe. Un export
+  tutto-v1 continua a dichiarare `1`, quindi ogni manifest già prodotto resta valido così com'è.
+- `packages/verifier/src/verify.ts` — un solo controllo nuovo: `receipt_version` deve combaciare con
+  il massimo delle versioni davvero presenti (stesso trattamento di `range`/`counts.*`, dichiarazione
+  verificata contro il contenuto, mai presa per buona). La manomissione di un `artifact` o del `model`
+  **non richiede nessun controllo nuovo**: sono campi dentro la ricevuta come ogni altro, quindi
+  cambiarli cambia l'impronta della ricevuta e viene rilevato dal `chain-link`/`signature` che già
+  esisteva. Le prove nuove lo dimostrano invece di limitarsi a dirlo.
+- `apps/server/src/export/archive.ts` — `receipt_version` nel manifest calcolato dal massimo delle
+  ricevute effettivamente esportate, non più letto da una costante: altrimenti sarebbe rimasto
+  sbagliato dal giorno in cui il server iniziasse davvero a scrivere ricevute v2 (N2/N5).
+  `apps/server/src/storage/store.ts` continua a scrivere `v: RECEIPT_VERSION_1`: **il server non
+  scrive ancora ricevute v2**, di proposito — resta compito di N2 (SDK) e N5 (demo), che sono le
+  prime milestone ad avere davvero `artifacts`/`model` da mettere in una ricevuta.
+- `docs/FORMAT.md` — nuove sezioni 2.5 (`artifacts`) e 2.6 (`model`), tabella dei membri aggiornata,
+  §7.1 con un esempio completo di ricevuta v2 (impronta calcolata e verificata con `openssl`, non
+  scritta a mano), §10.3 e §10.4 aggiornate per il nuovo significato di `receipt_version` e per il
+  controllo in più, nota di stato in testa che dichiara entrambe le versioni correnti.
+
+Vettori: **20 in totale** (erano 14), 8 nuovi di versione 2 — nessuno v1 modificato. Coprono: v2
+senza campi opzionali (canonicalizza come v1 a parte `v`), un artifact, due artifact (a riprova che
+un array non viene mai riordinato dalla canonicalizzazione, solo le chiavi degli oggetti lo sono),
+un modello con provider e digest, un modello con entrambi `null`, e artifact+model insieme. Il campo
+di intestazione del file, `receipt_version` (singolare), diventa `receipt_versions: [1, 2]`, calcolato
+dai vettori stessi invece che dichiarato a parte, così non può disallinearsi da ciò che il file contiene
+davvero.
+
+Verifiche eseguite (452 test verdi, erano 406):
+- ogni vettore v1 esistente è bit per bit quello di prima (nessuna riga toccata in `vectors.json` per
+  i primi 14 vettori, solo aggiunte in coda);
+- una ricevuta v1 che porta `artifacts` o `model` viene **rifiutata**: v1 resta chiuso, non
+  semplicemente permissivo;
+- catena che verifica con ricevute v1 e v2 mescolate nello stesso export, e una interamente v2;
+- manifest con `receipt_version` che sottostima o sovrastima la versione più alta davvero presente:
+  entrambi rifiutati con `range` e il numero dichiarato nel messaggio;
+- `scripts/crosscheck_vectors.py` re-deriva anche gli 8 vettori v2 con un'implementazione Python
+  indipendente, inclusa la forma di `artifacts[]` e `model` — non solo i 12 vettori v1 di prima;
+- l'impronta del vettore `v2-single-input-artifact` (552 byte, sha256
+  `b50f22f0f6d1c7332d28f8cece6a5517f04baa85ffcbedb4a62817cb818ecdd6`) è stata ricalcolata **a mano**
+  con `openssl dgst -sha256` prima di scriverla in `docs/FORMAT.md`, come già fatto per l'esempio v1
+  in M1: verificata contro un valore esterno, non contro sé stessa;
+- `pnpm lint`, `pnpm typecheck`, `pnpm build`, `node scripts/smoke-dist.mjs` (20 vettori verificati
+  sul pacchetto compilato) tutti verdi.
+
+Dimensione di verifier+core: **1909 righe totali (1480 escludendo vuote e commenti)**, erano 1792
+(1416). La crescita di 117 righe totali supera la soglia di ~100 righe della regola 5 di `CLAUDE.md`
+— questa è la nota che la regola stessa richiede. Cosa ha comprato: lo schema v2 con `artifacts` e
+`model` e la loro documentazione inline (~120 righe in `receipt.ts`), la separazione fra
+`CHECKPOINT_VERSION` e le costanti di versione della ricevuta, e il controllo di coerenza su
+`receipt_version` nel verificatore (~10 righe). Nessuna riga tolta o compressa per stare sotto la
+soglia: la richiesta esplicita della fase 2 era di aggiungere questi due campi mantenendo v1
+verificabile senza modifiche, e leggibilità resta il criterio, non il conteggio.
+
+Nessun difetto trovato dai test in questa milestone: le decisioni di design più delicate (versione
+del checkpoint disaccoppiata, `receipt_version` come massimo anziché come costante, `as const` sulle
+nuove costanti di versione) sono state prese **prima** di scrivere lo schema, seguendo l'analisi di
+come `RECEIPT_VERSION` veniva già usato in nove punti diversi del codice, non scoperte a posteriori
+da un test che falliva.
+
+#### N2 — SDK Python, fase 2 (fatto)
+
+- `sdk-python/src/sigillo/__init__.py` — **`sigillo.artifact(data, role, label, media_type=None)`**:
+  calcola SHA-256 in questo processo (`bytes` grezzi, `str` come byte UTF-8 esatti, un percorso letto
+  da disco) e allega solo l'impronta allo span corrente come evento `sigillo.artifact`. Se non c'è
+  uno span attivo, avvisa nei log e non fa nulla, invece di perdere l'evidenza in silenzio.
+- **Digest dei modelli Ollama**: `sigillo.init(..., ollama_url=...)` legge `GET /api/tags` **una sola
+  volta**, all'avvio, e aggiunge un `_ModelDigestProcessor` (un `SpanProcessor` su misura) che timbra
+  `sigillo.model.digest` sullo span **a `on_start`, non a `on_end`**: uno span rifiuta nuovi attributi
+  dopo la fine (`Span.set_attribute` diventa un no-op silenzioso), e una strumentazione corretta
+  dichiara il nome del modello tra gli attributi iniziali dello span proprio perché hook come questo
+  possano vederlo subito. Qualunque errore nel contattare Ollama (spento, rete, risposta inattesa) è
+  un avviso nei log, mai un'eccezione: il digest è un arricchimento, non un requisito per registrare
+  un'azione.
+- **Estensione OpenAI**: `"openai"` tra i valori ammessi di `instrument`, con
+  `openinference-instrumentation-openai` (aggiunta ora a `CLAUDE.md` e a `pyproject.toml`, come
+  annotato in sessione all'avvio della fase 2).
+- `apps/server/src/ingest/otlp.ts` — decodifica anche gli **eventi** dello span (`Span.events` nel
+  proto OTLP), finora ignorati: `OtlpSpan` guadagna `events: OtlpSpanEvent[]`.
+- `apps/server/src/ingest/adapter.ts` — `artifactsOf()` legge ogni evento `sigillo.artifact` e lo
+  trasforma in una voce di `artifacts`; un evento malformato (ruolo sconosciuto, campo mancante,
+  sha256 non esadecimale) viene **scartato, non lancia**: l'SDK garantisce la propria forma, ma un
+  mittente qualunque sul filo no. `modelOf()` legge nome/provider/digest del modello, **solo per un
+  `llm_call` riconosciuto** (scelta dell'adattatore, non un vincolo dello schema). Entrambe tollerano
+  i due dialetti già noti (`gen_ai.*` e `llm.*`).
+- `apps/server/src/storage/store.ts` — un evento con `artifacts` o `model` produce ora `v: 2`; uno
+  senza resta `v: 1`, esattamente come prima. La decisione è per-ricevuta, quindi una catena passa da
+  v1 a v2 in modo naturale nel momento in cui arriva davvero un documento o un modello da registrare,
+  non con un interruttore globale.
+
+Verifiche eseguite (**465 test Node**, erano 452; **22 test Python**, erano 12):
+- `packages/core`/`packages/verifier` invariati: la crescita è tutta in `apps/server` e nell'SDK;
+- Python, unitari: l'impronta calcolata da `sigillo.artifact()` coincide con `hashlib.sha256` calcolato
+  a parte nel test; il contenuto originale **non compare** nei byte del payload OTLP catturato
+  (intercettato con lo stesso server-giocattolo già usato per l'API key); un file letto da percorso
+  hasha gli stessi byte di `path.read_bytes()` e indovina il media type; ruolo diverso da
+  `input`/`output` rifiutato; nessuno span attivo → avviso, nessuna eccezione;
+- Python, digest Ollama: un server-giocattolo che risponde su `/api/tags` produce
+  `sigillo.model.digest` sullo span esportato; una porta locale dove non ascolta nessuno produce
+  **nessun digest e nessuna eccezione**, con l'avviso nei log verificato; senza `ollama_url` nessuna
+  chiamata di rete in più e nessun digest;
+- Python, end-to-end (**nuovo**, firmatario e server veri): `sigillo.artifact()` chiamato da un
+  processo Python reale produce, nell'export firmato e verificato dal verificatore reale, una
+  ricevuta `v: 2` con l'`artifacts` atteso e il contenuto originale assente da `receipts.jsonl` —
+  la prova end-to-end che la sezione 3 del prompt chiedeva, non solo un'asserzione unitaria;
+  esegue con il modello fittizio, non richiede Ollama installato nell'ambiente cloud;
+- Node, `adapter.ts`: un evento sconosciuto e un `sigillo.artifact` malformato (ruolo sbagliato,
+  sha256 non valido, campo assente) non fanno fallire lo span; due artifact restano nell'ordine
+  dell'evento; `label`/`media_type` troppo lunghi vengono troncati come già succede per `action.name`;
+  un `gen_ai.request.model` su uno span che non è un `llm_call` riconosciuto **non** produce `model`;
+- Node, `store.ts`: un evento senza `artifacts`/`model` resta `v: 1`; uno con l'uno o l'altro diventa
+  `v: 2`, con i byte canonici salvati e rileggibili esattamente come per v1;
+- `pnpm lint`, `pnpm typecheck`, `pnpm build`, `node scripts/smoke-dist.mjs`,
+  `python3 scripts/crosscheck_vectors.py` tutti verdi (i vettori non sono cambiati in questa
+  milestone: N2 non tocca il formato).
+
+Nessun difetto trovato dai test in questa milestone.
+
+#### N3 — Verifica di un documento (fatto)
+
+- `packages/core/src/export.ts` — `artifactsIndexEntrySchema`: una riga di `artifacts-index.jsonl`
+  è `{ sha256, seq, role, label }`. Niente `system_id` per riga: il fascicolo ne copre uno solo,
+  dichiarato nel manifest.
+- `apps/server/src/storage/schema.ts` — tabella `artifacts` (append-only, stessi trigger di
+  `receipts`/`checkpoints`/`timestamps`), `FOREIGN KEY (system_id, seq)` verso `receipts`, indice su
+  `sha256`. `apps/server/src/storage/store.ts` scrive le righe **nella stessa transazione** della
+  ricevuta che le dichiara — un documento non può comparire senza la ricevuta che lo nomina, né
+  viceversa — e `findArtifactsBySha256()` risponde alla domanda "chi ha mai usato questo documento"
+  con un indice, non con una scansione di ogni ricevuta.
+- `apps/server/src/export/archive.ts` — `artifacts-index.jsonl` nel fascicolo: una riga per ogni
+  *occorrenza* di artifact (una ricevuta con due documenti dà due righe).
+- `packages/verifier/src/verify.ts` — un controllo nuovo, **simmetrico apposta**: l'insieme degli
+  artifact che le ricevute v2 dichiarano deve coincidere esattamente con l'insieme delle righe
+  dell'indice, in entrambe le direzioni. Una riga in più nell'indice è respinta tanto quanto un
+  artifact senza riga corrispondente: solo così l'indice è affidabile per una ricerca, non soltanto
+  per un conteggio. **Manomettere un artifact non ha richiesto nessun controllo apposito** (come già
+  per N1): cambia l'impronta della ricevuta, quindi lo becca il controllo di catena o di firma che
+  esisteva già. `Verification` ora espone anche `receipts` (le ricevute già validate), perché
+  `sigillo-verify doc` ne ha bisogno senza doverle riparsare.
+- `packages/verifier/src/cli.ts` — `sigillo-verify doc <fascicolo> <file>`: verifica **tutto** il
+  fascicolo prima di rispondere (una ricerca su un archivio manomesso viene rifiutata, non
+  semplicemente resa inaffidabile), poi hasha il file con SHA-256 e cerca la corrispondenza. Uscita
+  come `grep`: 0 trovato, 1 non trovato o fascicolo non valido, 2 file o archivio illeggibile — così
+  uno script può distinguere i tre casi dal solo codice di uscita.
+- `apps/server/src/http/ui.ts` — pagina **"verifica un documento"**: file o testo incollato, un solo
+  script inline che chiama `crypto.subtle.digest` nel browser e naviga a
+  `/ui/verify-document?sha256=...` — il documento non raggiunge mai il server. È l'unica pagina con
+  JavaScript, come vuole la sezione 4 del prompt; il resto della UI resta quello di M9. I testi di
+  **questa** pagina sono in italiano (l'unica pagina per cui il prompt della fase 2 detta le frasi
+  esatte); il resto dell'interfaccia passa all'italiano in N4, con i testi raccolti in un unico file
+  come chiede la sezione 5.
+- `deploy/Caddyfile` — invece di allentare la CSP `default-src 'none'` in generale, `script-src`
+  ammette **solo** l'hash SHA-256 di quello script esatto (`'sha256-...'`). Un test
+  (`apps/server/test/ui.test.ts`) ricalcola l'hash dallo script davvero esportato da `ui.ts` e lo
+  confronta col Caddyfile: se qualcuno modifica lo script senza aggiornare l'hash, il test fallisce
+  invece di scoprirlo in produzione con la console del browser che blocca lo script.
+- `apps/server/src/export/report.ts` — sezione nuova nel PDF: quanti documenti sono indicizzati in
+  questo periodo e, se almeno uno, il comando `sigillo-verify doc` per controllarli.
+- `docs/FORMAT.md`, `docs/SECURITY.md` — `artifacts-index.jsonl` documentato (§10.3), il controllo
+  nuovo nell'elenco del verificatore (§10.5, con la nota sulla simmetria), `sigillo-verify doc`
+  spiegato; `SECURITY.md` estende "nessun contenuto" ai documenti (hashati lato client sia dall'SDK
+  sia dal browser) e spiega la CSP con hash della pagina.
+
+Verifiche eseguite (**485 test Node**, erano 465):
+- un documento trovato mostra sistema, etichetta, azione e stato del checkpoint che lo copre;
+- un documento modificato di un solo byte **non** viene trovato (impronta diversa, nessuna via di
+  mezzo: o è esattamente il file usato, o "nessuna azione registrata");
+- lo stesso documento usato in due ricevute diverse compare **in entrambe**, in ordine di tempo;
+- un indice a cui manca un artifact dichiarato, o che ne dichiara uno in più, o che punta al `seq`
+  sbagliato: tutti rifiutati con `artifacts-index` e il conteggio nel messaggio;
+- `sigillo-verify doc` su un archivio con l'indice manomesso fallisce **l'intero archivio**, non
+  restituisce semplicemente "non trovato" — la ricerca eredita la verifica, non la aggira;
+- il server non riceve mai il contenuto del documento: la pagina lo hasha nel browser, l'SDK lo hasha
+  nel processo del chiamante (già provato in N2); un test controlla che un `sha256` non valido nella
+  query non venga trattato come una ricerca riuscita;
+- XSS: un'etichetta o un nome di azione con markup incorporato arriva in pagina già sfuggito, come
+  per le pagine di M9;
+- `pnpm lint`, `pnpm typecheck`, `pnpm build`, `node scripts/smoke-dist.mjs`,
+  `python3 scripts/crosscheck_vectors.py` tutti verdi (i vettori non cambiano: N3 non tocca il
+  formato della ricevuta, solo l'export e il verificatore).
+
+Dimensione di verifier+core: **2064 righe totali (1609 escludendo vuote e commenti)**, erano 1909
+(1480) dopo N1. Crescita di 155 righe totali, di nuovo oltre la soglia di ~100 della regola 5. Cosa ha comprato: lo schema e il parsing di `artifacts-index.jsonl` in `core`, il controllo
+di coerenza simmetrico e l'esposizione di `receipts` in `Verification`, e l'intero sottocomando
+`sigillo-verify doc` (lettura dell'archivio, hashing del file, ricerca, messaggi) — tutti richiesti
+esplicitamente dalla sezione 4 del prompt. Nessuna riga tolta per stare sotto la soglia.
+
+Nessun difetto trovato dai test in questa milestone.
+
+#### N4 — Interfaccia nuova (fatto)
+
+- `apps/server/src/http/strings.ts` (nuovo) — ogni frase italiana della UI in un solo file: la
+  costante `UI` (navigazione, login, le tre domande, pagina sistemi, cronologia, checkpoint,
+  verifica documento) e due generatori di frasi, non solo stringhe fisse — `describeReceipt()`
+  (una frase per ricevuta, diversa per ogni combinazione di `action.kind` × `outcome`: un tentativo
+  fallito non è "completato" con un'etichetta diversa, è un verbo diverso) e `describeArtifact()`.
+  Un domani una seconda lingua vuol dire un secondo file così, non una caccia in ogni pagina.
+- `apps/server/src/health/chain-health.ts` (nuovo) — `ChainHealthMonitor` risponde alla prima
+  domanda, "è tutto a posto?", con un semaforo verde/giallo/rosso **più una parola**, mai il solo
+  colore (sezione 5 del prompt, e un requisito di accessibilità). La verifica è **incrementale**: ad
+  ogni giro controlla solo le ricevute nuove dall'ultimo controllo (`store.readChainFrom`), non
+  l'intera catena da capo — su un registro che cresce indefinitamente è l'unica scelta che resta
+  economica. Un fallimento è **sticky**: una firma o un anello non validi mettono il sistema a
+  rosso finché non lo si guarda di persona, anche se le ricevute successive tornano valide — un
+  problema non deve poter "guarire da solo" scomparendo dalla vista. Giallo copre tre casi diversi
+  con la stessa cautela (nessun checkpoint ancora, checkpoint non ancora marcato, ultima attività
+  più vecchia della soglia `--stale-after-minutes`); rosso è riservato a una violazione crittografica
+  vera. Gira ogni minuto come il `Checkpointer` di M7, stesso schema `start()`/`stop()` con
+  `.unref()`.
+- `apps/server/src/http/ui.ts` — riscritta: resta di sola lettura tranne la creazione di
+  sistemi/chiavi (come già deciso in M9: la UI non scrive mai una ricevuta). Pagina principale
+  (`/ui`) nelle tre domande esatte del prompt: **è tutto a posto?** una tabella semaforo per
+  sistema con `ChainHealthMonitor`; **cosa ha fatto l'AI?** le ricevute più recenti come frasi di
+  `describeReceipt()`, non come tabella tecnica; **mi prepari le prove?** un modulo con intervallo
+  di date che genera lo stesso fascicolo `.zip` di M7/M8, ora anche per un periodo parziale
+  (`GET/POST /ui/export`, riusa `store.readChainInRange` già esistente). La cronologia per sistema
+  (`/ui/systems/:id`) affianca a ogni frase i tag degli eventuali documenti e un `<details>`
+  "Dettagli tecnici" chiuso di default — `seq`, hash, firma, chiave — così chi non serve i dettagli
+  non li vede, e chi li cerca li trova senza dover chiedere. Nuova pagina `/ui/sistemi`: elenco dei
+  sistemi esistenti, la chiave di firma corrente, e un modulo per crearne uno nuovo; dopo la
+  creazione (`systemCreatedPage`) la chiave compare **una sola volta**, con avviso esplicito che non
+  sarà più recuperabile, più l'esempio Python (`sigillo.init(...)`) pronto da copiare — le
+  "istruzioni di collegamento con codice copiabile" della sezione 5. La pagina "verifica un
+  documento" di N3 resta invariata, incluso il suo unico script inline.
+- CSS (`STYLE` in `ui.ts`) — variabili di colore su `:root`, ridefinite sotto
+  `@media (prefers-color-scheme: dark)`: non è un tema scelto a mano, segue l'impostazione del
+  sistema operativo del lettore. `@media (max-width: 640px)` per il telefono. Nessun framework,
+  nessuna build: lo stesso CSS incorporato di M9, esteso. `deploy/Caddyfile` non cambia: la CSP resta
+  quella con l'hash dello script di N3.
+- `docs/screenshots/` (nuovo) — 7 schermate della UI vera, generate con Playwright (strumento
+  globale del sistema, `/opt/node22/lib/node_modules/playwright`, **non** aggiunto alle dipendenze
+  del progetto: non è nella lista approvata di `CLAUDE.md` e non serve a runtime, solo per questa
+  verifica visiva una tantum): home con le tre domande, cronologia, cronologia con un `<details>`
+  aperto, pagina sistemi, pagina verifica documento, home in tema scuro, home da telefono
+  (`devices["iPhone 13"]`). Dati di prova: un sistema `acme-support-bot` con 4 ricevute varie (uno
+  strumento riuscito con `on_behalf_of`, uno strumento bloccato, un passo, una decisione fallita) e
+  un checkpoint marcato davvero da FreeTSA — non dati sintetici a caso, la stessa forma di prova che
+  un ispettore vedrebbe.
+- `apps/server/test/strings.test.ts` (nuovo, 30 test) — copertura esaustiva di `describeReceipt()`
+  per ogni combinazione di tipo azione × esito, più genesi, `on_behalf_of`, le varianti di
+  provenienza del modello, le etichette degli artifact.
+- `apps/server/test/chain-health.test.ts` (nuovo, 9 test) — giallo (nessun checkpoint, checkpoint
+  non marcato, inattività), verde, rosso (ottenuto manomettendo una riga con una seconda connessione
+  diretta al database, aggirando i trigger append-only con `DROP TRIGGER` solo per il test), verifica
+  incrementale, isolamento tra sistemi diversi.
+- `apps/server/test/ui.test.ts` — riscritto: tutte le asserzioni sul testo passano all'italiano;
+  nuovi blocchi per le tre domande della home, la pagina sistemi (elenco, creazione, nome duplicato),
+  la cronologia con artifact e dettagli tecnici, l'accessibilità da tastiera (ogni `<label>` associato
+  al suo campo, nessun `onclick=` o `<div role="button">` al posto di un vero `<button>`/`<a>`), e
+  l'invariante CSP-hash ereditata da N3.
+
+Decisioni prese senza fermarsi (nessuna richiede una lista fuori da quella approvata):
+- Semaforo incrementale e sticky invece che una scansione completa ad ogni richiesta: su un registro
+  che può crescere per anni, ricontrollare tutto ad ogni caricamento pagina non avrebbe retto; sticky
+  perché un cruscotto di conformità che si "auto-assolve" al giro successivo sarebbe peggio di uno
+  che non controlla affatto.
+- L'export a intervallo di date riusa `readChainInRange`, già scritto per M7/M8 e già provato: N4 gli
+  dà solo un modulo HTML davanti, non una seconda implementazione.
+- Playwright resta uno strumento ad hoc per generare gli screenshot, non una dipendenza del
+  repository: rispetta la regola 6 (nessuna dipendenza fuori lista senza chiedere) perché non è mai
+  importato da codice che gira in produzione o nei test automatici.
+
+Verifiche eseguite (**537 test Node**, erano 485 dopo N3): `pnpm lint`, `pnpm typecheck`, `pnpm
+build`, `node scripts/smoke-dist.mjs`, `python3 scripts/crosscheck_vectors.py` tutti verdi; 7
+screenshot generati e controllati a occhio (tre domande visibili in home, semaforo verde con la
+parola oltre al colore, dettagli tecnici correttamente nascosti/espandibili, tema scuro e vista da
+telefono entrambi leggibili).
+
+Dimensione di verifier+core: **invariata, 2064 righe totali (1609 escludendo vuote e commenti)** —
+N4 non tocca `packages/core` né `packages/verifier`, solo `apps/server` e la documentazione; la
+regola 5 non si applica.
+
+Nessun difetto trovato dai test in questa milestone.
+
+#### N5 — Demo selezione CV (fatto)
+
+- `demo/selezione-cv/curricula/` — 20 curriculum inventati, in italiano, per "sviluppatore backend
+  junior". **Regole di punteggio neutre e dichiarate** (`agent.py`, `evaluate_cv_text`): leggono solo
+  competenze tecniche pertinenti (elenco dichiarato `BACKEND_SKILLS`, corrispondenza a parola intera —
+  altrimenti "javascript" farebbe contare anche "java") e anni di esperienza **specificamente come
+  sviluppatore** (`EXPERIENCE_PATTERN` richiede "N anni di esperienza come sviluppat...": un candidato
+  con anni di esperienza in un altro ruolo non li vede contare). Età, genere, provenienza, foto: non
+  esiste un campo da cui leggerli, non solo una scelta di non usarli. Convenzione con cui i 20
+  curriculum sono scritti apposta per essere testabili: esperienza pertinente in cifre ("2 anni di
+  esperienza come sviluppatore"), esperienza in altri ruoli scritta in lettere ("Tre anni come
+  contabile") — così un test può controllare che la seconda non venga mai letta come la prima. Il
+  candidato n. 7 (Andrea Bianchi, su cui è costruito `ISPEZIONE.md`) ha deliberatamente **zero**
+  competenze pertinenti, zero esperienza pertinente, nessuna formazione informatica: un rifiuto
+  costruito per essere palesemente legittimo, non un caso limite.
+- `agent.py` — tre strumenti (`leggi_curriculum`, `valuta_candidato`, `invia_email`, nomi esatti
+  richiesti dal prompt, perché diventano `action.name` nelle ricevute) in un grafo LangGraph **a tre
+  passi fissi**, non un ciclo dove un modello decide l'ordine: leggi, valuta, rispondi, sempre in
+  quest'ordine. Scelta deliberata — un ordine deciso da un modello sarebbe meno auditabile e meno
+  deterministico per un test, senza portare nulla in cambio qui. `valuta_candidato` calcola il
+  punteggio da sé (la regola dichiarata sopra) e chiede al modello solo di trasformare i fatti già
+  calcolati in una frase, mai di valutare da capo — così la parte che decide resta leggibile come
+  codice, non nascosta nel comportamento di un modello.
+- **Il modello**: `OLLAMA_URL` raggiungibile e modello già scaricato → `langchain_ollama.ChatOllama`,
+  con il digest allegato alla ricevuta `llm_call` (già supportato da N2). Altrimenti
+  `FakeRationaleModel`, un `SimpleChatModel` deterministico con la stessa interfaccia: stessi fatti in
+  ingresso, stessa frase in uscita, nessuna rete — è quello che gira in questa sandbox e in CI.
+  **Tentativo di installare Ollama in questa sessione**: `ollama.com` è raggiungibile (lo script di
+  installazione si scarica correttamente), ma l'esecuzione dello script scaricato è stata bloccata dal
+  classificatore di sicurezza della sandbox ("Code from External") — non un blocco di rete, un confine
+  deliberato di questa sessione cloud, distinto e riportato con precisione invece di confonderlo con
+  l'altro. Anche `pip install langchain-ollama` è stato bloccato allo stesso modo ("Untrusted Code
+  Integration"). Nessun tentativo di aggirare il blocco: il percorso col modello reale resta scritto,
+  testato nella sua parte deterministica, e documentato in `README.md` con i comandi esatti da eseguire
+  su una macchina vera:
+  ```
+  curl -fsSL https://ollama.com/install.sh | sh
+  ollama pull qwen2.5:3b
+  export OLLAMA_URL=http://127.0.0.1:11434
+  ./demo/selezione-cv/run_demo.sh
+  ```
+- **Un difetto vero trovato in `sigillo.artifact()` (N2), non solo nella demo.** Costruendo
+  `leggi_curriculum`/`invia_email` è emerso che `sigillo.artifact()` non allegava mai nulla quando
+  chiamato da dentro un vero strumento LangChain instrumentato da `openinference-instrumentation-
+  langchain`: la funzione cerca "lo span corrente" con `trace.get_current_span()`, ma il tracer di
+  OpenInference per LangChain crea i suoi span con `tracer.start_span(...)` e **apposta** non li
+  attacca mai al contesto di OpenTelemetry (il suo stesso codice sorgente lo spiega: in un sistema a
+  callback non si può garantire che un contesto agganciato venga sempre sganciato, quindi non lo
+  aggancia mai). Risultato: nessuno dei test di N2 se ne era accorto, perché usavano tutti
+  `tracer.start_as_current_span(...)` a mano, mai una vera chiamata LangChain. Corretto in
+  `sdk-python/src/sigillo/__init__.py`: `artifact()` accetta ora un parametro opzionale `span`, e una
+  nuova funzione `current_span_from_callbacks()` lo trova a partire dal `callbacks` che LangChain
+  inietta in una funzione-strumento che dichiara un parametro con questo nome esatto — senza importare
+  mai `langchain_core`, solo leggendo `.parent_run_id`/`.handlers`/`.get_span()` con `getattr`. Nuovo
+  test in `sdk-python/tests/test_init.py`,
+  `test_artifact_works_inside_a_real_langchain_tool_call`, che costruisce un vero `@tool` LangChain,
+  lo invoca come farebbe LangGraph, e controlla che l'evento `sigillo.artifact` compaia sullo span
+  giusto — questo è il test che avrebbe dovuto accorgersene in N2 e non l'ha fatto.
+- `run_demo.sh` — segnalatore/server effimeri (stesso schema di M7/M9), l'agente sui 20 curriculum,
+  un checkpoint marcato da FreeTSA (eseguito davvero in questa sessione: "1 anchored, 0 still
+  waiting"), riepilogo finale. Controlli di avvio che falliscono in modo esplicito (porta già in uso,
+  dipendenze Python mancanti con il comando `pip install` esatto da eseguire) invece di proseguire in
+  silenzio.
+- `run_demo.ps1` — stesso risultato su Windows, ma via Docker Desktop: riusa esattamente i container di
+  `deploy/docker-compose.local.yml` (quelli di `PROVA-LOCALE.md`), in un progetto Compose separato
+  (`sigillo-selezione-cv`) così da non toccare un'installazione di prova che l'utente avesse già in
+  piedi. Aggiunto un nuovo servizio `selezione-cv` al compose file, sullo schema già esistente del
+  servizio `esempio`; la porta pubblicata del server è ora parametrizzabile
+  (`SIGILLO_LOCAL_PORT`, default 8080 invariato) proprio per permettere ai due stack di convivere.
+  **Non eseguibile in questa sessione cloud** (Docker non è disponibile, come già annotato per la
+  checklist Docker di M9): scritto e controllato riga per riga contro i comandi di `PROVA-LOCALE.md`
+  già provati su macchina reale, non contro un'esecuzione vera.
+- `ISPEZIONE.md` — il percorso completo sul candidato n. 7, in italiano, per chi non ha mai visto
+  sigillo: dalla domanda del candidato alla verifica del documento, alla prova che manomettere anche un
+  solo carattere del curriculum lo rende irriconoscibile. **Ogni comando di questo file è stato
+  eseguito davvero in questa sessione** (non solo scritto): il documento giusto viene trovato, quello
+  manomesso no, il fascicolo si verifica, `sigillo-verify doc` su un file modificato di un carattere
+  restituisce "nessuna azione registrata" con uscita 1. Nota anche il limite onesto del percorso: il
+  registro prova che l'azione è avvenuta su quel documento con quell'esito, non che la regola di
+  punteggio è equa — quella si legge nel codice, non in una singola ricevuta.
+- `VIDEO.md` — copione di circa 3 minuti per DPO e responsabili compliance, zero parole tecniche nel
+  parlato, scena per scena, con note di produzione su cosa registrare.
+- `demo/selezione-cv/tests/test_scoring.py` (nuovo, 14 test) — la regola di punteggio in isolamento:
+  un profilo forte, un profilo a zero, la soglia come vero taglio netto (7 punti appena sotto, 8 appena
+  sopra, sugli stessi identici dati salvo un anno di esperienza), "java" mai contato dentro
+  "javascript", anni scritti in lettere in un altro ruolo mai contati, tutti i 20 curriculum spediti
+  verificati contro l'esito atteso uno per uno, il candidato n. 7 verificato a zero su tutti e tre gli
+  assi.
+- `demo/selezione-cv/tests/test_demo_e2e.py` (nuovo, 3 test) — segnalatore e server reali, l'agente
+  vero sui 20 curriculum, poi lo stesso export e lo stesso verificatore open source di ogni altra
+  milestone: conta le ricevute per strumento (20 per ciascuno dei tre), conferma che ogni ricevuta reale
+  porta `on_behalf_of: "elena.rizzo"`, conferma 40 righe nell'indice documenti (20 input + 20 output),
+  verifica che il contenuto del curriculum del candidato n. 7 non compaia mai nell'export, prova
+  `sigillo-verify doc` sul curriculum vero e su una sua versione manomessa.
+- `sdk-python/src/sigillo/__init__.py`, `sdk-python/tests/test_init.py` — vedi il difetto corretto
+  sopra; 4 test nuovi (l'override esplicito di `span`, due su `current_span_from_callbacks()` in
+  isolamento, l'integrazione reale con LangChain), il test sulla superficie pubblica aggiornato per la
+  terza funzione.
+
+Decisioni prese senza fermarsi:
+- Grafo a tre passi fissi invece di un agente che decide l'ordine degli strumenti: più leggibile, più
+  deterministico da testare, e la sezione 6 del prompt non chiede altro.
+- `langgraph`, `langchain-core`, `langchain-ollama` restano fuori dalla lista approvata di
+  `CLAUDE.md`: stesso trattamento già riservato a `langgraph`/`langchain-core` in M6, dichiarati solo
+  nel `requirements.txt` della demo, non dipendenze del pacchetto `sigillo`. La nota della sessione 2
+  ("le aggiungo alla lista quando le uso, in N5") era una previsione scritta prima di arrivarci; il
+  trattamento corretto, coerente con quanto già deciso in M6, è questo.
+- Difetto di `sigillo.artifact()` corretto alla radice (nell'SDK) invece che aggirato solo nella demo:
+  il problema riguarda chiunque usi LangChain con questo SDK, non solo questa demo.
+
+Verifiche eseguite: **537 test Node** (invariati, N5 non tocca codice TypeScript), **26 test Python in
+`sdk-python/tests`** (erano 22 dopo N2, +4 per il difetto corretto), **17 test Python nuovi in
+`demo/selezione-cv/tests`**; `pnpm check` verde; `run_demo.sh` eseguito per intero in questa sessione,
+incluso un checkpoint marcato da FreeTSA; ogni passo di `ISPEZIONE.md` eseguito davvero, non solo
+scritto; `run_demo.ps1` scritto e controllato ma non eseguibile qui (nessun Docker in questa sandbox,
+stesso limite già annotato per M9).
+
+Dimensione di verifier+core: **invariata, 2064 righe totali (1609 escludendo vuote e commenti)** — N5
+non tocca `packages/core` né `packages/verifier`; il difetto corretto vive in `sdk-python/`, fuori
+dall'ambito della regola 5.
+
+Difetto trovato e corretto in questa milestone: `sigillo.artifact()` non funzionava con LangChain reale
+(sopra). Nessun altro difetto trovato dai test.
+
+**Addendum, durante N6**: l'accettazione di N5 chiede esplicitamente "e2e in CI", ma
+`.github/workflows/ci.yml` non è stato aggiornato insieme al resto — i 17 test di
+`demo/selezione-cv/tests` giravano solo se lanciati a mano. Corretto aggiungendo un passo al job
+Python esistente: nessuna installazione in più, perché `sdk-python/examples/requirements.txt` (già
+installato in quel job) copre già `langgraph`/`langchain-core`/`openinference-instrumentation-
+langchain`, le uniche dipendenze della demo che il test in CI usa davvero — `langchain-ollama` resta
+fuori perché lì `OLLAMA_URL` non è mai impostata, quindi quel ramo di codice non viene mai importato.
+Controllato che `python -m unittest discover -s demo/selezione-cv/tests -t demo/selezione-cv` passi
+davvero senza `langchain-ollama` installato (è la condizione dell'ambiente CI, e anche quella di
+questa sandbox).
+
+#### N6 — Documentazione non tecnica (fatto)
+
+`ISPEZIONE.md` e `VIDEO.md` erano già stati scritti in N5, dove appartengono (sono documenti della
+demo, non della fase 2 in generale). Il lavoro rimasto per N6 era `PROVA-LOCALE.md`: non solo
+estenderlo, ma prima **correggerlo**, perché descriveva un'interfaccia che non esiste più.
+
+- **Due correzioni fattuali**, non aggiunte: il Passo 8 diceva "la pagina è in inglese" con
+  "Administrator password" / "Sign in" — falso da N4 in poi, l'interfaccia è in italiano
+  ("Password amministratore" / "Accedi"). Il Passo 12 nominava un bottone "Generate the evidence
+  file" che non esiste più (ora "Genera fascicolo", con scelta di un intervallo di date). Il Passo 11
+  descriveva un elenco tecnico di ricevute invece delle tre domande e delle frasi leggibili che la
+  pagina principale mostra davvero da N4. Ho verificato ogni stringa citata contro
+  `apps/server/src/http/strings.ts` e `ui.ts`, non a memoria.
+- **Nuovo Passo 15 — "Le novità della fase 2"**, inserito prima di "Spegnere" (rinumerato da 15 a
+  16; nessun altro passo lo referenzia per numero, quindi rinumerare non ha rotto rimandi
+  nell'appendice). Due parti:
+  - creare un sistema dalla pagina "sistemi" invece che da terminale — mostrata, non usata per
+    forza, perché `acme-support-bot` esiste già a quel punto della guida;
+  - verificare un documento: qui serviva dell'attenzione in più, perché l'agente di esempio del
+    Passo 10 non allega mai documenti — la pagina risponderebbe sempre "nessuna azione registrata",
+    correttamente ma senza dimostrare nulla. Ho scelto di far girare la demo `selezione-cv` **sullo
+    stesso** sigillo già acceso (un secondo registro, stessi comandi `system create`/`key create`
+    già visti al Passo 9, chiave passata con `-e` al comando `run` senza toccare il `.env` di
+    `acme-support-bot`) invece di rimandare a `run_demo.sh`/`run_demo.ps1`: quegli script richiedono
+    Node e Python **sul computer dell'utente**, mentre chi ha seguito `PROVA-LOCALE.md` fin qui ha
+    solo Docker Desktop, per progetto (è il punto del servizio `esempio` già esistente, che installa
+    le sue dipendenze dentro un container usa-e-getta). Riutilizzare il compose e il bind mount
+    `..:/work` già presenti significa che `demo/selezione-cv/outbox/` finisce comunque sul disco
+    reale dell'utente, esattamente dove `ISPEZIONE.md` (scritto in N5) si aspetta di trovarlo — le
+    due guide restano compatibili senza doversi coordinare esplicitamente.
+
+Decisioni prese senza fermarsi:
+- Non ho spostato il Passo 9 (creazione sistema da CLI) a favore della pagina "sistemi": sarebbe
+  stata una riscrittura strutturale di un documento già lungo e già controllato riga per riga in
+  M9, con un beneficio marginale — mostrare la pagina "sistemi" più avanti, come alternativa, ottiene
+  lo stesso risultato didattico con meno rischio.
+- Nessun test automatico per questa milestone: è documentazione, non codice. La verifica è stata
+  incrociare ogni frase, ogni etichetta di bottone e ogni percorso di file citati con il codice
+  sorgente attuale (`strings.ts`, `ui.ts`, `docker-compose.local.yml`), non un'esecuzione reale della
+  guida — Docker non è disponibile in questa sessione cloud, stesso limite già annotato per M9 e per
+  `run_demo.ps1` in N5. Resta, come per la checklist Docker di M9, da confermare su una macchina vera.
+
+Verifiche eseguite: nessun test nuovo (documentazione); `pnpm check` rieseguito per confermare che
+nessun'altra modifica di questa sessione fosse rimasta non salvata (537 test Node verdi, invariati).
+
+Con N6 tutte le milestone della fase 2 (N1–N6) sono `fatto`.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

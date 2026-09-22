@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Marco Vitali
+
+Formazione:
+Laurea in Ingegneria Informatica.
+
+Esperienza:
+2 anni di esperienza come sviluppatore backend su servizi di reportistica
+interna per una media impresa manifatturiera.
+
+Competenze tecniche:
+Python, PostgreSQL, Docker, Git, REST.
+
+Disponibilità: un mese di preavviso.

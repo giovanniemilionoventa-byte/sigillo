@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Martina Lombardi
+
+Formazione:
+Diploma di Istituto Tecnico Informatico.
+
+Esperienza:
+1 anno di esperienza come sviluppatrice su un'applicazione interna di
+gestione turni per una piccola catena di negozi.
+
+Competenze tecniche:
+JavaScript, Node.js, MongoDB, Git.
+
+Disponibilità: immediata.

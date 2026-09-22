@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalReceiptBytes,
   GENESIS_PREV_HASH,
   parseReceipt,
-  RECEIPT_VERSION,
+  receiptHashHex,
+  RECEIPT_VERSION_2,
   safeParseReceipt,
   type Receipt,
+  type ReceiptV2,
 } from "@sigillo/core";
 
 const SIG =
@@ -193,9 +196,9 @@ describe("receipt schema", () => {
   });
 
   it("refuses to parse a schema version it does not implement", () => {
-    expectRejected(withField("v", RECEIPT_VERSION + 1), "v");
+    expectRejected(withField("v", RECEIPT_VERSION_2 + 1), "v");
     expectRejected(withField("v", 0), "v");
-    expect(() => parseReceipt(withField("v", 2))).toThrow(/version/i);
+    expect(() => parseReceipt(withField("v", RECEIPT_VERSION_2 + 1))).toThrow();
   });
 
   it("reports the failing field so a verifier can name it", () => {
@@ -204,6 +207,123 @@ describe("receipt schema", () => {
     if (result.ok) return;
     expect(result.error).toMatch(/prev_hash/);
     expect(result.error).toMatch(/64/);
+  });
+});
+
+describe("receipt schema version 2", () => {
+  function validReceiptV2(overrides: Partial<ReceiptV2> = {}): ReceiptV2 {
+    return {
+      v: RECEIPT_VERSION_2,
+      system_id: "acme-support-bot",
+      seq: 3,
+      ts_event: "2026-03-29T14:30:00.123Z",
+      ts_received: "2026-03-29T14:30:00.456Z",
+      actor: { agent: "planner" },
+      action: { kind: "tool_call", name: "search_orders" },
+      input_hash: HASH,
+      output_hash: null,
+      outcome: "ok",
+      source: { type: "sdk" },
+      prev_hash: HASH,
+      key_id: "3f2a1c9d8e7b6a5f",
+      sig: SIG,
+      ...overrides,
+    };
+  }
+
+  const artifact = {
+    role: "input" as const,
+    label: "curriculum",
+    media_type: "text/plain",
+    sha256: HASH,
+  };
+  const model = { name: "qwen2.5:3b", provider: "ollama", digest: "sha256:deadbeef" };
+
+  it("accepts a v2 receipt with neither artifacts nor model: it carries no more than a v1 one", () => {
+    expect(safeParseReceipt(validReceiptV2()).ok).toBe(true);
+  });
+
+  it("accepts artifacts, model, or both", () => {
+    expect(safeParseReceipt(validReceiptV2({ artifacts: [artifact] })).ok).toBe(true);
+    expect(safeParseReceipt(validReceiptV2({ model })).ok).toBe(true);
+    expect(safeParseReceipt(validReceiptV2({ artifacts: [artifact], model })).ok).toBe(true);
+  });
+
+  it("accepts a model with a null provider and digest: a name is all the caller may have", () => {
+    expect(
+      safeParseReceipt(validReceiptV2({ model: { name: "local-model", provider: null, digest: null } }))
+        .ok,
+    ).toBe(true);
+  });
+
+  it("accepts both artifact roles", () => {
+    expect(safeParseReceipt(validReceiptV2({ artifacts: [{ ...artifact, role: "input" }] })).ok).toBe(
+      true,
+    );
+    expect(safeParseReceipt(validReceiptV2({ artifacts: [{ ...artifact, role: "output" }] })).ok).toBe(
+      true,
+    );
+  });
+
+  it("rejects an empty artifacts array: omit the member instead", () => {
+    expectRejected(validReceiptV2({ artifacts: [] }), "artifacts");
+  });
+
+  it("rejects an artifact with an unknown role", () => {
+    expectRejected(
+      validReceiptV2({ artifacts: [{ ...artifact, role: "both" as never }] }),
+      "role",
+    );
+  });
+
+  it("rejects an artifact whose sha256 is not 64 lowercase hex characters", () => {
+    for (const bad of [HASH.slice(0, 63), HASH.toUpperCase(), "not-hex"]) {
+      expectRejected(validReceiptV2({ artifacts: [{ ...artifact, sha256: bad }] }), "sha256");
+    }
+  });
+
+  it("rejects an artifact with an empty or oversized label", () => {
+    expectRejected(validReceiptV2({ artifacts: [{ ...artifact, label: "" }] }), "label");
+    expectRejected(validReceiptV2({ artifacts: [{ ...artifact, label: "x".repeat(257) }] }), "label");
+  });
+
+  it("rejects an artifact with an empty media_type", () => {
+    expectRejected(validReceiptV2({ artifacts: [{ ...artifact, media_type: "" }] }), "media_type");
+  });
+
+  it("rejects a model with an empty name", () => {
+    expectRejected(validReceiptV2({ model: { ...model, name: "" } }), "model");
+  });
+
+  it("rejects an artifacts or model field that carries an unknown member", () => {
+    expectRejected(
+      validReceiptV2({ artifacts: [{ ...artifact, note: "smuggled" } as never] }),
+      "artifacts",
+    );
+    expectRejected(validReceiptV2({ model: { ...model, trust: "high" } as never }), "model");
+  });
+
+  it("keeps a v1 receipt closed to the new members: v1 is unchanged, not merely lenient", () => {
+    expectRejected({ ...validReceipt(), artifacts: [artifact] }, "artifacts");
+    expectRejected({ ...validReceipt(), model }, "model");
+  });
+
+  it("changes the receipt hash when an artifact's digest changes, exactly like every other field", () => {
+    const withArtifact = validReceiptV2({ artifacts: [artifact] });
+    const tampered = validReceiptV2({ artifacts: [{ ...artifact, sha256: HASH.replace("f", "0") }] });
+    expect(receiptHashHex(withArtifact)).not.toBe(receiptHashHex(tampered));
+  });
+
+  it("changes the receipt hash when the model field changes", () => {
+    const withModel = validReceiptV2({ model });
+    const tampered = validReceiptV2({ model: { ...model, name: "gpt-4o" } });
+    expect(receiptHashHex(withModel)).not.toBe(receiptHashHex(tampered));
+  });
+
+  it("omits absent optional members from the canonical form, as v1 does for on_behalf_of", () => {
+    const canonical = new TextDecoder().decode(canonicalReceiptBytes(validReceiptV2()));
+    expect(canonical).not.toContain("artifacts");
+    expect(canonical).not.toContain("model");
   });
 });
 

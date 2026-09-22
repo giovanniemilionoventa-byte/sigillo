@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Nicola Barbieri
+
+Formazione:
+Diploma Tecnico Commerciale.
+
+Esperienza:
+2 anni di esperienza come sviluppatore, autodidatta per la parte di backend,
+su un piccolo progetto di fatturazione per l'azienda di famiglia.
+
+Competenze tecniche:
+SQL, Git, Linux.
+
+Disponibilità: immediata.

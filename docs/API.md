@@ -53,6 +53,21 @@ know is still recorded, as an `agent_step`, and reported back in the response.
 A span that describes no AI action at all — an HTTP handler, a database query —
 is ignored and counted.
 
+Two members of the receipt format, both added in phase 2, are filled from the
+same span, when present, and the resulting receipt is `v: 2` rather than `v: 1`:
+
+- **`artifacts`**: one entry per `sigillo.artifact` span event (as the Python
+  SDK's `sigillo.artifact(...)` attaches), read from that event's
+  `sigillo.artifact.role`/`.label`/`.media_type`/`.sha256` attributes. A
+  malformed event is skipped, not thrown on. Any span may carry these, not
+  only an `llm_call`.
+- **`model`**: for a recognised `llm_call` only, from `gen_ai.request.model` /
+  `gen_ai.response.model` / `llm.model_name` for the name,
+  `gen_ai.provider.name` / `gen_ai.system` / `llm.provider` / `llm.system` for
+  the provider, and the SDK's own `sigillo.model.digest` for the digest — the
+  latter present only when `sigillo.init(..., ollama_url=...)` could reach
+  Ollama.
+
 The span's status becomes the receipt's outcome: `OK` → `ok`, `ERROR` →
 `error`, and an unset status → `unknown`. An unset status is not read as
 success: OpenTelemetry leaves it unset unless the source said otherwise.

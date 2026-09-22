@@ -13,7 +13,7 @@ import {
   type ZipEntry,
 } from "@sigillo/core";
 import { verifyBundle, type Bundle, type VerificationCheck } from "@sigillo/verifier";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { buildArchive } from "../src/export/archive.js";
 import { requestTimestampWithRetry } from "../src/timestamp/rfc3161.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
@@ -123,11 +123,31 @@ describe("the archive a full export produces", () => {
     const files = filesOf((await build()).zip);
     expect([...files.keys()].sort()).toEqual([
       "VERIFY.md",
+      "artifacts-index.jsonl",
       "checkpoints.jsonl",
       "manifest.json",
       "receipts.jsonl",
       "report.pdf",
       "timestamps/checkpoint-12-1.tsr",
+    ]);
+  });
+
+  it("indexes every artifact a receipt declares, one line each", async () => {
+    await store.append({
+      ...event(12),
+      artifacts: [
+        { role: "input", label: "curriculum", media_type: "text/plain", sha256: "a".repeat(64) },
+        { role: "output", label: "email di risposta", media_type: "text/plain", sha256: "b".repeat(64) },
+      ],
+    });
+    const files = filesOf((await build()).zip);
+    const lines = decode(files.get("artifacts-index.jsonl"))
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as unknown);
+    expect(lines).toEqual([
+      { sha256: "a".repeat(64), seq: 12, role: "input", label: "curriculum" },
+      { sha256: "b".repeat(64), seq: 12, role: "output", label: "email di risposta" },
     ]);
   });
 
@@ -178,6 +198,29 @@ describe("the archive a full export produces", () => {
     expect(text).toContain("Article 12(2)");
     expect(text).toContain("post-market monitoring");
     expect(text).toContain("sigillo-verify");
+    // This chain has no artifacts, so the report says there is nothing to look up.
+    expect(text).toContain("nothing to look up");
+  });
+
+  it("points to sigillo-verify doc in the report once a receipt names a document", async () => {
+    await store.append({
+      ...event(12),
+      artifacts: [
+        { role: "input", label: "curriculum", media_type: "text/plain", sha256: "a".repeat(64) },
+      ],
+    });
+    const files = filesOf((await build()).zip);
+    const report = files.get("report.pdf");
+    const path = join(directory, "report-with-artifact.pdf");
+    writeFileSync(path, report ?? new Uint8Array());
+    let text = "";
+    try {
+      text = execFileSync("pdftotext", [path, "-"], { encoding: "utf8" });
+    } catch {
+      return; // no pdftotext here; the zip-level test above already covers this file
+    }
+    expect(text).toContain("sigillo-verify doc");
+    expect(text).toContain("1 document fingerprint");
   });
 
   it("writes instructions that stand on their own", async () => {
@@ -466,5 +509,122 @@ describe("the sigillo-verify command on a real archive", () => {
     expect(status).toBe(1);
     expect(stderr).toContain("FAILED");
     expect(stderr).toContain("chain-link");
+  }, 30_000);
+});
+
+describe("the sigillo-verify doc command", () => {
+  const VERIFIER_CLI = join(REPOSITORY_ROOT, "packages", "verifier", "src", "cli.ts");
+  const TSX = join(REPOSITORY_ROOT, "node_modules", ".bin", "tsx");
+
+  function run(args: string[]): { status: number; stdout: string; stderr: string } {
+    try {
+      const stdout = execFileSync(TSX, [VERIFIER_CLI, ...args], { encoding: "utf8" });
+      return { status: 0, stdout, stderr: "" };
+    } catch (error) {
+      const failure = error as { status?: number; stdout?: string; stderr?: string };
+      return { status: failure.status ?? 1, stdout: failure.stdout ?? "", stderr: failure.stderr ?? "" };
+    }
+  }
+
+  it("finds a document that was used, with the right label and action", async () => {
+    const content = "il curriculum esatto usato in questo test";
+    const sha256 = createHash("sha256").update(content).digest("hex");
+    await store.append({
+      ...event(12),
+      action: { kind: "tool_call", name: "leggi_curriculum" },
+      artifacts: [{ role: "input", label: "curriculum", media_type: "text/plain", sha256 }],
+    });
+
+    const archivePath = join(directory, "fascicolo.zip");
+    writeFileSync(archivePath, (await build()).zip);
+    const filePath = join(directory, "curriculum.txt");
+    writeFileSync(filePath, content);
+
+    const result = run(["doc", archivePath, filePath]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(SYSTEM);
+    expect(result.stdout).toContain("curriculum");
+    expect(result.stdout).toContain("leggi_curriculum");
+    expect(result.stdout).toContain("not been modified");
+  }, 30_000);
+
+  it("reports no match for a document changed by one character", async () => {
+    const content = "il curriculum esatto usato in questo test";
+    const sha256 = createHash("sha256").update(content).digest("hex");
+    await store.append({
+      ...event(12),
+      artifacts: [{ role: "input", label: "curriculum", media_type: "text/plain", sha256 }],
+    });
+
+    const archivePath = join(directory, "fascicolo.zip");
+    writeFileSync(archivePath, (await build()).zip);
+    const filePath = join(directory, "curriculum.txt");
+    writeFileSync(filePath, `${content}!`);
+
+    const result = run(["doc", archivePath, filePath]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("No registered action used this document");
+  }, 30_000);
+
+  it("lists every use of a document that was recorded more than once", async () => {
+    const content = "documento riutilizzato due volte";
+    const sha256 = createHash("sha256").update(content).digest("hex");
+    await store.append({
+      ...event(12),
+      action: { kind: "tool_call", name: "prima-azione" },
+      artifacts: [{ role: "input", label: "allegato", media_type: "text/plain", sha256 }],
+    });
+    await store.append({
+      ...event(13),
+      action: { kind: "tool_call", name: "seconda-azione" },
+      artifacts: [{ role: "input", label: "allegato", media_type: "text/plain", sha256 }],
+    });
+
+    const archivePath = join(directory, "fascicolo.zip");
+    writeFileSync(archivePath, (await build()).zip);
+    const filePath = join(directory, "allegato.txt");
+    writeFileSync(filePath, content);
+
+    const result = run(["doc", archivePath, filePath]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("prima-azione");
+    expect(result.stdout).toContain("seconda-azione");
+  }, 30_000);
+
+  it("fails the whole archive, not just the lookup, when the index has been tampered with", async () => {
+    const content = "documento di prova";
+    const sha256 = createHash("sha256").update(content).digest("hex");
+    await store.append({
+      ...event(12),
+      artifacts: [{ role: "input", label: "curriculum", media_type: "text/plain", sha256 }],
+    });
+
+    const files = filesOf((await build()).zip);
+    const tampered = JSON.stringify({ sha256, seq: 999, role: "input", label: "curriculum" });
+    const rebuilt = createZip(
+      [...files].map(([name, data]) =>
+        name === "artifacts-index.jsonl"
+          ? { name, data: new TextEncoder().encode(`${tampered}\n`) }
+          : { name, data },
+      ),
+    );
+    const archivePath = join(directory, "tampered.zip");
+    writeFileSync(archivePath, rebuilt);
+    const filePath = join(directory, "curriculum.txt");
+    writeFileSync(filePath, content);
+
+    const result = run(["doc", archivePath, filePath]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("FAILED");
+    expect(result.stderr).toContain("artifacts-index");
+  }, 30_000);
+
+  it("exits 2 when the file to look up cannot be read", async () => {
+    await store.append(event(12));
+    const archivePath = join(directory, "fascicolo.zip");
+    writeFileSync(archivePath, (await build()).zip);
+
+    const result = run(["doc", archivePath, join(directory, "does-not-exist.txt")]);
+    expect(result.status).toBe(2);
   }, 30_000);
 });

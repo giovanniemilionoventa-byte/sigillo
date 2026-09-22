@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Alessio Ferrari
+
+Formazione:
+Laurea in Ingegneria Informatica.
+
+Esperienza:
+2 anni di esperienza come sviluppatore backend, con introduzione di una
+pipeline di integrazione continua nel team.
+
+Competenze tecniche:
+Java, Spring, MySQL, Docker, Git, CI/CD.
+
+Disponibilità: due settimane di preavviso.

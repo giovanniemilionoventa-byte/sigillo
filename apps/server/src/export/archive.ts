@@ -4,7 +4,6 @@ import {
   fromHex,
   inclusionProof,
   receiptHashHex,
-  RECEIPT_VERSION,
   SIGILLO_VERSION,
   toHex,
   type CheckpointEntry,
@@ -78,6 +77,24 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
   const receiptsJsonl = receipts.map((receipt) => `${canonicalJson(receipt)}\n`).join("");
   const leaves = receipts.map((receipt) => fromHex(receiptHashHex(receipt)));
 
+  // One line per artifact occurrence, so "has this document been used"
+  // never requires opening every receipt to find out.
+  const artifactsIndexJsonl = receipts
+    .flatMap((receipt) =>
+      receipt.v === 2 && receipt.artifacts !== undefined
+        ? receipt.artifacts.map(
+            (artifact) =>
+              `${JSON.stringify({
+                sha256: artifact.sha256,
+                seq: receipt.seq,
+                role: artifact.role,
+                label: artifact.label,
+              })}\n`,
+          )
+        : [],
+    )
+    .join("");
+
   const tokens: ZipEntry[] = [];
   const entries: CheckpointEntry[] = [];
 
@@ -116,9 +133,16 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
 
   const checkpointsJsonl = entries.map((entry) => `${JSON.stringify(entry)}\n`).join("");
 
+  // The manifest declares the highest receipt version actually present, so an
+  // export that mixes v1 and v2 receipts (a chain upgraded mid-flight) still
+  // makes a claim the verifier can check against the receipts themselves.
+  const receiptVersion = receipts.reduce<number>((max, receipt) => Math.max(max, receipt.v), 0) as
+    | 1
+    | 2;
+
   const manifest: Manifest = {
     sigillo_version: SIGILLO_VERSION,
-    receipt_version: RECEIPT_VERSION,
+    receipt_version: receiptVersion,
     system_id: systemId,
     exported_at: input.exportedAt,
     range: {
@@ -136,7 +160,12 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
   };
   const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
 
-  const verification = verifyBundle({ manifestJson, receiptsJsonl, checkpointsJsonl });
+  const verification = verifyBundle({
+    manifestJson,
+    receiptsJsonl,
+    checkpointsJsonl,
+    artifactsIndexJsonl,
+  });
 
   const actionCounts = new Map<string, number>();
   for (const receipt of receipts) {
@@ -149,6 +178,7 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     { name: "manifest.json", data: encode(manifestJson) },
     { name: "receipts.jsonl", data: encode(receiptsJsonl) },
     { name: "checkpoints.jsonl", data: encode(checkpointsJsonl) },
+    { name: "artifacts-index.jsonl", data: encode(artifactsIndexJsonl) },
     ...tokens,
     { name: "report.pdf", data: report },
     { name: "VERIFY.md", data: encode(verifyInstructions(manifest, entries)) },

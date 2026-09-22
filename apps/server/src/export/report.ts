@@ -161,6 +161,29 @@ export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
       "verify a single receipt by hand.",
   );
 
+  heading("Checking whether a specific document was used");
+  if (verification.ok && verification.summary.artifacts_indexed > 0) {
+    document.text(
+      `${verification.summary.artifacts_indexed} document fingerprint(s) are recorded in this ` +
+        "file, in artifacts-index.jsonl. To find out whether a file you have is the exact one a " +
+        "receipt names:",
+    );
+    document.moveDown(0.3);
+    document.font("Courier").fontSize(9);
+    document.text("  sigillo-verify doc <this archive> <the file>");
+    document.font("Helvetica").fontSize(10).moveDown(0.3);
+    document.text(
+      "It verifies the archive first, then hashes the file with SHA-256 and looks for that " +
+        "digest in the index. Changing even one character of the file changes its digest, so " +
+        "there is no partial match: either it is exactly the file that was used, or the tool " +
+        "reports that no registered action used it.",
+    );
+  } else {
+    document.text(
+      "No receipt in this period names a document, so there is nothing to look up this way.",
+    );
+  }
+
   heading("Why this record exists");
   document.text(
     "Regulation (EU) 2024/1689 (the AI Act), Article 12(2), requires that the logging " +

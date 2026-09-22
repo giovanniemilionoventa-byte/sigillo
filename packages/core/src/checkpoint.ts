@@ -2,7 +2,7 @@ import { type KeyObject } from "node:crypto";
 import { z } from "zod";
 import { CANONICAL_BASE64_MESSAGE, isCanonicalBase64 } from "./base64.js";
 import { canonicalBytes, sha256, sha256Hex } from "./canonical.js";
-import { isoUtcTimestampSchema, RECEIPT_VERSION } from "./receipt.js";
+import { isoUtcTimestampSchema } from "./receipt.js";
 import { signDigest, verifyDigestSignature } from "./signing.js";
 
 /**
@@ -12,7 +12,13 @@ import { signDigest, verifyDigestSignature } from "./signing.js";
  * It is what a timestamp token is taken over, and what an inclusion proof is
  * checked against. Its canonical form and signature follow the same rules as a
  * receipt's, so a verifier has one procedure to implement, not two.
+ *
+ * The checkpoint format is versioned separately from the receipt format: phase
+ * 2 adds a second receipt version without touching checkpoints at all.
  */
+
+/** Schema version carried in every checkpoint's `v` field. */
+export const CHECKPOINT_VERSION = 1 as const;
 
 const hexString = (length: number) =>
   z
@@ -21,9 +27,9 @@ const hexString = (length: number) =>
 
 export const unsignedCheckpointSchema = z
   .object({
-    v: z.literal(RECEIPT_VERSION, {
+    v: z.literal(CHECKPOINT_VERSION, {
       errorMap: () => ({
-        message: `unsupported checkpoint version, this build implements version ${RECEIPT_VERSION}`,
+        message: `unsupported checkpoint version, this build implements version ${CHECKPOINT_VERSION}`,
       }),
     }),
     system_id: z.string().min(1).max(128),

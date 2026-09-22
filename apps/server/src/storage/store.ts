@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import {
   canonicalReceiptBytes,
   checkpointHash,
+  CHECKPOINT_VERSION,
   fromHex,
   GENESIS_PREV_HASH,
   merkleRoot,
@@ -9,11 +10,14 @@ import {
   parseReceipt,
   parseUnsignedReceipt,
   receiptHash,
-  RECEIPT_VERSION,
+  RECEIPT_VERSION_1,
+  RECEIPT_VERSION_2,
   toHex,
   type Action,
   type Actor,
+  type ArtifactEntry,
   type Checkpoint,
+  type ModelInfo,
   type Outcome,
   type Receipt,
   type Source,
@@ -37,11 +41,26 @@ export interface ChainEvent {
   output_hash: string | null;
   outcome: Outcome;
   source: Source;
+  /** Either one, present, makes the stored receipt v2 rather than v1. */
+  artifacts?: ArtifactEntry[];
+  model?: ModelInfo;
 }
 
 export interface ChainTip {
   seq: number;
   hash: string;
+}
+
+/** One recorded use of a document, joined with enough of its receipt to describe it. */
+export interface ArtifactMatch {
+  system_id: string;
+  seq: number;
+  role: string;
+  label: string;
+  media_type: string;
+  ts_received: string;
+  action_kind: string;
+  action_name: string;
 }
 
 /** A checkpoint as stored, with the row id that timestamp tokens hang from. */
@@ -82,7 +101,7 @@ function rowToCheckpoint(row: CheckpointRow): StoredCheckpoint {
   return {
     id: row.id,
     checkpoint: parseCheckpoint({
-      v: RECEIPT_VERSION,
+      v: CHECKPOINT_VERSION,
       system_id: row.system_id,
       tree_size: row.tree_size,
       root_hash: row.root_hash,
@@ -115,6 +134,7 @@ export class ReceiptStore {
 
   private readonly tipStatement: Database.Statement;
   private readonly insertStatement: Database.Statement;
+  private readonly insertArtifactStatement: Database.Statement;
   private readonly registerStatement: Database.Statement;
 
   private constructor(
@@ -133,6 +153,10 @@ export class ReceiptStore {
                              ts_event, ts_received, action_kind, action_name, outcome)
        VALUES (@system_id, @seq, @hash, @prev_hash, @canonical, @sig, @key_id,
                @ts_event, @ts_received, @action_kind, @action_name, @outcome)`,
+    );
+    this.insertArtifactStatement = this.write.prepare(
+      `INSERT INTO artifacts (system_id, seq, role, label, media_type, sha256)
+       VALUES (@system_id, @seq, @role, @label, @media_type, @sha256)`,
     );
   }
 
@@ -197,6 +221,32 @@ export class ReceiptStore {
     const rows = this.read
       .prepare("SELECT canonical, sig FROM receipts WHERE system_id = ? ORDER BY seq")
       .all(systemId) as StoredRow[];
+    return rows.map(rowToReceipt);
+  }
+
+  /** Everything after `afterSeq`, for a checker that does not want to reread what it already saw. */
+  readChainFrom(systemId: string, afterSeq: number): Receipt[] {
+    const rows = this.read
+      .prepare("SELECT canonical, sig FROM receipts WHERE system_id = ? AND seq > ? ORDER BY seq")
+      .all(systemId, afterSeq) as StoredRow[];
+    return rows.map(rowToReceipt);
+  }
+
+  /** The receipts whose ts_received falls in [from, to] (either end optional), in seq order. */
+  readChainInRange(systemId: string, from?: string, to?: string): Receipt[] {
+    const clauses = ["system_id = @system_id"];
+    const parameters: Record<string, string> = { system_id: systemId };
+    if (from !== undefined) {
+      clauses.push("ts_received >= @from");
+      parameters["from"] = from;
+    }
+    if (to !== undefined) {
+      clauses.push("ts_received <= @to");
+      parameters["to"] = to;
+    }
+    const rows = this.read
+      .prepare(`SELECT canonical, sig FROM receipts WHERE ${clauses.join(" AND ")} ORDER BY seq`)
+      .all(parameters) as StoredRow[];
     return rows.map(rowToReceipt);
   }
 
@@ -315,6 +365,20 @@ export class ReceiptStore {
     return rows.map(rowToReceipt);
   }
 
+  /** Every recorded use of a document, oldest first, across every system. */
+  findArtifactsBySha256(sha256: string): ArtifactMatch[] {
+    return this.read
+      .prepare(
+        `SELECT a.system_id, a.seq, a.role, a.label, a.media_type,
+                r.ts_received, r.action_kind, r.action_name
+         FROM artifacts a
+         JOIN receipts r ON r.system_id = a.system_id AND r.seq = a.seq
+         WHERE a.sha256 = ?
+         ORDER BY r.ts_received`,
+      )
+      .all(sha256) as ArtifactMatch[];
+  }
+
   listSystems(): string[] {
     const rows = this.read
       .prepare("SELECT system_id FROM systems ORDER BY system_id")
@@ -359,7 +423,7 @@ export class ReceiptStore {
       }
 
       const unsigned = {
-        v: RECEIPT_VERSION,
+        v: CHECKPOINT_VERSION,
         system_id: systemId,
         tree_size: hashes.length,
         root_hash: toHex(merkleRoot(hashes.map((hash) => fromHex(hash)))),
@@ -428,8 +492,11 @@ export class ReceiptStore {
         throw new StorageError(`unknown system ${event.system_id}: create its chain first`);
       }
 
+      // A receipt is v2 only when it actually carries something v1 cannot: a
+      // chain otherwise stays v1, which is what every reader still expects.
+      const isV2 = event.artifacts !== undefined || event.model !== undefined;
       const unsigned = parseUnsignedReceipt({
-        v: RECEIPT_VERSION,
+        v: isV2 ? RECEIPT_VERSION_2 : RECEIPT_VERSION_1,
         system_id: event.system_id,
         seq: tip === undefined ? 0 : tip.seq + 1,
         ts_event: event.ts_event,
@@ -442,6 +509,8 @@ export class ReceiptStore {
         source: event.source,
         prev_hash: tip === undefined ? GENESIS_PREV_HASH : tip.hash,
         key_id: signer.keyId,
+        ...(event.artifacts === undefined ? {} : { artifacts: event.artifacts }),
+        ...(event.model === undefined ? {} : { model: event.model }),
       });
 
       const canonical = new TextDecoder().decode(canonicalReceiptBytes(unsigned));
@@ -465,6 +534,19 @@ export class ReceiptStore {
         action_name: receipt.action.name,
         outcome: receipt.outcome,
       });
+
+      if (receipt.v === 2 && receipt.artifacts !== undefined) {
+        for (const artifact of receipt.artifacts) {
+          this.insertArtifactStatement.run({
+            system_id: receipt.system_id,
+            seq: receipt.seq,
+            role: artifact.role,
+            label: artifact.label,
+            media_type: artifact.media_type,
+            sha256: artifact.sha256,
+          });
+        }
+      }
 
       this.write.exec("COMMIT");
       return receipt;
