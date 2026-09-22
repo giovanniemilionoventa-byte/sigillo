@@ -188,3 +188,121 @@ Regole:
 - L'ambiente cloud potrebbe non permettere Docker. Prova; se non è disponibile, verifica tutto il percorso senza Docker (processi avviati direttamente), prepara comunque Dockerfile e `docker-compose.yml`, e scrivi in `PROGRESS.md` la checklist esatta dei comandi che eseguirò io su un computer o sul server per la verifica finale.
 
 **Definizione di "finito"**: tutte le milestone in stato `fatto`, CI verde su GitHub Actions (lint, typecheck, test Node, test Python), e il percorso completo di M9 eseguito davvero almeno una volta, con l'output annotato in `PROGRESS.md`.
+
+## Fase 2
+
+> Le sottosezioni 1–6 che seguono sono copia integrale delle sezioni 1–6 del prompt che ha avviato la fase 2, ricevuto dal committente il 2026-09-22. Le milestone della sua sezione 7 e il fuori-ambito della sua sezione 8 sono in `PROGRESS.md`, come chiesto dal prompt stesso. Vale la stessa regola della sezione precedente: non va modificata se non per riflettere una decisione esplicita del committente.
+
+### 1. Obiettivo della fase 2
+
+La prima fase ha dimostrato che la matematica funziona. Questa fase deve rendere sigillo **comprensibile e utile per una persona non tecnica**: un responsabile compliance, un DPO, un ispettore.
+
+Quattro risultati:
+1. **Verifica di un documento**: carichi un file o incolli un testo, sigillo dice se è esattamente quello usato dall'AI, quando e in quale azione.
+2. **Identità del modello** in ogni ricevuta: quale modello, e per i modelli locali quale file esatto.
+3. **Interfaccia nuova** costruita attorno alle tre domande del responsabile compliance.
+4. **Demo realistica**: un agente di selezione CV su modello locale, con uno scenario di ispezione simulata.
+
+### 2. Formato della ricevuta, versione 2
+
+Aggiungi due campi **opzionali**. Incrementa `v` a 2. Le ricevute `v: 1` devono restare verificabili senza modifiche: il verificatore applica le regole della versione indicata in ogni ricevuta. Aggiorna `docs/FORMAT.md` e i vettori di test (aggiungi vettori v2, non toccare quelli v1).
+
+**`artifacts`** — elenco dei documenti coinvolti nell'azione, solo come impronta:
+```
+[{ "role": "input" | "output",
+   "label": string,            // es. "curriculum", "email di risposta"
+   "media_type": string,       // es. "application/pdf", "text/plain"
+   "sha256": string hex }]     // SHA-256 dei byte grezzi del documento
+```
+- L'impronta è calcolata sui **byte esatti** del documento, senza canonicalizzazione (i documenti non sono JSON).
+- Per i testi: byte UTF-8 esatti. Documenta chiaramente che uno spazio o un a capo in più cambiano l'impronta.
+- Nessun contenuto e nessun nome di file che possa contenere dati personali: il `label` è una categoria scelta dallo sviluppatore, non il nome del file.
+
+**`model`** — identità del modello per le azioni `llm_call`:
+```
+{ "name": string,              // es. "qwen2.5:3b", "gpt-4o"
+  "provider": string | null,   // es. "ollama", "openai", "vllm"
+  "digest": string | null }    // impronta del file del modello, se disponibile
+```
+- Ricava `name` e `provider` dagli attributi degli span: `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.provider.name` / `gen_ai.system` (OpenTelemetry) e `llm.model_name`, `llm.provider` (OpenInference). Tollera nomi alternativi come nella prima fase.
+
+### 3. SDK Python
+
+- **`sigillo.artifact(data, role, label, media_type=None)`**: accetta `bytes`, `str` o un percorso di file. Calcola SHA-256 **sul client** e allega l'impronta allo span corrente come evento `sigillo.artifact`. **Il documento non lascia mai la macchina del cliente.** L'adattatore del server trasforma questi eventi nel campo `artifacts`.
+- **Digest dei modelli Ollama**: opzione `sigillo.init(..., ollama_url="http://localhost:11434")`. All'avvio e poi con cache, l'SDK legge l'elenco dei modelli da `GET /api/tags` e aggiunge agli span LLM l'attributo `sigillo.model.digest` con il digest del modello usato. Se Ollama non risponde, prosegue senza digest e lo registra nei log dell'SDK.
+- **Estensione OpenAI**: aggiungi `"openai"` ai valori ammessi di `instrument`, usando `openinference-instrumentation-openai`. Serve per le aziende che chiamano direttamente un server compatibile OpenAI (Ollama, vLLM, llama.cpp) senza framework.
+- Test: impronta calcolata sul client coincide con quella nella ricevuta; nessun byte del documento compare nel traffico verso il server (controllalo intercettando il payload OTLP nei test).
+
+### 4. Verifica di un documento
+
+**Nella pagina web**
+- Pagina "Verifica un documento": carica un file oppure incolla un testo.
+- **L'impronta si calcola nel browser** con Web Crypto (`crypto.subtle.digest('SHA-256', ...)`), e al server arriva solo l'impronta. Il documento non viene mai inviato. Questa è l'unica pagina in cui è ammesso JavaScript: uno script inline piccolo, senza librerie, senza build step. Scrivilo sulla pagina in una frase chiara: *"Il documento non lascia il tuo computer: calcoliamo solo la sua impronta."*
+- Risultato trovato: *"✓ Questo documento è esattamente quello usato da [sistema] il [data] alle [ora], come [label], nell'azione [descrizione leggibile]. Non è stato modificato."* più il collegamento alla ricevuta e lo stato della marca temporale del checkpoint che la copre.
+- Più corrispondenze: elencale tutte in ordine di tempo.
+- Nessuna corrispondenza: *"Nessuna azione registrata ha usato questo documento. Se ne hai una versione diversa, anche un solo carattere cambia il risultato."*
+- Indice su `sha256` degli artifacts per rendere la ricerca istantanea.
+
+**Nel verificatore offline**
+- Nuovo sottocomando: `sigillo-verify doc <fascicolo> <file>` che cerca il documento dentro il fascicolo e stampa lo stesso esito, senza server.
+- Il fascicolo include un file `artifacts-index.jsonl` (impronta → ricevuta) e il verificatore controlla che l'indice sia coerente con le ricevute.
+- Il PDF del fascicolo spiega in una sezione come un ispettore può verificare un documento con il verificatore.
+
+### 5. Interfaccia nuova
+
+Resta HTML generato dal server, senza framework e senza build step (eccezione: lo script della sezione 4). Un solo foglio di stile CSS scritto a mano, chiaro, leggibile, con tema chiaro e scuro, adatto anche al telefono. Interfaccia **in italiano**, con i testi raccolti in un unico file per poter aggiungere l'inglese in seguito.
+
+La pagina principale risponde a tre domande, in quest'ordine.
+
+**1. "È tutto a posto?"**
+- Un semaforo per ogni sistema:
+  - **verde**: catena verificata e ultimo checkpoint con marca temporale valida;
+  - **giallo**: marca temporale in attesa, oppure nessuna attività da un periodo configurabile;
+  - **rosso**: verifica fallita.
+- Accanto, in parole normali: *"Registro integro. Ultimo sigillo 12 minuti fa. 1.243 azioni registrate questo mese."*
+- Per mantenere il semaforo aggiornato: un controllo periodico in background che verifica la catena a partire dall'ultimo punto verificato (non da zero ogni volta).
+
+**2. "Cosa ha fatto l'AI?"**
+- Cronologia per sistema e per giorno, con ricerca per data e per tipo di azione.
+- Ogni ricevuta mostrata come **frase leggibile**, generata da modelli di frase per tipo di azione. Esempi:
+  - *"L'agente selezione-cv ha usato lo strumento leggi_curriculum per conto di m.rossi — completato."*
+  - *"Il modello qwen2.5:3b (locale) ha generato una risposta — completato."*
+  - *"L'agente ha tentato invia_email — bloccato."*
+- Gli artifacts compaiono come etichette leggibili ("curriculum", "email di risposta").
+- Tutto ciò che è tecnico (impronte, numero progressivo, firma, chiave, prova di inclusione) sta dentro un blocco `<details>` "Dettagli tecnici", chiuso di default.
+
+**3. "Mi prepari le prove?"**
+- Scelta del sistema e del periodo con un calendario, un pulsante "Genera fascicolo", e una spiegazione di una riga su cosa contiene.
+
+Altre pagine: "Verifica un documento" (sezione 4); "Sistemi" (creazione di un sistema e della chiave d'accesso con spiegazione passo passo di come collegare un chatbot o un agente, incluso un esempio di codice copiabile).
+
+Accessibilità di base: contrasto sufficiente, testi alternativi, navigazione da tastiera, nessuna informazione trasmessa solo con il colore (il semaforo ha anche la parola).
+
+### 6. Demo: agente di selezione CV
+
+Cartella `demo/selezione-cv/`, in Python, con la sua lista di dipendenze separata. Dipendenze ammesse per la demo: `langgraph`, `langchain-core`, `langchain-ollama`, più l'SDK sigillo.
+
+**Scenario**
+- 20 curriculum **inventati**, file di testo, in italiano, con nomi di fantasia, per una posizione di "sviluppatore backend junior".
+- **Regole di punteggio neutre e dichiarate**: solo competenze ed esperienza pertinenti. Nessun uso di età, genere, provenienza, foto o altri attributi protetti. Scrivilo nel README della demo: una demo di selezione che discrimina sarebbe l'opposto di ciò che vendiamo.
+- Tre strumenti:
+  - `leggi_curriculum` — legge il file e lo allega come artifact `input` con label "curriculum";
+  - `valuta_candidato` — produce punteggio e motivazione breve;
+  - `invia_email` — scrive la mail di risposta in una cartella `outbox/` (niente invii reali) e la allega come artifact `output` con label "email di risposta".
+- L'agente lavora "per conto di" un selezionatore di fantasia.
+
+**Modello**
+- Se `OLLAMA_URL` è impostato e raggiungibile: usa un modello piccolo via Ollama (es. `qwen2.5:3b` o equivalente leggero), con digest registrato.
+- Altrimenti: **modello fittizio deterministico** con le stesse interfacce, così la demo gira ovunque, anche in CI.
+- Nell'ambiente cloud prova a installare Ollama e scaricare il modello piccolo. Se non è possibile, usa il modello fittizio e scrivi in `PROGRESS.md` i comandi esatti che eseguirò io su un computer per la versione con modello reale.
+
+**Script**
+- `run_demo.sh` (e `run_demo.ps1` per Windows): crea il sistema in sigillo, esegue l'agente sui 20 curriculum, forza un checkpoint, stampa un riepilogo.
+
+**Ispezione simulata** — file `demo/selezione-cv/ISPEZIONE.md`
+- La storia: *"Il candidato n. 7 sostiene di essere stato scartato ingiustamente. L'ispettore chiede di dimostrare cosa ha fatto l'AI."*
+- I passi, nella nuova interfaccia: trovare le azioni sul candidato n. 7 nella cronologia; caricare il suo curriculum in "Verifica un documento" e ottenere la conferma; caricare la mail ricevuta e ottenere la conferma; generare il fascicolo del giorno; verificarlo con il verificatore offline; modificare un carattere del curriculum e mostrare che la verifica non lo riconosce più.
+- Deve poterlo seguire una persona che non ha mai visto sigillo.
+
+**Copione video** — file `demo/selezione-cv/VIDEO.md`
+- Un copione di circa 3 minuti per un video dimostrativo destinato a DPO e responsabili compliance: cosa si vede sullo schermo e cosa si dice, scena per scena. Zero parole tecniche nel parlato.

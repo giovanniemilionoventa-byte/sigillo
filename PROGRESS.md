@@ -15,6 +15,12 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | M7 | Merkle e marca temporale | fatto | RFC 6962 (0..17), checkpoint firmati, RFC 3161 su FreeTSA |
 | M8 | Fascicolo completo e verificatore v2 | fatto | Zip completo con PDF, 12 controlli, token FreeTSA verificato |
 | M9 | UI, deploy, documentazione | fatto | UI senza JavaScript, compose a tre servizi, backup SQLite, 406 test verdi |
+| N1 | Formato v2 | todo | Campi `artifacts` e `model`; `v: 2`; le ricevute v1 restano verificabili senza modifiche |
+| N2 | SDK Python, fase 2 | todo | `sigillo.artifact()` con hash lato client; digest dei modelli Ollama; `instrument=["openai"]` |
+| N3 | Verifica di un documento | todo | Hash calcolato nel browser; `sigillo-verify doc`; `artifacts-index.jsonl` nel fascicolo |
+| N4 | Interfaccia nuova | todo | Le tre domande del responsabile compliance; semaforo; cronologia in linguaggio naturale |
+| N5 | Demo selezione CV | todo | 20 curriculum, Ollama o modello fittizio, ispezione simulata, e2e in CI |
+| N6 | Documentazione non tecnica | todo | `ISPEZIONE.md`, `VIDEO.md`, `PROVA-LOCALE.md` esteso alla fase 2 |
 
 ## Decisioni prese dal committente — 2026-09-21
 
@@ -566,6 +572,29 @@ La tabella della dimensione del verificatore, qui sopra, **ometteva `packages/co
 (96 righe di re-export). Il numero onesto, ricontato ora e comprensivo di `base64.ts`, è
 **1792 righe in totale, 1416 escludendo righe vuote e commenti**, non 1689. La decisione che ti
 chiedo non cambia — le tre opzioni restano quelle — ma il numero su cui decidere è questo.
+
+### Sessione 2 — 2026-09-22
+
+Avviata la fase 2. Il prompt che la descrive (sezioni 1–6) è copiato integralmente in fondo a
+`SPEC.md`, sezione "Fase 2"; le milestone della sua sezione 7 sono nella tabella qui sopra
+(N1–N6, tutte `todo`); il fuori-ambito della sua sezione 8 è la nota qui sotto. Branch di lavoro:
+`claude/sigillo-fase-2-illggi`, ripartito da `main` allo stesso commit con cui si era chiusa la
+fase 1 (`7362402` — la PR #1 con le decisioni del committente era nel frattempo stata mergiata,
+quindi il blocco "main non esiste sul remote" annotato in Sessione 1 è superato).
+
+#### Fuori ambito per la fase 2
+
+Non previsti in questa fase: il casello davanti ai modelli locali, la verifica incrociata tra più
+fonti, multi-utente e ruoli, HSM/KMS, cancellazione per retention. Se durante il lavoro dovesse
+emergere che uno di questi è necessario, la decisione si annota qui prima di proseguire.
+
+#### Dipendenze nuove già autorizzate dal committente nel prompt della fase 2
+
+Il prompt nomina esplicitamente due dipendenze non ancora nella lista approvata di `CLAUDE.md`:
+`openinference-instrumentation-openai` (extra opzionale Python, usata in N2) e `langchain-ollama`
+(solo per `demo/selezione-cv`, stesso trattamento di `langgraph`/`langchain-core` in M6: non è una
+dipendenza del pacchetto `sigillo`, serve solo alla demo). Le aggiungo alla lista approvata quando
+le uso davvero, in N2 e N5 rispettivamente, non prima.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
