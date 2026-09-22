@@ -11,6 +11,7 @@ installed, so that `python -m unittest` still works on its own.
 
 from __future__ import annotations
 
+import hashlib
 import http.client
 import importlib.util
 import json
@@ -214,6 +215,51 @@ class EndToEndTest(unittest.TestCase):
                                 capture_output=True, text=True, cwd=ROOT, timeout=120)
         self.assertEqual(result.returncode, 1)
         self.assertIn("FAILED", result.stderr)
+
+    def test_sigillo_artifact_produces_a_v2_receipt_with_a_matching_fingerprint(self) -> None:
+        content = "il contenuto esatto del curriculum di un candidato di prova, per un test"
+        expected_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+        code = f"""
+import sigillo
+tracing = sigillo.init(
+    endpoint={f"http://127.0.0.1:{self.port}"!r},
+    api_key={self.token!r},
+    system_id={SYSTEM!r},
+    instrument=[],
+)
+tracer = tracing.provider.get_tracer("sigillo.tests")
+with tracer.start_as_current_span("leggi_curriculum") as span:
+    span.set_attribute("gen_ai.operation.name", "execute_tool")
+    span.set_attribute("gen_ai.tool.name", "leggi_curriculum")
+    sigillo.artifact({content!r}, role="input", label="curriculum")
+tracing.flush()
+"""
+        result = subprocess.run(
+            ["python", "-c", code], capture_output=True, text=True, cwd=ROOT, timeout=60
+        )
+        self.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
+
+        export = self.work / "fascicolo.zip"
+        self._run(["node", str(SERVER_CLI), "export", SYSTEM, "--db", str(self.db_path),
+                   "--signer-socket", str(self.socket_path), "--out", str(export)])
+        with zipfile.ZipFile(export) as archive:
+            receipts_text = archive.read("receipts.jsonl").decode()
+        receipts = [json.loads(line) for line in receipts_text.splitlines() if line]
+
+        tool_call = next(r for r in receipts if r["action"]["name"] == "leggi_curriculum")
+        self.assertEqual(tool_call["v"], 2)
+        self.assertEqual(
+            tool_call["artifacts"],
+            [{"role": "input", "label": "curriculum", "media_type": "text/plain",
+              "sha256": expected_digest}],
+        )
+
+        # The document itself must never reach the export, only its fingerprint.
+        self.assertNotIn(content, receipts_text)
+
+        verdict = self._run(["node", str(VERIFY_CLI), str(export), "--quiet"])
+        self.assertIn("OK", verdict)
 
     def test_the_server_refuses_a_key_it_did_not_issue(self) -> None:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)

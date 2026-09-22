@@ -19,7 +19,7 @@ This file collects the permanent rules for anyone (human or AI) working on this 
 
 - **Node runtime**: `fastify`, `better-sqlite3`, `canonicalize` (RFC 8785), `zod`, `protobufjs`, `pdfkit`, `commander`. Cryptography uses only `node:crypto` (SHA-256, Ed25519, scrypt) — no external crypto libraries.
 - **Node dev**: `typescript`, `tsx`, `vitest`, `fast-check`, `@types/*`.
-- **Python**: `opentelemetry-sdk`, `opentelemetry-exporter-otlp-proto-http`; optional extras `openinference-instrumentation-langchain`, `openinference-instrumentation-crewai`.
+- **Python**: `opentelemetry-sdk`, `opentelemetry-exporter-otlp-proto-http`; optional extras `openinference-instrumentation-langchain`, `openinference-instrumentation-crewai`, `openinference-instrumentation-openai` (added in phase 2, N2, for agents that call an OpenAI-compatible server directly).
 - Anything else: ask the project owner before adding it.
 
 ## Repository layout

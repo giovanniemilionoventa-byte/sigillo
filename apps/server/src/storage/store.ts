@@ -11,10 +11,13 @@ import {
   parseUnsignedReceipt,
   receiptHash,
   RECEIPT_VERSION_1,
+  RECEIPT_VERSION_2,
   toHex,
   type Action,
   type Actor,
+  type ArtifactEntry,
   type Checkpoint,
+  type ModelInfo,
   type Outcome,
   type Receipt,
   type Source,
@@ -38,6 +41,9 @@ export interface ChainEvent {
   output_hash: string | null;
   outcome: Outcome;
   source: Source;
+  /** Either one, present, makes the stored receipt v2 rather than v1. */
+  artifacts?: ArtifactEntry[];
+  model?: ModelInfo;
 }
 
 export interface ChainTip {
@@ -429,8 +435,11 @@ export class ReceiptStore {
         throw new StorageError(`unknown system ${event.system_id}: create its chain first`);
       }
 
+      // A receipt is v2 only when it actually carries something v1 cannot: a
+      // chain otherwise stays v1, which is what every reader still expects.
+      const isV2 = event.artifacts !== undefined || event.model !== undefined;
       const unsigned = parseUnsignedReceipt({
-        v: RECEIPT_VERSION_1,
+        v: isV2 ? RECEIPT_VERSION_2 : RECEIPT_VERSION_1,
         system_id: event.system_id,
         seq: tip === undefined ? 0 : tip.seq + 1,
         ts_event: event.ts_event,
@@ -443,6 +452,8 @@ export class ReceiptStore {
         source: event.source,
         prev_hash: tip === undefined ? GENESIS_PREV_HASH : tip.hash,
         key_id: signer.keyId,
+        ...(event.artifacts === undefined ? {} : { artifacts: event.artifacts }),
+        ...(event.model === undefined ? {} : { model: event.model }),
       });
 
       const canonical = new TextDecoder().decode(canonicalReceiptBytes(unsigned));

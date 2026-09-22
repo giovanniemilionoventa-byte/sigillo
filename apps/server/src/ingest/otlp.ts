@@ -16,6 +16,11 @@ import protobuf from "protobufjs";
 
 export type AttributeValue = string | number | boolean | null | AttributeValue[];
 
+export interface OtlpSpanEvent {
+  name: string;
+  attributes: Map<string, AttributeValue>;
+}
+
 export interface OtlpSpan {
   traceId: string;
   spanId: string;
@@ -25,6 +30,7 @@ export interface OtlpSpan {
   status: "unset" | "ok" | "error";
   attributes: Map<string, AttributeValue>;
   resource: Map<string, AttributeValue>;
+  events: OtlpSpanEvent[];
 }
 
 export class OtlpDecodeError extends Error {
@@ -151,6 +157,18 @@ function decodeAnyValue(value: unknown): AttributeValue {
   return null;
 }
 
+function decodeEvents(value: unknown): OtlpSpanEvent[] {
+  const events: OtlpSpanEvent[] = [];
+  for (const entry of asArray(value)) {
+    const event = asRecord(entry);
+    if (event === null) continue;
+    const name = event["name"];
+    if (typeof name !== "string" || name.length === 0) continue;
+    events.push({ name, attributes: decodeAttributes(event["attributes"]) });
+  }
+  return events;
+}
+
 function decodeAttributes(value: unknown): Map<string, AttributeValue> {
   const attributes = new Map<string, AttributeValue>();
   for (const entry of asArray(value)) {
@@ -219,6 +237,7 @@ function normalizeExportRequest(value: unknown): OtlpSpan[] {
           status: decodeStatus(span["status"]),
           attributes: decodeAttributes(span["attributes"]),
           resource,
+          events: decodeEvents(span["events"]),
         });
       }
     }

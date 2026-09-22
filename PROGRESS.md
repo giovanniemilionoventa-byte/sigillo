@@ -16,7 +16,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | M8 | Fascicolo completo e verificatore v2 | fatto | Zip completo con PDF, 12 controlli, token FreeTSA verificato |
 | M9 | UI, deploy, documentazione | fatto | UI senza JavaScript, compose a tre servizi, backup SQLite, 406 test verdi |
 | N1 | Formato v2 | fatto | Campi `artifacts` e `model`, schema v1/v2 come union discriminata, 20 vettori (8 nuovi v2), 452 test verdi |
-| N2 | SDK Python, fase 2 | todo | `sigillo.artifact()` con hash lato client; digest dei modelli Ollama; `instrument=["openai"]` |
+| N2 | SDK Python, fase 2 | fatto | `sigillo.artifact()`, digest Ollama, `instrument=["openai"]`, adattatore server; 465 test Node + 22 Python |
 | N3 | Verifica di un documento | todo | Hash calcolato nel browser; `sigillo-verify doc`; `artifacts-index.jsonl` nel fascicolo |
 | N4 | Interfaccia nuova | todo | Le tre domande del responsabile compliance; semaforo; cronologia in linguaggio naturale |
 | N5 | Demo selezione CV | todo | 20 curriculum, Ollama o modello fittizio, ispezione simulata, e2e in CI |
@@ -671,6 +671,64 @@ del checkpoint disaccoppiata, `receipt_version` come massimo anziché come costa
 nuove costanti di versione) sono state prese **prima** di scrivere lo schema, seguendo l'analisi di
 come `RECEIPT_VERSION` veniva già usato in nove punti diversi del codice, non scoperte a posteriori
 da un test che falliva.
+
+#### N2 — SDK Python, fase 2 (fatto)
+
+- `sdk-python/src/sigillo/__init__.py` — **`sigillo.artifact(data, role, label, media_type=None)`**:
+  calcola SHA-256 in questo processo (`bytes` grezzi, `str` come byte UTF-8 esatti, un percorso letto
+  da disco) e allega solo l'impronta allo span corrente come evento `sigillo.artifact`. Se non c'è
+  uno span attivo, avvisa nei log e non fa nulla, invece di perdere l'evidenza in silenzio.
+- **Digest dei modelli Ollama**: `sigillo.init(..., ollama_url=...)` legge `GET /api/tags` **una sola
+  volta**, all'avvio, e aggiunge un `_ModelDigestProcessor` (un `SpanProcessor` su misura) che timbra
+  `sigillo.model.digest` sullo span **a `on_start`, non a `on_end`**: uno span rifiuta nuovi attributi
+  dopo la fine (`Span.set_attribute` diventa un no-op silenzioso), e una strumentazione corretta
+  dichiara il nome del modello tra gli attributi iniziali dello span proprio perché hook come questo
+  possano vederlo subito. Qualunque errore nel contattare Ollama (spento, rete, risposta inattesa) è
+  un avviso nei log, mai un'eccezione: il digest è un arricchimento, non un requisito per registrare
+  un'azione.
+- **Estensione OpenAI**: `"openai"` tra i valori ammessi di `instrument`, con
+  `openinference-instrumentation-openai` (aggiunta ora a `CLAUDE.md` e a `pyproject.toml`, come
+  annotato in sessione all'avvio della fase 2).
+- `apps/server/src/ingest/otlp.ts` — decodifica anche gli **eventi** dello span (`Span.events` nel
+  proto OTLP), finora ignorati: `OtlpSpan` guadagna `events: OtlpSpanEvent[]`.
+- `apps/server/src/ingest/adapter.ts` — `artifactsOf()` legge ogni evento `sigillo.artifact` e lo
+  trasforma in una voce di `artifacts`; un evento malformato (ruolo sconosciuto, campo mancante,
+  sha256 non esadecimale) viene **scartato, non lancia**: l'SDK garantisce la propria forma, ma un
+  mittente qualunque sul filo no. `modelOf()` legge nome/provider/digest del modello, **solo per un
+  `llm_call` riconosciuto** (scelta dell'adattatore, non un vincolo dello schema). Entrambe tollerano
+  i due dialetti già noti (`gen_ai.*` e `llm.*`).
+- `apps/server/src/storage/store.ts` — un evento con `artifacts` o `model` produce ora `v: 2`; uno
+  senza resta `v: 1`, esattamente come prima. La decisione è per-ricevuta, quindi una catena passa da
+  v1 a v2 in modo naturale nel momento in cui arriva davvero un documento o un modello da registrare,
+  non con un interruttore globale.
+
+Verifiche eseguite (**465 test Node**, erano 452; **22 test Python**, erano 12):
+- `packages/core`/`packages/verifier` invariati: la crescita è tutta in `apps/server` e nell'SDK;
+- Python, unitari: l'impronta calcolata da `sigillo.artifact()` coincide con `hashlib.sha256` calcolato
+  a parte nel test; il contenuto originale **non compare** nei byte del payload OTLP catturato
+  (intercettato con lo stesso server-giocattolo già usato per l'API key); un file letto da percorso
+  hasha gli stessi byte di `path.read_bytes()` e indovina il media type; ruolo diverso da
+  `input`/`output` rifiutato; nessuno span attivo → avviso, nessuna eccezione;
+- Python, digest Ollama: un server-giocattolo che risponde su `/api/tags` produce
+  `sigillo.model.digest` sullo span esportato; una porta locale dove non ascolta nessuno produce
+  **nessun digest e nessuna eccezione**, con l'avviso nei log verificato; senza `ollama_url` nessuna
+  chiamata di rete in più e nessun digest;
+- Python, end-to-end (**nuovo**, firmatario e server veri): `sigillo.artifact()` chiamato da un
+  processo Python reale produce, nell'export firmato e verificato dal verificatore reale, una
+  ricevuta `v: 2` con l'`artifacts` atteso e il contenuto originale assente da `receipts.jsonl` —
+  la prova end-to-end che la sezione 3 del prompt chiedeva, non solo un'asserzione unitaria;
+  esegue con il modello fittizio, non richiede Ollama installato nell'ambiente cloud;
+- Node, `adapter.ts`: un evento sconosciuto e un `sigillo.artifact` malformato (ruolo sbagliato,
+  sha256 non valido, campo assente) non fanno fallire lo span; due artifact restano nell'ordine
+  dell'evento; `label`/`media_type` troppo lunghi vengono troncati come già succede per `action.name`;
+  un `gen_ai.request.model` su uno span che non è un `llm_call` riconosciuto **non** produce `model`;
+- Node, `store.ts`: un evento senza `artifacts`/`model` resta `v: 1`; uno con l'uno o l'altro diventa
+  `v: 2`, con i byte canonici salvati e rileggibili esattamente come per v1;
+- `pnpm lint`, `pnpm typecheck`, `pnpm build`, `node scripts/smoke-dist.mjs`,
+  `python3 scripts/crosscheck_vectors.py` tutti verdi (i vettori non sono cambiati in questa
+  milestone: N2 non tocca il formato).
+
+Nessun difetto trovato dai test in questa milestone.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

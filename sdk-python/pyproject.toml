@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 langchain = ["openinference-instrumentation-langchain"]
 crewai = ["openinference-instrumentation-crewai"]
+openai = ["openinference-instrumentation-openai"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

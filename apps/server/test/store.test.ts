@@ -150,6 +150,70 @@ describe("appending to a chain", () => {
   });
 });
 
+describe("version 2 fields", () => {
+  beforeEach(async () => {
+    await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
+  });
+
+  it("stays v1, with neither member, when the event carries no artifacts or model", async () => {
+    const receipt = await store.append(event());
+    expect(receipt.v).toBe(1);
+    expect(receipt).not.toHaveProperty("artifacts");
+    expect(receipt).not.toHaveProperty("model");
+  });
+
+  it("becomes v2 when the event carries an artifact", async () => {
+    const receipt = await store.append(
+      event({
+        artifacts: [
+          { role: "input", label: "curriculum", media_type: "text/plain", sha256: "a".repeat(64) },
+        ],
+      }),
+    );
+    expect(receipt.v).toBe(2);
+    if (receipt.v !== 2) return;
+    expect(receipt.artifacts).toEqual([
+      { role: "input", label: "curriculum", media_type: "text/plain", sha256: "a".repeat(64) },
+    ]);
+    expect(receipt).not.toHaveProperty("model");
+  });
+
+  it("becomes v2 when the event carries a model", async () => {
+    const receipt = await store.append(
+      event({ model: { name: "qwen2.5:3b", provider: "ollama", digest: "sha256:deadbeef" } }),
+    );
+    expect(receipt.v).toBe(2);
+    if (receipt.v !== 2) return;
+    expect(receipt.model).toEqual({ name: "qwen2.5:3b", provider: "ollama", digest: "sha256:deadbeef" });
+  });
+
+  it("chains a v2 receipt to a v1 predecessor exactly as it would another v1", async () => {
+    const first = await store.append(event());
+    const second = await store.append(
+      event({ model: { name: "gpt-4o", provider: "openai", digest: null } }),
+    );
+    expect(second.prev_hash).toBe(receiptHashHex(first));
+    expect(signatureIsValid(second)).toBe(true);
+  });
+
+  it("stores the exact canonical bytes for a v2 receipt too, artifacts included", async () => {
+    const receipt = await store.append(
+      event({
+        artifacts: [
+          { role: "output", label: "email di risposta", media_type: "text/plain", sha256: "b".repeat(64) },
+        ],
+      }),
+    );
+    const raw = openRawConnection();
+    const row = raw
+      .prepare("SELECT canonical FROM receipts WHERE system_id = ? AND seq = ?")
+      .get(SYSTEM, receipt.seq) as { canonical: string };
+    raw.close();
+    expect(row.canonical).toBe(new TextDecoder().decode(canonicalReceiptBytes(receipt)));
+    expect(parseReceipt({ ...JSON.parse(row.canonical), sig: receipt.sig })).toEqual(receipt);
+  });
+});
+
 describe("append-only storage", () => {
   beforeEach(async () => {
     await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");

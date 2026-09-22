@@ -160,6 +160,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         output_hash: action.output_hash,
         outcome: action.outcome,
         source: action.source,
+        ...(action.artifacts === undefined ? {} : { artifacts: action.artifacts }),
+        ...(action.model === undefined ? {} : { model: action.model }),
       });
       accepted += 1;
     }

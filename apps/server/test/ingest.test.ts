@@ -267,6 +267,181 @@ describe("the OpenInference dialect", () => {
   });
 });
 
+function jsonSpan(options: {
+  attributes?: Record<string, string>;
+  events?: { name: string; attributes: Record<string, string> }[];
+}): OtlpSpan {
+  const asAttributes = (values: Record<string, string>) =>
+    Object.entries(values).map(([key, value]) => ({ key, value: { stringValue: value } }));
+
+  const spans = decodeJsonTraces({
+    resourceSpans: [
+      {
+        scopeSpans: [
+          {
+            spans: [
+              {
+                traceId: "4bf92f3577b34da6a3ce929d0e0e0001",
+                spanId: "00f067aa0ba90001",
+                name: "x",
+                startTimeUnixNano: "1789971053648178106",
+                endTimeUnixNano: "1789971053648204813",
+                attributes: asAttributes(options.attributes ?? {}),
+                events: (options.events ?? []).map((event) => ({
+                  name: event.name,
+                  attributes: asAttributes(event.attributes),
+                })),
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const span = spans[0];
+  if (span === undefined) throw new Error("expected exactly one span");
+  return span;
+}
+
+const SHA_A = "a".repeat(64);
+const SHA_B = "b".repeat(64);
+
+describe("extracting artifacts and model (phase 2)", () => {
+  it("turns a sigillo.artifact event into the action's artifacts member", () => {
+    const span = jsonSpan({
+      attributes: { "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": "leggi_curriculum" },
+      events: [
+        {
+          name: "sigillo.artifact",
+          attributes: {
+            "sigillo.artifact.role": "input",
+            "sigillo.artifact.label": "curriculum",
+            "sigillo.artifact.media_type": "text/plain",
+            "sigillo.artifact.sha256": SHA_A,
+          },
+        },
+      ],
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.artifacts).toEqual([
+      { role: "input", label: "curriculum", media_type: "text/plain", sha256: SHA_A },
+    ]);
+  });
+
+  it("keeps two artifacts in event order", () => {
+    const span = jsonSpan({
+      attributes: { "gen_ai.operation.name": "execute_tool" },
+      events: [
+        {
+          name: "sigillo.artifact",
+          attributes: {
+            "sigillo.artifact.role": "input",
+            "sigillo.artifact.label": "curriculum",
+            "sigillo.artifact.media_type": "text/plain",
+            "sigillo.artifact.sha256": SHA_A,
+          },
+        },
+        {
+          name: "sigillo.artifact",
+          attributes: {
+            "sigillo.artifact.role": "output",
+            "sigillo.artifact.label": "email di risposta",
+            "sigillo.artifact.media_type": "text/plain",
+            "sigillo.artifact.sha256": SHA_B,
+          },
+        },
+      ],
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.artifacts?.map((artifact) => artifact.role)).toEqual(["input", "output"]);
+  });
+
+  it("omits artifacts entirely when the span carries no sigillo.artifact event", () => {
+    const span = jsonSpan({ attributes: { "gen_ai.operation.name": "execute_tool" } });
+    const [action] = adaptSpans([span]).actions;
+    expect(action).not.toHaveProperty("artifacts");
+  });
+
+  it("ignores an event of another name, and a malformed sigillo.artifact event, without failing the span", () => {
+    const span = jsonSpan({
+      attributes: { "gen_ai.operation.name": "execute_tool" },
+      events: [
+        { name: "some.other.event", attributes: { unrelated: "x" } },
+        {
+          name: "sigillo.artifact",
+          attributes: {
+            "sigillo.artifact.role": "sideways",
+            "sigillo.artifact.label": "l",
+            "sigillo.artifact.media_type": "text/plain",
+            "sigillo.artifact.sha256": SHA_A,
+          },
+        },
+        {
+          name: "sigillo.artifact",
+          attributes: {
+            "sigillo.artifact.role": "input",
+            "sigillo.artifact.label": "l",
+            "sigillo.artifact.media_type": "text/plain",
+            "sigillo.artifact.sha256": "not-a-digest",
+          },
+        },
+        { name: "sigillo.artifact", attributes: { "sigillo.artifact.role": "input" } },
+      ],
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action).not.toHaveProperty("artifacts");
+  });
+
+  it("caps an artifact's label and media_type exactly as it caps an action name", () => {
+    const span = jsonSpan({
+      attributes: { "gen_ai.operation.name": "execute_tool" },
+      events: [
+        {
+          name: "sigillo.artifact",
+          attributes: {
+            "sigillo.artifact.role": "input",
+            "sigillo.artifact.label": "l".repeat(400),
+            "sigillo.artifact.media_type": "m".repeat(400),
+            "sigillo.artifact.sha256": SHA_A,
+          },
+        },
+      ],
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.artifacts?.[0]?.label).toHaveLength(256);
+    expect(action?.artifacts?.[0]?.media_type).toHaveLength(128);
+  });
+
+  it("reads model name, provider and digest for a recognised llm_call, GenAI dialect", () => {
+    const span = jsonSpan({
+      attributes: {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": "qwen2.5:3b",
+        "gen_ai.provider.name": "ollama",
+        "sigillo.model.digest": "sha256:deadbeef",
+      },
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.model).toEqual({ name: "qwen2.5:3b", provider: "ollama", digest: "sha256:deadbeef" });
+  });
+
+  it("reads the model name alone for OpenInference, with provider and digest null", () => {
+    const span = jsonSpan({
+      attributes: { "openinference.span.kind": "LLM", "llm.model_name": "gpt-4o" },
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.model).toEqual({ name: "gpt-4o", provider: null, digest: null });
+  });
+
+  it("does not attach model information to a span that is not a recognised llm_call", () => {
+    const span = jsonSpan({
+      attributes: { "gen_ai.operation.name": "execute_tool", "gen_ai.request.model": "should-be-ignored" },
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action).not.toHaveProperty("model");
+  });
+});
+
 describe("adapting a batch", () => {
   it("produces the same result from every encoding of the same payload", () => {
     for (const dialect of ["otel-genai", "openinference"]) {
