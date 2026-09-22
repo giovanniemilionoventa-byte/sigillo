@@ -1010,6 +1010,17 @@ dall'ambito della regola 5.
 Difetto trovato e corretto in questa milestone: `sigillo.artifact()` non funzionava con LangChain reale
 (sopra). Nessun altro difetto trovato dai test.
 
+**Addendum, durante N6**: l'accettazione di N5 chiede esplicitamente "e2e in CI", ma
+`.github/workflows/ci.yml` non è stato aggiornato insieme al resto — i 17 test di
+`demo/selezione-cv/tests` giravano solo se lanciati a mano. Corretto aggiungendo un passo al job
+Python esistente: nessuna installazione in più, perché `sdk-python/examples/requirements.txt` (già
+installato in quel job) copre già `langgraph`/`langchain-core`/`openinference-instrumentation-
+langchain`, le uniche dipendenze della demo che il test in CI usa davvero — `langchain-ollama` resta
+fuori perché lì `OLLAMA_URL` non è mai impostata, quindi quel ramo di codice non viene mai importato.
+Controllato che `python -m unittest discover -s demo/selezione-cv/tests -t demo/selezione-cv` passi
+davvero senza `langchain-ollama` installato (è la condizione dell'ambiente CI, e anche quella di
+questa sandbox).
+
 #### N6 — Documentazione non tecnica (fatto)
 
 `ISPEZIONE.md` e `VIDEO.md` erano già stati scritti in N5, dove appartengono (sono documenti della

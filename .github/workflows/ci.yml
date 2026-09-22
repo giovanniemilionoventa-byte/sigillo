@@ -45,6 +45,14 @@ jobs:
       - run: pnpm build
       - run: pip install -e sdk-python -r sdk-python/examples/requirements.txt
       - run: python -m unittest discover -s sdk-python/tests -t sdk-python -v
+      # The CV-screening demo, same signer/server/verifier, its own end-to-end
+      # test. Needs nothing beyond what sdk-python/examples/requirements.txt
+      # already installed above: langchain-ollama is the one addition in the
+      # demo's own requirements.txt, and it is only imported on the
+      # OLLAMA_URL-reachable path, which is not exercised here — this runs
+      # the deterministic fake model instead, the same path a contributor's
+      # machine takes without Ollama installed.
+      - run: python -m unittest discover -s demo/selezione-cv/tests -t demo/selezione-cv -v
 
   vectors:
     name: independent cross-check of the test vectors
