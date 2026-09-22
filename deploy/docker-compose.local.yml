@@ -55,9 +55,12 @@ services:
       TSA_URL: ${TSA_URL:-https://freetsa.org/tsr}
       SIGILLO_ADMIN_PASSWORD: ${SIGILLO_ADMIN_PASSWORD:?set SIGILLO_ADMIN_PASSWORD in deploy/.env, at least 12 characters}
     # Loopback only. Binding to 0.0.0.0 here would put an unencrypted admin
-    # page on every network the computer is attached to.
+    # page on every network the computer is attached to. The host port is
+    # overridable (SIGILLO_LOCAL_PORT) so a second stack under a different
+    # project name — run_demo.ps1's, for instance — does not fight this one
+    # for 8080; the container's own port stays 8080 either way.
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${SIGILLO_LOCAL_PORT:-8080}:8080"
 
   # Not started by `up`: it is run on demand with
   #   docker compose -f docker-compose.local.yml run --rm esempio
@@ -86,6 +89,29 @@ services:
       - |
         pip install --quiet ./sdk-python -r sdk-python/examples/requirements.txt
         python sdk-python/examples/langgraph_agent.py
+
+  # The CV-screening demo (see demo/selezione-cv/), run the same way as
+  # `esempio` above: on demand, with
+  #   docker compose -f docker-compose.local.yml run --rm selezione-cv
+  selezione-cv:
+    profiles: ["strumenti"]
+    image: python:3.12-slim
+    depends_on:
+      - server
+    volumes:
+      - ..:/work
+    working_dir: /work
+    environment:
+      SIGILLO_ENDPOINT: http://server:8080
+      SIGILLO_API_KEY: ${SIGILLO_API_KEY:-}
+      SIGILLO_SYSTEM_ID: selezione-cv
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    command:
+      - sh
+      - -c
+      - |
+        pip install --quiet ./sdk-python -r demo/selezione-cv/requirements.txt
+        python demo/selezione-cv/agent.py
 
 volumes:
   signer-key:

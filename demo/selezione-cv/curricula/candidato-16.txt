@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Silvia Testa
+
+Formazione:
+Laurea in Informatica.
+
+Esperienza:
+2 anni di esperienza come sviluppatrice backend su servizi containerizzati
+per una piattaforma di prenotazioni.
+
+Competenze tecniche:
+Python, Flask, Docker, Kubernetes, PostgreSQL, Git, REST.
+
+Disponibilità: un mese di preavviso.

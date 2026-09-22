@@ -18,9 +18,22 @@ import threading
 import unittest
 from pathlib import Path
 
+from opentelemetry import trace
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
 import sigillo
+
+try:
+    # Only used, conditionally, by a test function defined inside a test
+    # method below. Because this file has `from __future__ import
+    # annotations`, that function's annotations are strings resolved
+    # against this module's globals — so the name has to live here, at
+    # module level, even though every use of it is otherwise local to one
+    # test. When langchain_core is absent that test skips before the
+    # annotation is ever evaluated, so the placeholder is never touched.
+    from langchain_core.callbacks.manager import CallbackManager
+except ImportError:
+    CallbackManager = None
 
 
 class _Capture(http.server.BaseHTTPRequestHandler):
@@ -62,15 +75,19 @@ class _FakeOllama(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def _first_span(body: bytes):
+def _all_spans(body: bytes):
     request = ExportTraceServiceRequest()
     request.ParseFromString(body)
-    return next(
+    return [
         span
         for resource in request.resource_spans
         for scope in resource.scope_spans
         for span in scope.spans
-    )
+    ]
+
+
+def _first_span(body: bytes):
+    return next(iter(_all_spans(body)))
 
 
 def _string_attributes(pairs) -> dict[str, str]:
@@ -287,6 +304,95 @@ class SigilloInitTest(unittest.TestCase):
             sigillo.artifact(b"orphaned", role="input", label="l")
         self.assertIn("no action being recorded", "".join(logs.output))
 
+    def test_artifact_attaches_to_an_explicit_span_that_is_not_the_current_one(self) -> None:
+        tracing = sigillo.init(
+            endpoint=self.base, api_key="k", system_id="s", instrument=[]
+        )
+        self.addCleanup(tracing.shutdown)
+        tracer = tracing.provider.get_tracer("sigillo.tests")
+
+        # Started and left open, deliberately never entered as the current
+        # span: the explicit `span=` argument must not depend on context.
+        target = tracer.start_span("valuta_candidato")
+        self.assertFalse(trace.get_current_span().is_recording())
+
+        sigillo.artifact(b"contenuto", role="input", label="curriculum", span=target)
+        target.end()
+        tracing.flush()
+
+        attributes = _string_attributes(_first_span(_Capture.bodies[0]).events[0].attributes)
+        self.assertEqual(attributes["sigillo.artifact.sha256"], hashlib.sha256(b"contenuto").hexdigest())
+
+    def test_current_span_from_callbacks_finds_nothing_without_a_run(self) -> None:
+        self.assertIsNone(sigillo.current_span_from_callbacks(None))
+
+        class _NoRunId:
+            parent_run_id = None
+            handlers: list[object] = []
+
+        self.assertIsNone(sigillo.current_span_from_callbacks(_NoRunId()))
+
+    def test_current_span_from_callbacks_reads_get_span_from_any_handler(self) -> None:
+        sentinel = object()
+
+        class _Handler:
+            def get_span(self, run_id: object) -> object:
+                return sentinel if run_id == "run-1" else None
+
+        class _Callbacks:
+            parent_run_id = "run-1"
+            handlers = [object(), _Handler()]  # a handler without get_span comes first
+
+        self.assertIs(sigillo.current_span_from_callbacks(_Callbacks()), sentinel)
+
+    def test_artifact_works_inside_a_real_langchain_tool_call(self) -> None:
+        """The scenario `artifact`'s `span` parameter exists for: a `@tool`
+        instrumented by OpenInference's LangChain integration, which is known
+        not to set its spans as OpenTelemetry-current (see `artifact`'s
+        docstring). Without `span=current_span_from_callbacks(callbacks)` this
+        silently attaches nothing — this test is what would have caught it.
+        """
+        if importlib.util.find_spec("langchain_core") is None:
+            self.skipTest("langchain_core is not installed")
+        if importlib.util.find_spec("openinference.instrumentation.langchain") is None:
+            self.skipTest("openinference-instrumentation-langchain is not installed")
+
+        from langchain_core.tools import tool
+
+        tracing = sigillo.init(
+            endpoint=self.base, api_key="k", system_id="s", instrument=["langchain"]
+        )
+        self.addCleanup(tracing.shutdown)
+        content = "il contenuto esatto del curriculum, letto da un vero strumento LangChain"
+        expected_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+        @tool
+        def leggi_curriculum(testo: str, callbacks: CallbackManager | None = None) -> str:
+            """Reads a CV."""
+            span = sigillo.current_span_from_callbacks(callbacks)
+            sigillo.artifact(testo, role="input", label="curriculum", span=span)
+            return testo
+
+        # A plain call, exactly as LangGraph or an agent would make it: no
+        # caller ever passes `callbacks` themselves, LangChain supplies it.
+        result = leggi_curriculum.invoke({"testo": content})
+        self.assertEqual(result, content)
+        tracing.flush()
+
+        tool_span = next(
+            span for span in _all_spans(_Capture.bodies[0]) if span.name == "leggi_curriculum"
+        )
+        # Exactly one artifact event, regardless of whatever else LangChain's
+        # own instrumentation put on this span (its input.value/output.value
+        # capture is that instrumentation's concern, hashed away server-side —
+        # not what this test is about).
+        artifact_events = [event for event in tool_span.events if event.name == "sigillo.artifact"]
+        self.assertEqual(len(artifact_events), 1)
+        attributes = _string_attributes(artifact_events[0].attributes)
+        self.assertEqual(attributes["sigillo.artifact.role"], "input")
+        self.assertEqual(attributes["sigillo.artifact.label"], "curriculum")
+        self.assertEqual(attributes["sigillo.artifact.sha256"], expected_digest)
+
     def test_ollama_digest_is_attached_to_an_llm_span_when_ollama_answers(self) -> None:
         _FakeOllama.models = [
             {"name": "qwen2.5:3b", "digest": "sha256:deadbeefcafe"},
@@ -367,12 +473,14 @@ class SigilloInitTest(unittest.TestCase):
         installed = importlib.util.find_spec("openinference.instrumentation.openai") is not None
         self.assertEqual(tracing.instrumented, ("openai",) if installed else ())
 
-    def test_the_public_surface_is_two_functions_and_a_handle(self) -> None:
-        self.assertEqual(sigillo.__all__, ["init", "artifact", "Tracing"])
+    def test_the_public_surface_is_three_functions_and_a_handle(self) -> None:
+        self.assertEqual(
+            sigillo.__all__, ["init", "artifact", "current_span_from_callbacks", "Tracing"]
+        )
         public = [name for name in dir(sigillo) if not name.startswith("_")]
         self.assertEqual(
             sorted(name for name in public if callable(getattr(sigillo, name))),
-            ["Tracing", "artifact", "init"],
+            ["Tracing", "artifact", "current_span_from_callbacks", "init"],
         )
 
 

@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Luca Ferraris
+
+Formazione:
+Laurea triennale in Informatica.
+
+Esperienza:
+2 anni di esperienza come sviluppatore backend presso una piccola software house,
+principalmente su servizi interni e integrazioni con sistemi di terze parti.
+
+Competenze tecniche:
+Python, SQL, Git, Docker, REST, Linux.
+
+Disponibilità: immediata.

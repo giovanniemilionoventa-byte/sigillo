@@ -1,0 +1,15 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Riccardo Gatti
+
+Formazione:
+Diploma di Ragioneria.
+
+Esperienza:
+Quattro anni come contabile presso uno studio associato, con progressiva
+assunzione di compiti di reportistica.
+
+Competenze tecniche:
+Conoscenza basilare di SQL per l'estrazione di report; uso quotidiano di Git
+per la condivisione di documenti con i colleghi.
+
+Disponibilità: un mese di preavviso.

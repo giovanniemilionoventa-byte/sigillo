@@ -19,7 +19,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | N2 | SDK Python, fase 2 | fatto | `sigillo.artifact()`, digest Ollama, `instrument=["openai"]`, adattatore server; 465 test Node + 22 Python |
 | N3 | Verifica di un documento | fatto | Hash nel browser, `sigillo-verify doc`, `artifacts-index.jsonl`; 485 test Node |
 | N4 | Interfaccia nuova | fatto | Le tre domande in italiano, semaforo verde/giallo/rosso con parola, cronologia leggibile, pagina sistemi, tema chiaro/scuro/mobile; 537 test Node |
-| N5 | Demo selezione CV | todo | 20 curriculum, Ollama o modello fittizio, ispezione simulata, e2e in CI |
+| N5 | Demo selezione CV | fatto | 20 curriculum, modello fittizio (Ollama scritto ma non eseguibile qui), ispezione simulata, e2e reale; bug corretto in `sigillo.artifact()` |
 | N6 | Documentazione non tecnica | todo | `ISPEZIONE.md`, `VIDEO.md`, `PROVA-LOCALE.md` esteso alla fase 2 |
 
 ## Decisioni prese dal committente — 2026-09-21
@@ -885,6 +885,130 @@ N4 non tocca `packages/core` né `packages/verifier`, solo `apps/server` e la do
 regola 5 non si applica.
 
 Nessun difetto trovato dai test in questa milestone.
+
+#### N5 — Demo selezione CV (fatto)
+
+- `demo/selezione-cv/curricula/` — 20 curriculum inventati, in italiano, per "sviluppatore backend
+  junior". **Regole di punteggio neutre e dichiarate** (`agent.py`, `evaluate_cv_text`): leggono solo
+  competenze tecniche pertinenti (elenco dichiarato `BACKEND_SKILLS`, corrispondenza a parola intera —
+  altrimenti "javascript" farebbe contare anche "java") e anni di esperienza **specificamente come
+  sviluppatore** (`EXPERIENCE_PATTERN` richiede "N anni di esperienza come sviluppat...": un candidato
+  con anni di esperienza in un altro ruolo non li vede contare). Età, genere, provenienza, foto: non
+  esiste un campo da cui leggerli, non solo una scelta di non usarli. Convenzione con cui i 20
+  curriculum sono scritti apposta per essere testabili: esperienza pertinente in cifre ("2 anni di
+  esperienza come sviluppatore"), esperienza in altri ruoli scritta in lettere ("Tre anni come
+  contabile") — così un test può controllare che la seconda non venga mai letta come la prima. Il
+  candidato n. 7 (Andrea Bianchi, su cui è costruito `ISPEZIONE.md`) ha deliberatamente **zero**
+  competenze pertinenti, zero esperienza pertinente, nessuna formazione informatica: un rifiuto
+  costruito per essere palesemente legittimo, non un caso limite.
+- `agent.py` — tre strumenti (`leggi_curriculum`, `valuta_candidato`, `invia_email`, nomi esatti
+  richiesti dal prompt, perché diventano `action.name` nelle ricevute) in un grafo LangGraph **a tre
+  passi fissi**, non un ciclo dove un modello decide l'ordine: leggi, valuta, rispondi, sempre in
+  quest'ordine. Scelta deliberata — un ordine deciso da un modello sarebbe meno auditabile e meno
+  deterministico per un test, senza portare nulla in cambio qui. `valuta_candidato` calcola il
+  punteggio da sé (la regola dichiarata sopra) e chiede al modello solo di trasformare i fatti già
+  calcolati in una frase, mai di valutare da capo — così la parte che decide resta leggibile come
+  codice, non nascosta nel comportamento di un modello.
+- **Il modello**: `OLLAMA_URL` raggiungibile e modello già scaricato → `langchain_ollama.ChatOllama`,
+  con il digest allegato alla ricevuta `llm_call` (già supportato da N2). Altrimenti
+  `FakeRationaleModel`, un `SimpleChatModel` deterministico con la stessa interfaccia: stessi fatti in
+  ingresso, stessa frase in uscita, nessuna rete — è quello che gira in questa sandbox e in CI.
+  **Tentativo di installare Ollama in questa sessione**: `ollama.com` è raggiungibile (lo script di
+  installazione si scarica correttamente), ma l'esecuzione dello script scaricato è stata bloccata dal
+  classificatore di sicurezza della sandbox ("Code from External") — non un blocco di rete, un confine
+  deliberato di questa sessione cloud, distinto e riportato con precisione invece di confonderlo con
+  l'altro. Anche `pip install langchain-ollama` è stato bloccato allo stesso modo ("Untrusted Code
+  Integration"). Nessun tentativo di aggirare il blocco: il percorso col modello reale resta scritto,
+  testato nella sua parte deterministica, e documentato in `README.md` con i comandi esatti da eseguire
+  su una macchina vera:
+  ```
+  curl -fsSL https://ollama.com/install.sh | sh
+  ollama pull qwen2.5:3b
+  export OLLAMA_URL=http://127.0.0.1:11434
+  ./demo/selezione-cv/run_demo.sh
+  ```
+- **Un difetto vero trovato in `sigillo.artifact()` (N2), non solo nella demo.** Costruendo
+  `leggi_curriculum`/`invia_email` è emerso che `sigillo.artifact()` non allegava mai nulla quando
+  chiamato da dentro un vero strumento LangChain instrumentato da `openinference-instrumentation-
+  langchain`: la funzione cerca "lo span corrente" con `trace.get_current_span()`, ma il tracer di
+  OpenInference per LangChain crea i suoi span con `tracer.start_span(...)` e **apposta** non li
+  attacca mai al contesto di OpenTelemetry (il suo stesso codice sorgente lo spiega: in un sistema a
+  callback non si può garantire che un contesto agganciato venga sempre sganciato, quindi non lo
+  aggancia mai). Risultato: nessuno dei test di N2 se ne era accorto, perché usavano tutti
+  `tracer.start_as_current_span(...)` a mano, mai una vera chiamata LangChain. Corretto in
+  `sdk-python/src/sigillo/__init__.py`: `artifact()` accetta ora un parametro opzionale `span`, e una
+  nuova funzione `current_span_from_callbacks()` lo trova a partire dal `callbacks` che LangChain
+  inietta in una funzione-strumento che dichiara un parametro con questo nome esatto — senza importare
+  mai `langchain_core`, solo leggendo `.parent_run_id`/`.handlers`/`.get_span()` con `getattr`. Nuovo
+  test in `sdk-python/tests/test_init.py`,
+  `test_artifact_works_inside_a_real_langchain_tool_call`, che costruisce un vero `@tool` LangChain,
+  lo invoca come farebbe LangGraph, e controlla che l'evento `sigillo.artifact` compaia sullo span
+  giusto — questo è il test che avrebbe dovuto accorgersene in N2 e non l'ha fatto.
+- `run_demo.sh` — segnalatore/server effimeri (stesso schema di M7/M9), l'agente sui 20 curriculum,
+  un checkpoint marcato da FreeTSA (eseguito davvero in questa sessione: "1 anchored, 0 still
+  waiting"), riepilogo finale. Controlli di avvio che falliscono in modo esplicito (porta già in uso,
+  dipendenze Python mancanti con il comando `pip install` esatto da eseguire) invece di proseguire in
+  silenzio.
+- `run_demo.ps1` — stesso risultato su Windows, ma via Docker Desktop: riusa esattamente i container di
+  `deploy/docker-compose.local.yml` (quelli di `PROVA-LOCALE.md`), in un progetto Compose separato
+  (`sigillo-selezione-cv`) così da non toccare un'installazione di prova che l'utente avesse già in
+  piedi. Aggiunto un nuovo servizio `selezione-cv` al compose file, sullo schema già esistente del
+  servizio `esempio`; la porta pubblicata del server è ora parametrizzabile
+  (`SIGILLO_LOCAL_PORT`, default 8080 invariato) proprio per permettere ai due stack di convivere.
+  **Non eseguibile in questa sessione cloud** (Docker non è disponibile, come già annotato per la
+  checklist Docker di M9): scritto e controllato riga per riga contro i comandi di `PROVA-LOCALE.md`
+  già provati su macchina reale, non contro un'esecuzione vera.
+- `ISPEZIONE.md` — il percorso completo sul candidato n. 7, in italiano, per chi non ha mai visto
+  sigillo: dalla domanda del candidato alla verifica del documento, alla prova che manomettere anche un
+  solo carattere del curriculum lo rende irriconoscibile. **Ogni comando di questo file è stato
+  eseguito davvero in questa sessione** (non solo scritto): il documento giusto viene trovato, quello
+  manomesso no, il fascicolo si verifica, `sigillo-verify doc` su un file modificato di un carattere
+  restituisce "nessuna azione registrata" con uscita 1. Nota anche il limite onesto del percorso: il
+  registro prova che l'azione è avvenuta su quel documento con quell'esito, non che la regola di
+  punteggio è equa — quella si legge nel codice, non in una singola ricevuta.
+- `VIDEO.md` — copione di circa 3 minuti per DPO e responsabili compliance, zero parole tecniche nel
+  parlato, scena per scena, con note di produzione su cosa registrare.
+- `demo/selezione-cv/tests/test_scoring.py` (nuovo, 14 test) — la regola di punteggio in isolamento:
+  un profilo forte, un profilo a zero, la soglia come vero taglio netto (7 punti appena sotto, 8 appena
+  sopra, sugli stessi identici dati salvo un anno di esperienza), "java" mai contato dentro
+  "javascript", anni scritti in lettere in un altro ruolo mai contati, tutti i 20 curriculum spediti
+  verificati contro l'esito atteso uno per uno, il candidato n. 7 verificato a zero su tutti e tre gli
+  assi.
+- `demo/selezione-cv/tests/test_demo_e2e.py` (nuovo, 3 test) — segnalatore e server reali, l'agente
+  vero sui 20 curriculum, poi lo stesso export e lo stesso verificatore open source di ogni altra
+  milestone: conta le ricevute per strumento (20 per ciascuno dei tre), conferma che ogni ricevuta reale
+  porta `on_behalf_of: "elena.rizzo"`, conferma 40 righe nell'indice documenti (20 input + 20 output),
+  verifica che il contenuto del curriculum del candidato n. 7 non compaia mai nell'export, prova
+  `sigillo-verify doc` sul curriculum vero e su una sua versione manomessa.
+- `sdk-python/src/sigillo/__init__.py`, `sdk-python/tests/test_init.py` — vedi il difetto corretto
+  sopra; 4 test nuovi (l'override esplicito di `span`, due su `current_span_from_callbacks()` in
+  isolamento, l'integrazione reale con LangChain), il test sulla superficie pubblica aggiornato per la
+  terza funzione.
+
+Decisioni prese senza fermarsi:
+- Grafo a tre passi fissi invece di un agente che decide l'ordine degli strumenti: più leggibile, più
+  deterministico da testare, e la sezione 6 del prompt non chiede altro.
+- `langgraph`, `langchain-core`, `langchain-ollama` restano fuori dalla lista approvata di
+  `CLAUDE.md`: stesso trattamento già riservato a `langgraph`/`langchain-core` in M6, dichiarati solo
+  nel `requirements.txt` della demo, non dipendenze del pacchetto `sigillo`. La nota della sessione 2
+  ("le aggiungo alla lista quando le uso, in N5") era una previsione scritta prima di arrivarci; il
+  trattamento corretto, coerente con quanto già deciso in M6, è questo.
+- Difetto di `sigillo.artifact()` corretto alla radice (nell'SDK) invece che aggirato solo nella demo:
+  il problema riguarda chiunque usi LangChain con questo SDK, non solo questa demo.
+
+Verifiche eseguite: **537 test Node** (invariati, N5 non tocca codice TypeScript), **26 test Python in
+`sdk-python/tests`** (erano 22 dopo N2, +4 per il difetto corretto), **17 test Python nuovi in
+`demo/selezione-cv/tests`**; `pnpm check` verde; `run_demo.sh` eseguito per intero in questa sessione,
+incluso un checkpoint marcato da FreeTSA; ogni passo di `ISPEZIONE.md` eseguito davvero, non solo
+scritto; `run_demo.ps1` scritto e controllato ma non eseguibile qui (nessun Docker in questa sandbox,
+stesso limite già annotato per M9).
+
+Dimensione di verifier+core: **invariata, 2064 righe totali (1609 escludendo vuote e commenti)** — N5
+non tocca `packages/core` né `packages/verifier`; il difetto corretto vive in `sdk-python/`, fuori
+dall'ambito della regola 5.
+
+Difetto trovato e corretto in questa milestone: `sigillo.artifact()` non funzionava con LangChain reale
+(sopra). Nessun altro difetto trovato dai test.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

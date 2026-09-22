@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Francesca Villa
+
+Formazione:
+Laurea in Ingegneria Informatica.
+
+Esperienza:
+2 anni di esperienza come sviluppatrice backend su un'applicazione di
+e-commerce, con responsabilità sul catalogo prodotti e sui pagamenti.
+
+Competenze tecniche:
+Python, Flask, PostgreSQL, Docker, Git, REST.
+
+Disponibilità: due settimane di preavviso.

@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Chiara Galli
+
+Formazione:
+Laurea in Ingegneria Informatica.
+
+Esperienza:
+2 anni di esperienza come sviluppatrice, prevalentemente su API interne
+per un'azienda di logistica.
+
+Competenze tecniche:
+Python, Django, PostgreSQL, Git.
+
+Disponibilità: un mese di preavviso.

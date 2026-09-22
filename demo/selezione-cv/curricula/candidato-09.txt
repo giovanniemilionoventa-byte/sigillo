@@ -1,0 +1,14 @@
+Candidatura per: Sviluppatore Backend Junior
+Nome: Simone Marino
+
+Formazione:
+Diploma di Istituto Tecnico Informatico.
+
+Esperienza:
+1 anno di esperienza come sviluppatore presso lo studio di un commercialista,
+su un piccolo sito interno di gestione pratiche.
+
+Competenze tecniche:
+PHP, SQL, Git.
+
+Disponibilità: immediata.

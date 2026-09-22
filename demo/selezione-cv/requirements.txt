@@ -1,0 +1,9 @@
+# Only this demo needs these. The sigillo package itself does not depend on
+# LangGraph or LangChain: see sdk-python/pyproject.toml.
+langgraph>=0.2
+langchain-core>=0.3
+openinference-instrumentation-langchain>=0.1
+# Only needed for the real-model path (OLLAMA_URL set to a running Ollama
+# server with the model already pulled). The demo runs without it, using a
+# deterministic fake model instead — see README.md, "The model".
+langchain-ollama>=0.2

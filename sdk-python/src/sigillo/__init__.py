@@ -16,7 +16,9 @@ your code changes.
 A second function, `sigillo.artifact(...)`, attaches a document's fingerprint
 (never its content) to the action being recorded, and `ollama_url` on `init`
 lets a locally-run model's digest ride along on its own receipt. Both are
-optional: code that calls neither behaves exactly as before.
+optional: code that calls neither behaves exactly as before. A third,
+`sigillo.current_span_from_callbacks(...)`, is the one piece most LangChain
+tools need alongside `artifact`: see its docstring.
 
 What this package does not do: it does not sign anything, and it does not decide
 where a receipt lands. The API key does: a key belongs to exactly one system,
@@ -49,7 +51,7 @@ from opentelemetry.sdk.trace import SpanProcessor as _SpanProcessor
 from opentelemetry.sdk.trace import TracerProvider as _TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor as _BatchSpanProcessor
 
-__all__ = ["init", "artifact", "Tracing"]
+__all__ = ["init", "artifact", "current_span_from_callbacks", "Tracing"]
 __version__ = "0.1.0"
 
 _LOG = _logging.getLogger("sigillo")
@@ -258,6 +260,7 @@ def artifact(
     role: str,
     label: str,
     media_type: str | None = None,
+    span: _Span | None = None,
 ) -> None:
     """Attaches a document's fingerprint to the action being recorded right now.
 
@@ -265,23 +268,28 @@ def artifact(
     (hashed as its UTF-8 bytes), or a path to read it from — never a filename
     to describe it with: `label` is that, a category such as `"curriculum"`,
     chosen so it cannot carry a person's name. Hashing happens here, in this
-    process; only the digest is attached to the current span, as an event
-    named `sigillo.artifact`. The document's content is never sent anywhere.
+    process; only the digest is attached to the span, as an event named
+    `sigillo.artifact`. The document's content is never sent anywhere.
 
-    Must be called with a span active (inside whatever the instrumentation
-    already opened for this action); otherwise it logs a warning and does
-    nothing, since there would be no action for the fingerprint to attach to.
+    By default this attaches to the current span (whatever the instrumentation
+    already opened for this action); if there is none, it logs a warning and
+    does nothing, since there would be no action for the fingerprint to attach
+    to. Pass `span` explicitly to attach to a specific one instead — needed
+    for OpenInference's LangChain integration, which opens a span without ever
+    making it "current" in OpenTelemetry's sense (deliberately: it must not
+    risk leaving a context attached if a callback fails partway through).
+    `current_span_from_callbacks` finds that span from inside a `@tool`.
     """
     if role not in _ARTIFACT_ROLES:
         raise ValueError(f"role must be one of {_ARTIFACT_ROLES}, got {role!r}")
 
-    span = _trace.get_current_span()
-    if not span.is_recording():
+    target = span if span is not None else _trace.get_current_span()
+    if not target.is_recording():
         _LOG.warning("sigillo.artifact() called with no action being recorded; nothing was attached")
         return
 
     raw, default_media_type = _artifact_bytes(data)
-    span.add_event(
+    target.add_event(
         "sigillo.artifact",
         attributes={
             "sigillo.artifact.role": role,
@@ -290,6 +298,41 @@ def artifact(
             "sigillo.artifact.sha256": _hashlib.sha256(raw).hexdigest(),
         },
     )
+
+
+def current_span_from_callbacks(callbacks: object) -> _Span | None:
+    """The span a callback-based instrumentation opened for the run behind `callbacks`.
+
+    LangChain injects a `CallbackManager` into a `@tool` function that declares
+    a `callbacks` parameter; its handlers include OpenInference's LangChain
+    tracer, which — unlike most instrumentations — keeps its spans out of
+    OpenTelemetry's context (see `artifact`'s docstring for why) and only
+    exposes them through its own `get_span(run_id)`. This walks `callbacks` to
+    find that span, for passing to `artifact(..., span=...)`. LangChain itself
+    is never imported here: everything is read with `getattr`, against
+    whatever object was passed in.
+
+        def leggi_curriculum(percorso_file: str, callbacks: CallbackManager | None = None) -> str:
+            span = sigillo.current_span_from_callbacks(callbacks)
+            sigillo.artifact(percorso_file, role="input", label="curriculum", span=span)
+            ...
+
+    Returns `None` when `callbacks` is `None`, carries no run, or none of its
+    handlers expose a span this way — `artifact` then falls back to its usual
+    warning rather than raising.
+    """
+    if callbacks is None:
+        return None
+    parent_run_id = getattr(callbacks, "parent_run_id", None)
+    if parent_run_id is None:
+        return None
+    for handler in getattr(callbacks, "handlers", []):
+        get_span = getattr(handler, "get_span", None)
+        if callable(get_span):
+            found = get_span(parent_run_id)
+            if found is not None:
+                return found
+    return None
 
 
 def _artifact_bytes(data: bytes | str | _os.PathLike) -> tuple[bytes, str]:
