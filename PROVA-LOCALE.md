@@ -269,10 +269,8 @@ raggiungibile da nessun altro.
 > e riscrivi l'indirizzo cominciando da `http://`. Qui la connessione sicura
 > non c'è, ed è voluto: nella prova locale non serve.
 
-**La pagina è in inglese**: sigillo è pensato per essere letto anche da
-revisori stranieri. Ti comparirà un riquadro **Administrator password**: metti
-quella del Passo 4 (`provaLocale2026`, se non l'hai cambiata) e clicca
-**Sign in**.
+Ti comparirà un riquadro **Password amministratore**: metti quella del
+Passo 4 (`provaLocale2026`, se non l'hai cambiata) e clicca **Accedi**.
 
 Entrato, vedrai una pagina che dice che non c'è ancora nessun sistema. Giusto:
 lo creiamo adesso.
@@ -346,14 +344,22 @@ risposta è sempre la stessa, e non costa niente.
 
 Torna nel browser su `http://127.0.0.1:8080/ui` e **ricarica la pagina**.
 
-Ora `acme-support-bot` compare nell'elenco. Cliccaci sopra: vedrai le ricevute,
-una per ogni azione dell'agente — la chiamata al modello, la chiamata allo
-strumento, i passi dell'agente.
+La pagina principale risponde a tre domande. Sotto **"È tutto a posto?"** vedi
+ora `acme-support-bot` con un pallino verde e la scritta **verde**: il
+registro è integro. Sotto **"Cosa ha fatto l'AI?"** trovi le ultime azioni
+già scritte in una frase, non in una tabella tecnica — per esempio *"L'agente
+«acme-support-bot» ha usato lo strumento «search_orders» — completato."*
+Clicca su `acme-support-bot` (o su "vedi tutta la cronologia") per la lista
+completa: una per ogni azione dell'agente — la chiamata al modello, la
+chiamata allo strumento, i passi dell'agente, ciascuna con un link
+**"Dettagli tecnici"** che, se lo apri, mostra i campi che il verificatore
+controlla (impronta, firma, chiave).
 
 **Guarda cosa non c'è.** Non trovi da nessuna parte la domanda del cliente né
-la risposta dell'agente. Ci sono i nomi delle azioni e delle impronte
-(le sequenze di lettere e numeri). Il contenuto non è stato salvato: sigillo
-prova *che* una cosa è successa e *quando*, non *cosa* è stato detto.
+la risposta dell'agente, nemmeno nei dettagli tecnici. Ci sono i nomi delle
+azioni e delle impronte (le sequenze di lettere e numeri). Il contenuto non è
+stato salvato: sigillo prova *che* una cosa è successa e *quando*, non *cosa*
+è stato detto.
 
 ---
 
@@ -364,10 +370,11 @@ firme, le marche temporali e una relazione in PDF.
 
 ### Dalla pagina web
 
-Nella pagina del sistema c'è un bottone **"Generate the evidence file"**.
-Cliccalo: il browser scarica un file `.zip` nella tua cartella Download.
-Puoi aprirlo con un doppio clic e guardarci dentro — c'è un `report.pdf`
-leggibile e un `VERIFY.md` che spiega come controllarlo.
+Sulla pagina principale, sotto **"Mi prepari le prove?"**, scegli il sistema
+`acme-support-bot` (lascia vuoti i campi data per prendere tutto il registro)
+e clicca **"Genera fascicolo"**. Il browser scarica un file `.zip` nella tua
+cartella Download. Puoi aprirlo con un doppio clic e guardarci dentro — c'è un
+`report.pdf` leggibile e un `VERIFY.md` che spiega come controllarlo.
 
 ### E adesso di nuovo, ma dal terminale
 
@@ -447,7 +454,81 @@ impossibili da modificare — rende ogni modifica impossibile da nascondere.
 
 ---
 
-## Passo 15 — Spegnere
+## Passo 15 — Le novità della fase 2
+
+Tutto quello che hai fatto finora usava già, senza che lo notassi, l'interfaccia
+della **fase 2** di sigillo: è per questo che era già in italiano e già
+organizzata intorno a "È tutto a posto?", "Cosa ha fatto l'AI?" e "Mi prepari
+le prove?" fin dal Passo 8. Restano da vedere due cose che il Passo 9 e il
+Passo 12 non hanno ancora mostrato: la pagina per creare un sistema **senza
+terminale**, e la verifica di un documento.
+
+### Creare un sistema dalla pagina web
+
+Al Passo 9 hai creato `acme-support-bot` da terminale. Ora puoi fare lo stesso
+dal browser: clicca **"sistemi"** nel menu in alto. Vedrai l'elenco dei
+sistemi esistenti e, sotto, un modulo **"Crea un nuovo sistema"**. Non serve
+usarlo per questa prova — `acme-support-bot` esiste già — ma è lì per quando
+vorrai aggiungere un secondo agente senza toccare più il terminale: dopo aver
+scelto un nome e cliccato **"Crea sistema e chiave"**, la pagina ti mostra
+**una sola volta** il codice di accesso (esattamente come il `sigillo_...` del
+Passo 9) insieme a un esempio di codice Python già pronto da incollare nel tuo
+agente.
+
+### Verificare un documento
+
+Clicca **"verifica documento"** nel menu. Questa pagina risponde a una domanda
+diversa da tutte le altre: non "cosa ha fatto l'AI", ma "è stato usato
+**esattamente questo file**?". Carichi un documento (o incolli del testo), e
+sigillo ti dice se un'azione registrata lo ha usato — senza che il documento
+lasci mai il tuo computer: l'impronta viene calcolata dal browser stesso.
+
+L'agente di esempio del Passo 10 non allega documenti a nessuna azione, quindi
+per `acme-support-bot` questa pagina risponderà sempre "nessuna azione
+registrata ha usato questo documento" — giusto, non è un errore. Per vederla
+rispondere di sì, con dati veri, il progetto include una seconda demo pensata
+apposta per questo: un agente che legge curriculum veri (finti, ma completi)
+e li allega alle proprie azioni. Gira sullo **stesso** sigillo già acceso, in
+un secondo registro a parte da `acme-support-bot`, con gli stessi comandi già
+visti al Passo 9 e al Passo 10:
+
+```sh
+docker compose exec server node dist/cli.js system create selezione-cv
+```
+**Cosa fa:** crea un secondo registro, chiamato `selezione-cv`, accanto a
+quello dell'agente di esempio — uno stesso sigillo può tenerne quanti ne
+vuoi.
+
+```sh
+docker compose exec server node dist/cli.js key create selezione-cv
+```
+**Cosa fa:** genera una chiave di accesso per questo secondo registro.
+**Copia la seconda riga** (quella che comincia con `sigillo_`) come hai già
+fatto al Passo 9 — questa volta non serve scriverla nel `.env`, basta usarla
+nel prossimo comando.
+
+```sh
+docker compose run --rm -e SIGILLO_API_KEY=IL_TUO_CODICE_QUI selezione-cv
+```
+**Cosa fa:** fa passare 20 curriculum finti (per un posto da sviluppatore)
+attraverso un agente che li legge, li valuta con una regola dichiarata e
+uguale per tutti, e scrive una risposta per ciascuno — registrando ogni
+passo, insieme all'impronta di ogni curriculum e di ogni risposta, nel
+registro `selezione-cv` appena creato.
+
+Ricarica `http://127.0.0.1:8080/ui`: ora vedrai anche `selezione-cv`
+nell'elenco. Prendi uno dei venti curriculum — sono nella cartella del
+progetto che hai scaricato al Passo 3, sotto
+`demo/selezione-cv/curricula/candidato-01.txt` (o un altro numero a scelta) —
+e caricalo in **"verifica documento"**: questa volta la conferma arriva
+davvero. Il file
+`demo/selezione-cv/ISPEZIONE.md` (si apre con un qualsiasi editor di testo)
+ti guida passo per passo in uno scenario completo, con il candidato n. 7: un
+candidato scartato che chiede conto di cosa l'AI ha valutato sul suo conto.
+
+---
+
+## Passo 16 — Spegnere
 
 ```sh
 docker compose down

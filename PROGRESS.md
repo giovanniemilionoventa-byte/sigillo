@@ -20,7 +20,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | N3 | Verifica di un documento | fatto | Hash nel browser, `sigillo-verify doc`, `artifacts-index.jsonl`; 485 test Node |
 | N4 | Interfaccia nuova | fatto | Le tre domande in italiano, semaforo verde/giallo/rosso con parola, cronologia leggibile, pagina sistemi, tema chiaro/scuro/mobile; 537 test Node |
 | N5 | Demo selezione CV | fatto | 20 curriculum, modello fittizio (Ollama scritto ma non eseguibile qui), ispezione simulata, e2e reale; bug corretto in `sigillo.artifact()` |
-| N6 | Documentazione non tecnica | todo | `ISPEZIONE.md`, `VIDEO.md`, `PROVA-LOCALE.md` esteso alla fase 2 |
+| N6 | Documentazione non tecnica | fatto | `ISPEZIONE.md` e `VIDEO.md` (in N5), `PROVA-LOCALE.md` corretto ed esteso alla fase 2 |
 
 ## Decisioni prese dal committente — 2026-09-21
 
@@ -1009,6 +1009,53 @@ dall'ambito della regola 5.
 
 Difetto trovato e corretto in questa milestone: `sigillo.artifact()` non funzionava con LangChain reale
 (sopra). Nessun altro difetto trovato dai test.
+
+#### N6 — Documentazione non tecnica (fatto)
+
+`ISPEZIONE.md` e `VIDEO.md` erano già stati scritti in N5, dove appartengono (sono documenti della
+demo, non della fase 2 in generale). Il lavoro rimasto per N6 era `PROVA-LOCALE.md`: non solo
+estenderlo, ma prima **correggerlo**, perché descriveva un'interfaccia che non esiste più.
+
+- **Due correzioni fattuali**, non aggiunte: il Passo 8 diceva "la pagina è in inglese" con
+  "Administrator password" / "Sign in" — falso da N4 in poi, l'interfaccia è in italiano
+  ("Password amministratore" / "Accedi"). Il Passo 12 nominava un bottone "Generate the evidence
+  file" che non esiste più (ora "Genera fascicolo", con scelta di un intervallo di date). Il Passo 11
+  descriveva un elenco tecnico di ricevute invece delle tre domande e delle frasi leggibili che la
+  pagina principale mostra davvero da N4. Ho verificato ogni stringa citata contro
+  `apps/server/src/http/strings.ts` e `ui.ts`, non a memoria.
+- **Nuovo Passo 15 — "Le novità della fase 2"**, inserito prima di "Spegnere" (rinumerato da 15 a
+  16; nessun altro passo lo referenzia per numero, quindi rinumerare non ha rotto rimandi
+  nell'appendice). Due parti:
+  - creare un sistema dalla pagina "sistemi" invece che da terminale — mostrata, non usata per
+    forza, perché `acme-support-bot` esiste già a quel punto della guida;
+  - verificare un documento: qui serviva dell'attenzione in più, perché l'agente di esempio del
+    Passo 10 non allega mai documenti — la pagina risponderebbe sempre "nessuna azione registrata",
+    correttamente ma senza dimostrare nulla. Ho scelto di far girare la demo `selezione-cv` **sullo
+    stesso** sigillo già acceso (un secondo registro, stessi comandi `system create`/`key create`
+    già visti al Passo 9, chiave passata con `-e` al comando `run` senza toccare il `.env` di
+    `acme-support-bot`) invece di rimandare a `run_demo.sh`/`run_demo.ps1`: quegli script richiedono
+    Node e Python **sul computer dell'utente**, mentre chi ha seguito `PROVA-LOCALE.md` fin qui ha
+    solo Docker Desktop, per progetto (è il punto del servizio `esempio` già esistente, che installa
+    le sue dipendenze dentro un container usa-e-getta). Riutilizzare il compose e il bind mount
+    `..:/work` già presenti significa che `demo/selezione-cv/outbox/` finisce comunque sul disco
+    reale dell'utente, esattamente dove `ISPEZIONE.md` (scritto in N5) si aspetta di trovarlo — le
+    due guide restano compatibili senza doversi coordinare esplicitamente.
+
+Decisioni prese senza fermarsi:
+- Non ho spostato il Passo 9 (creazione sistema da CLI) a favore della pagina "sistemi": sarebbe
+  stata una riscrittura strutturale di un documento già lungo e già controllato riga per riga in
+  M9, con un beneficio marginale — mostrare la pagina "sistemi" più avanti, come alternativa, ottiene
+  lo stesso risultato didattico con meno rischio.
+- Nessun test automatico per questa milestone: è documentazione, non codice. La verifica è stata
+  incrociare ogni frase, ogni etichetta di bottone e ogni percorso di file citati con il codice
+  sorgente attuale (`strings.ts`, `ui.ts`, `docker-compose.local.yml`), non un'esecuzione reale della
+  guida — Docker non è disponibile in questa sessione cloud, stesso limite già annotato per M9 e per
+  `run_demo.ps1` in N5. Resta, come per la checklist Docker di M9, da confermare su una macchina vera.
+
+Verifiche eseguite: nessun test nuovo (documentazione); `pnpm check` rieseguito per confermare che
+nessun'altra modifica di questa sessione fosse rimasta non salvata (537 test Node verdi, invariati).
+
+Con N6 tutte le milestone della fase 2 (N1–N6) sono `fatto`.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
