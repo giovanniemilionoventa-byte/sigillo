@@ -107,6 +107,15 @@ program
         )
       : undefined;
 
+    const tsa = tsaFromOptions(options.tsaUrl);
+    const checkpointer = new Checkpointer({
+      store,
+      now: () => new Date(),
+      ...(tsa === undefined ? {} : { tsa }),
+      intervalMinutes: Number(options.checkpointMinutes),
+      onError: (message) => process.stderr.write(`${message}\n`),
+    });
+
     const app = buildServer({
       store,
       keys,
@@ -121,19 +130,11 @@ program
                 public_key_base64: signer.publicKeyBase64,
               },
               healthMonitor,
+              checkpointer,
             },
           }),
     });
     healthMonitor?.start();
-
-    const tsa = tsaFromOptions(options.tsaUrl);
-    const checkpointer = new Checkpointer({
-      store,
-      now: () => new Date(),
-      ...(tsa === undefined ? {} : { tsa }),
-      intervalMinutes: Number(options.checkpointMinutes),
-      onError: (message) => process.stderr.write(`${message}\n`),
-    });
     checkpointer.start();
 
     const shutdown = (): void => {

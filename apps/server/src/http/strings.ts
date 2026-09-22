@@ -32,6 +32,13 @@ export const UI = {
     wholeChain: "Lascia vuoto per l'intero registro.",
     generate: "Genera fascicolo",
     generateHint: "Uno .zip con le ricevute, i checkpoint, le marche temporali e il rapporto.",
+    checkpointNow: "Sigilla adesso",
+    checkpointHint:
+      "Normalmente non serve: ogni sistema viene sigillato da solo a intervalli regolari. " +
+      "Usa questo se non vuoi aspettare.",
+    checkpointDone:
+      "Fatto: ogni sistema con azioni nuove è stato sigillato. Se uno resta giallo, il sigillo " +
+      "è scritto ma la marca temporale non è ancora arrivata — riprova tra poco.",
   },
   status: {
     green: "verde",

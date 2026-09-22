@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
+import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { buildArchive } from "../export/archive.js";
 import type { ChainHealthMonitor, ChainStatus } from "../health/chain-health.js";
 import type { ArtifactMatch, ReceiptStore } from "../storage/store.js";
@@ -13,8 +14,10 @@ import { actionKindLabel, describeArtifact, describeDocumentMatch, describeRecei
  *
  * It answers three questions, in order — è tutto a posto? cosa ha fatto
  * l'AI? mi prepari le prove? — plus two secondary pages: creating a system
- * (and its first key) and checking a document by fingerprint. Creating a
- * system is the one write this view performs; it never writes a receipt.
+ * (and its first key) and checking a document by fingerprint. It never
+ * writes a receipt; its only writes are creating a system and, on request,
+ * running the same checkpoint the server already does on a timer — sooner,
+ * not instead.
  */
 
 const COOKIE = "sigillo_session";
@@ -27,6 +30,7 @@ export interface UiOptions {
   password: string;
   signerKey: { key_id: string; public_key_base64: string };
   healthMonitor: ChainHealthMonitor;
+  checkpointer: Checkpointer;
   now: () => Date;
 }
 
@@ -294,7 +298,18 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
 
   app.get("/ui", async (request, reply) => {
     if (!requireSession(request, reply)) return reply;
-    return html(reply, page(UI.home.title, homePage(store, options.healthMonitor, options.now())));
+    const query = request.query as { checkpoint?: string };
+    const justCheckpointed = query.checkpoint === "1";
+    return html(
+      reply,
+      page(UI.home.title, homePage(store, options.healthMonitor, options.now(), justCheckpointed)),
+    );
+  });
+
+  app.post("/ui/checkpoint", async (request, reply) => {
+    if (!requireSession(request, reply)) return reply;
+    await options.checkpointer.runOnce();
+    return reply.redirect("/ui?checkpoint=1", 303);
   });
 
   app.post("/ui/export", async (request, reply) => {
@@ -460,7 +475,12 @@ function semaphore(status: ChainStatus): string {
   return `<span class="dot ${status}" aria-hidden="true"></span><span class="status-word ${status}">${escape(UI.status[status])}</span>`;
 }
 
-function homePage(store: ReceiptStore, healthMonitor: ChainHealthMonitor, now: Date): string {
+function homePage(
+  store: ReceiptStore,
+  healthMonitor: ChainHealthMonitor,
+  now: Date,
+  justCheckpointed: boolean,
+): string {
   const t = UI.home;
   const systems = store.listSystems();
 
@@ -480,7 +500,12 @@ ${systems
 </tr>`;
   })
   .join("\n")}
-</table></div>`;
+</table></div>
+${justCheckpointed ? `<p>${escape(t.checkpointDone)}</p>` : ""}
+<form method="post" action="/ui/checkpoint">
+  <button type="submit">${escape(t.checkpointNow)}</button>
+  <span class="muted">${escape(t.checkpointHint)}</span>
+</form>`;
 
   const recent = systems
     .flatMap((systemId) =>
