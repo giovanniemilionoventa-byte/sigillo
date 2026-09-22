@@ -14,7 +14,8 @@ import {
   GENESIS_PREV_HASH,
   parseReceipt,
   receiptHashHex,
-  RECEIPT_VERSION,
+  RECEIPT_VERSION_1,
+  RECEIPT_VERSION_2,
   type Receipt,
 } from "../packages/core/src/index.js";
 
@@ -33,7 +34,7 @@ interface VectorInput {
 }
 
 const genesis: Receipt = {
-  v: RECEIPT_VERSION,
+  v: RECEIPT_VERSION_1,
   system_id: "acme-support-bot",
   seq: 0,
   ts_event: "2026-03-29T14:30:00.123Z",
@@ -257,6 +258,116 @@ const inputs: VectorInput[] = [
       prev_hash: genesisHash,
     },
   },
+  {
+    name: "v2-no-optional-fields",
+    comment:
+      "Version 2 with neither new member present: it canonicalises exactly like v1 except for v itself.",
+    receipt: {
+      ...genesis,
+      v: RECEIPT_VERSION_2,
+      seq: 19,
+      ts_event: "2026-03-29T14:31:12.000Z",
+      ts_received: "2026-03-29T14:31:12.001Z",
+      actor: { agent: "executor" },
+      action: { kind: "tool_call", name: "search_orders" },
+      source: { type: "sdk" },
+      prev_hash: genesisHash,
+    },
+  },
+  {
+    name: "v2-single-input-artifact",
+    comment: "One input artifact: its sha256 is over the document's raw bytes, never canonicalised.",
+    receipt: {
+      ...genesis,
+      v: RECEIPT_VERSION_2,
+      seq: 20,
+      ts_event: "2026-03-29T14:31:13.000Z",
+      ts_received: "2026-03-29T14:31:13.001Z",
+      actor: { agent: "selezione-cv" },
+      action: { kind: "tool_call", name: "leggi_curriculum" },
+      source: { type: "sdk" },
+      prev_hash: genesisHash,
+      artifacts: [
+        {
+          role: "input",
+          label: "curriculum",
+          media_type: "text/plain",
+          sha256: SHA_SIGILLO,
+        },
+      ],
+    },
+  },
+  {
+    name: "v2-two-artifacts-preserve-order",
+    comment:
+      "Two artifacts, input then output: RFC 8785 sorts object members but never reorders an array.",
+    receipt: {
+      ...genesis,
+      v: RECEIPT_VERSION_2,
+      seq: 21,
+      ts_event: "2026-03-29T14:31:14.000Z",
+      ts_received: "2026-03-29T14:31:14.001Z",
+      actor: { agent: "selezione-cv", on_behalf_of: "urn:user:selezionatore" },
+      action: { kind: "agent_step", name: "valuta_candidato" },
+      source: { type: "sdk" },
+      prev_hash: genesisHash,
+      artifacts: [
+        { role: "input", label: "curriculum", media_type: "text/plain", sha256: SHA_EMPTY },
+        { role: "output", label: "email di risposta", media_type: "text/plain", sha256: SHA_SIGILLO },
+      ],
+    },
+  },
+  {
+    name: "v2-model-with-provider-and-digest",
+    comment: "An llm_call naming a local model, its provider, and the digest of the model file used.",
+    receipt: {
+      ...genesis,
+      v: RECEIPT_VERSION_2,
+      seq: 22,
+      ts_event: "2026-03-29T14:31:15.000Z",
+      ts_received: "2026-03-29T14:31:15.001Z",
+      actor: { agent: "planner" },
+      action: { kind: "llm_call", name: "chat.completions" },
+      source: { type: "otlp", trace_id: "4bf92f3577b34da6a3ce929d0e0e4736" },
+      prev_hash: genesisHash,
+      model: { name: "qwen2.5:3b", provider: "ollama", digest: `sha256:${SHA_SIGILLO}` },
+    },
+  },
+  {
+    name: "v2-model-with-null-provider-and-digest",
+    comment: "A model name with neither provider nor digest known: both are null, never omitted.",
+    receipt: {
+      ...genesis,
+      v: RECEIPT_VERSION_2,
+      seq: 23,
+      ts_event: "2026-03-29T14:31:16.000Z",
+      ts_received: "2026-03-29T14:31:16.001Z",
+      actor: { agent: "planner" },
+      action: { kind: "llm_call", name: "chat.completions" },
+      source: { type: "api" },
+      prev_hash: genesisHash,
+      model: { name: "unknown-local-model", provider: null, digest: null },
+    },
+  },
+  {
+    name: "v2-artifact-and-model-together",
+    comment: "Both new members on the same receipt: an llm_call that also produced a document.",
+    receipt: {
+      ...genesis,
+      v: RECEIPT_VERSION_2,
+      seq: 24,
+      ts_event: "2026-03-29T14:31:17.000Z",
+      ts_received: "2026-03-29T14:31:17.001Z",
+      actor: { agent: "planner" },
+      action: { kind: "llm_call", name: "chat.completions" },
+      source: { type: "sdk" },
+      prev_hash: genesisHash,
+      artifacts: [
+        { role: "output", label: "email di risposta", media_type: "text/plain", sha256: SHA_EMPTY },
+      ],
+      model: { name: "gpt-4o", provider: "openai", digest: null },
+    },
+  },
 ];
 
 const vectors = inputs.map((input) => {
@@ -278,12 +389,15 @@ if (names.size !== vectors.length || hashes.size !== vectors.length) {
 
 const output = {
   format: "sigillo receipt test vectors",
-  receipt_version: RECEIPT_VERSION,
+  // Derived from what the vectors actually contain, not asserted separately,
+  // so this can never drift from the vectors below it.
+  receipt_versions: [...new Set(vectors.map((vector) => vector.receipt.v))].sort(),
   note: [
     "canonical is the RFC 8785 form of the receipt with the sig field removed;",
     "hash is the SHA-256 of those UTF-8 bytes, lowercase hex.",
     "The sig values are a fixed placeholder: these vectors pin the wire format,",
-    "not signatures. Signature vectors arrive with the signer.",
+    "not signatures. Signature vectors arrive with the signer. Versions 1 and 2",
+    "are both covered; a v1 vector has no artifacts or model member at all.",
   ].join(" "),
   vectors,
 };

@@ -15,7 +15,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | M7 | Merkle e marca temporale | fatto | RFC 6962 (0..17), checkpoint firmati, RFC 3161 su FreeTSA |
 | M8 | Fascicolo completo e verificatore v2 | fatto | Zip completo con PDF, 12 controlli, token FreeTSA verificato |
 | M9 | UI, deploy, documentazione | fatto | UI senza JavaScript, compose a tre servizi, backup SQLite, 406 test verdi |
-| N1 | Formato v2 | todo | Campi `artifacts` e `model`; `v: 2`; le ricevute v1 restano verificabili senza modifiche |
+| N1 | Formato v2 | fatto | Campi `artifacts` e `model`, schema v1/v2 come union discriminata, 20 vettori (8 nuovi v2), 452 test verdi |
 | N2 | SDK Python, fase 2 | todo | `sigillo.artifact()` con hash lato client; digest dei modelli Ollama; `instrument=["openai"]` |
 | N3 | Verifica di un documento | todo | Hash calcolato nel browser; `sigillo-verify doc`; `artifacts-index.jsonl` nel fascicolo |
 | N4 | Interfaccia nuova | todo | Le tre domande del responsabile compliance; semaforo; cronologia in linguaggio naturale |
@@ -595,6 +595,82 @@ Il prompt nomina esplicitamente due dipendenze non ancora nella lista approvata 
 (solo per `demo/selezione-cv`, stesso trattamento di `langgraph`/`langchain-core` in M6: non è una
 dipendenza del pacchetto `sigillo`, serve solo alla demo). Le aggiungo alla lista approvata quando
 le uso davvero, in N2 e N5 rispettivamente, non prima.
+
+#### N1 — Formato v2 (fatto)
+
+- `packages/core/src/receipt.ts` — `v` diventa un'unione discriminata zod fra `unsignedReceiptV1Schema`
+  (invariato bit per bit rispetto a prima) e `unsignedReceiptV2Schema`, che aggiunge `artifacts`
+  (array non vuoto, mai vuoto: un'azione senza documenti omette il campo) e `model` (con `provider`
+  e `digest` **nullable**, non opzionali, perché a differenza di `on_behalf_of` un nome di modello
+  da solo resta un'evidenza significativa). I campi comuni vivono in una sola `receiptCoreShape`
+  condivisa, così ogni versione resta uno `z.object` leggibile per intero, senza `.extend()` da
+  inseguire. `RECEIPT_VERSION` (una sola costante) diventa `RECEIPT_VERSION_1`/`RECEIPT_VERSION_2`
+  (`as const`, altrimenti TypeScript le allarga a `number` e l'unione discriminata smette di
+  distinguere le due forme).
+- `packages/core/src/checkpoint.ts` — disaccoppiato dalla versione della ricevuta: aveva sempre
+  riusato `RECEIPT_VERSION` per il proprio campo `v`, che per puro caso valeva 1 in entrambi i casi.
+  Ora ha una propria `CHECKPOINT_VERSION = 1`, perché la fase 2 non tocca affatto il formato del
+  checkpoint e le due versioni non devono restare accoppiate per un incidente storico.
+- `packages/core/src/manifest.ts` — `receipt_version` accetta `1` o `2` e cambia significato: non è
+  più "la versione di questo export" ma **la versione più alta fra le ricevute presenti**, perché
+  una catena può passare da v1 a v2 a metà strada e un fascicolo può contenerle entrambe. Un export
+  tutto-v1 continua a dichiarare `1`, quindi ogni manifest già prodotto resta valido così com'è.
+- `packages/verifier/src/verify.ts` — un solo controllo nuovo: `receipt_version` deve combaciare con
+  il massimo delle versioni davvero presenti (stesso trattamento di `range`/`counts.*`, dichiarazione
+  verificata contro il contenuto, mai presa per buona). La manomissione di un `artifact` o del `model`
+  **non richiede nessun controllo nuovo**: sono campi dentro la ricevuta come ogni altro, quindi
+  cambiarli cambia l'impronta della ricevuta e viene rilevato dal `chain-link`/`signature` che già
+  esisteva. Le prove nuove lo dimostrano invece di limitarsi a dirlo.
+- `apps/server/src/export/archive.ts` — `receipt_version` nel manifest calcolato dal massimo delle
+  ricevute effettivamente esportate, non più letto da una costante: altrimenti sarebbe rimasto
+  sbagliato dal giorno in cui il server iniziasse davvero a scrivere ricevute v2 (N2/N5).
+  `apps/server/src/storage/store.ts` continua a scrivere `v: RECEIPT_VERSION_1`: **il server non
+  scrive ancora ricevute v2**, di proposito — resta compito di N2 (SDK) e N5 (demo), che sono le
+  prime milestone ad avere davvero `artifacts`/`model` da mettere in una ricevuta.
+- `docs/FORMAT.md` — nuove sezioni 2.5 (`artifacts`) e 2.6 (`model`), tabella dei membri aggiornata,
+  §7.1 con un esempio completo di ricevuta v2 (impronta calcolata e verificata con `openssl`, non
+  scritta a mano), §10.3 e §10.4 aggiornate per il nuovo significato di `receipt_version` e per il
+  controllo in più, nota di stato in testa che dichiara entrambe le versioni correnti.
+
+Vettori: **20 in totale** (erano 14), 8 nuovi di versione 2 — nessuno v1 modificato. Coprono: v2
+senza campi opzionali (canonicalizza come v1 a parte `v`), un artifact, due artifact (a riprova che
+un array non viene mai riordinato dalla canonicalizzazione, solo le chiavi degli oggetti lo sono),
+un modello con provider e digest, un modello con entrambi `null`, e artifact+model insieme. Il campo
+di intestazione del file, `receipt_version` (singolare), diventa `receipt_versions: [1, 2]`, calcolato
+dai vettori stessi invece che dichiarato a parte, così non può disallinearsi da ciò che il file contiene
+davvero.
+
+Verifiche eseguite (452 test verdi, erano 406):
+- ogni vettore v1 esistente è bit per bit quello di prima (nessuna riga toccata in `vectors.json` per
+  i primi 14 vettori, solo aggiunte in coda);
+- una ricevuta v1 che porta `artifacts` o `model` viene **rifiutata**: v1 resta chiuso, non
+  semplicemente permissivo;
+- catena che verifica con ricevute v1 e v2 mescolate nello stesso export, e una interamente v2;
+- manifest con `receipt_version` che sottostima o sovrastima la versione più alta davvero presente:
+  entrambi rifiutati con `range` e il numero dichiarato nel messaggio;
+- `scripts/crosscheck_vectors.py` re-deriva anche gli 8 vettori v2 con un'implementazione Python
+  indipendente, inclusa la forma di `artifacts[]` e `model` — non solo i 12 vettori v1 di prima;
+- l'impronta del vettore `v2-single-input-artifact` (552 byte, sha256
+  `b50f22f0f6d1c7332d28f8cece6a5517f04baa85ffcbedb4a62817cb818ecdd6`) è stata ricalcolata **a mano**
+  con `openssl dgst -sha256` prima di scriverla in `docs/FORMAT.md`, come già fatto per l'esempio v1
+  in M1: verificata contro un valore esterno, non contro sé stessa;
+- `pnpm lint`, `pnpm typecheck`, `pnpm build`, `node scripts/smoke-dist.mjs` (20 vettori verificati
+  sul pacchetto compilato) tutti verdi.
+
+Dimensione di verifier+core: **1909 righe totali (1480 escludendo vuote e commenti)**, erano 1792
+(1416). La crescita di 117 righe totali supera la soglia di ~100 righe della regola 5 di `CLAUDE.md`
+— questa è la nota che la regola stessa richiede. Cosa ha comprato: lo schema v2 con `artifacts` e
+`model` e la loro documentazione inline (~120 righe in `receipt.ts`), la separazione fra
+`CHECKPOINT_VERSION` e le costanti di versione della ricevuta, e il controllo di coerenza su
+`receipt_version` nel verificatore (~10 righe). Nessuna riga tolta o compressa per stare sotto la
+soglia: la richiesta esplicita della fase 2 era di aggiungere questi due campi mantenendo v1
+verificabile senza modifiche, e leggibilità resta il criterio, non il conteggio.
+
+Nessun difetto trovato dai test in questa milestone: le decisioni di design più delicate (versione
+del checkpoint disaccoppiata, `receipt_version` come massimo anziché come costante, `as const` sulle
+nuove costanti di versione) sono state prese **prima** di scrivere lo schema, seguendo l'analisi di
+come `RECEIPT_VERSION` veniva già usato in nove punti diversi del codice, non scoperte a posteriori
+da un test che falliva.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

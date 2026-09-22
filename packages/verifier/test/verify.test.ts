@@ -8,6 +8,7 @@ import {
   receiptHashHex,
   signReceipt,
   type Receipt,
+  type ReceiptV2,
 } from "@sigillo/core";
 import { verifyBundle, type Bundle, type VerificationCheck } from "../src/verify.js";
 import {
@@ -289,6 +290,101 @@ function relink(receipts: Receipt[], signer: ReturnType<typeof createIdentity>):
     );
   }
 }
+
+describe("receipt format version 2", () => {
+  it("verifies a chain mixing v1 and v2 receipts", () => {
+    const receipts = buildReceipts(6, identity, undefined, [
+      undefined,
+      undefined,
+      undefined,
+      { v: 2 },
+      {
+        v: 2,
+        artifacts: [
+          { role: "input", label: "curriculum", media_type: "text/plain", sha256: "a".repeat(64) },
+        ],
+      },
+      { v: 2, model: { name: "qwen2.5:3b", provider: "ollama", digest: "sha256:deadbeef" } },
+    ]);
+    const bundle = toBundle(receipts, buildManifest(receipts, identity));
+    const result = verifyBundle(bundle);
+    expect(result.ok ? "" : `${result.check}: ${result.detail}`).toBe("");
+  });
+
+  it("verifies a chain that is entirely v2", () => {
+    const receipts = buildReceipts(3, identity, undefined, [
+      { v: 2 },
+      {
+        v: 2,
+        artifacts: [
+          { role: "output", label: "email di risposta", media_type: "text/plain", sha256: "b".repeat(64) },
+        ],
+      },
+      { v: 2 },
+    ]);
+    const result = verifyBundle(toBundle(receipts, buildManifest(receipts, identity)));
+    expect(result.ok ? "" : `${result.check}: ${result.detail}`).toBe("");
+  });
+
+  it("detects a tampered artifact digest", () => {
+    const receipts = buildReceipts(5, identity, undefined, [
+      undefined,
+      undefined,
+      {
+        v: 2,
+        artifacts: [
+          { role: "input", label: "curriculum", media_type: "text/plain", sha256: "c".repeat(64) },
+        ],
+      },
+      undefined,
+      undefined,
+    ]);
+    const bundle = toBundle(receipts, buildManifest(receipts, identity));
+    const changed = lines(bundle);
+    const receipt = JSON.parse(changed[2] ?? "{}") as ReceiptV2;
+    changed[2] = canonicalJson({
+      ...receipt,
+      artifacts: [{ ...receipt.artifacts![0], sha256: "d".repeat(64) }],
+    });
+
+    const message = expectFailure(fromLines(bundle, changed), "chain-link");
+    expect(message).toMatch(/seq 3/);
+  });
+
+  it("detects a tampered model field in the last receipt, where only the signature covers it", () => {
+    const receipts = buildReceipts(4, identity, undefined, [
+      undefined,
+      undefined,
+      undefined,
+      { v: 2, model: { name: "qwen2.5:3b", provider: "ollama", digest: null } },
+    ]);
+    const bundle = toBundle(receipts, buildManifest(receipts, identity));
+    const changed = lines(bundle);
+    const receipt = JSON.parse(changed[3] ?? "{}") as ReceiptV2;
+    changed[3] = canonicalJson({
+      ...receipt,
+      model: { name: "gpt-4o", provider: "ollama", digest: null },
+    });
+
+    expectFailure(fromLines(bundle, changed), "signature");
+  });
+
+  it("rejects a manifest whose receipt_version understates the receipts it holds", () => {
+    const receipts = buildReceipts(3, identity, undefined, [undefined, undefined, { v: 2 }]);
+    const manifest = buildManifest(receipts, identity);
+    expect(manifest.receipt_version).toBe(2);
+    const message = expectFailure(toBundle(receipts, { ...manifest, receipt_version: 1 }), "range");
+    expect(message).toMatch(/receipt_version/);
+  });
+
+  it("rejects a manifest whose receipt_version overstates the receipts it holds", () => {
+    const receipts = buildReceipts(3, identity);
+    const manifest = buildManifest(receipts, identity);
+    expect(manifest.receipt_version).toBe(1);
+    const message = expectFailure(toBundle(receipts, { ...manifest, receipt_version: 2 }), "range");
+    expect(message).toMatch(/receipt_version/);
+  });
+});
 
 describe("properties", () => {
   it("accepts every well-formed chain", () => {

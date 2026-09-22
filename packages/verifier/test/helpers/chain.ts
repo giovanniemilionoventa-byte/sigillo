@@ -5,10 +5,13 @@ import {
   keyIdFromRawPublicKey,
   rawPublicKeyBytes,
   receiptHashHex,
-  RECEIPT_VERSION,
+  RECEIPT_VERSION_1,
   signReceipt,
+  type ArtifactEntry,
   type Manifest,
+  type ModelInfo,
   type Receipt,
+  type UnsignedReceipt,
 } from "@sigillo/core";
 import type { Bundle } from "../../src/verify.js";
 
@@ -34,18 +37,31 @@ function timestamp(index: number): string {
   return new Date(Date.UTC(2026, 2, 29, 14, 30, 0, 0) + index * 1000).toISOString();
 }
 
-/** Builds a chain the way the server would, so the verifier has something real to check. */
+/** Per-seq departures from an all-v1 chain, for tests that need a v2 or mixed chain. */
+export interface ReceiptOverride {
+  v?: 1 | 2;
+  artifacts?: ArtifactEntry[];
+  model?: ModelInfo;
+}
+
+/**
+ * Builds a chain the way the server would, so the verifier has something real
+ * to check. Every receipt is v1 with no artifacts or model unless `overrides`
+ * says otherwise for that seq, so existing callers that omit it are unaffected.
+ */
 export function buildReceipts(
   length: number,
   identity: SigningIdentity,
   systemId = SYSTEM,
+  overrides: ReadonlyArray<ReceiptOverride | undefined> = [],
 ): Receipt[] {
   const receipts: Receipt[] = [];
   let prevHash = GENESIS_PREV_HASH;
 
   for (let seq = 0; seq < length; seq += 1) {
+    const override = overrides[seq];
     const unsigned = {
-      v: RECEIPT_VERSION as 1,
+      v: override?.v ?? RECEIPT_VERSION_1,
       system_id: systemId,
       seq,
       ts_event: timestamp(seq),
@@ -61,7 +77,9 @@ export function buildReceipts(
       source: { type: "api" as const },
       prev_hash: prevHash,
       key_id: identity.keyId,
-    };
+      ...(override?.artifacts === undefined ? {} : { artifacts: override.artifacts }),
+      ...(override?.model === undefined ? {} : { model: override.model }),
+    } as UnsignedReceipt;
     const receipt = signReceipt(unsigned, identity.privateKey);
     receipts.push(receipt);
     prevHash = receiptHashHex(receipt);
@@ -76,9 +94,12 @@ export function buildManifest(receipts: Receipt[], identity: SigningIdentity): M
   if (first === undefined || last === undefined) {
     throw new Error("a bundle needs at least one receipt");
   }
+  const receiptVersion = receipts.reduce<number>((max, receipt) => Math.max(max, receipt.v), 0) as
+    | 1
+    | 2;
   return {
     sigillo_version: "0.1.0",
-    receipt_version: RECEIPT_VERSION,
+    receipt_version: receiptVersion,
     system_id: first.system_id,
     exported_at: timestamp(receipts.length),
     range: {

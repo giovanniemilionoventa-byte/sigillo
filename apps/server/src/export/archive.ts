@@ -4,7 +4,6 @@ import {
   fromHex,
   inclusionProof,
   receiptHashHex,
-  RECEIPT_VERSION,
   SIGILLO_VERSION,
   toHex,
   type CheckpointEntry,
@@ -116,9 +115,16 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
 
   const checkpointsJsonl = entries.map((entry) => `${JSON.stringify(entry)}\n`).join("");
 
+  // The manifest declares the highest receipt version actually present, so an
+  // export that mixes v1 and v2 receipts (a chain upgraded mid-flight) still
+  // makes a claim the verifier can check against the receipts themselves.
+  const receiptVersion = receipts.reduce<number>((max, receipt) => Math.max(max, receipt.v), 0) as
+    | 1
+    | 2;
+
   const manifest: Manifest = {
     sigillo_version: SIGILLO_VERSION,
-    receipt_version: RECEIPT_VERSION,
+    receipt_version: receiptVersion,
     system_id: systemId,
     exported_at: input.exportedAt,
     range: {

@@ -369,6 +369,21 @@ export function verifyBundle(bundle: Bundle): Verification {
     );
   }
 
+  // A chain may upgrade from v1 to v2 mid-flight, so this is not "the export's
+  // version": it is a claim, like the counts above, checked against what the
+  // receipts actually declare rather than trusted.
+  const highestReceiptVersion = receipts.reduce<number>(
+    (max, receipt) => Math.max(max, receipt.v),
+    0,
+  );
+  if (manifest.receipt_version !== highestReceiptVersion) {
+    return fail(
+      "range",
+      "manifest.json",
+      `the manifest declares receipt_version ${manifest.receipt_version}, but the highest version among the receipts is ${highestReceiptVersion}`,
+    );
+  }
+
   return {
     ok: true,
     summary: {

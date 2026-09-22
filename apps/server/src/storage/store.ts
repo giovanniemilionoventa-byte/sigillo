@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import {
   canonicalReceiptBytes,
   checkpointHash,
+  CHECKPOINT_VERSION,
   fromHex,
   GENESIS_PREV_HASH,
   merkleRoot,
@@ -9,7 +10,7 @@ import {
   parseReceipt,
   parseUnsignedReceipt,
   receiptHash,
-  RECEIPT_VERSION,
+  RECEIPT_VERSION_1,
   toHex,
   type Action,
   type Actor,
@@ -82,7 +83,7 @@ function rowToCheckpoint(row: CheckpointRow): StoredCheckpoint {
   return {
     id: row.id,
     checkpoint: parseCheckpoint({
-      v: RECEIPT_VERSION,
+      v: CHECKPOINT_VERSION,
       system_id: row.system_id,
       tree_size: row.tree_size,
       root_hash: row.root_hash,
@@ -359,7 +360,7 @@ export class ReceiptStore {
       }
 
       const unsigned = {
-        v: RECEIPT_VERSION,
+        v: CHECKPOINT_VERSION,
         system_id: systemId,
         tree_size: hashes.length,
         root_hash: toHex(merkleRoot(hashes.map((hash) => fromHex(hash)))),
@@ -429,7 +430,7 @@ export class ReceiptStore {
       }
 
       const unsigned = parseUnsignedReceipt({
-        v: RECEIPT_VERSION,
+        v: RECEIPT_VERSION_1,
         system_id: event.system_id,
         seq: tip === undefined ? 0 : tip.seq + 1,
         ts_event: event.ts_event,
