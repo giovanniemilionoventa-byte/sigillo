@@ -2,7 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Receipt } from "@sigillo/core";
 import { buildArchive } from "../export/archive.js";
-import type { ReceiptStore } from "../storage/store.js";
+import type { ArtifactMatch, ReceiptStore } from "../storage/store.js";
 
 /**
  * A small operator's view: four pages of server-rendered HTML, no framework and
@@ -68,10 +68,81 @@ function page(title: string, body: string): string {
 <header>
   <h1>sigillo</h1>
   <span class="muted">${escape(title)}</span>
-  <nav><a href="/ui">systems</a><a href="/ui/logout">sign out</a></nav>
+  <nav><a href="/ui">systems</a><a href="/ui/verify-document">verifica documento</a><a href="/ui/logout">sign out</a></nav>
 </header>
 ${body}
 </body></html>`;
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/**
+ * The one script this UI carries. Hashing happens in the browser, with Web
+ * Crypto: the document is never sent anywhere, only its fingerprint, as a
+ * query parameter of an ordinary navigation. No library, no build step.
+ *
+ * Its exact bytes are what deploy/Caddyfile's CSP allows by `script-src
+ * 'sha256-...'`: changing so much as a character here means recomputing that
+ * hash (packages/verifier, sorry — apps/server/test/ui.test.ts checks the two
+ * stay in step, so a mismatch fails in CI rather than in production).
+ */
+export const VERIFY_DOCUMENT_SCRIPT = `(function () {
+  function toHex(buffer) {
+    return Array.from(new Uint8Array(buffer))
+      .map(function (byte) { return byte.toString(16).padStart(2, "0"); })
+      .join("");
+  }
+  document.getElementById("sigillo-doc-button").addEventListener("click", async function () {
+    var fileInput = document.getElementById("sigillo-doc-file");
+    var textInput = document.getElementById("sigillo-doc-text");
+    var bytes;
+    if (fileInput.files.length > 0) {
+      bytes = await fileInput.files[0].arrayBuffer();
+    } else if (textInput.value.length > 0) {
+      bytes = new TextEncoder().encode(textInput.value);
+    } else {
+      return;
+    }
+    var digest = await crypto.subtle.digest("SHA-256", bytes);
+    window.location.href = "/ui/verify-document?sha256=" + toHex(digest);
+  });
+})();`;
+
+function verifyDocumentForm(): string {
+  return `<p>${escape("Il documento non lascia il tuo computer: calcoliamo solo la sua impronta.")}</p>
+<p><label>File<br><input type="file" id="sigillo-doc-file"></label></p>
+<p><label>oppure incolla il testo<br><textarea id="sigillo-doc-text" rows="6" cols="60"></textarea></label></p>
+<p><button type="button" id="sigillo-doc-button">Verifica</button></p>
+<script>${VERIFY_DOCUMENT_SCRIPT}</script>`;
+}
+
+/** Italian, deliberately: this is the one page the fase 2 prompt gives exact user-facing text for. */
+function timestampStatus(store: ReceiptStore, systemId: string, seq: number): string {
+  const covering = store.readCheckpoints(systemId).find((entry) => entry.checkpoint.tree_size > seq);
+  if (covering === undefined) return "non ancora coperto da un checkpoint";
+  const tokens = store.readTimestamps(covering.id);
+  return tokens.length > 0
+    ? `con marca temporale del ${tokens[0]?.obtainedAt ?? ""}`
+    : "checkpoint scritto, marca temporale in attesa";
+}
+
+function verifyDocumentResult(store: ReceiptStore, matches: ArtifactMatch[]): string {
+  if (matches.length === 0) {
+    return `<h2>Risultato</h2><p>${escape(
+      "Nessuna azione registrata ha usato questo documento. Se ne hai una versione diversa, anche un solo carattere cambia il risultato.",
+    )}</p>`;
+  }
+  const items = matches
+    .map((match) => {
+      const sentence =
+        `✓ Questo documento è esattamente quello usato da ${match.system_id} il ${match.ts_received}, ` +
+        `come «${match.label}», nell'azione ${match.action_name} (${match.role}). Non è stato modificato.`;
+      const link = escape(encodeURIComponent(match.system_id));
+      return `<li>${escape(sentence)} <a href="/ui/systems/${link}">vedi la ricevuta</a> — ` +
+        `<span class="muted">${escape(timestampStatus(store, match.system_id, match.seq))}</span></li>`;
+    })
+    .join("\n");
+  return `<h2>Risultato</h2><ul>${items}</ul>`;
 }
 
 function loginPage(message?: string): string {
@@ -212,6 +283,19 @@ ${rows}
 <p class="muted">Signing key <span class="hash">${escape(options.signerKey.key_id)}</span></p>`,
       ),
     );
+  });
+
+  app.get("/ui/verify-document", async (request, reply) => {
+    if (!requireSession(request, reply)) return reply;
+
+    const query = request.query as { sha256?: string };
+    const sha256 = query.sha256;
+    const searched = typeof sha256 === "string" && SHA256_HEX.test(sha256);
+
+    const body = `${verifyDocumentForm()}${
+      searched ? verifyDocumentResult(store, store.findArtifactsBySha256(sha256)) : ""
+    }`;
+    return html(reply, page("verifica un documento", body));
   });
 
   app.get("/ui/systems/:systemId", async (request, reply) => {

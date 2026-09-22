@@ -17,7 +17,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | M9 | UI, deploy, documentazione | fatto | UI senza JavaScript, compose a tre servizi, backup SQLite, 406 test verdi |
 | N1 | Formato v2 | fatto | Campi `artifacts` e `model`, schema v1/v2 come union discriminata, 20 vettori (8 nuovi v2), 452 test verdi |
 | N2 | SDK Python, fase 2 | fatto | `sigillo.artifact()`, digest Ollama, `instrument=["openai"]`, adattatore server; 465 test Node + 22 Python |
-| N3 | Verifica di un documento | todo | Hash calcolato nel browser; `sigillo-verify doc`; `artifacts-index.jsonl` nel fascicolo |
+| N3 | Verifica di un documento | fatto | Hash nel browser, `sigillo-verify doc`, `artifacts-index.jsonl`; 485 test Node |
 | N4 | Interfaccia nuova | todo | Le tre domande del responsabile compliance; semaforo; cronologia in linguaggio naturale |
 | N5 | Demo selezione CV | todo | 20 curriculum, Ollama o modello fittizio, ispezione simulata, e2e in CI |
 | N6 | Documentazione non tecnica | todo | `ISPEZIONE.md`, `VIDEO.md`, `PROVA-LOCALE.md` esteso alla fase 2 |
@@ -727,6 +727,77 @@ Verifiche eseguite (**465 test Node**, erano 452; **22 test Python**, erano 12):
 - `pnpm lint`, `pnpm typecheck`, `pnpm build`, `node scripts/smoke-dist.mjs`,
   `python3 scripts/crosscheck_vectors.py` tutti verdi (i vettori non sono cambiati in questa
   milestone: N2 non tocca il formato).
+
+Nessun difetto trovato dai test in questa milestone.
+
+#### N3 — Verifica di un documento (fatto)
+
+- `packages/core/src/export.ts` — `artifactsIndexEntrySchema`: una riga di `artifacts-index.jsonl`
+  è `{ sha256, seq, role, label }`. Niente `system_id` per riga: il fascicolo ne copre uno solo,
+  dichiarato nel manifest.
+- `apps/server/src/storage/schema.ts` — tabella `artifacts` (append-only, stessi trigger di
+  `receipts`/`checkpoints`/`timestamps`), `FOREIGN KEY (system_id, seq)` verso `receipts`, indice su
+  `sha256`. `apps/server/src/storage/store.ts` scrive le righe **nella stessa transazione** della
+  ricevuta che le dichiara — un documento non può comparire senza la ricevuta che lo nomina, né
+  viceversa — e `findArtifactsBySha256()` risponde alla domanda "chi ha mai usato questo documento"
+  con un indice, non con una scansione di ogni ricevuta.
+- `apps/server/src/export/archive.ts` — `artifacts-index.jsonl` nel fascicolo: una riga per ogni
+  *occorrenza* di artifact (una ricevuta con due documenti dà due righe).
+- `packages/verifier/src/verify.ts` — un controllo nuovo, **simmetrico apposta**: l'insieme degli
+  artifact che le ricevute v2 dichiarano deve coincidere esattamente con l'insieme delle righe
+  dell'indice, in entrambe le direzioni. Una riga in più nell'indice è respinta tanto quanto un
+  artifact senza riga corrispondente: solo così l'indice è affidabile per una ricerca, non soltanto
+  per un conteggio. **Manomettere un artifact non ha richiesto nessun controllo apposito** (come già
+  per N1): cambia l'impronta della ricevuta, quindi lo becca il controllo di catena o di firma che
+  esisteva già. `Verification` ora espone anche `receipts` (le ricevute già validate), perché
+  `sigillo-verify doc` ne ha bisogno senza doverle riparsare.
+- `packages/verifier/src/cli.ts` — `sigillo-verify doc <fascicolo> <file>`: verifica **tutto** il
+  fascicolo prima di rispondere (una ricerca su un archivio manomesso viene rifiutata, non
+  semplicemente resa inaffidabile), poi hasha il file con SHA-256 e cerca la corrispondenza. Uscita
+  come `grep`: 0 trovato, 1 non trovato o fascicolo non valido, 2 file o archivio illeggibile — così
+  uno script può distinguere i tre casi dal solo codice di uscita.
+- `apps/server/src/http/ui.ts` — pagina **"verifica un documento"**: file o testo incollato, un solo
+  script inline che chiama `crypto.subtle.digest` nel browser e naviga a
+  `/ui/verify-document?sha256=...` — il documento non raggiunge mai il server. È l'unica pagina con
+  JavaScript, come vuole la sezione 4 del prompt; il resto della UI resta quello di M9. I testi di
+  **questa** pagina sono in italiano (l'unica pagina per cui il prompt della fase 2 detta le frasi
+  esatte); il resto dell'interfaccia passa all'italiano in N4, con i testi raccolti in un unico file
+  come chiede la sezione 5.
+- `deploy/Caddyfile` — invece di allentare la CSP `default-src 'none'` in generale, `script-src`
+  ammette **solo** l'hash SHA-256 di quello script esatto (`'sha256-...'`). Un test
+  (`apps/server/test/ui.test.ts`) ricalcola l'hash dallo script davvero esportato da `ui.ts` e lo
+  confronta col Caddyfile: se qualcuno modifica lo script senza aggiornare l'hash, il test fallisce
+  invece di scoprirlo in produzione con la console del browser che blocca lo script.
+- `apps/server/src/export/report.ts` — sezione nuova nel PDF: quanti documenti sono indicizzati in
+  questo periodo e, se almeno uno, il comando `sigillo-verify doc` per controllarli.
+- `docs/FORMAT.md`, `docs/SECURITY.md` — `artifacts-index.jsonl` documentato (§10.3), il controllo
+  nuovo nell'elenco del verificatore (§10.5, con la nota sulla simmetria), `sigillo-verify doc`
+  spiegato; `SECURITY.md` estende "nessun contenuto" ai documenti (hashati lato client sia dall'SDK
+  sia dal browser) e spiega la CSP con hash della pagina.
+
+Verifiche eseguite (**485 test Node**, erano 465):
+- un documento trovato mostra sistema, etichetta, azione e stato del checkpoint che lo copre;
+- un documento modificato di un solo byte **non** viene trovato (impronta diversa, nessuna via di
+  mezzo: o è esattamente il file usato, o "nessuna azione registrata");
+- lo stesso documento usato in due ricevute diverse compare **in entrambe**, in ordine di tempo;
+- un indice a cui manca un artifact dichiarato, o che ne dichiara uno in più, o che punta al `seq`
+  sbagliato: tutti rifiutati con `artifacts-index` e il conteggio nel messaggio;
+- `sigillo-verify doc` su un archivio con l'indice manomesso fallisce **l'intero archivio**, non
+  restituisce semplicemente "non trovato" — la ricerca eredita la verifica, non la aggira;
+- il server non riceve mai il contenuto del documento: la pagina lo hasha nel browser, l'SDK lo hasha
+  nel processo del chiamante (già provato in N2); un test controlla che un `sha256` non valido nella
+  query non venga trattato come una ricerca riuscita;
+- XSS: un'etichetta o un nome di azione con markup incorporato arriva in pagina già sfuggito, come
+  per le pagine di M9;
+- `pnpm lint`, `pnpm typecheck`, `pnpm build`, `node scripts/smoke-dist.mjs`,
+  `python3 scripts/crosscheck_vectors.py` tutti verdi (i vettori non cambiano: N3 non tocca il
+  formato della ricevuta, solo l'export e il verificatore).
+
+Dimensione di verifier+core: **2064 righe totali (1609 escludendo vuote e commenti)**, erano 1909
+(1480) dopo N1. Crescita di 155 righe totali, di nuovo oltre la soglia di ~100 della regola 5. Cosa ha comprato: lo schema e il parsing di `artifacts-index.jsonl` in `core`, il controllo
+di coerenza simmetrico e l'esposizione di `receipts` in `Verification`, e l'intero sottocomando
+`sigillo-verify doc` (lettura dell'archivio, hashing del file, ricerca, messaggi) — tutti richiesti
+esplicitamente dalla sezione 4 del prompt. Nessuna riga tolta per stare sotto la soglia.
 
 Nessun difetto trovato dai test in questa milestone.
 

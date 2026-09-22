@@ -13,12 +13,16 @@ export { SIGILLO_VERSION } from "./version.js";
 export { CANONICAL_BASE64_MESSAGE, isCanonicalBase64 } from "./base64.js";
 
 export {
+  artifactsIndexEntrySchema,
   checkpointEntrySchema,
   exportTimestampSchema,
   inclusionProofSchema,
+  safeParseArtifactsIndexEntry,
   safeParseCheckpointEntry,
 } from "./export.js";
 export type {
+  ArtifactsIndexEntry,
+  ArtifactsIndexEntryParseResult,
   CheckpointEntry,
   CheckpointEntryParseResult,
   ExportTimestamp,

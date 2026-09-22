@@ -113,10 +113,30 @@ export function buildManifest(receipts: Receipt[], identity: SigningIdentity): M
   };
 }
 
+/** Mirrors apps/server/src/export/archive.ts: one index line per artifact occurrence. */
+function artifactsIndexJsonl(receipts: Receipt[]): string {
+  return receipts
+    .flatMap((receipt) =>
+      receipt.v === 2 && receipt.artifacts !== undefined
+        ? receipt.artifacts.map(
+            (artifact) =>
+              `${JSON.stringify({
+                sha256: artifact.sha256,
+                seq: receipt.seq,
+                role: artifact.role,
+                label: artifact.label,
+              })}\n`,
+          )
+        : [],
+    )
+    .join("");
+}
+
 export function toBundle(receipts: Receipt[], manifest: Manifest): Bundle {
   return {
     manifestJson: JSON.stringify(manifest, null, 2),
     receiptsJsonl: `${receipts.map((receipt) => canonicalJson(receipt)).join("\n")}\n`,
+    artifactsIndexJsonl: artifactsIndexJsonl(receipts),
   };
 }
 

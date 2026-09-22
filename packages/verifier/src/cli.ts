@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Command } from "commander";
@@ -15,6 +16,7 @@ const CHECKS = [
   "a chain that starts at seq 0 starts with a genesis receipt",
   "every receipt's prev_hash is the recomputed hash of the receipt before it",
   "every receipt is signed by a key the manifest publishes",
+  "every artifact a v2 receipt names is indexed once, and the index claims nothing more",
   "every checkpoint is signed by a key the manifest publishes",
   "every Merkle root is rebuilt from the receipts present",
   "every inclusion proof rebuilds its checkpoint's root",
@@ -42,6 +44,7 @@ function readArchiveFile(target: string): Archive {
   }
 
   const checkpoints = files.get("checkpoints.jsonl");
+  const artifactsIndex = files.get("artifacts-index.jsonl");
   const tokens = new Map<string, Uint8Array>();
   for (const [name, data] of files) {
     if (name.startsWith("timestamps/")) tokens.set(name, data);
@@ -52,6 +55,7 @@ function readArchiveFile(target: string): Archive {
       manifestJson: decode(manifest),
       receiptsJsonl: decode(receipts),
       ...(checkpoints === undefined ? {} : { checkpointsJsonl: decode(checkpoints) }),
+      ...(artifactsIndex === undefined ? {} : { artifactsIndexJsonl: decode(artifactsIndex) }),
     },
     tokens,
   };
@@ -72,6 +76,7 @@ function readDirectory(target: string): Archive {
     throw new Error("the directory has no manifest.json or no receipts.jsonl");
   }
   const checkpointsJsonl = read("checkpoints.jsonl");
+  const artifactsIndexJsonl = read("artifacts-index.jsonl");
 
   const tokens = new Map<string, Uint8Array>();
   try {
@@ -87,6 +92,7 @@ function readDirectory(target: string): Archive {
       manifestJson,
       receiptsJsonl,
       ...(checkpointsJsonl === undefined ? {} : { checkpointsJsonl }),
+      ...(artifactsIndexJsonl === undefined ? {} : { artifactsIndexJsonl }),
     },
     tokens,
   };
@@ -158,6 +164,9 @@ program
           `${summary.inclusion_proofs} inclusion proof(s) verified\n`,
       );
     }
+    if (summary.artifacts_indexed > 0) {
+      process.stdout.write(`    ${summary.artifacts_indexed} document fingerprint(s) indexed\n`);
+    }
     for (const check of timestamps.checks) {
       process.stdout.write(
         `    timestamp ${check.file}: ${check.status} (${check.tsaUrl})\n`,
@@ -172,6 +181,66 @@ program
       for (const check of CHECKS) {
         process.stdout.write(`  - ${check}\n`);
       }
+    }
+  });
+
+program
+  .command("doc <archive> <file>")
+  .description("check whether <file> is a document a receipt in <archive> names, by its fingerprint")
+  .action((archivePath: string, filePath: string) => {
+    let archive: Archive;
+    try {
+      archive = readArchive(archivePath);
+    } catch (error) {
+      process.stderr.write(
+        `cannot read ${archivePath}: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+      process.exit(2);
+    }
+
+    // The document lookup is only as trustworthy as the archive it is read
+    // from, so the whole chain is checked first, exactly as the default
+    // command would: a tampered archive never gets to report a match.
+    const result = verifyBundle(archive.bundle);
+    if (!result.ok) {
+      process.stderr.write(`FAILED  ${result.check} at ${result.location}\n`);
+      process.stderr.write(`        ${result.detail}\n`);
+      process.exit(1);
+    }
+
+    let fileBytes: Buffer;
+    try {
+      fileBytes = readFileSync(filePath);
+    } catch (error) {
+      process.stderr.write(
+        `cannot read ${filePath}: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+      process.exit(2);
+    }
+    const digest = createHash("sha256").update(fileBytes).digest("hex");
+    const manifest = JSON.parse(archive.bundle.manifestJson) as { system_id: string };
+
+    const matches = result.receipts.flatMap((receipt) => {
+      if (receipt.v !== 2 || receipt.artifacts === undefined) return [];
+      return receipt.artifacts
+        .filter((artifact) => artifact.sha256 === digest)
+        .map((artifact) => ({ receipt, artifact }));
+    });
+
+    if (matches.length === 0) {
+      process.stdout.write("No registered action used this document.\n");
+      process.stdout.write(
+        "If you have a different version of it, changing even one character changes the result.\n",
+      );
+      process.exit(1);
+    }
+
+    for (const { receipt, artifact } of matches) {
+      process.stdout.write(
+        `This document is exactly the one used by ${manifest.system_id} on ${receipt.ts_received}, ` +
+          `as "${artifact.label}" (${artifact.role}), in action ${receipt.action.name} (seq ${receipt.seq}). ` +
+          "It has not been modified.\n",
+      );
     }
   });
 

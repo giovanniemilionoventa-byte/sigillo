@@ -51,6 +51,18 @@ export interface ChainTip {
   hash: string;
 }
 
+/** One recorded use of a document, joined with enough of its receipt to describe it. */
+export interface ArtifactMatch {
+  system_id: string;
+  seq: number;
+  role: string;
+  label: string;
+  media_type: string;
+  ts_received: string;
+  action_kind: string;
+  action_name: string;
+}
+
 /** A checkpoint as stored, with the row id that timestamp tokens hang from. */
 export interface StoredCheckpoint {
   id: number;
@@ -122,6 +134,7 @@ export class ReceiptStore {
 
   private readonly tipStatement: Database.Statement;
   private readonly insertStatement: Database.Statement;
+  private readonly insertArtifactStatement: Database.Statement;
   private readonly registerStatement: Database.Statement;
 
   private constructor(
@@ -140,6 +153,10 @@ export class ReceiptStore {
                              ts_event, ts_received, action_kind, action_name, outcome)
        VALUES (@system_id, @seq, @hash, @prev_hash, @canonical, @sig, @key_id,
                @ts_event, @ts_received, @action_kind, @action_name, @outcome)`,
+    );
+    this.insertArtifactStatement = this.write.prepare(
+      `INSERT INTO artifacts (system_id, seq, role, label, media_type, sha256)
+       VALUES (@system_id, @seq, @role, @label, @media_type, @sha256)`,
     );
   }
 
@@ -322,6 +339,20 @@ export class ReceiptStore {
     return rows.map(rowToReceipt);
   }
 
+  /** Every recorded use of a document, oldest first, across every system. */
+  findArtifactsBySha256(sha256: string): ArtifactMatch[] {
+    return this.read
+      .prepare(
+        `SELECT a.system_id, a.seq, a.role, a.label, a.media_type,
+                r.ts_received, r.action_kind, r.action_name
+         FROM artifacts a
+         JOIN receipts r ON r.system_id = a.system_id AND r.seq = a.seq
+         WHERE a.sha256 = ?
+         ORDER BY r.ts_received`,
+      )
+      .all(sha256) as ArtifactMatch[];
+  }
+
   listSystems(): string[] {
     const rows = this.read
       .prepare("SELECT system_id FROM systems ORDER BY system_id")
@@ -477,6 +508,19 @@ export class ReceiptStore {
         action_name: receipt.action.name,
         outcome: receipt.outcome,
       });
+
+      if (receipt.v === 2 && receipt.artifacts !== undefined) {
+        for (const artifact of receipt.artifacts) {
+          this.insertArtifactStatement.run({
+            system_id: receipt.system_id,
+            seq: receipt.seq,
+            role: artifact.role,
+            label: artifact.label,
+            media_type: artifact.media_type,
+            sha256: artifact.sha256,
+          });
+        }
+      }
 
       this.write.exec("COMMIT");
       return receipt;

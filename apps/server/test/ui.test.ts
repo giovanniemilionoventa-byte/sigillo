@@ -1,13 +1,18 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readZip } from "@sigillo/core";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { buildServer } from "../src/http/server.js";
+import { VERIFY_DOCUMENT_SCRIPT } from "../src/http/ui.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
+
+const REPOSITORY_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 
 const SYSTEM = "acme-support-bot";
 const PASSWORD = "an administrator password";
@@ -360,5 +365,94 @@ describe("generating the evidence file", () => {
   it("refuses without a session", async () => {
     const response = await app.inject({ method: "POST", url: `/ui/systems/${SYSTEM}/export` });
     expect(response.statusCode).toBe(302);
+  });
+});
+
+describe("the verify-document page", () => {
+  it("sends an anonymous visitor to the login page", async () => {
+    const response = await app.inject({ method: "GET", url: "/ui/verify-document" });
+    expect(response.statusCode).toBe(302);
+    expect(response.headers["location"]).toBe("/ui/login");
+  });
+
+  it("shows the form and the privacy sentence, with no result section yet", async () => {
+    const cookie = await signIn();
+    const response = await app.inject({
+      method: "GET",
+      url: "/ui/verify-document",
+      headers: { cookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain("non lascia il tuo computer");
+    expect(response.body).toContain('id="sigillo-doc-file"');
+    expect(response.body).toContain('id="sigillo-doc-text"');
+    expect(response.body).toContain("<script>");
+    expect(response.body).not.toContain("Risultato");
+  });
+
+  it("finds a document that a receipt names, by its fingerprint alone", async () => {
+    const sha256 = "a".repeat(64);
+    await store.append(
+      event(9, {
+        action: { kind: "tool_call", name: "leggi_curriculum" },
+        artifacts: [{ role: "input", label: "curriculum", media_type: "text/plain", sha256 }],
+      }),
+    );
+    const cookie = await signIn();
+    const response = await app.inject({
+      method: "GET",
+      url: `/ui/verify-document?sha256=${sha256}`,
+      headers: { cookie },
+    });
+
+    expect(response.body).toContain("Risultato");
+    expect(response.body).toContain(SYSTEM);
+    expect(response.body).toContain("curriculum");
+    expect(response.body).toContain("leggi_curriculum");
+    expect(response.body).toContain("Non è stato modificato");
+  });
+
+  it("says plainly when nothing matches, without pretending to have searched on garbage input", async () => {
+    const cookie = await signIn();
+    const found = await app.inject({
+      method: "GET",
+      url: `/ui/verify-document?sha256=${"b".repeat(64)}`,
+      headers: { cookie },
+    });
+    expect(found.body).toContain("Nessuna azione registrata");
+
+    const garbage = await app.inject({
+      method: "GET",
+      url: "/ui/verify-document?sha256=not-a-digest",
+      headers: { cookie },
+    });
+    expect(garbage.body).not.toContain("Risultato");
+  });
+
+  it("escapes a label and an action name in the result, so neither can become markup", async () => {
+    const sha256 = "c".repeat(64);
+    await store.append(
+      event(9, {
+        action: { kind: "tool_call", name: '<script>alert("x")</script>' },
+        artifacts: [
+          { role: "input", label: '<b>label</b>', media_type: "text/plain", sha256 },
+        ],
+      }),
+    );
+    const cookie = await signIn();
+    const response = await app.inject({
+      method: "GET",
+      url: `/ui/verify-document?sha256=${sha256}`,
+      headers: { cookie },
+    });
+    expect(response.body).not.toContain("<script>alert");
+    expect(response.body).not.toContain("<b>label</b>");
+    expect(response.body).toContain("&lt;script&gt;");
+  });
+
+  it("keeps deploy/Caddyfile's CSP hash in step with the script it actually allows", () => {
+    const caddyfile = readFileSync(join(REPOSITORY_ROOT, "deploy", "Caddyfile"), "utf8");
+    const actualHash = createHash("sha256").update(VERIFY_DOCUMENT_SCRIPT, "utf8").digest("base64");
+    expect(caddyfile).toContain(`'sha256-${actualHash}'`);
   });
 });

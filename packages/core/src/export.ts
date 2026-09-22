@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { checkpointSchema } from "./checkpoint.js";
-import { isoUtcTimestampSchema } from "./receipt.js";
+import { artifactRoleSchema, isoUtcTimestampSchema } from "./receipt.js";
 
 /**
  * A line of `checkpoints.jsonl`: one signed checkpoint, the inclusion proofs
@@ -55,6 +55,37 @@ export function safeParseCheckpointEntry(value: unknown): CheckpointEntryParseRe
   }
   const error = parsed.error.issues
     .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "<checkpoint entry>"}: ${issue.message}`)
+    .join("; ");
+  return { ok: false, error };
+}
+
+/**
+ * A line of `artifacts-index.jsonl`: one document occurrence, pointing back at
+ * the receipt that names it. `system_id` is not repeated here — the archive
+ * covers exactly one, named in the manifest.
+ */
+export const artifactsIndexEntrySchema = z
+  .object({
+    sha256: hexDigest,
+    seq: z.number().int().nonnegative(),
+    role: artifactRoleSchema,
+    label: z.string().min(1).max(256),
+  })
+  .strict();
+
+export type ArtifactsIndexEntry = z.infer<typeof artifactsIndexEntrySchema>;
+
+export type ArtifactsIndexEntryParseResult =
+  | { ok: true; entry: ArtifactsIndexEntry }
+  | { ok: false; error: string };
+
+export function safeParseArtifactsIndexEntry(value: unknown): ArtifactsIndexEntryParseResult {
+  const parsed = artifactsIndexEntrySchema.safeParse(value);
+  if (parsed.success) {
+    return { ok: true, entry: parsed.data };
+  }
+  const error = parsed.error.issues
+    .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "<artifacts index entry>"}: ${issue.message}`)
     .join("; ");
   return { ok: false, error };
 }

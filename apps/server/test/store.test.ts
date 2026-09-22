@@ -212,6 +212,37 @@ describe("version 2 fields", () => {
     expect(row.canonical).toBe(new TextDecoder().decode(canonicalReceiptBytes(receipt)));
     expect(parseReceipt({ ...JSON.parse(row.canonical), sig: receipt.sig })).toEqual(receipt);
   });
+
+  it("finds a document by its fingerprint, across systems, oldest use first", async () => {
+    const sha256 = "c".repeat(64);
+    await store.append(
+      event({
+        ts_received: "2026-03-29T14:30:02.000Z",
+        artifacts: [{ role: "input", label: "curriculum", media_type: "text/plain", sha256 }],
+      }),
+    );
+
+    await store.createSystem(OTHER_SYSTEM, "2026-03-29T14:29:00.000Z");
+    await store.append(
+      event({
+        system_id: OTHER_SYSTEM,
+        ts_received: "2026-03-29T14:29:01.000Z",
+        action: { kind: "tool_call", name: "call-1" },
+        artifacts: [{ role: "output", label: "allegato", media_type: "text/plain", sha256 }],
+      }),
+    );
+
+    const matches = store.findArtifactsBySha256(sha256);
+    expect(matches).toHaveLength(2);
+    // Ordered by when the action was received, not by system or insertion order.
+    expect(matches[0]).toMatchObject({ system_id: OTHER_SYSTEM, seq: 1, role: "output" });
+    expect(matches[1]).toMatchObject({ system_id: SYSTEM, seq: 1, role: "input" });
+  });
+
+  it("finds nothing for a fingerprint no receipt ever declared", async () => {
+    await store.append(event());
+    expect(store.findArtifactsBySha256("d".repeat(64))).toEqual([]);
+  });
 });
 
 describe("append-only storage", () => {
