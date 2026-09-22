@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readZip } from "@sigillo/core";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
+import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { buildServer } from "../src/http/server.js";
 import { UI } from "../src/http/strings.js";
@@ -27,6 +28,7 @@ let signer: TestSigner;
 let store: ReceiptStore;
 let keys: ApiKeyStore;
 let healthMonitor: ChainHealthMonitor;
+let checkpointer: Checkpointer;
 let app: FastifyInstance;
 
 async function start(withUi = true): Promise<FastifyInstance> {
@@ -40,6 +42,7 @@ async function start(withUi = true): Promise<FastifyInstance> {
             password: PASSWORD,
             signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
             healthMonitor,
+            checkpointer,
           },
         }
       : {}),
@@ -75,6 +78,7 @@ beforeEach(async () => {
   keys = ApiKeyStore.open(databasePath);
   healthMonitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS);
   healthMonitor.check();
+  checkpointer = new Checkpointer({ store, now: () => new Date(NOW) });
   app = await start();
 });
 
@@ -166,6 +170,7 @@ describe("signing in", () => {
         password: PASSWORD,
         signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
         healthMonitor,
+        checkpointer,
       },
     });
     await later.ready();
@@ -247,6 +252,7 @@ describe("the main page: È tutto a posto?", () => {
         password: PASSWORD,
         signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
         healthMonitor: freshMonitor,
+        checkpointer,
       },
     });
     await freshApp.ready();
@@ -263,6 +269,7 @@ describe("the main page: È tutto a posto?", () => {
   it("shows nothing to look at, plainly, when there are no systems", async () => {
     const bareStore = ReceiptStore.open(join(directory, "empty.db"), signer);
     const bareMonitor = new ChainHealthMonitor(bareStore, signer.publicKey, ONE_DAY_MS);
+    const bareCheckpointer = new Checkpointer({ store: bareStore, now: () => new Date(NOW) });
     const bareApp = buildServer({
       store: bareStore,
       keys,
@@ -271,6 +278,7 @@ describe("the main page: È tutto a posto?", () => {
         password: PASSWORD,
         signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
         healthMonitor: bareMonitor,
+        checkpointer: bareCheckpointer,
       },
     });
     await bareApp.ready();
@@ -282,6 +290,43 @@ describe("the main page: È tutto a posto?", () => {
       await bareApp.close();
       bareStore.close();
     }
+  });
+});
+
+describe("checkpointing on demand", () => {
+  it("offers a button, with a hint that it is not usually needed", async () => {
+    const cookie = await signIn();
+    const body = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
+    expect(body).toContain('action="/ui/checkpoint"');
+    expect(body).toContain(UI.home.checkpointNow);
+    expect(body).toContain(UI.home.checkpointHint);
+  });
+
+  it("refuses the request without a session", async () => {
+    const response = await app.inject({ method: "POST", url: "/ui/checkpoint" });
+    expect(response.statusCode).toBe(302);
+    expect(response.headers["location"]).toBe("/ui/login");
+  });
+
+  it("checkpoints every system that has new receipts, then redirects back with a confirmation", async () => {
+    expect(store.latestCheckpoint(SYSTEM)).toBeNull();
+    const cookie = await signIn();
+
+    const response = await app.inject({ method: "POST", url: "/ui/checkpoint", headers: { cookie } });
+    expect(response.statusCode).toBe(303);
+    expect(response.headers["location"]).toBe("/ui?checkpoint=1");
+    expect(store.latestCheckpoint(SYSTEM)).not.toBeNull();
+
+    const body = (
+      await app.inject({ method: "GET", url: "/ui?checkpoint=1", headers: { cookie } })
+    ).body;
+    expect(body).toContain(UI.home.checkpointDone);
+  });
+
+  it("says nothing extra when the page was not just reached from that button", async () => {
+    const cookie = await signIn();
+    const body = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
+    expect(body).not.toContain(UI.home.checkpointDone);
   });
 });
 

@@ -504,11 +504,29 @@ docker compose exec server node dist/cli.js key create selezione-cv
 ```
 **Cosa fa:** genera una chiave di accesso per questo secondo registro.
 **Copia la seconda riga** (quella che comincia con `sigillo_`) come hai già
-fatto al Passo 9 — questa volta non serve scriverla nel `.env`, basta usarla
-nel prossimo comando.
+fatto al Passo 9.
+
+Questa volta la chiave va scritta in `.env` con un **nome diverso** da
+`SIGILLO_API_KEY` — quel nome è già preso da `acme-support-bot`, e se lo
+riusassi qui la demo scriverebbe, senza nessun errore, dentro al registro
+sbagliato (è un pericolo vero: è capitato scrivendo questa guida). Il nome
+qui sotto è già quello che la demo si aspetta, quindi copia il comando così
+com'è, cambiando solo `IL_TUO_CODICE_QUI`:
+
+**Windows:**
+```powershell
+Add-Content -Path ".env" -Value "SIGILLO_SELEZIONE_CV_KEY=IL_TUO_CODICE_QUI"
+```
+
+**Mac:**
+```sh
+echo "SIGILLO_SELEZIONE_CV_KEY=IL_TUO_CODICE_QUI" >> .env
+```
+**Cosa fa:** salva la chiave di questo secondo registro in `.env`, sotto un
+nome tutto suo.
 
 ```sh
-docker compose run --rm -e SIGILLO_API_KEY=IL_TUO_CODICE_QUI selezione-cv
+docker compose run --rm selezione-cv
 ```
 **Cosa fa:** fa passare 20 curriculum finti (per un posto da sviluppatore)
 attraverso un agente che li legge, li valuta con una regola dichiarata e
@@ -643,6 +661,27 @@ quello del Passo 10:
 ```sh
 docker compose --profile strumenti run --rm esempio
 ```
+
+### Le azioni di un agente compaiono sotto il sistema sbagliato
+
+Se apri la cronologia di `acme-support-bot` e ci trovi dentro le azioni di
+`selezione-cv` (o viceversa), la causa è quasi certa: i due sistemi hanno
+finito per usare la **stessa chiave** di accesso. In sigillo è la chiave, non
+il nome che l'agente dichiara, a decidere in quale registro finiscono le sue
+azioni — è una misura di sicurezza voluta, non un bug, ma vuol dire che una
+chiave sbagliata scrive comunque, senza errori, solo nel posto sbagliato.
+
+Non c'è modo di spostare le ricevute già scritte: in un registro append-only
+non si può, per la stessa ragione per cui non si può manomettere. Se ti serve
+un `acme-support-bot` pulito, riparti da zero:
+
+```sh
+docker compose down -v
+```
+
+poi rifai i Passi 6, 7, 9, 10 e 15, controllando questa volta che il Passo 15
+usi davvero `SIGILLO_SELEZIONE_CV_KEY` in `.env`, un nome diverso da
+`SIGILLO_API_KEY`.
 
 ### Il checkpoint dice `0 anchored`
 

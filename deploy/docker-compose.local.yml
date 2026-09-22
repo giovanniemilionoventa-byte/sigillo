@@ -103,7 +103,14 @@ services:
     working_dir: /work
     environment:
       SIGILLO_ENDPOINT: http://server:8080
-      SIGILLO_API_KEY: ${SIGILLO_API_KEY:-}
+      # A name distinct from the "esempio" service's SIGILLO_API_KEY, on
+      # purpose: once .env holds a real value for that one (from PROVA-LOCALE.md
+      # step 9), sharing the name would make it silently become this service's
+      # key too — every receipt lands, validly signed, on the WRONG chain, with
+      # no error anywhere to notice. Left unset here instead, this container
+      # gets no key at all, and the agent's own "set SIGILLO_ENDPOINT and
+      # SIGILLO_API_KEY first" check stops it loudly.
+      SIGILLO_API_KEY: ${SIGILLO_SELEZIONE_CV_KEY:-}
       SIGILLO_SYSTEM_ID: selezione-cv
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     command:

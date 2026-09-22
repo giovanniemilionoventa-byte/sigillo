@@ -1068,6 +1068,58 @@ nessun'altra modifica di questa sessione fosse rimasta non salvata (537 test Nod
 
 Con N6 tutte le milestone della fase 2 (N1–N6) sono `fatto`.
 
+### Sessione 3 — 2026-09-22 — due difetti trovati dal committente su una macchina vera
+
+La PR di fase 2 era già mergiata quando il committente ha effettivamente seguito
+`PROVA-LOCALE.md` su Windows con Docker Desktop — la prima esecuzione reale, non simulata, di
+questa guida. Due cose emerse, la seconda più seria della prima.
+
+**Un difetto vero: le chiavi di `esempio` e `selezione-cv` condividevano lo stesso nome in
+`.env`.** Seguendo il Passo 15 (aggiunto in N6), il committente ha creato il sistema
+`selezione-cv` e la sua chiave, ma le ricevute dell'agente sono finite tutte dentro
+`acme-support-bot` invece che in `selezione-cv`. Causa: in sigillo è **la chiave**, non il nome
+che l'agente dichiara, a decidere il registro di destinazione (`apps/server/src/http/server.ts`,
+`authenticate(request)` → `keys.verify(token)` — comportamento corretto e voluto, documentato nel
+commento in cima al file). Il Passo 15 però faceva scrivere la nuova chiave con `-e
+SIGILLO_API_KEY=...` sulla riga di comando invece che in `.env`, e quel nome di variabile era già
+occupato dalla chiave di `acme-support-bot` fin dal Passo 9: se l'override sulla riga di comando
+non va a segno per qualunque motivo (un `IL_TUO_CODICE_QUI` lasciato non sostituito, un problema di
+quoting in PowerShell), il container eredita **silenziosamente** la chiave sbagliata — nessun
+errore, solo ricevute scritte, validamente firmate, nel registro sbagliato. Non recuperabile a
+catena già scritta (un registro append-only non si corregge, per la stessa ragione per cui non si
+manomette).
+
+Corretto: `deploy/docker-compose.local.yml` ora usa `SIGILLO_SELEZIONE_CV_KEY`, un nome distinto,
+per la chiave del servizio `selezione-cv` (`SIGILLO_API_KEY: ${SIGILLO_SELEZIONE_CV_KEY:-}`) — non
+`:?` perché Compose interpola l'intero file ad ogni comando, anche `up`, ben prima che questa
+chiave esista al Passo 7; il fallimento resta quindi quello già previsto e già gestito dal codice
+dell'agente stesso (`sigillo.init` si rifiuta con "set SIGILLO_ENDPOINT and SIGILLO_API_KEY
+first") invece di un successo silenzioso sotto l'identità sbagliata. `PROVA-LOCALE.md` aggiornato
+per scrivere questa chiave in `.env` con `Add-Content`/`echo`, come già fa il Passo 9, invece
+dell'override sulla riga di comando; aggiunta una voce nella sezione "Se qualcosa va storto" per
+questo identico sintomo, perché è un errore plausibile per chiunque, non solo conseguenza di
+un'istruzione mia.
+
+**Una richiesta legittima: forzare il sigillo dalla pagina web.** Il committente ha chiesto se il
+semaforo giallo debba sempre passare dal terminale per diventare verde. Risposta corretta: no, il
+server sigilla ogni registro da solo ogni 60 minuti (`Checkpointer`, già da M7) — nessuno deve mai
+aprire un terminale in uso normale. Mancava però un modo per farlo **subito**, senza aspettare, che
+non fosse il comando da terminale. Aggiunto: `POST /ui/checkpoint`, un bottone "Sigilla adesso"
+nella pagina principale sotto "È tutto a posto?", collegato alla **stessa istanza** di
+`Checkpointer` che il timer del server già usa (la sua costruzione in `apps/server/src/cli.ts` è
+stata solo spostata prima di `buildServer()`, non duplicata) — così il bottone fa esattamente,
+bit per bit, quello che il timer avrebbe fatto da solo, prima. 4 test nuovi in
+`apps/server/test/ui.test.ts` (il bottone compare, richiede una sessione, crea davvero un
+checkpoint e reindirizza con conferma, la conferma non compare quando non richiesta).
+
+Verifiche eseguite: **541 test Node** (erano 537), `pnpm check` verde. Dimensione di
+verifier+core invariata — nessuna di queste modifiche tocca `packages/core` o
+`packages/verifier`.
+
+Nota di processo: la PR #2 era già mergiata, quindi questo lavoro è ripartito da un ramo nuovo
+sullo stesso nome, da `main` aggiornato (come da istruzioni), non impilato sulla cronologia già
+mergiata.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > Esiste anche una versione **per chi non usa il terminale**: `PROVA-LOCALE.md`, in italiano,
