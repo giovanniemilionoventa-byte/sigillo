@@ -306,3 +306,69 @@ Cartella `demo/selezione-cv/`, in Python, con la sua lista di dipendenze separat
 
 **Copione video** — file `demo/selezione-cv/VIDEO.md`
 - Un copione di circa 3 minuti per un video dimostrativo destinato a DPO e responsabili compliance: cosa si vede sullo schermo e cosa si dice, scena per scena. Zero parole tecniche nel parlato.
+
+## Fasi 5-11 (pre-pilot)
+
+> Questa sezione riporta il prompt ricevuto dal committente il 2026-09-24 per le fasi 5-11 del
+> piano "dalla repository attuale al primo pilot", **così come è arrivato**. Vale la stessa regola
+> delle sezioni precedenti: non va modificata se non per una decisione esplicita del committente.
+>
+> **Nota di chi l'ha trascritto.** Il testo ricevuto è incompleto: manca l'intestazione della
+> sezione 1 (fase 5) e mancano per intero le sezioni 3, 4 e 5 (fasi 7, 8 e 9) e l'intestazione
+> della sezione 6 (fase 10); la numerazione salta da "2. Fase 6" a "7. Fase 11". Il testo stesso
+> rimanda a una "fase 9 descritta sopra" che non compare. Per le parti mancanti il lavoro segue la
+> definizione delle fasi nella tabella 3.2 di `docs/RAPPORTO-SESSIONE-2026-09-24.md`, che è la
+> numerazione a cui il prompt rimanda:
+>
+> | Fase | Contenuto (dal rapporto del 24 settembre) |
+> |---|---|
+> | 5 | Hardening della configurazione di produzione (punti 11, 15, 16), più la limitazione dei tentativi di accesso, spostata qui dal committente; per affinità, i punti 2, 10 e 12 |
+> | 6 | Test di manomissione (punti 3, 8, 17) |
+> | 7 | Test completo di esportazione e verifica (punti 4, 9) |
+> | 8 | Preparazione dell'integrazione con un agente reale: analisi e proposta, senza inventare un agente (D6) |
+> | 9 | Prima integrazione reale: solo dopo l'approvazione della fase 8. In questa sessione resta **sospesa** |
+> | 10 | Preparazione alla produzione: dal `git clone` alla verifica dell'export, per un utente esterno (`docs/DEPLOY-PRODUZIONE.md`) |
+> | 11 | Revisione finale prima del pilot |
+>
+> Il testo che segue è quello ricevuto, senza correzioni.
+
+### Testo ricevuto
+
+0. Come lavorare
+
+Aggiungi in fondo a SPEC.md una sezione "Fasi 5-11 (pre-pilot)" con il contenuto di questo prompt.
+Aggiungi in PROGRESS.md le fasi 5-11 con stato e note, riprendendo la numerazione già usata nel rapporto di sessione del 24 settembre 2026.
+Lavora una fase alla volta, in ordine. Fine di ogni fase: criteri di accettazione verdi → PROGRESS.md aggiornato → commit e push sul ramo della sessione nel repository sigillo → fase successiva, senza chiedermi conferma tra una fase e l'altra, con la sola eccezione della fase 9 descritta sopra.
+Mai push diretto su main. A fine di ogni fase aggiorna la stessa pull request verso main (aprine una nuova solo se non esiste ancora); non aspettare che io la unisca per proseguire con la fase successiva — continua sul tuo ramo.
+Fermati, oltre che per la fase 9, solo per questi motivi: un problema di gravità alta emerso durante il lavoro che richiede una scelta di prodotto e non solo tecnica; una dipendenza nuova fuori dalla lista già approvata in CLAUDE.md; un download bloccato dalla rete (in quel caso dimmi quale dominio serve, non aggirarlo); un conflitto reale tra due parti della specifica.
+Se durante una fase trovi un problema che appartiene chiaramente a una fase successiva, annotalo in PROGRESS.md alla fase giusta e continua quella corrente: non saltare avanti.
+Ogni volta che correggi un difetto reale (non solo aggiungi una funzione), riproducilo prima con un test che fallisce usando componenti veri (crittografia, database, rete reali, non mock), come hai già fatto nella fase 1-2. Non dichiarare un difetto "corretto" senza quel test.
+
+*[qui manca l'intestazione della sezione 1, fase 5]*
+
+Limitazione dei tentativi di accesso alla pagina web (era il punto 2, spostata qui su mia indicazione): dopo N tentativi falliti di password in una finestra di tempo, blocca ulteriori tentativi per un periodo crescente. Valori di default ragionevoli, configurabili da variabile d'ambiente. Risposta di errore che non distingue "password sbagliata" da "troppi tentativi" in un modo che aiuti chi attacca a capire quale dei due sta succedendo prima del blocco stesso. Test: N+1 tentativi vengono bloccati; passata la finestra, si sblocca; il blocco non impedisce l'uso legittimo con la password corretta subito dopo lo sblocco.
+Hardening Docker/Caddy: utenti non privilegiati nei container dove possibile, filesystem in sola lettura dove possibile, no-new-privileges, limiti di risorse ragionevoli, intestazioni di sicurezza HTTP di base in Caddy (X-Content-Type-Options, X-Frame-Options o equivalente moderno, Referrer-Policy).
+Segreti: verifica che nessun segreto (password, chiave) possa finire nei log o nell'output di docker compose config; se il progetto già lo garantisce, documentalo esplicitamente in SECURITY.md con la prova (comando eseguito e risultato).
+Log: livello di dettaglio appropriato per produzione (niente corpo delle richieste nei log, niente segreti), rotazione o limite di dimensione.
+Aggiorna SECURITY.md con una checklist "prima di andare in produzione" derivata da questa fase.
+
+2. Fase 6 — Test di manomissione
+
+Copre i punti 3, 8, 17.
+Almeno 10 scenari di manomissione distinti, ciascuno con un test che dimostra che il verificatore lo rileva: byte alterato in una ricevuta, ricevuta rimossa, due ricevute scambiate, ricevuta duplicata, firma sostituita con un'altra chiave valida ma non autorizzata, prev_hash alterato senza toccare il resto, checkpoint con radice Merkle alterata, prova di inclusione falsificata, token di marca temporale sostituito con uno di un'altra impronta, manifest con key_id mancante.
+Documenta esplicitamente cosa il sistema NON può rilevare, in una nuova sezione di SECURITY.md: ad esempio, una sorgente che smette di mandare eventi senza errori (il "silenzio" oltre la soglia configurata è rilevabile solo come stato giallo, non come manomissione), o un cliente che manda dati falsi ma correttamente formati e firmati con la propria chiave legittima. Questa lista dei limiti è importante quanto i test che passano: non ometterla.
+
+*[qui mancano le sezioni 3, 4 e 5 (fasi 7, 8 e 9) e l'intestazione della sezione 6 (fase 10)]*
+
+Scrivi (o riorganizza se esiste già materiale sufficiente in PROVA-LOCALE.md) una guida docs/DEPLOY-PRODUZIONE.md pensata per una persona che non ha mai visto il progetto: dal clone del repository fino a un fascicolo esportato e verificato, su un server vero (non il tuo computer di sviluppo), con dominio reale e HTTPS reale.
+Includi una checklist finale con comandi esatti e risultato atteso per ciascuno, così io possa eseguirla passo passo su un VPS.
+Non puoi eseguire questa checklist tu stesso in questo ambiente cloud (niente Docker, niente dominio reale): scrivila con la massima precisione possibile e segnala chiaramente, in PROGRESS.md, che resta da eseguire su una macchina vera.
+
+7. Fase 11 — Revisione finale prima del pilot
+
+Tabella prima/dopo: per ciascuno dei 20 problemi di docs/REVISIONE-FASE-1.md, stato attuale (corretto / mitigato / accettato come rischio noto con motivazione / rimandato a dopo il pilot con motivazione).
+Riepilogo finale in italiano in PROGRESS.md e nella pull request: cosa è pronto, cosa resta esplicitamente a mio carico (i tre punti di "ciò che non è verificato" del rapporto precedente: Docker reale, deploy su VPS, marca temporale qualificata), e se qualcosa scoperto in queste fasi cambia la tua valutazione complessiva della sicurezza del progetto.
+
+8. Definizione di "finito" per questa sessione
+
+Fasi 5, 6, 7, 8, 10, 11 in stato fatto; fase 9 in stato sospesa, in attesa; CI verde; pull request aggiornata con il riepilogo completo. Se arrivi in fondo a tutte queste fasi senza aver dovuto fermarti per uno dei motivi della sezione 0, scrivi comunque un riepilogo finale e fermati lì: non tornare indietro a rifare cose già fatte né ad aggiungere ambiti fuori da questo prompt.

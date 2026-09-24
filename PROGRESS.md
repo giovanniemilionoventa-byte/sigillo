@@ -65,16 +65,21 @@ dopo ogni fase in attesa di autorizzazione. Niente PostgreSQL, multi-tenancy, Sa
 |---|---|---|---|
 | 1 | Revisione tecnica pre-produzione | fatto | Rapporto in `docs/REVISIONE-FASE-1.md`: 20 punti, 5 di gravità alta, i principali riprodotti con codice reale; nessuna modifica al codice |
 | 2 | Correzione dell'associazione tra richiesta e firma (signer) | fatto | Punto 1 della revisione. Ogni richiesta al signer ha un `id` che il signer ripete nella risposta: una risposta arrivata dopo il timeout viene ignorata e non può più completare la richiesta successiva. Il server verifica ogni firma (ricevute e checkpoint) sui byte esatti prima di scrivere. Bug riprodotto con il signer reale congelato (SIGSTOP/SIGCONT); 24 test nuovi, 565 verdi |
-| — | Limitazione dei tentativi di accesso | todo | Era la fase 2 del piano iniziale; il committente ha anteposto la correzione del signer. Numero da ridefinire |
 | 3 | Controllo automatico delle dipendenze | fatto | `pnpm audit:deps` e workflow `dependency-audit.yml` (push, PR, ogni lunedì). Node: produzione bloccante a qualsiasi gravità, sviluppo da `high` in su; Python: `pip-audit` su SDK con tutti gli extra, esempio e demo. Guida in `docs/DEPENDENCY-AUDIT.md`. Il controllo ha trovato 7 avvisi nella catena di sviluppo (vitest 2.1.9 → vite/esbuild): vitest aggiornato a 4.1.11, ora 0 avvisi. Da confermare: `pip-audit` come strumento solo-CI |
 | 4 | Dati personali nei campi testuali | fatto | Analisi su 169 ricevute reali (demo CV + esempio): unico dato personale in chiaro `on_behalf_of` = `elena.rizzo`. Corretto senza decisioni di prodotto: Unicode sempre valido (il taglio OTLP spezzava le emoji, e il cross-check Python non riusciva a calcolare l'impronta), `model.provider`/`digest` limitati a 256, affermazione falsa in `SECURITY.md`. Nuovo `docs/DATA-INVENTORY.md`; proposte D1–D7 in `docs/PROPOSTA-FASE-4.md`, da approvare |
-| 5 | Hardening della configurazione di produzione | todo | |
-| 6 | Test di manomissione | todo | |
-| 7 | Test completo di esportazione e verifica | todo | |
-| 8 | Preparazione integrazione con un agente reale | todo | |
-| 9 | Prima integrazione reale | todo | |
-| 10 | Preparazione alla produzione | todo | |
-| 11 | Revisione finale prima del pilot | todo | |
+| 5 | Hardening della configurazione di produzione, e limitazione dei tentativi di accesso | in corso | Assorbe la limitazione dei tentativi di accesso (ex fase 2 del piano iniziale, spostata qui dal committente il 2026-09-24). Punti della revisione: 2, 10, 11, 12, 15, 16 |
+| 6 | Test di manomissione | todo | Punti 3, 8, 17. Almeno 10 scenari, e i limiti di ciò che non si può rilevare in `SECURITY.md` |
+| 7 | Test completo di esportazione e verifica | todo | Punti 4, 9 |
+| 8 | Preparazione integrazione con un agente reale | todo | Analisi e proposta, senza inventare un agente (decisione D6, punto 5) |
+| 9 | Prima integrazione reale | todo | Solo dopo l'approvazione della fase 8: in questa sessione resta sospesa |
+| 10 | Preparazione alla produzione | todo | `docs/DEPLOY-PRODUZIONE.md` con checklist per un VPS, da eseguire su una macchina vera |
+| 11 | Revisione finale prima del pilot | todo | Tabella prima/dopo dei 20 punti della revisione |
+
+Il 2026-09-24 il committente ha mandato il prompt delle fasi 5-11, trascritto in fondo a `SPEC.md`
+("Fasi 5-11 (pre-pilot)"). Il testo arrivato è incompleto: mancano le sezioni delle fasi 7, 8 e 9.
+Per quelle fasi vale la definizione della tabella 3.2 di `docs/RAPPORTO-SESSIONE-2026-09-24.md`,
+riportata anche in `SPEC.md`. Le fasi procedono senza conferma tra l'una e l'altra; la fase 9 non si
+esegue in questa sessione.
 
 ## Note di sessione
 
