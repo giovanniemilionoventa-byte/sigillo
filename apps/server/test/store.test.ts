@@ -436,3 +436,101 @@ describe("reading back", () => {
     expect(store.tip("nothing-here")).toBeNull();
   });
 });
+
+describe("verifying every signature before it is stored", () => {
+  // The signer is a separate process, and what it hands back is checked, not
+  // trusted: a signature that does not verify over exactly the bytes about to
+  // be stored, under the signer's own public key, never reaches the table.
+
+  /** The same key, the same key_id, but a genuine signature over some other digest. */
+  function signerSigningTheWrongDigest(): TestSigner {
+    const honest = createTestSigner();
+    return { ...honest, sign: async () => honest.sign(new Uint8Array(32).fill(7)) };
+  }
+
+  async function reopenWith(liar: TestSigner): Promise<ReceiptStore> {
+    store.close();
+    store = ReceiptStore.open(databasePath, liar);
+    return store;
+  }
+
+  function tableCount(table: string): number {
+    const raw = openRawConnection();
+    try {
+      return (raw.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+    } finally {
+      raw.close();
+    }
+  }
+
+  it("refuses a well-formed signature that does not verify at all", async () => {
+    await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
+    const liar = { ...signer, sign: async () => "A".repeat(86) + "==" };
+    await reopenWith(liar);
+
+    await expect(store.append(event())).rejects.toThrow(/does not verify/);
+    expect(store.readChain(SYSTEM).map((receipt) => receipt.seq)).toEqual([0]);
+    expect(tableCount("receipts")).toBe(1);
+  });
+
+  it("refuses a valid signature over a different digest, made with the very same key", async () => {
+    await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
+    const other = await signer.sign(receiptHash(store.readChain(SYSTEM)[0] as Receipt));
+    // A genuine signature by this signer's key — just not over this receipt.
+    const liar = { ...signer, sign: async () => other };
+    await reopenWith(liar);
+
+    await expect(store.append(event())).rejects.toThrow(/does not verify/);
+    expect(tableCount("receipts")).toBe(1);
+  });
+
+  it("refuses a signature made with a different key under this signer's key_id", async () => {
+    await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
+    const impostor = createTestSigner();
+    const liar = { ...signer, sign: (digest: Uint8Array) => impostor.sign(digest) };
+    await reopenWith(liar);
+
+    await expect(store.append(event())).rejects.toThrow(/does not verify/);
+    expect(tableCount("receipts")).toBe(1);
+  });
+
+  it("keeps the chain writable afterwards: the refused position is taken by the next good receipt", async () => {
+    await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
+    const honest = signer;
+    await reopenWith({ ...honest, sign: async () => "A".repeat(86) + "==" });
+    await expect(store.append(event())).rejects.toThrow(/does not verify/);
+
+    await reopenWith(honest);
+    const next = await store.append(event({ action: { kind: "tool_call", name: "after" } }));
+    expect(next.seq).toBe(1);
+    expect(signatureIsValid(next)).toBe(true);
+    expect(next.prev_hash).toBe(receiptHashHex(store.readChain(SYSTEM)[0] as Receipt));
+  });
+
+  it("refuses a genesis receipt whose signature does not verify, and registers no system", async () => {
+    await reopenWith(signerSigningTheWrongDigest());
+
+    await expect(store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z")).rejects.toThrow(
+      /does not verify/,
+    );
+    expect(store.hasSystem(SYSTEM)).toBe(false);
+    expect(tableCount("receipts")).toBe(0);
+  });
+
+  it("refuses a checkpoint whose signature does not verify", async () => {
+    await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
+    await store.append(event());
+    await reopenWith({ ...signer, sign: async () => "A".repeat(86) + "==" });
+
+    await expect(store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z")).rejects.toThrow(
+      /does not verify/,
+    );
+    expect(tableCount("checkpoints")).toBe(0);
+  });
+
+  it("refuses to open for writing with a signer whose key_id is not its public key's", () => {
+    const stranger = createTestSigner();
+    const mismatched = { ...signer, publicKeyBase64: stranger.publicKeyBase64 };
+    expect(() => ReceiptStore.open(join(directory, "other.db"), mismatched)).toThrow(/key_id/);
+  });
+});

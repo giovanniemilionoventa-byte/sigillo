@@ -25,7 +25,17 @@ local Unix socket. It has no network access at all, and in the supplied
 
 The signer is not a general signing oracle. `sign` takes a 64-character
 lowercase hex digest and nothing else: not a document, not a digest of the wrong
-length, not a digest in a different encoding. Every other input is refused.
+length, not a digest in a different encoding. Every other input is refused. A
+request may also carry an `id`, which the signer echoes on its reply and which
+is the only thing the server matches replies by: a reply that arrives after its
+request has timed out is ignored, and can never complete a later request.
+
+What the signer returns is checked, not trusted. Before a receipt or a
+checkpoint is written, the server verifies its signature over exactly the bytes
+it is about to store, under the public key the signer announced (whose
+identifier must be the `key_id` the record carries). A signature that does not
+verify is refused and the transaction is rolled back: nothing is written, and
+the position in the chain stays free for the next record.
 
 ## If the server is compromised
 

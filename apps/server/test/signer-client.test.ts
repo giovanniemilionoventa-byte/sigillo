@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createPrivateKey, createPublicKey, type KeyObject, verify } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, type KeyObject, verify } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -203,6 +203,96 @@ describe("a server talking to a signer in another process", () => {
       // The chain is still exactly the genesis receipt: no gap, no unsigned row.
       expect(store.readChain("acme-support-bot").map((receipt) => receipt.seq)).toEqual([0]);
     } finally {
+      store.close();
+      client.close();
+    }
+  }, 30_000);
+});
+
+describe("a signer that stalls past the timeout", () => {
+  // The real signer process, frozen with SIGSTOP the way a GC pause, swap or an
+  // overloaded host would freeze it. Requests written meanwhile wait in the
+  // socket; on SIGCONT the signer answers all of them, strictly in order —
+  // including the one the server has already given up on.
+
+  const freeze = (): void => {
+    if (daemon?.pid !== undefined) process.kill(-daemon.pid, "SIGSTOP");
+  };
+  const thaw = (): void => {
+    if (daemon?.pid !== undefined) process.kill(-daemon.pid, "SIGCONT");
+  };
+  const digestOf = (text: string): Uint8Array =>
+    new Uint8Array(createHash("sha256").update(text).digest());
+  const announcedKey = (client: SignerClient): KeyObject =>
+    publicKeyFromRaw(new Uint8Array(Buffer.from(client.publicKeyBase64, "base64")));
+  const settle = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+  it("never hands a reply that arrived too late to the request after it", async () => {
+    const client = await SignerClient.connect(socketPath, { timeoutMs: 1000 });
+    const key = announcedKey(client);
+    const first = digestOf("receipt A");
+    const second = digestOf("receipt B");
+    const third = digestOf("receipt C");
+    try {
+      freeze();
+      const started = Date.now();
+      await expect(client.sign(first)).rejects.toBeInstanceOf(SignerUnavailableError);
+      // It fails within its own deadline, not whenever the signer wakes up.
+      expect(Date.now() - started).toBeLessThan(3000);
+
+      const pending = client.sign(second);
+      await settle(100);
+      thaw();
+      // The signer now answers A (late) and then B. B must get B's signature.
+      const signature = await pending;
+      expect(verify(null, second, key, Buffer.from(signature, "base64"))).toBe(true);
+      expect(verify(null, first, key, Buffer.from(signature, "base64"))).toBe(false);
+
+      // And the client is still usable: nothing from A lingers to meet C.
+      const after = await client.sign(third);
+      expect(verify(null, third, key, Buffer.from(after, "base64"))).toBe(true);
+    } finally {
+      thaw();
+      client.close();
+    }
+  }, 30_000);
+
+  it("stores no receipt with a wrong signature when a write times out and the next one succeeds", async () => {
+    const client = await SignerClient.connect(socketPath, { timeoutMs: 1000 });
+    const store = ReceiptStore.open(join(directory, "stalled.db"), client);
+    const write = (name: string) =>
+      store.append({
+        system_id: "acme-support-bot",
+        ts_event: "2026-03-29T14:30:01.000Z",
+        ts_received: "2026-03-29T14:30:01.005Z",
+        actor: { agent: "planner" },
+        action: { kind: "tool_call", name },
+        input_hash: null,
+        output_hash: null,
+        outcome: "ok",
+        source: { type: "sdk" },
+      });
+    try {
+      await store.createSystem("acme-support-bot", "2026-03-29T14:30:00.000Z");
+
+      freeze();
+      await expect(write("timed-out")).rejects.toBeInstanceOf(SignerUnavailableError);
+      const next = write("written-after");
+      await settle(100);
+      thaw();
+      await next;
+
+      const key = announcedKey(client);
+      const chain = store.readChain("acme-support-bot");
+      expect(chain.map((receipt) => [receipt.seq, receipt.action.name])).toEqual([
+        [0, "acme-support-bot"],
+        [1, "written-after"],
+      ]);
+      for (const receipt of chain) {
+        expect(verifyReceiptSignature(receipt, key), `seq ${receipt.seq}`).toBe(true);
+      }
+    } finally {
+      thaw();
       store.close();
       client.close();
     }

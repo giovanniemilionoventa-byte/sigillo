@@ -6,12 +6,20 @@ import type { SignerKey } from "./key-file.js";
 /**
  * The signer speaks one request per line of JSON and answers one line of JSON.
  *
- *   {"method":"pubkey"}
- *     -> {"ok":true,"key_id":"<16 hex>","public_key_base64":"<32 raw bytes>"}
- *   {"method":"sign","digest":"<64 lowercase hex>"}
- *     -> {"ok":true,"sig":"<64-byte Ed25519 signature, standard base64>"}
+ *   {"id":"<id>","method":"pubkey"}
+ *     -> {"id":"<id>","ok":true,"key_id":"<16 hex>","public_key_base64":"<32 raw bytes>"}
+ *   {"id":"<id>","method":"sign","digest":"<64 lowercase hex>"}
+ *     -> {"id":"<id>","ok":true,"sig":"<64-byte Ed25519 signature, standard base64>"}
  *   anything else
- *     -> {"ok":false,"error":"<reason>"}
+ *     -> {"id":"<id>","ok":false,"error":"<reason>"}
+ *
+ * `id` is the client's name for the request, echoed on the reply to it —
+ * refusals included — so that a reply is matched to its request by name and
+ * never by arrival order. Order is not enough: a client that gives up on a
+ * request that timed out would otherwise hand that request's late reply to
+ * whichever request came next. An id is 1 to 64 characters of [A-Za-z0-9_-];
+ * one that is not is refused, and not echoed. `id` is optional, so a request
+ * without one is still answered, without one.
  *
  * `sign` takes a 32-byte receipt hash and nothing else. It is not a general
  * signing oracle: it will not sign a document, a file, or a digest of the wrong
@@ -19,6 +27,7 @@ import type { SignerKey } from "./key-file.js";
  */
 
 const DIGEST_HEX = /^[0-9a-f]{64}$/;
+const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_LINE_BYTES = 4096;
 const NEWLINE = 0x0a;
 
@@ -41,7 +50,19 @@ function handleRequest(line: string, key: SignerKey): Reply {
     return { ok: false, error: "request must be a JSON object" };
   }
 
-  const fields = request as Record<string, unknown>;
+  // The id is set aside before the request itself is checked, so each method
+  // keeps its exact list of fields and the id is echoed on every answer to it.
+  const { id, ...fields } = request as Record<string, unknown>;
+  if (id === undefined) {
+    return answer(fields, key);
+  }
+  if (typeof id !== "string" || !REQUEST_ID.test(id)) {
+    return { ok: false, error: "id must be 1 to 64 characters from A-Z, a-z, 0-9, _ and -" };
+  }
+  return { id, ...answer(fields, key) };
+}
+
+function answer(fields: Record<string, unknown>, key: SignerKey): Reply {
   const method = fields["method"];
 
   if (method === "pubkey") {
