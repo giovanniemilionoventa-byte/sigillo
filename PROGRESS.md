@@ -72,7 +72,7 @@ dopo ogni fase in attesa di autorizzazione. Niente PostgreSQL, multi-tenancy, Sa
 | 7 | Test completo di esportazione e verifica | fatto | Punti 4 e 9 corretti; punto 20 (`from_ts`/`to_ts`) corretto. Test end-to-end su tre giorni: signer vero, sistema e chiave dalla pagina web, OTLP e API nativa, checkpoint dal pulsante con marca RFC 3161 vera via HTTP, export dell'intera catena, di un giorno e da CLI, tutti verificati dal `sigillo-verify` reale con `--tsa-ca`, `--key-id`, `--previous` e `doc`. 678 test |
 | 8 | Preparazione integrazione con un agente reale | fatto | Proposta in `docs/PROPOSTA-FASE-8.md`, nessuna modifica al codice. Misurato il traffico dell'SDK: la demo CV manda al server 244 KB in chiaro per 160 span, nomi dei candidati e testo dei CV compresi. Proposta D6 (impronte calcolate nell'SDK, elenco di attributi da tenere); fattibilità verificata: su 2 005 stringhe, impronte Python e TypeScript identiche. Rischi dell'integrazione reale e sette domande (A–G) per il committente |
 | 9 | Prima integrazione reale | **sospesa, in attesa** | Parte solo dopo l'approvazione della fase 8: servono le risposte alle domande A–G di `docs/PROPOSTA-FASE-8.md` (quale agente, chi gestisce il server, D6, deduplicazione, `on_behalf_of`, marca temporale) |
-| 10 | Preparazione alla produzione | todo | `docs/DEPLOY-PRODUZIONE.md` con checklist per un VPS, da eseguire su una macchina vera |
+| 10 | Preparazione alla produzione | fatto | `docs/DEPLOY-PRODUZIONE.md`: dal clone a un fascicolo verificato su un VPS con dominio e HTTPS, con checklist di 33 righe (comando e risultato atteso). I risultati attesi sono copiati da esecuzioni reali senza Docker (FreeTSA vera compresa). **La checklist resta da eseguire su una macchina vera: Docker qui non gira.** Corretti anche i punti 6 (batch OTLP atomico), 7 (storico delle chiavi di firma) e 13 (scritture fuori coda). 684 test |
 | 11 | Revisione finale prima del pilot | todo | Tabella prima/dopo dei 20 punti della revisione |
 
 Il 2026-09-24 il committente ha mandato il prompt delle fasi 5-11, trascritto in fondo a `SPEC.md`
@@ -305,6 +305,62 @@ analisi e proposta.
 
 Non eseguita, come previsto dal prompt: aspetta le risposte alle domande A–G di
 `docs/PROPOSTA-FASE-8.md`.
+
+### Fase 10 — Preparazione alla produzione (fatto)
+
+Test Vitest: da 678 a **684**. Test Python SDK (26) e demo (17), `smoke-dist` e cross-check: verdi.
+
+**La guida `docs/DEPLOY-PRODUZIONE.md`**, in italiano, per chi non ha mai visto il progetto:
+server, DNS, firewall, orologio, Docker, configurazione, password come segreto, costruzione,
+chiave (con la copia cifrata fuori dal server e la prova che si apre), avvio, controlli
+dall'esterno, primo sistema, agente di esempio dal portatile, pagina web e blocco dei tentativi,
+checkpoint, export, verifica fuori dal server con `--tsa-ca` e `--key-id`, prova di
+manomissione, backup notturno e copia fuori dal server, prova di ripristino, aggiornamenti,
+cambio o ripristino della chiave, marca qualificata, tabella dei problemi. In fondo, una
+**checklist di 33 righe**, con il comando e il risultato atteso per ciascuna.
+
+**Come sono stati ottenuti i risultati attesi.** Senza Docker, ho eseguito davvero, con gli
+eseguibili compilati:
+- `keygen`, `serve` con la password letta da file, `system create`, `key create`;
+- l'agente d'esempio attraverso l'SDK;
+- `checkpoint` con **FreeTSA vera** ("1 new checkpoint(s), 1 anchored, 0 still waiting");
+- `export` e la verifica con il certificato di FreeTSA e `--key-id` (token `verified`, con
+  l'ora attestata);
+- il blocco dopo 5 password sbagliate (`401` ×5, poi `401` anche con quella giusta);
+- `Cache-Control: no-store`, il backup e la lettura del backup.
+
+Le uscite scritte nella guida sono copiate da lì. La parte Docker (volumi, secret, `read_only`,
+`docker compose run --entrypoint tar` per la copia della chiave, `docker cp` verso stdout) è
+controllata solo sulla documentazione dei comandi e su `docker compose config`.
+
+> **Da eseguire su una macchina vera: la checklist di `docs/DEPLOY-PRODUZIONE.md`.** È il
+> collaudo che manca. Se una riga dà un risultato diverso da quello scritto, va annotato e
+> corretto.
+
+**Difetti corretti** (ciascuno riprodotto prima con un test che falliva, componenti reali):
+- **Punto 6, la parte che non richiedeva decisioni.** Gli span di un batch OTLP venivano scritti
+  uno per volta. Riprodotto in `batch-atomic.test.ts`: signer reale fermato dopo la prima firma
+  di un batch da 3; il server risponde 503, ma la prima ricevuta resta scritta (`[0, 1]`), e il
+  ritentativo dell'esportatore la duplica. Ora il batch sta in una sola transazione: tutto o
+  niente, e il ritentativo lo scrive una volta sola. **Resta la decisione E della fase 8:** la
+  deduplicazione per `trace_id`/`span_id`, che serve quando il server ha scritto ma la risposta
+  si è persa in rete.
+- **Punto 7.** Dopo un cambio di chiave, l'export pubblicava solo la chiave del momento e falliva
+  ("key … which the manifest does not publish"); il semaforo diventava rosso. Riprodotto in
+  `key-rotation.test.ts` con due chiavi Ed25519 reali sullo stesso database. Ora c'è una tabella
+  append-only `signing_keys`: ogni export pubblica tutte le chiavi, e il monitor verifica ogni
+  ricevuta con la sua. Limite: una chiave cambiata **prima** di questa versione non è nella
+  tabella, perché la sua chiave pubblica non era salvata da nessuna parte.
+- **Punto 13.** Due casi, riprodotti in `write-queue.test.ts`:
+  - una marca temporale registrata mentre una ricevuta aspettava la firma entrava nella sua
+    transazione, e andava persa quando questa falliva;
+  - una chiave API emessa dalla pagina web, nello stesso momento, bloccava l'intero processo
+    per 5 secondi e poi falliva con 400.
+
+  Ora entrambe passano dalla coda di scrittura.
+
+`SECURITY.md` (storico delle chiavi) e `README.md` (rimando alla guida, password come segreto)
+sono aggiornati.
 
 ## Note di sessione
 

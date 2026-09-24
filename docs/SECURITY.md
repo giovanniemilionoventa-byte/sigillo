@@ -14,8 +14,17 @@ local Unix socket. It has no network access at all, and in the supplied
 
 - The key file is written with permission `0600`, and the signer **refuses to
   load a key file that anyone else can read**.
-- `keygen` refuses to overwrite an existing key: losing a signing key silently
-  would orphan every receipt already signed with it.
+- `keygen` refuses to overwrite an existing key: a key replaced by accident
+  would change, from one receipt to the next, the key_id everyone was told to
+  expect.
+- Every public key the server has signed with is kept in an append-only table
+  and published in every export. If the key does change (its volume lost and a
+  new one generated), the receipts signed with the old key stay verifiable, and
+  the web view keeps checking each receipt under its own key. A signer that
+  comes back with a different key while the server runs is refused until the
+  server is restarted on purpose. What cannot be recovered is the ability to
+  sign with the old key: hence the encrypted, off-host copy in the checklist
+  below.
 - The server never receives the key's path. It is given a socket, and nothing
   else. That the server contains no code capable of loading a private key is
   checked by `pnpm lint` and asserted by a test that reads every file under

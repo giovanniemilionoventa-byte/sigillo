@@ -77,7 +77,7 @@ async function produceArchive(withSigner: TestSigner, database: string): Promise
     const checkpoint = await store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z");
     if (checkpoint === null) throw new Error("no checkpoint");
     const token = tsa.stamp(checkpoint.checkpoint.root_hash);
-    store.recordTimestamp(checkpoint.id, "http://tsa.test/", token.toString("base64"), "2026-03-29T15:00:05.000Z");
+    await store.recordTimestamp(checkpoint.id, "http://tsa.test/", token.toString("base64"), "2026-03-29T15:00:05.000Z");
 
     const archive = await buildArchive({
       systemId: SYSTEM,

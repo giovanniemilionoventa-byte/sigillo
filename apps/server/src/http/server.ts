@@ -255,10 +255,11 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
     const batch = adaptSpans(spans);
     const receivedAt = isoNow(now);
-    let accepted = 0;
 
-    for (const action of batch.actions) {
-      await store.append({
+    // The whole batch in one transaction: if anything fails, nothing of it is
+    // kept, and the exporter's retry writes it exactly once.
+    const written = await store.appendBatch(
+      batch.actions.map((action) => ({
         system_id: systemId,
         ts_event: action.ts_event,
         ts_received: receivedAt,
@@ -270,9 +271,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         source: action.source,
         ...(action.artifacts === undefined ? {} : { artifacts: action.artifacts }),
         ...(action.model === undefined ? {} : { model: action.model }),
-      });
-      accepted += 1;
-    }
+      })),
+    );
+    const accepted = written.length;
 
     // OTLP expects a partial-success body; an empty object means "all accepted".
     return reply.code(200).send({

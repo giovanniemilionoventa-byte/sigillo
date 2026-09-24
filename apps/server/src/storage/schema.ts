@@ -86,6 +86,17 @@ CREATE TABLE IF NOT EXISTS artifacts (
 
 CREATE INDEX IF NOT EXISTS artifacts_by_sha256 ON artifacts (sha256);
 
+-- Every public key the server has signed with, kept for as long as the
+-- receipts it signed: an export publishes all of them, and the web view's
+-- monitor checks each receipt under its own key. Without this, a key that
+-- changed (lost and regenerated, or replaced) would leave every earlier
+-- receipt unverifiable from the server's own exports.
+CREATE TABLE IF NOT EXISTS signing_keys (
+  key_id            TEXT PRIMARY KEY,
+  public_key_base64 TEXT NOT NULL,
+  first_seen        TEXT NOT NULL
+) STRICT;
+
 CREATE TRIGGER IF NOT EXISTS receipts_no_update BEFORE UPDATE ON receipts
 BEGIN SELECT RAISE(ABORT, 'append-only: a receipt cannot be modified'); END;
 
@@ -109,4 +120,10 @@ BEGIN SELECT RAISE(ABORT, 'append-only: an artifact entry cannot be modified'); 
 
 CREATE TRIGGER IF NOT EXISTS artifacts_no_delete BEFORE DELETE ON artifacts
 BEGIN SELECT RAISE(ABORT, 'append-only: an artifact entry cannot be deleted'); END;
+
+CREATE TRIGGER IF NOT EXISTS signing_keys_no_update BEFORE UPDATE ON signing_keys
+BEGIN SELECT RAISE(ABORT, 'append-only: a signing key cannot be modified'); END;
+
+CREATE TRIGGER IF NOT EXISTS signing_keys_no_delete BEFORE DELETE ON signing_keys
+BEGIN SELECT RAISE(ABORT, 'append-only: a signing key cannot be deleted'); END;
 `;

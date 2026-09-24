@@ -41,10 +41,10 @@ beforeEach(async () => {
 });
 
 /** Anchors the checkpoint with whatever token the test wants to study. */
-function anchor(tokenBase64: string, tsaUrl = "https://freetsa.org/tsr"): void {
+async function anchor(tokenBase64: string, tsaUrl = "https://freetsa.org/tsr"): Promise<void> {
   const checkpoint = store.latestCheckpoint(SYSTEM);
   if (checkpoint === null) throw new Error("no checkpoint to anchor");
-  store.recordTimestamp(checkpoint.id, tsaUrl, tokenBase64, "2026-03-29T15:00:05.000Z");
+  await store.recordTimestamp(checkpoint.id, tsaUrl, tokenBase64, "2026-03-29T15:00:05.000Z");
 }
 
 afterEach(() => {
@@ -119,7 +119,7 @@ function expectFailure(bundle: Bundle, check: VerificationCheck): string {
 
 describe("the archive a full export produces", () => {
   it("contains every part an auditor needs", async () => {
-    anchor(FAKE_TOKEN);
+    await anchor(FAKE_TOKEN);
     const files = filesOf((await build()).zip);
     expect([...files.keys()].sort()).toEqual([
       "VERIFY.md",
@@ -166,14 +166,14 @@ describe("the archive a full export produces", () => {
   });
 
   it("declares in the manifest exactly what it holds", async () => {
-    anchor(FAKE_TOKEN);
+    await anchor(FAKE_TOKEN);
     const archive = await build();
     expect(archive.manifest.counts).toEqual({ receipts: 12, checkpoints: 1, timestamps: 1 });
     expect(archive.manifest.range).toMatchObject({ from_seq: 0, to_seq: 11 });
   });
 
   it("carries the timestamp token byte for byte", async () => {
-    anchor(FAKE_TOKEN);
+    await anchor(FAKE_TOKEN);
     const files = filesOf((await build()).zip);
     expect(Buffer.from(files.get("timestamps/checkpoint-12-1.tsr") ?? new Uint8Array())).toEqual(
       Buffer.from(FAKE_TOKEN, "base64"),
@@ -224,7 +224,7 @@ describe("the archive a full export produces", () => {
   });
 
   it("writes instructions that stand on their own", async () => {
-    anchor(FAKE_TOKEN);
+    await anchor(FAKE_TOKEN);
     const files = filesOf((await build()).zip);
     const verify = decode(files.get("VERIFY.md"));
     expect(verify).toContain(SYSTEM);
@@ -453,7 +453,7 @@ describe("tampering with the archive", () => {
   });
 
   it("is caught when the manifest's counts are changed", async () => {
-    anchor(FAKE_TOKEN);
+    await anchor(FAKE_TOKEN);
     const files = filesOf((await build()).zip);
     for (const [field, value] of [
       ["receipts", 11],
@@ -516,7 +516,7 @@ describe("the sigillo-verify command on a real archive", () => {
   }, 30_000);
 
   it("refuses an archive whose timestamp token is not a timestamp token", async () => {
-    anchor(FAKE_TOKEN);
+    await anchor(FAKE_TOKEN);
     const path = join(directory, "bad-token.zip");
     writeFileSync(path, (await build()).zip);
 
@@ -555,7 +555,7 @@ describe("the sigillo-verify command on a real archive", () => {
       context.skip();
       return;
     }
-    anchor(token);
+    await anchor(token);
 
     const path = join(directory, "anchored.zip");
     writeFileSync(path, (await build()).zip);

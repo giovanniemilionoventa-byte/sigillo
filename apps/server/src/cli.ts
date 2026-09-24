@@ -354,7 +354,7 @@ program
           timestamps: store.readTimestamps(stored.id),
         })),
         chainLeaves: store.readReceiptHashes(systemId),
-        keys: [{ key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 }],
+        keys: store.signingKeys(),
         exportedAt: now(),
       });
 

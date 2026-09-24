@@ -122,7 +122,9 @@ same code. An auditor who wants to check what matters reads `core` and
 
 ```sh
 cd deploy
-cp .env.example .env     # set the domain, the administrator password, the TSA
+cp .env.example .env     # set the domain and the certificate contact address
+install -d -m 700 secrets && openssl rand -base64 24 | tr -d '\n' > secrets/admin_password
+chmod 444 secrets/admin_password   # the web view's password, kept out of .env
 docker compose run --rm signer keygen --key /var/lib/sigillo-key/signer.key
 docker compose up -d
 docker compose exec server node dist/cli.js system create acme-support-bot
@@ -130,7 +132,9 @@ docker compose exec server node dist/cli.js key create acme-support-bot
 ```
 
 Three containers: the signer with the key and no network, the server with the
-database, Caddy with TLS. See [`deploy/`](deploy/).
+database, Caddy with TLS. See [`deploy/`](deploy/). The complete procedure for a
+real server, from `git clone` to a verified evidence file, with a checklist, is
+[`docs/DEPLOY-PRODUZIONE.md`](docs/DEPLOY-PRODUZIONE.md) (in Italian).
 
 For qualified timestamps under eIDAS, point `TSA_URL` at a qualified provider.
 The default, FreeTSA, is fine for a trial and is **not** qualified.

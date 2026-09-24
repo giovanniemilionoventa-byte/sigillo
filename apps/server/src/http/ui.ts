@@ -408,7 +408,8 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
 
     try {
       await store.createSystem(systemId, options.now().toISOString());
-      const issued = keys.issue(systemId, options.now().toISOString());
+      // On the write queue: see ReceiptStore.exclusive.
+      const issued = await store.exclusive(() => keys.issue(systemId, options.now().toISOString()));
       return html(reply, page(UI.systemsPage.title, systemCreatedPage(systemId, issued.token)));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -517,7 +518,8 @@ ${rows}
         timestamps: store.readTimestamps(stored.id),
       })),
       chainLeaves: store.readReceiptHashes(systemId),
-      keys: [options.signerKey],
+      // Every key the chain has been signed with, not only today's.
+      keys: store.signingKeys(),
       exportedAt: options.now().toISOString(),
     });
 

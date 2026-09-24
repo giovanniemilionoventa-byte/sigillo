@@ -70,7 +70,7 @@ export class Checkpointer {
           tsa,
           this.options.retry ?? {},
         );
-        this.options.store.recordTimestamp(
+        await this.options.store.recordTimestamp(
           stored.id,
           tsa.url,
           token,
