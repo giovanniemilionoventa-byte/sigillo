@@ -516,6 +516,7 @@ ${rows}
         stored,
         timestamps: store.readTimestamps(stored.id),
       })),
+      chainLeaves: store.readReceiptHashes(systemId),
       keys: [options.signerKey],
       exportedAt: options.now().toISOString(),
     });

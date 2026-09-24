@@ -77,6 +77,12 @@ export interface VerificationSummary {
   roots_recomputed: number;
   /** Document fingerprints found in artifacts-index.jsonl, confirmed to match the receipts. */
   artifacts_indexed: number;
+  /**
+   * Checkpoints tied to none of these receipts: no root rebuilt from them and
+   * no inclusion proof. They verify as signed statements, but prove nothing
+   * about this export's receipts (review point 4).
+   */
+  unlinked_checkpoints: number;
 }
 
 export type Verification =
@@ -297,6 +303,7 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
   const checkpoints: CheckpointEntry[] = [];
   let rootsRecomputed = 0;
   let proofsChecked = 0;
+  let unlinked = 0;
 
   for (const [index, line] of jsonLines(bundle.checkpointsJsonl ?? "").entries()) {
     let value: unknown;
@@ -345,7 +352,9 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
 
     // 11. Where the export holds the receipts the tree was built from, the root
     //     is rebuilt from them rather than taken on the checkpoint's word.
-    if (first.seq === 0 && receipts.length >= checkpoint.tree_size) {
+    const rebuildable = first.seq === 0 && receipts.length >= checkpoint.tree_size;
+    if (!rebuildable && proofs.length === 0) unlinked += 1;
+    if (rebuildable) {
       const leaves = receipts
         .slice(0, checkpoint.tree_size)
         .map((receipt) => fromHex(receiptHashHex(receipt)));
@@ -422,6 +431,16 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
       `the manifest declares the export ends at seq ${manifest.range.to_seq}, but the last receipt is seq ${last.seq}`,
     );
   }
+  // The period the manifest states (and the report prints) is the time the
+  // server received the first and the last receipt: checked, not taken.
+  if (manifest.range.from_ts !== first.ts_received || manifest.range.to_ts !== last.ts_received) {
+    const member = manifest.range.from_ts !== first.ts_received ? "from_ts" : "to_ts";
+    return fail(
+      "range",
+      "manifest.json",
+      `the manifest's range.${member} is ${manifest.range[member]}, but the receipts run from ${first.ts_received} to ${last.ts_received}`,
+    );
+  }
   if (manifest.counts.receipts !== receipts.length) {
     return fail(
       "range",
@@ -472,6 +491,7 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
       inclusion_proofs: proofsChecked,
       roots_recomputed: rootsRecomputed,
       artifacts_indexed: artifactsIndex.length,
+      unlinked_checkpoints: unlinked,
     },
     receipts,
   };

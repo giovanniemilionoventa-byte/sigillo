@@ -437,6 +437,36 @@ describe("reading back", () => {
   });
 });
 
+describe("reading a period by date", () => {
+  // Review point 9: the window used to be chosen by filtering on ts_received,
+  // and after the server's clock stepped back (an NTP correction) the rows
+  // selected were not consecutive, so the export failed its own verification.
+  it("returns a contiguous run of positions even when the clock went back", async () => {
+    await store.createSystem(SYSTEM, "2026-03-29T09:00:00.000Z");
+    await store.append(event({ ts_received: "2026-03-29T10:00:05.000Z" })); // seq 1
+    await store.append(event({ ts_received: "2026-03-29T09:59:58.000Z" })); // seq 2: the clock stepped back
+    await store.append(event({ ts_received: "2026-03-29T10:00:06.000Z" })); // seq 3
+    await store.append(event({ ts_received: "2026-03-29T10:30:00.000Z" })); // seq 4
+
+    const window = store.readChainInRange(SYSTEM, "2026-03-29T10:00:00.000Z", "2026-03-29T10:00:10.000Z");
+    expect(window.map((receipt) => receipt.seq)).toEqual([1, 2, 3]);
+  });
+
+  it("runs from the first receipt at or after the start to the last at or before the end", async () => {
+    await store.createSystem(SYSTEM, "2026-03-29T09:00:00.000Z");
+    for (const minute of ["10", "11", "12", "13"]) {
+      await store.append(event({ ts_received: `2026-03-29T${minute}:00:00.000Z` }));
+    }
+    const read = (from?: string, to?: string): number[] =>
+      store.readChainInRange(SYSTEM, from, to).map((receipt) => receipt.seq);
+    expect(read("2026-03-29T10:30:00.000Z", "2026-03-29T12:30:00.000Z")).toEqual([2, 3]);
+    expect(read(undefined, "2026-03-29T11:00:00.000Z")).toEqual([0, 1, 2]);
+    expect(read("2026-03-29T12:00:00.000Z")).toEqual([3, 4]);
+    expect(read("2026-03-29T20:00:00.000Z")).toEqual([]);
+    expect(read("2026-03-29T10:10:00.000Z", "2026-03-29T10:20:00.000Z")).toEqual([]);
+  });
+});
+
 describe("verifying every signature before it is stored", () => {
   // The signer is a separate process, and what it hands back is checked, not
   // trusted: a signature that does not verify over exactly the bytes about to

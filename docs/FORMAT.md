@@ -517,11 +517,18 @@ One line per checkpoint:
 ```
 
 - `proofs` carries the audit path (section 8.3) for the first and the last
-  receipt the export holds. Those two anchor the whole range to the checkpoint's
-  root; the receipts between them are tied to each other by the chain.
-- An export that does not start at `seq` 0 cannot build proofs against a tree it
-  does not hold in full. It carries the checkpoint with an empty `proofs` rather
-  than a proof it cannot support.
+  receipt the export holds that fall inside the checkpoint's tree. Those two
+  anchor the whole range to the checkpoint's root; the receipts between them
+  are tied to each other by the chain.
+- An export of a window that does not start at `seq` 0 carries these proofs
+  too: the exporter builds them from the hashes of the whole chain, which it
+  holds, even though the archive holds only the window. It carries the
+  checkpoints whose tree holds at least one of the window's receipts, up to
+  and including the first whose tree holds them all.
+- Archives written before that (sigillo 0.1.0 before 2026-09-24) carry the
+  checkpoints of a window with an empty `proofs`. They still verify; the
+  verifier counts such a checkpoint as **unlinked** and says that it, and its
+  timestamps, prove nothing about the receipts of that archive.
 - `file` names the token inside the archive. The token is not inlined: it is
   binary, and an auditor needs it as a file to hand to `openssl`.
 
@@ -566,7 +573,14 @@ claiming one the receipts do not have, fails verification.
 ```
 
 `range.from_ts` and `range.to_ts` are the `ts_received` of the first and last
-receipt. `keys` carries the raw 32-byte public keys in standard base64.
+receipt, and a verifier checks that they are. `keys` carries the raw 32-byte
+public keys in standard base64.
+
+An export chosen by date covers the contiguous run of positions from the first
+receipt received on or after the start to the last received on or before the
+end. A receipt in between whose `ts_received` falls outside the dates (the
+server's clock stepped back) is included, not skipped: a gap in `seq` would be
+indistinguishable from a removal.
 
 `receipt_version` is **not** "the version of this export": a chain may upgrade
 from `v: 1` to `v: 2` partway through, and one export can hold both. It is the
@@ -601,7 +615,7 @@ published under an identifier that is not its own `key_id` is rejected, because
     the export holds them all, and must match.
 11. Every inclusion proof rebuilds its checkpoint's root, and the
     `receipt_hash` it names is the hash of the receipt actually at that `seq`.
-12. `range`, `counts.receipts`, `counts.checkpoints`, `counts.timestamps` and
+12. `range` (including `from_ts` and `to_ts`), `counts.receipts`, `counts.checkpoints`, `counts.timestamps` and
     `receipt_version` describe what the archive actually holds — the last of
     these is the highest version actually present, per 10.4.
 13. Every RFC 3161 token is checked with `openssl` (section 9). With the

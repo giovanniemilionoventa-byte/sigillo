@@ -203,6 +203,11 @@ program
           `${summary.inclusion_proofs} inclusion proof(s) verified\n`,
       );
     }
+    if (summary.unlinked_checkpoints > 0) {
+      process.stdout.write(
+        `    note: ${summary.unlinked_checkpoints} checkpoint(s) are not linked to these receipts by any proof\n`,
+      );
+    }
     if (summary.artifacts_indexed > 0) {
       process.stdout.write(`    ${summary.artifacts_indexed} document fingerprint(s) indexed\n`);
     }
@@ -232,6 +237,12 @@ program
       // done here is said separately, never folded into the list.
       const notDone: string[] = [];
       if (summary.checkpoints === 0) notDone.push("no checkpoint: nothing ties these receipts to a Merkle root or a timestamp");
+      if (summary.unlinked_checkpoints > 0) {
+        notDone.push(
+          `${summary.unlinked_checkpoints} checkpoint(s) carry no inclusion proof and no root rebuilt from these receipts: ` +
+            "they, and their timestamps, prove nothing about this export",
+        );
+      }
       else if (summary.roots_recomputed < summary.checkpoints) {
         notDone.push(
           `${summary.checkpoints - summary.roots_recomputed} checkpoint root(s) could not be rebuilt, because the export does not start at seq 0`,

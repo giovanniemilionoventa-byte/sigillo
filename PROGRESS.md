@@ -69,7 +69,7 @@ dopo ogni fase in attesa di autorizzazione. Niente PostgreSQL, multi-tenancy, Sa
 | 4 | Dati personali nei campi testuali | fatto | Analisi su 169 ricevute reali (demo CV + esempio): unico dato personale in chiaro `on_behalf_of` = `elena.rizzo`. Corretto senza decisioni di prodotto: Unicode sempre valido (il taglio OTLP spezzava le emoji, e il cross-check Python non riusciva a calcolare l'impronta), `model.provider`/`digest` limitati a 256, affermazione falsa in `SECURITY.md`. Nuovo `docs/DATA-INVENTORY.md`; proposte D1–D7 in `docs/PROPOSTA-FASE-4.md`, da approvare |
 | 5 | Hardening della configurazione di produzione, e limitazione dei tentativi di accesso | fatto | Punti 2, 10, 11, 12, 15, 16 corretti; 20 in parte. Limite ai tentativi di password (per indirizzo, blocco crescente, risposta identica a una password sbagliata) e alle API key sbagliate; revoca delle chiavi efficace sul server già avviato; scrypt asincrono; riconnessione al signer e `/healthz` che lo controlla; cookie `Secure`, sessioni revocabili, `no-store`, controllo di `Origin`, logout in POST; impostazioni numeriche validate all'avvio; container in sola lettura, senza capability, `no-new-privileges`, limiti di risorse, log a rotazione; password in un file segreto (assente da `docker compose config`, provato); log senza query string né segreti (provato con Fastify e con Caddy reale). Tre difetti nuovi trovati: la cartella dei backup non scrivibile nell'immagine, Caddy che non parte con `SIGILLO_TLS_EMAIL` vuota, la password stampata da `docker compose config`. 636 test verdi |
 | 6 | Test di manomissione | fatto | Punti 3, 8, 17 corretti. 17 scenari di manomissione (i 10 richiesti più 7) su un fascicolo vero, ciascuno verificato con il `sigillo-verify` reale; due scenari passano da soli e vengono presi solo con le nuove opzioni `--key-id` (chiave attesa) e `--previous` (export precedente). Ora vera della marca (`genTime`) nel verificatore, nel PDF, in VERIFY.md e nella pagina web. Lettore ZIP più severo. Nuova sezione "What sigillo cannot detect" in `SECURITY.md`; corrette le affermazioni false in `SECURITY.md`, `FORMAT.md`, VERIFY.md e nel PDF. 665 test |
-| 7 | Test completo di esportazione e verifica | todo | Punti 4, 9 |
+| 7 | Test completo di esportazione e verifica | fatto | Punti 4 e 9 corretti; punto 20 (`from_ts`/`to_ts`) corretto. Test end-to-end su tre giorni: signer vero, sistema e chiave dalla pagina web, OTLP e API nativa, checkpoint dal pulsante con marca RFC 3161 vera via HTTP, export dell'intera catena, di un giorno e da CLI, tutti verificati dal `sigillo-verify` reale con `--tsa-ca`, `--key-id`, `--previous` e `doc`. 678 test |
 | 8 | Preparazione integrazione con un agente reale | todo | Analisi e proposta, senza inventare un agente (decisione D6, punto 5) |
 | 9 | Prima integrazione reale | todo | Solo dopo l'approvazione della fase 8: in questa sessione resta sospesa |
 | 10 | Preparazione alla produzione | todo | `docs/DEPLOY-PRODUZIONE.md` con checklist per un VPS, da eseguire su una macchina vera |
@@ -231,6 +231,48 @@ la memoria, e l'elenco onesto di ciò che non è stato verificato.
 - Fase 7: il verificatore non controlla `range.from_ts`/`to_ts` del manifest (punto 20); e
   l'export per date senza prove di inclusione (punto 4) oggi produce checkpoint "scollegati", di
   cui il verificatore non dice nulla.
+
+### Fase 7 — Test completo di esportazione e verifica (fatto)
+
+Test Vitest: da 664 a **678**.
+
+**Difetti corretti** (ciascuno riprodotto prima con un test che falliva):
+- **Punto 4 (ALTA).** Un export per date non portava nessuna prova di inclusione: le marche
+  temporali nell'archivio non erano legate alle ricevute, e il verificatore non lo diceva.
+  Riprodotto in `archive.test.ts` (checkpoint con `proofs: []`). Ora l'export riceve le impronte
+  dell'intera catena (`store.readReceiptHashes`) e costruisce le prove della prima e dell'ultima
+  ricevuta della finestra anche se la finestra non parte da 0. Porta solo i checkpoint utili:
+  quelli che coprono almeno una ricevuta della finestra, fino al primo che le copre tutte. Il
+  formato dell'archivio non cambia: `proofs` passa da vuoto a pieno.
+- **Decisione ancora aperta del committente** (fase 1): un checkpoint senza alcun legame con le
+  ricevute deve dare avviso o errore? Ho applicato la raccomandazione, cioè l'**avviso**. Il
+  verificatore conta questi checkpoint (`unlinked_checkpoints`) e lo scrive due volte: tra le
+  note, e sotto "not verified" ("prove nothing about this export"). Così gli archivi prodotti
+  prima di oggi restano verificabili. Trasformarlo in errore è una riga in `verify.ts`.
+- **Punto 9.** Con l'orologio del server tornato indietro, l'export per date selezionava `seq` 1 e
+  3 saltando il 2, e l'archivio falliva la propria verifica. Riprodotto in `store.test.ts` con
+  SQLite reale (`[1, 3]` invece di `[1, 2, 3]`). Ora le date scelgono solo il primo e l'ultimo
+  `seq`, e si esporta tutto ciò che sta in mezzo.
+- **Punto 20, `from_ts`/`to_ts`.** Il periodo dichiarato nel manifest, che il PDF stampa, non
+  veniva controllato. Ora deve coincidere con `ts_received` della prima e dell'ultima ricevuta.
+
+**Il test completo** (`apps/server/test/export-e2e.test.ts`) percorre tre giorni simulati,
+senza nulla di finto tranne l'orologio:
+- un signer vero su socket con file di chiave, e il server costruito come lo costruisce `serve`;
+- il sistema `selezione-cv` e la sua chiave creati dalla pagina web;
+- ogni giorno spazi OTLP (uno con l'impronta di un curriculum) e ricevute dall'API nativa;
+- i checkpoint dei primi due giorni presi con il pulsante "Sigilla adesso", ancorati via HTTP da
+  un'autorità RFC 3161 vera (openssl locale); il terzo giorno resta senza marca;
+- quattro export, tutti verificati dal `sigillo-verify` reale:
+  - l'intera catena dalla pagina web, con `--tsa-ca` e `--key-id`: 10 ricevute, 2 checkpoint,
+    2 radici ricostruite, 2 token `verified` con l'ora attestata;
+  - un solo giorno scelto per data: 3 ricevute, 1 checkpoint, **2 prove di inclusione**, nessun
+    checkpoint scollegato;
+  - l'intera catena esportata più tardi con `--previous` sul giorno: accettata; al contrario,
+    rifiutata;
+  - l'export da CLI (`sigillo-server export`) mentre il server gira;
+- `sigillo-verify doc` trova il curriculum, e non lo trova più con una lettera cambiata;
+- nessun contenuto in chiaro (nome del candidato, argomenti, esito) compare nell'archivio.
 
 ## Note di sessione
 

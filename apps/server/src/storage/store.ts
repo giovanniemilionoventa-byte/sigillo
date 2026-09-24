@@ -287,21 +287,36 @@ export class ReceiptStore {
     return rows.map(rowToReceipt);
   }
 
-  /** The receipts whose ts_received falls in [from, to] (either end optional), in seq order. */
+  /** The run of receipts from the first received at or after `from` to the last received at or before `to` (either end optional). */
   readChainInRange(systemId: string, from?: string, to?: string): Receipt[] {
-    const clauses = ["system_id = @system_id"];
-    const parameters: Record<string, string> = { system_id: systemId };
-    if (from !== undefined) {
-      clauses.push("ts_received >= @from");
-      parameters["from"] = from;
-    }
-    if (to !== undefined) {
-      clauses.push("ts_received <= @to");
-      parameters["to"] = to;
-    }
+    // The dates only choose where the run starts and ends: the first receipt
+    // received at or after `from`, the last at or before `to`. Everything in
+    // between is exported, so the run of positions has no gap even when the
+    // server's clock stepped back in the middle of it (review point 9) — a
+    // gap would make the export fail its own verification.
+    const bound = (sql: string, parameters: Record<string, string>): number | null =>
+      (this.read.prepare(sql).get(parameters) as { seq: number | null }).seq;
+    const firstSeq =
+      from === undefined
+        ? 0
+        : bound("SELECT MIN(seq) AS seq FROM receipts WHERE system_id = @system_id AND ts_received >= @from", {
+            system_id: systemId,
+            from,
+          });
+    const lastSeq =
+      to === undefined
+        ? bound("SELECT MAX(seq) AS seq FROM receipts WHERE system_id = @system_id", { system_id: systemId })
+        : bound("SELECT MAX(seq) AS seq FROM receipts WHERE system_id = @system_id AND ts_received <= @to", {
+            system_id: systemId,
+            to,
+          });
+    if (firstSeq === null || lastSeq === null || firstSeq > lastSeq) return [];
+
     const rows = this.read
-      .prepare(`SELECT canonical, sig FROM receipts WHERE ${clauses.join(" AND ")} ORDER BY seq`)
-      .all(parameters) as StoredRow[];
+      .prepare(
+        "SELECT canonical, sig FROM receipts WHERE system_id = ? AND seq BETWEEN ? AND ? ORDER BY seq",
+      )
+      .all(systemId, firstSeq, lastSeq) as StoredRow[];
     return rows.map(rowToReceipt);
   }
 

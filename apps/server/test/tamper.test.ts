@@ -130,7 +130,7 @@ interface Entry {
 }
 interface Manifest {
   keys: { key_id: string; public_key_base64: string }[];
-  range: { from_seq: number; to_seq: number };
+  range: { from_seq: number; to_seq: number; from_ts: string; to_ts: string };
   counts: { receipts: number; checkpoints: number; timestamps: number };
 }
 
@@ -318,6 +318,7 @@ describe("beyond the ten", () => {
     const receipts = receiptsOf(original).slice(0, RECEIPTS - 3);
     const manifest = jsonOf<Manifest>(original, "manifest.json");
     manifest.range.to_seq = RECEIPTS - 4;
+    manifest.range.to_ts = (receipts[receipts.length - 1] as Receipt).ts_received;
     manifest.counts = { receipts: RECEIPTS - 3, checkpoints: 0, timestamps: 0 };
     const tokenFiles = Object.fromEntries([...original.keys()].filter((n) => n.startsWith("timestamps/")).map((n) => [n, null]));
     const truncated = doctor({

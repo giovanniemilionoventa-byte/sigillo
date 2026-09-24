@@ -238,6 +238,18 @@ describe("tampering with the manifest", () => {
     expectFailure({ ...bundle, manifestJson: JSON.stringify(manifest) }, "range");
   });
 
+  // Review point 20: the period the manifest (and so the PDF) states was
+  // never compared with the receipts.
+  it("detects a period that does not match the receipts' own times", () => {
+    const bundle = buildBundle(3, identity);
+    for (const member of ["from_ts", "to_ts"] as const) {
+      const manifest = JSON.parse(bundle.manifestJson) as { range: Record<string, string> };
+      manifest.range[member] = "2020-01-01T00:00:00.000Z";
+      const detail = expectFailure({ ...bundle, manifestJson: JSON.stringify(manifest) }, "range");
+      expect(detail).toContain(member);
+    }
+  });
+
   it("detects a system_id that does not match the receipts", () => {
     const bundle = buildBundle(3, identity);
     const manifest = JSON.parse(bundle.manifestJson) as { system_id: string };

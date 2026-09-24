@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createServer } from "node:http";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -47,6 +48,11 @@ export interface LocalTsa {
   caFile: string;
   /** A DER TimeStampResp over the 32-byte digest given in hex, as a TSA returns it. */
   stamp(digestHex: string): Buffer;
+  /**
+   * Serves RFC 3161 over HTTP on 127.0.0.1, as an authority does: a POST of a
+   * TimeStampReq, answered with a TimeStampResp. Resolves to its URL.
+   */
+  listen(): Promise<string>;
   close(): void;
 }
 
@@ -78,7 +84,43 @@ export function createLocalTsa(): LocalTsa {
   );
 
   let requests = 0;
+  const reply = (query: Buffer): Buffer => {
+    requests += 1;
+    const queryFile = path(`http${requests}.tsq`);
+    const replyFile = path(`http${requests}.tsr`);
+    writeFileSync(queryFile, query);
+    execFileSync(
+      "openssl",
+      ["ts", "-reply", "-config", path("tsa.cnf"), "-queryfile", queryFile, "-signer", path("tsa.crt"),
+        "-inkey", path("tsa.key"), "-out", replyFile],
+      quiet,
+    );
+    return readFileSync(replyFile);
+  };
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      if (request.method !== "POST" || request.headers["content-type"] !== "application/timestamp-query") {
+        response.writeHead(400).end();
+        return;
+      }
+      try {
+        const body = reply(Buffer.concat(chunks));
+        response.writeHead(200, { "content-type": "application/timestamp-reply" }).end(body);
+      } catch {
+        response.writeHead(500).end();
+      }
+    });
+  });
   return {
+    listen: () =>
+      new Promise((resolve) => {
+        server.listen(0, "127.0.0.1", () => {
+          const address = server.address();
+          resolve(`http://127.0.0.1:${typeof address === "object" && address !== null ? address.port : 0}/tsr`);
+        });
+      }),
     caFile: path("ca.crt"),
     stamp(digestHex: string): Buffer {
       requests += 1;
@@ -94,6 +136,7 @@ export function createLocalTsa(): LocalTsa {
       return readFileSync(reply);
     },
     close(): void {
+      server.close();
       rmSync(directory, { recursive: true, force: true });
     },
   };
