@@ -68,9 +68,27 @@ function text(attributes: Map<string, AttributeValue>, ...names: string[]): stri
   return null;
 }
 
-/** Receipt fields are capped, and a name that arrives longer is cut, not dropped. */
+/**
+ * Every text member of a receipt passes through here, and leaves it as
+ * something the format can hold: at most `limit` UTF-16 code units, the unit
+ * the schema counts in, and well-formed Unicode. RFC 8785 is defined over
+ * well-formed Unicode, so a string holding half of a surrogate pair has no
+ * canonical form another implementation would agree on.
+ *
+ * A lone surrogate that arrives in OTLP/JSON is replaced with U+FFFD, which is
+ * what decoding the same span from protobuf already does with bytes that are
+ * not UTF-8. A name that arrives too long is cut, not dropped — and never
+ * between the two halves of a pair, which would create a lone surrogate here.
+ *
+ * Only text that is recorded as text comes through here: a payload that is
+ * hashed (`digestOf`) is hashed exactly as it arrived.
+ */
 function cap(value: string, limit = 256): string {
-  return value.length <= limit ? value : value.slice(0, limit);
+  const whole = value.toWellFormed();
+  if (whole.length <= limit) return whole;
+  const cut = whole.slice(0, limit);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
 }
 
 function outcomeOf(span: OtlpSpan): Outcome {
@@ -121,10 +139,12 @@ function artifactsOf(span: OtlpSpan): ArtifactEntry[] | undefined {
 function modelOf(attributes: Map<string, AttributeValue>): ModelInfo | undefined {
   const name = text(attributes, ...MODEL_NAME_ATTRIBUTES);
   if (name === null) return undefined;
+  const provider = text(attributes, ...MODEL_PROVIDER_ATTRIBUTES);
+  const digest = text(attributes, "sigillo.model.digest");
   return {
     name: cap(name),
-    provider: text(attributes, ...MODEL_PROVIDER_ATTRIBUTES),
-    digest: text(attributes, "sigillo.model.digest"),
+    provider: provider === null ? null : cap(provider),
+    digest: digest === null ? null : cap(digest),
   };
 }
 

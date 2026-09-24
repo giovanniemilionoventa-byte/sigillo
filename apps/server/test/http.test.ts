@@ -358,3 +358,60 @@ describe("POST /api/v1/receipts", () => {
     expect(receipt?.ts_received).toBe(NOW);
   });
 });
+
+describe("text that would not survive canonicalisation", () => {
+  it("refuses a native receipt with half a surrogate pair in a name, and writes nothing", async () => {
+    const before = store.readChain(SYSTEM).length;
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/receipts",
+      headers: auth(),
+      payload: {
+        actor: { agent: "planner", on_behalf_of: "utente\ud83d" },
+        action: { kind: "tool_call", name: "search_orders" },
+        outcome: "ok",
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toMatch(/well-formed Unicode/);
+    expect(store.readChain(SYSTEM)).toHaveLength(before);
+  });
+
+  it("accepts an OTLP span whose model provider is longer than a receipt allows, cut to fit", async () => {
+    const before = store.readChain(SYSTEM).length;
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/traces",
+      headers: auth(),
+      payload: {
+        resourceSpans: [
+          {
+            scopeSpans: [
+              {
+                spans: [
+                  {
+                    traceId: "4bf92f3577b34da6a3ce929d0e0e0001",
+                    spanId: "00f067aa0ba90001",
+                    name: "chat",
+                    startTimeUnixNano: "1789971053648178106",
+                    endTimeUnixNano: "1789971053648204813",
+                    attributes: [
+                      { key: "gen_ai.operation.name", value: { stringValue: "chat" } },
+                      { key: "gen_ai.request.model", value: { stringValue: "qwen2.5:3b" } },
+                      { key: "gen_ai.provider.name", value: { stringValue: "p".repeat(300) } },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    const chain = store.readChain(SYSTEM);
+    expect(chain).toHaveLength(before + 1);
+    const last = chain[chain.length - 1];
+    expect(last?.v === 2 ? last.model?.provider : undefined).toBe("p".repeat(256));
+  });
+});
