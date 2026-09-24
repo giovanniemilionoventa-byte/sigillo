@@ -233,8 +233,14 @@ describe("the archive a full export produces", () => {
     expect(verify).toContain("openssl ts -verify");
     expect(verify).toContain(signer.keyId);
     expect(verify).toContain(signer.publicKeyBase64);
-    // It must be honest about what a log cannot prove.
-    expect(verify).toContain("does not prove that everything the system did was recorded");
+    // It must be honest about what a log cannot prove (review point 3).
+    expect(verify).toContain("that everything the system did was recorded");
+    expect(verify).toContain("that the key is the operator's");
+    expect(verify).toContain("that nothing was cut from the end");
+    expect(verify).toContain(`--key-id ${signer.keyId}`);
+    expect(verify).toContain("--previous");
+    expect(verify).not.toContain("Nothing here asks you to trust");
+    expect(verify).not.toContain("any\nremoval");
   });
 
   it("says plainly when nothing anchors the archive in time", async () => {

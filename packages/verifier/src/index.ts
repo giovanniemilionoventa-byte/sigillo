@@ -1,6 +1,6 @@
-export { verifyBundle } from "./verify.js";
-export type { Bundle, Verification, VerificationCheck, VerificationSummary } from "./verify.js";
-export { verifyTimestamps } from "./timestamps.js";
+export { compareWithPrevious, verifyBundle } from "./verify.js";
+export type { Bundle, Verification, VerificationCheck, VerificationSummary, VerifyOptions } from "./verify.js";
+export { genTimeFrom, verifyTimestamps } from "./timestamps.js";
 export type {
   TimestampCheck,
   TimestampOptions,

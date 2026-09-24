@@ -101,6 +101,75 @@ describe("refusing a damaged archive", () => {
   });
 });
 
+/** Replaces every occurrence of `from` in the archive's bytes with `to`, of the same length. */
+function patch(archive: Uint8Array, from: string, to: string, only?: "first" | "last"): Uint8Array {
+  const bytes = Buffer.from(archive);
+  const positions: number[] = [];
+  for (let at = bytes.indexOf(from); at >= 0; at = bytes.indexOf(from, at + 1)) positions.push(at);
+  const chosen = only === "first" ? positions.slice(0, 1) : only === "last" ? positions.slice(-1) : positions;
+  for (const at of chosen) bytes.write(to, at, "latin1");
+  return new Uint8Array(bytes);
+}
+
+// Review point 17: what a reader must refuse in an archive it did not write.
+// These archives are built by the writer and then edited byte by byte, the
+// way someone handing over a doctored evidence file would.
+describe("refusing an archive built to mislead", () => {
+  it("refuses two entries with the same name, instead of letting the last one win", () => {
+    const archive = createZip([
+      { name: "receipts.jsonl", data: text("the real receipts") },
+      { name: "receiptz.jsonl", data: text("other receipts") },
+    ]);
+    const doctored = patch(archive, "receiptz.jsonl", "receipts.jsonl");
+    expect(() => readZip(doctored)).toThrow(/twice/);
+  });
+
+  it("refuses an entry whose local name differs from the directory's", () => {
+    // Unzip tools disagree on which of the two names they show: one archive
+    // could then read as different files to different people.
+    const archive = createZip([{ name: "receipts.jsonl", data: text("the receipts") }]);
+    const doctored = patch(archive, "receipts.jsonl", "receiptz.jsonl", "first");
+    expect(() => readZip(doctored)).toThrow(/local header/);
+  });
+
+  it("refuses an entry marked as encrypted", () => {
+    const archive = createZip([{ name: "a.txt", data: text("x") }]);
+    const bytes = Buffer.from(archive);
+    // General purpose flag: offset 6 in the local header, 8 in the directory.
+    bytes.writeUInt16LE(1, 6);
+    bytes.writeUInt16LE(1, bytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02])) + 8);
+    expect(() => readZip(new Uint8Array(bytes))).toThrow(/encrypted/);
+  });
+
+  it("refuses an entry larger than the limit before inflating it", () => {
+    const large = new Uint8Array(5 * 1024 * 1024);
+    const archive = createZip([{ name: "receipts.jsonl", data: large }]);
+    // Five megabytes of zeros deflate to a few kilobytes: the ratio of a zip bomb.
+    expect(archive.length).toBeLessThan(64 * 1024);
+    expect(() => readZip(archive, { maxEntryBytes: 1024 * 1024 })).toThrow(/limit/);
+    expect(readZip(archive, { maxEntryBytes: 8 * 1024 * 1024 })[0]?.data.length).toBe(large.length);
+  });
+
+  it("refuses archives whose entries add up to more than the total limit", () => {
+    const archive = createZip([
+      { name: "a", data: new Uint8Array(600 * 1024) },
+      { name: "b", data: new Uint8Array(600 * 1024) },
+    ]);
+    expect(() => readZip(archive, { maxEntryBytes: 1024 * 1024, maxTotalBytes: 1024 * 1024 })).toThrow(/limit/);
+  });
+
+  it("never inflates past the size the directory declares", () => {
+    // A directory that understates the size, so that a size check alone would
+    // pass it: the inflater itself must stop at the declared size.
+    const archive = createZip([{ name: "a", data: new Uint8Array(4 * 1024 * 1024) }]);
+    const bytes = Buffer.from(archive);
+    const central = bytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+    bytes.writeUInt32LE(10, central + 24);
+    bytes.writeUInt32LE(10, 22);
+    expect(() => readZip(new Uint8Array(bytes))).toThrow(/declares|larger/);
+  });
+});
+
 describe("what other tools see", () => {
   it("is an archive the system unzip reads", () => {
     const directory = mkdtempSync(join(tmpdir(), "sigillo-zip-"));

@@ -15,6 +15,7 @@ import {
 import { verifyBundle, type Verification } from "@sigillo/verifier";
 import type { StoredCheckpoint, StoredTimestamp } from "../storage/store.js";
 import { buildReportPdf } from "./report.js";
+import { genTimeOfToken } from "../timestamp/gentime.js";
 import { verifyInstructions } from "./verify-instructions.js";
 
 /**
@@ -172,7 +173,15 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     actionCounts.set(receipt.action.kind, (actionCounts.get(receipt.action.kind) ?? 0) + 1);
   }
 
-  const report = await buildReportPdf({ manifest, checkpoints: entries, verification, actionCounts });
+  // The time each token attests, read from the token itself: the evidence of
+  // when, rather than the server's clock (review point 8).
+  const genTimes = new Map<string, string>();
+  for (const token of tokens) {
+    const attested = genTimeOfToken(token.data);
+    if (attested !== undefined) genTimes.set(token.name, attested);
+  }
+
+  const report = await buildReportPdf({ manifest, checkpoints: entries, verification, actionCounts, genTimes });
 
   const archiveEntries: ZipEntry[] = [
     { name: "manifest.json", data: encode(manifestJson) },
@@ -181,7 +190,7 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     { name: "artifacts-index.jsonl", data: encode(artifactsIndexJsonl) },
     ...tokens,
     { name: "report.pdf", data: report },
-    { name: "VERIFY.md", data: encode(verifyInstructions(manifest, entries)) },
+    { name: "VERIFY.md", data: encode(verifyInstructions(manifest, entries, genTimes)) },
   ];
 
   return { zip: createZip(archiveEntries), entries: archiveEntries, manifest, verification };

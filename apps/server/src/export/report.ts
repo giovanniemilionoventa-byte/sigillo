@@ -27,6 +27,8 @@ export interface ReportInput {
   verification: Verification;
   /** How many receipts of each kind, for the summary table. */
   actionCounts: ReadonlyMap<string, number>;
+  /** The time each token attests (genTime), by the token's file name. */
+  genTimes?: ReadonlyMap<string, string>;
 }
 
 export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
@@ -72,8 +74,9 @@ export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
   document.fontSize(20).font("Helvetica-Bold").text("sigillo evidence file");
   document.moveDown(0.2).fontSize(10).font("Helvetica").fillColor("#444444");
   document.text(
-    "A record of what an AI system did, signed at the time and chained so that nothing " +
-      "can be changed, removed or reordered without this file failing to verify.",
+    "A record of what an AI system did, signed at the time and chained so that no receipt " +
+      "can be changed, removed from the middle or reordered without this file failing to verify. " +
+      "What it cannot show on its own is listed in VERIFY.md.",
   );
   document.fillColor("black");
   rule();
@@ -136,7 +139,15 @@ export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
         document.fillColor("#a11").text("  not anchored: no timestamp token").fillColor("black");
       } else {
         for (const timestamp of entry.timestamps) {
-          document.text(`  anchored ${timestamp.obtained_at} by ${timestamp.tsa_url}`);
+          const attested = input.genTimes?.get(timestamp.file);
+          document.text(
+            attested === undefined
+              ? `  anchored by ${timestamp.tsa_url}; the attested time could not be read from the token`
+              : `  anchored ${attested} by ${timestamp.tsa_url} (the time the authority attests)`,
+          );
+          document.fontSize(8).fillColor("#444444");
+          document.text(`  received by the server ${timestamp.obtained_at}, by its own clock`);
+          document.fontSize(10).fillColor("black");
           document.text(`  token: ${timestamp.file}`);
         }
       }

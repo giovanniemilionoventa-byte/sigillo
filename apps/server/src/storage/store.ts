@@ -26,6 +26,7 @@ import {
   type Receipt,
   type Source,
 } from "@sigillo/core";
+import { genTimeOfToken } from "../timestamp/gentime.js";
 import { SCHEMA_SQL } from "./schema.js";
 
 /** Whatever holds the private key. In production this is the separate signer process. */
@@ -81,7 +82,10 @@ export interface StoredCheckpoint {
 export interface StoredTimestamp {
   tsaUrl: string;
   tokenBase64: string;
+  /** When the server received the token, by its own clock. */
   obtainedAt: string;
+  /** The time the authority attests inside the token, where it can be read. */
+  genTime: string | undefined;
 }
 
 export class StorageError extends Error {
@@ -373,6 +377,7 @@ export class ReceiptStore {
       tsaUrl: row.tsa_url,
       tokenBase64: row.token_base64,
       obtainedAt: row.obtained_at,
+      genTime: genTimeOfToken(new Uint8Array(Buffer.from(row.token_base64, "base64"))),
     }));
   }
 

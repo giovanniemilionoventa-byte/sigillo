@@ -33,6 +33,12 @@ export interface TimestampCheck {
   expectedDigest: string;
   status: TimestampStatus;
   detail: string;
+  /**
+   * The time the authority attests, from inside the token (genTime), as ISO
+   * 8601, where openssl could read it. This, not the server's own clock, is
+   * the evidence of when the checkpoint existed.
+   */
+  genTime?: string;
 }
 
 export interface TimestampVerification {
@@ -57,6 +63,28 @@ async function opensslAvailable(): Promise<boolean> {
     return false;
   }
 }
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Pulls genTime out of `openssl ts -reply -text`, whose line reads
+ * `Time stamp: Mar 29 15:00:05 2026 GMT` (with `.123` after the seconds when
+ * the authority gives fractions). Returns ISO 8601, or undefined.
+ */
+export function genTimeFrom(reply: string): string | undefined {
+  const match = /^Time stamp: (\w{3}) +(\d{1,2}) (\d{2}):(\d{2}):(\d{2})(\.\d+)? (\d{4}) GMT$/m.exec(reply);
+  if (match === null) return undefined;
+  const [, month, day, hours, minutes, seconds, fraction, year] = match;
+  const monthIndex = MONTHS.indexOf(month ?? "");
+  if (monthIndex < 0) return undefined;
+  const millis = Math.floor(Number(`0${fraction ?? ""}`) * 1000);
+  return new Date(
+    Date.UTC(Number(year), monthIndex, Number(day), Number(hours), Number(minutes), Number(seconds), millis),
+  ).toISOString();
+}
+
+/** How far genTime may lie from the checkpoint's own time before it is pointed out. */
+const SKEW_NOTE_MS = 60 * 60 * 1000;
 
 /** Pulls the message imprint out of `openssl ts -reply -text`. */
 function imprintFrom(reply: string): string {
@@ -138,61 +166,83 @@ export async function verifyTimestamps(
       const path = join(work, `${checks.length}.tsr`);
       writeFileSync(path, token);
 
-      if (options.caFile !== undefined) {
-        try {
-          await run("openssl", [
-            "ts",
-            "-verify",
-            "-digest",
-            expectedDigest,
-            "-in",
-            path,
-            "-CAfile",
-            options.caFile,
-          ]);
-          checks.push({
-            ...base,
-            status: "verified",
-            detail: `signed by the authority and taken over ${expectedDigest}`,
-          });
-        } catch (error) {
-          checks.push({
-            ...base,
-            status: "failed",
-            detail: `openssl ts -verify refused it: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`,
-          });
-        }
-        continue;
-      }
-
+      // The token is read first in every case: its imprint must be this
+      // checkpoint's root, and its genTime is printed either way.
+      let reply: string;
       try {
-        const { stdout } = await run("openssl", ["ts", "-reply", "-in", path, "-text"]);
-        const imprint = imprintFrom(stdout);
-        if (imprint !== expectedDigest) {
-          checks.push({
-            ...base,
-            status: "failed",
-            detail:
-              imprint === ""
-                ? "the token carries no readable message imprint"
-                : `the token is over ${imprint}, not over the checkpoint root ${expectedDigest}`,
-          });
-          continue;
-        }
-        if (!stdout.includes("Status: Granted.")) {
-          checks.push({ ...base, status: "failed", detail: "the authority did not grant the token" });
-          continue;
-        }
-        checks.push({
-          ...base,
-          status: "imprint-only",
-          detail: "the token is over this checkpoint's root; its signature was not checked",
-        });
+        reply = (await run("openssl", ["ts", "-reply", "-in", path, "-text"])).stdout;
       } catch (error) {
         checks.push({
           ...base,
           status: "failed",
           detail: `openssl could not read the token: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`,
+        });
+        continue;
+      }
+      const imprint = imprintFrom(reply);
+      if (imprint !== expectedDigest) {
+        checks.push({
+          ...base,
+          status: "failed",
+          detail:
+            imprint === ""
+              ? "the token carries no readable message imprint"
+              : `the token is over ${imprint}, not over the checkpoint root ${expectedDigest}`,
+        });
+        continue;
+      }
+      if (!reply.includes("Status: Granted.")) {
+        checks.push({ ...base, status: "failed", detail: "the authority did not grant the token" });
+        continue;
+      }
+
+      const genTime = genTimeFrom(reply);
+      const dated = genTime === undefined ? {} : { genTime };
+      if (genTime !== undefined) {
+        const skew = Date.parse(genTime) - Date.parse(entry.checkpoint.ts);
+        if (skew < -SKEW_NOTE_MS) {
+          warnings.push(
+            `${timestamp.file}: the authority dates it ${genTime}, before the checkpoint's own time ${entry.checkpoint.ts}: the server's clock was ahead`,
+          );
+        } else if (skew > SKEW_NOTE_MS) {
+          warnings.push(
+            `${timestamp.file}: the authority dates it ${genTime}, ${Math.round(skew / 3_600_000)} hour(s) after the checkpoint's own time ${entry.checkpoint.ts}: until then, only the server's clock vouched for it`,
+          );
+        }
+      }
+
+      if (options.caFile === undefined) {
+        checks.push({
+          ...base,
+          ...dated,
+          status: "imprint-only",
+          detail: "the token is over this checkpoint's root; its signature was not checked",
+        });
+        continue;
+      }
+
+      try {
+        await run("openssl", [
+          "ts",
+          "-verify",
+          "-digest",
+          expectedDigest,
+          "-in",
+          path,
+          "-CAfile",
+          options.caFile,
+        ]);
+        checks.push({
+          ...base,
+          ...dated,
+          status: "verified",
+          detail: `signed by the authority and taken over ${expectedDigest}`,
+        });
+      } catch (error) {
+        checks.push({
+          ...base,
+          status: "failed",
+          detail: `openssl ts -verify refused it: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`,
         });
       }
     }

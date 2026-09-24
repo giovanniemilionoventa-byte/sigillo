@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { readZip, safeParseCheckpointEntry, type CheckpointEntry } from "@sigillo/core";
 import { verifyTimestamps } from "./timestamps.js";
-import { verifyBundle, type Bundle } from "./verify.js";
+import { compareWithPrevious, verifyBundle, type Bundle, type VerifyOptions } from "./verify.js";
 
 /** What this build checks, in the order it checks it. Printed so the reader knows. */
 const CHECKS = [
@@ -120,8 +120,21 @@ program
   .version("0.1.0")
   .argument("<path>", "an export archive (.zip) or an export directory")
   .option("--tsa-ca <path>", "the timestamp authority's certificate, to check token signatures")
+  .option(
+    "--key-id <id>",
+    "a key you expect, learned from the operator by another channel; every other key fails (repeatable)",
+    (value: string, previous: string[] | undefined) => [...(previous ?? []), value],
+  )
+  .option(
+    "--previous <path>",
+    "an export of the same chain received earlier: this one must contain it unchanged and reach at least as far",
+  )
   .option("--quiet", "print only the verdict")
-  .action(async (target: string, options: { tsaCa?: string; quiet?: boolean }) => {
+  .action(
+    async (
+      target: string,
+      options: { tsaCa?: string; keyId?: string[]; previous?: string; quiet?: boolean },
+    ) => {
     let archive: Archive;
     try {
       archive = readArchive(target);
@@ -132,11 +145,37 @@ program
       process.exit(2);
     }
 
-    const result = verifyBundle(archive.bundle);
+    const verifyOptions: VerifyOptions =
+      options.keyId === undefined ? {} : { trustedKeyIds: new Set(options.keyId) };
+    const result = verifyBundle(archive.bundle, verifyOptions);
     if (!result.ok) {
       process.stderr.write(`FAILED  ${result.check} at ${result.location}\n`);
       process.stderr.write(`        ${result.detail}\n`);
       process.exit(1);
+    }
+
+    if (options.previous !== undefined) {
+      let previous: Archive;
+      try {
+        previous = readArchive(options.previous);
+      } catch (error) {
+        process.stderr.write(
+          `cannot read ${options.previous}: ${error instanceof Error ? error.message : String(error)}\n`,
+        );
+        process.exit(2);
+      }
+      const before = verifyBundle(previous.bundle, verifyOptions);
+      if (!before.ok) {
+        process.stderr.write(`FAILED  the previous export, ${before.check} at ${before.location}\n`);
+        process.stderr.write(`        ${before.detail}\n`);
+        process.exit(1);
+      }
+      const compared = compareWithPrevious(result.receipts, before.receipts);
+      if (compared !== null && !compared.ok) {
+        process.stderr.write(`FAILED  ${compared.check} at ${compared.location}\n`);
+        process.stderr.write(`        ${compared.detail}\n`);
+        process.exit(1);
+      }
     }
 
     const timestamps = await verifyTimestamps({
@@ -169,20 +208,52 @@ program
     }
     for (const check of timestamps.checks) {
       process.stdout.write(
-        `    timestamp ${check.file}: ${check.status} (${check.tsaUrl})\n`,
+        `    timestamp ${check.file}: ${check.status} (${check.tsaUrl})` +
+          `${check.genTime === undefined ? "" : `, attested time ${check.genTime}`}\n`,
       );
     }
     for (const warning of timestamps.warnings) {
       process.stdout.write(`    note: ${warning}\n`);
     }
+    if (options.keyId === undefined) {
+      process.stdout.write(
+        "    note: the keys were taken from the archive's own manifest. Compare them with the key_id the " +
+          "operator published elsewhere, or pass it with --key-id.\n",
+      );
+    } else {
+      process.stdout.write(`    every signature is by a key you said to expect: ${options.keyId.join(", ")}\n`);
+    }
+    if (options.previous !== undefined) {
+      process.stdout.write(`    contains ${options.previous} unchanged, and reaches at least as far\n`);
+    }
 
     if (options.quiet !== true) {
+      // Only what was actually done is listed as verified; what could not be
+      // done here is said separately, never folded into the list.
+      const notDone: string[] = [];
+      if (summary.checkpoints === 0) notDone.push("no checkpoint: nothing ties these receipts to a Merkle root or a timestamp");
+      else if (summary.roots_recomputed < summary.checkpoints) {
+        notDone.push(
+          `${summary.checkpoints - summary.roots_recomputed} checkpoint root(s) could not be rebuilt, because the export does not start at seq 0`,
+        );
+      }
+      const tokensChecked = timestamps.checks.filter((check) => check.status === "verified" || check.status === "imprint-only").length;
+      if (tokensChecked === 0) notDone.push("no timestamp token was checked");
+      else if (timestamps.checks.some((check) => check.status === "imprint-only")) {
+        notDone.push("token signatures were not checked (no --tsa-ca)");
+      }
+
       process.stdout.write("\nverified:\n");
-      for (const check of CHECKS) {
+      for (const check of CHECKS.slice(0, tokensChecked === 0 ? -1 : undefined)) {
         process.stdout.write(`  - ${check}\n`);
       }
+      if (notDone.length > 0) {
+        process.stdout.write("\nnot verified:\n");
+        for (const item of notDone) process.stdout.write(`  - ${item}\n`);
+      }
     }
-  });
+  },
+  );
 
 program
   .command("doc <archive> <file>")

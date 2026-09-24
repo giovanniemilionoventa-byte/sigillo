@@ -52,7 +52,18 @@ export type VerificationCheck =
   | "checkpoint-signature"
   | "merkle-root"
   | "inclusion-proof"
-  | "artifacts-index";
+  | "artifacts-index"
+  | "previous-export";
+
+export interface VerifyOptions {
+  /**
+   * The key identifiers the verifier was told to expect, from a source other
+   * than the archive (--key-id). When given, a receipt or checkpoint signed by
+   * any other key fails, even if the manifest publishes that key: a manifest
+   * is part of the archive, and whoever forged the archive wrote it too.
+   */
+  trustedKeyIds?: ReadonlySet<string>;
+}
 
 export interface VerificationSummary {
   system_id: string;
@@ -88,7 +99,8 @@ function jsonLines(text: string): string[] {
   return text.split("\n").filter((line) => line.trim().length > 0);
 }
 
-export function verifyBundle(bundle: Bundle): Verification {
+export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verification {
+  const trusted = options.trustedKeyIds;
   // 1. The manifest, which carries the keys everything else is checked against.
   let manifestValue: unknown;
   try {
@@ -212,7 +224,8 @@ export function verifyBundle(bundle: Bundle): Verification {
     }
   }
 
-  // 7. Every receipt names a key the manifest publishes, and 8. is signed by it.
+  // 7. Every receipt names a key the manifest publishes (and, if the verifier
+  //    was told which keys to expect, one of those), and 8. is signed by it.
   for (const [index, receipt] of receipts.entries()) {
     const key = keysById.get(receipt.key_id);
     if (key === undefined) {
@@ -220,6 +233,13 @@ export function verifyBundle(bundle: Bundle): Verification {
         "key",
         at(index + 1),
         `receipt seq ${receipt.seq} is signed by key ${receipt.key_id}, which the manifest does not publish`,
+      );
+    }
+    if (trusted !== undefined && !trusted.has(receipt.key_id)) {
+      return fail(
+        "key",
+        at(index + 1),
+        `receipt seq ${receipt.seq} is signed by key ${receipt.key_id}, which is not a key you said to expect (--key-id)`,
       );
     }
     if (!verifyReceiptSignature(receipt, key)) {
@@ -306,6 +326,13 @@ export function verifyBundle(bundle: Bundle): Verification {
         "key",
         atCheckpoint(index + 1),
         `the checkpoint is signed by key ${checkpoint.key_id}, which the manifest does not publish`,
+      );
+    }
+    if (trusted !== undefined && !trusted.has(checkpoint.key_id)) {
+      return fail(
+        "key",
+        atCheckpoint(index + 1),
+        `the checkpoint is signed by key ${checkpoint.key_id}, which is not a key you said to expect (--key-id)`,
       );
     }
     if (!verifyCheckpointSignature(checkpoint, key)) {
@@ -448,4 +475,67 @@ export function verifyBundle(bundle: Bundle): Verification {
     },
     receipts,
   };
+}
+
+/**
+ * Compares an export with one of the same chain received earlier (--previous).
+ *
+ * An archive on its own cannot show that receipts were cut from its end: a
+ * shorter chain with a matching manifest is still a valid chain. An earlier
+ * export can. Every receipt the two have in common must be the same receipt,
+ * byte for byte, and the new export must reach at least as far as the old one
+ * did. When the new one starts right after the old one ends, its first receipt
+ * must link to the old one's last.
+ *
+ * Both exports must already have verified on their own.
+ */
+export function compareWithPrevious(current: Receipt[], previous: Receipt[]): Verification | null {
+  const firstNow = current[0];
+  const lastNow = current[current.length - 1];
+  const lastBefore = previous[previous.length - 1];
+  if (firstNow === undefined || lastNow === undefined || lastBefore === undefined) {
+    return fail("previous-export", "receipts.jsonl", "one of the two exports holds no receipts");
+  }
+  if (firstNow.system_id !== lastBefore.system_id) {
+    return fail(
+      "previous-export",
+      "manifest.json",
+      `this export is of system ${firstNow.system_id}, the previous one of ${lastBefore.system_id}`,
+    );
+  }
+
+  const before = new Map(previous.map((receipt) => [receipt.seq, receiptHashHex(receipt)]));
+  for (const [index, receipt] of current.entries()) {
+    const earlier = before.get(receipt.seq);
+    if (earlier !== undefined && earlier !== receiptHashHex(receipt)) {
+      return fail(
+        "previous-export",
+        at(index + 1),
+        `receipt seq ${receipt.seq} is not the receipt seq ${receipt.seq} of the previous export: the history has been rewritten`,
+      );
+    }
+  }
+
+  if (lastNow.seq < lastBefore.seq) {
+    return fail(
+      "previous-export",
+      "manifest.json",
+      `this export ends at seq ${lastNow.seq}, but the previous one already reached seq ${lastBefore.seq}: receipts are missing from the end`,
+    );
+  }
+  if (firstNow.seq > lastBefore.seq + 1) {
+    return fail(
+      "previous-export",
+      at(1),
+      `this export starts at seq ${firstNow.seq} and the previous one ends at seq ${lastBefore.seq}: they neither overlap nor follow each other`,
+    );
+  }
+  if (firstNow.seq === lastBefore.seq + 1 && firstNow.prev_hash !== before.get(lastBefore.seq)) {
+    return fail(
+      "previous-export",
+      at(1),
+      `receipt seq ${firstNow.seq} does not link to the last receipt of the previous export`,
+    );
+  }
+  return null;
 }

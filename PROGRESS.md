@@ -68,7 +68,7 @@ dopo ogni fase in attesa di autorizzazione. Niente PostgreSQL, multi-tenancy, Sa
 | 3 | Controllo automatico delle dipendenze | fatto | `pnpm audit:deps` e workflow `dependency-audit.yml` (push, PR, ogni lunedì). Node: produzione bloccante a qualsiasi gravità, sviluppo da `high` in su; Python: `pip-audit` su SDK con tutti gli extra, esempio e demo. Guida in `docs/DEPENDENCY-AUDIT.md`. Il controllo ha trovato 7 avvisi nella catena di sviluppo (vitest 2.1.9 → vite/esbuild): vitest aggiornato a 4.1.11, ora 0 avvisi. Da confermare: `pip-audit` come strumento solo-CI |
 | 4 | Dati personali nei campi testuali | fatto | Analisi su 169 ricevute reali (demo CV + esempio): unico dato personale in chiaro `on_behalf_of` = `elena.rizzo`. Corretto senza decisioni di prodotto: Unicode sempre valido (il taglio OTLP spezzava le emoji, e il cross-check Python non riusciva a calcolare l'impronta), `model.provider`/`digest` limitati a 256, affermazione falsa in `SECURITY.md`. Nuovo `docs/DATA-INVENTORY.md`; proposte D1–D7 in `docs/PROPOSTA-FASE-4.md`, da approvare |
 | 5 | Hardening della configurazione di produzione, e limitazione dei tentativi di accesso | fatto | Punti 2, 10, 11, 12, 15, 16 corretti; 20 in parte. Limite ai tentativi di password (per indirizzo, blocco crescente, risposta identica a una password sbagliata) e alle API key sbagliate; revoca delle chiavi efficace sul server già avviato; scrypt asincrono; riconnessione al signer e `/healthz` che lo controlla; cookie `Secure`, sessioni revocabili, `no-store`, controllo di `Origin`, logout in POST; impostazioni numeriche validate all'avvio; container in sola lettura, senza capability, `no-new-privileges`, limiti di risorse, log a rotazione; password in un file segreto (assente da `docker compose config`, provato); log senza query string né segreti (provato con Fastify e con Caddy reale). Tre difetti nuovi trovati: la cartella dei backup non scrivibile nell'immagine, Caddy che non parte con `SIGILLO_TLS_EMAIL` vuota, la password stampata da `docker compose config`. 636 test verdi |
-| 6 | Test di manomissione | todo | Punti 3, 8, 17. Almeno 10 scenari, e i limiti di ciò che non si può rilevare in `SECURITY.md` |
+| 6 | Test di manomissione | fatto | Punti 3, 8, 17 corretti. 17 scenari di manomissione (i 10 richiesti più 7) su un fascicolo vero, ciascuno verificato con il `sigillo-verify` reale; due scenari passano da soli e vengono presi solo con le nuove opzioni `--key-id` (chiave attesa) e `--previous` (export precedente). Ora vera della marca (`genTime`) nel verificatore, nel PDF, in VERIFY.md e nella pagina web. Lettore ZIP più severo. Nuova sezione "What sigillo cannot detect" in `SECURITY.md`; corrette le affermazioni false in `SECURITY.md`, `FORMAT.md`, VERIFY.md e nel PDF. 665 test |
 | 7 | Test completo di esportazione e verifica | todo | Punti 4, 9 |
 | 8 | Preparazione integrazione con un agente reale | todo | Analisi e proposta, senza inventare un agente (decisione D6, punto 5) |
 | 9 | Prima integrazione reale | todo | Solo dopo l'approvazione della fase 8: in questa sessione resta sospesa |
@@ -159,6 +159,78 @@ quindi `read_only`, i limiti, i secret e i permessi dei volumi sono controllati 
   `range.from_ts`/`to_ts` e che elenca come "verified" anche senza openssl) → fasi 6 e 7.
 - Il vecchio elenco "Checklist di verifica finale M9" in fondo a questo file usa ancora la
   password in `.env`: la fase 10 lo sostituisce con `docs/DEPLOY-PRODUZIONE.md`.
+
+### Fase 6 — Test di manomissione (fatto)
+
+Test Vitest: da 636 a **664** (più 1 saltato dove `caddy` non è installato).
+
+**Come sono fatti i test** (`apps/server/test/tamper.test.ts`). Il fascicolo di partenza è
+prodotto come lo produce il server: SQLite reale, firme Ed25519 reali, un checkpoint reale e una
+marca temporale RFC 3161 **vera**. La marca viene da un'autorità locale costruita con openssl
+(`test/helpers/local-tsa.ts`: una CA e un certificato TSA con `extendedKeyUsage=timeStamping`),
+che `openssl ts -verify` controlla come quelle di FreeTSA: niente rete, niente mock. Ogni
+scenario altera una copia del fascicolo e la passa al comando `sigillo-verify` vero, in un
+processo a parte, con `--tsa-ca`. Lo scenario passa solo se il comando esce con 1 e nomina il
+controllo e il punto esatto.
+
+| # | Scenario | Rilevato da |
+|---|---|---|
+| 1 | un byte alterato in una ricevuta | `chain-link` alla riga successiva |
+| 2 | ricevuta rimossa | `sequence` |
+| 3 | due ricevute scambiate | `sequence` |
+| 4 | ricevuta duplicata | `sequence` ("appears twice") |
+| 5 | firme sostituite con quelle di un'altra chiave valida (pubblicata nel manifest dal falsario, checkpoint e marca tolti) | **da solo passa**; con `--key-id` della chiave vera: `key` alla prima ricevuta rifirmata |
+| 6 | `prev_hash` alterato e nient'altro | `chain-link` |
+| 7 | radice Merkle del checkpoint alterata | `checkpoint-signature` |
+| 7b | idem, ma rifirmato con la chiave vera (attaccante che usa il socket del signer) | `merkle-root` |
+| 8 | prova di inclusione falsificata | `inclusion-proof` |
+| 9 | token di marca sostituito con uno vero della stessa autorità su un'altra impronta | `timestamp` ("the token is over …") |
+| 10 | manifest senza il `key_id` (o con un'altra chiave valida al suo posto) | `manifest` / `key` |
+| 11 | ultime 3 ricevute tagliate, manifest corretto di conseguenza (punto 3b) | **da solo passa**; con `--previous`: `previous-export` |
+| 12 | fascicolo interamente falso sotto una chiave nuova, marca compresa (punto 3c) | **da solo passa**; con `--key-id`: `key` |
+| 13 | storia riscritta e rifirmata con la chiave vera dopo la consegna di un export | **da solo passa**; con `--previous`: `previous-export` alla prima ricevuta cambiata |
+| 14 | token di marca tolto dallo zip | `timestamp` |
+| 15 | secondo `receipts.jsonl` infilato nello zip | lettore ZIP: "appears twice" (uscita 2) |
+| 16 | ricevuta con una firma vera della chiave giusta, ma di un'altra ricevuta | `signature` |
+
+**Difetti corretti** (ciascuno riprodotto prima con un test che falliva):
+- **Punto 3 (ALTA).** Le affermazioni false sono corrette: "Re-signing a forged chain requires
+  the key" (`SECURITY.md`: durante una compromissione il socket del signer firma qualunque cosa),
+  "removing the last ones is caught" (`SECURITY.md`, `FORMAT.md`: vero solo se il manifest non è
+  stato ritoccato), "Nothing here asks you to trust…" e "any removal breaks a hash" (VERIFY.md),
+  "nothing can be … removed" (PDF). Nel verificatore due opzioni nuove, che portano dentro la
+  verifica ciò che un archivio non può fornire da sé: `--key-id` (ripetibile) e `--previous`.
+  Senza `--key-id` il verificatore ora avvisa che le chiavi vengono dal manifest dell'archivio.
+- **Punto 8.** `genTime` è letto dal token e stampato dal verificatore (via openssl), con un avviso
+  se si discosta di più di un'ora dall'ora del checkpoint; il server lo legge con un piccolo lettore
+  DER (`apps/server/src/timestamp/gentime.ts`) e lo mostra nel PDF, in VERIFY.md, nella pagina dei
+  checkpoint e nella verifica di un documento. Le due letture sono confrontate su token veri.
+- **Punto 17.** Il lettore ZIP ora rifiuta nomi duplicati, nome locale diverso da quello della
+  directory centrale, voci cifrate, voci oltre 512 MiB o un totale oltre 1 GiB (prima di
+  decomprimere), e non decomprime mai oltre la dimensione dichiarata. I flag dei data descriptor
+  restano accettati: gli archivi rifatti con gli strumenti di sistema (per esempio quello del Mac)
+  li usano.
+- **Punto 20, una parte.** Il verificatore elencava come "verified" anche i controlli non fatti
+  (nessun token, openssl assente, radici non ricostruibili): ora li elenca a parte, sotto
+  "not verified".
+
+**`SECURITY.md`, nuova sezione "What sigillo cannot detect"**, richiesta dal committente: la
+sorgente che tace (solo semaforo giallo, mai "manomissione"), la sorgente che omette, i dati falsi
+ben formati mandati con la propria chiave legittima, la chiave API rubata, `ts_event`, i duplicati
+OTLP, ciò che un server compromesso può riscrivere prima della marca successiva o sostituire in
+blocco, l'orologio del server, e ciò che un singolo archivio non può dire di sé (chiave, coda
+tagliata, autorità).
+
+**Dimensione del verificatore** (regola 5 di `CLAUDE.md`): `packages/verifier/src` passa da 911
+a 1122 righe, `core/zip.ts` da 216 a 260; in tutto circa +250 righe. Cosa hanno comprato:
+`--key-id` e `--previous` (le uniche difese contro i due falsi del punto 3 che passavano la
+verifica), `genTime` (la prova del "quando"), il lettore ZIP che non si fa ingannare né esaurire
+la memoria, e l'elenco onesto di ciò che non è stato verificato.
+
+**Da fare nelle fasi successive**
+- Fase 7: il verificatore non controlla `range.from_ts`/`to_ts` del manifest (punto 20); e
+  l'export per date senza prove di inclusione (punto 4) oggi produce checkpoint "scollegati", di
+  cui il verificatore non dice nulla.
 
 ## Note di sessione
 

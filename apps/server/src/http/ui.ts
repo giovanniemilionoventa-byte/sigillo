@@ -195,9 +195,11 @@ function timestampStatus(store: ReceiptStore, systemId: string, seq: number): st
   const covering = store.readCheckpoints(systemId).find((entry) => entry.checkpoint.tree_size > seq);
   if (covering === undefined) return "non ancora coperto da un checkpoint";
   const tokens = store.readTimestamps(covering.id);
-  return tokens.length > 0
-    ? `con marca temporale del ${tokens[0]?.obtainedAt ?? ""}`
-    : "checkpoint scritto, marca temporale in attesa";
+  const token = tokens[0];
+  if (token === undefined) return "checkpoint scritto, marca temporale in attesa";
+  return token.genTime === undefined
+    ? "con marca temporale (ora attestata non leggibile dal token)"
+    : `con marca temporale del ${token.genTime}`;
 }
 
 function verifyDocumentResult(store: ReceiptStore, matches: ArtifactMatch[]): string {
@@ -472,7 +474,11 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     tokens.length === 0
       ? `<span class="warn">${escape(UI.checkpoints.waiting)}</span>`
       : tokens
-          .map((token) => `${escape(token.obtainedAt)}<br><span class="muted">${escape(token.tsaUrl)}</span>`)
+          .map(
+            (token) =>
+              `${escape(token.genTime ?? UI.checkpoints.genTimeUnreadable)}<br>` +
+              `<span class="muted">${escape(token.tsaUrl)} · ${escape(UI.checkpoints.receivedAt)} ${escape(token.obtainedAt)}</span>`,
+          )
           .join("<br>")
   }</td>
 </tr>`;
@@ -486,7 +492,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
         checkpoints.length === 0
           ? `<p class="empty">${escape(UI.checkpoints.none)}</p>`
           : `<div class="table-scroll"><table>
-<tr><th>ricevute coperte</th><th>scritto</th><th>radice Merkle</th><th>marca temporale</th></tr>
+<tr><th>ricevute coperte</th><th>scritto</th><th>radice Merkle</th><th>marca temporale (ora attestata dall'autorità)</th></tr>
 ${rows}
 </table></div>`,
       ),

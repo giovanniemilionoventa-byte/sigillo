@@ -607,7 +607,16 @@ published under an identifier that is not its own `key_id` is rejected, because
 13. Every RFC 3161 token is checked with `openssl` (section 9). With the
     authority's certificate, its signature is verified; without it, only the
     digest it carries is compared with the checkpoint root, and the verifier
-    says which of the two it did.
+    says which of the two it did. Either way it prints the time the authority
+    attests (`genTime`, the `Time stamp` line of `openssl ts -reply -text`):
+    that, not the checkpoint's own `ts` or the `obtained_at` recorded by the
+    server, is the evidence of when the checkpoint existed.
+
+Two optional inputs extend the checks with what an archive cannot supply
+itself: `--key-id <id>` (a signature by any key but these fails, at check 7
+or 9) and `--previous <archive>` (an earlier export of the same chain: every
+receipt the two share must be identical, the new export must reach at least
+as far, and one that starts right after the old one ends must link to it).
 
 A verifier stops at the first failure and names the file, the line and the
 check. Any failure means the export is not evidence of anything.
@@ -619,9 +628,22 @@ every receipt whose `artifacts` names that digest, or that none does.
 
 Four of these deserve a note, because they catch what the others miss:
 
-- Step 4 and step 12 together catch a deleted *last* receipt. Removing it
-  leaves a chain that is internally consistent; only the manifest's declared
-  range shows that the export was supposed to run further.
+- Step 4 and step 12 together catch a deleted *last* receipt **only when the
+  manifest was left as it was**. The manifest is not signed: whoever removes
+  the last receipts can lower `range.to_seq` and the counts too (and drop a
+  checkpoint over the removed ones), and what remains is a shorter chain that
+  verifies. Nothing inside one archive can show that it was cut. Two things
+  outside it can: an export of the same chain received earlier
+  (`sigillo-verify --previous <earlier archive>` requires the new one to
+  contain it unchanged and to reach at least as far), and the attested time of
+  the last timestamped checkpoint, compared with when the chain should have
+  been active.
+- The keys a verifier checks against come from the archive's own manifest.
+  An archive fabricated from nothing, under a key the forger made and
+  published in that manifest, is consistent and verifies. What ties an archive
+  to its operator is the key identifier, obtained from the operator through
+  another channel and given to the verifier (`sigillo-verify --key-id <id>`),
+  which then refuses a signature by any other key.
 - Step 8 is symmetric on purpose: an index entry with no matching artifact is
   rejected exactly like an artifact with no matching index entry. Either
   direction alone would let a document be found, or not found, incorrectly.

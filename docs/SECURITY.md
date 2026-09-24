@@ -46,17 +46,30 @@ receipts and the signer will sign any digest it is given. A sigillo log does not
 prevent an attacker with the server from adding false entries going forward.
 They can also delete the database file, or replace it with another one.
 
+And, while they hold the server, **rewrite what is not yet anchored, and have
+it signed with the real key.** The signer's isolation stops the key from being
+*taken*: once the attacker is out, they cannot sign any more. It does not stop
+the key from being *used* through the socket while they are in, and the signer
+cannot tell a legitimate digest from a forged one. The key alone is therefore
+no protection for the past; what protects it is below.
+
 **What they cannot do.** Change or remove a receipt that is already covered by a
-checkpoint that has been timestamped, without that being visible:
+checkpoint that has been timestamped, without that being visible to someone who
+checks:
 
 - Altering any receipt changes its hash, so the next receipt's `prev_hash` no
   longer matches and the chain breaks at a named position.
 - Altering the last receipt of a tree changes the Merkle root, which the
   checkpoint signed and the timestamp authority attested at a known time.
-- Removing receipts leaves a gap in the sequence, and removing the last ones is
-  caught because the export manifest declares how far the range was meant to
-  run.
-- Re-signing a forged chain requires the key, which is not in that process.
+  Re-signing a rewritten chain yields new roots, and the authority's tokens
+  over the old roots, with their attested times, no longer match them: a
+  rewritten history carries only timestamps from after the rewrite.
+- Removing receipts from the middle leaves a gap in the sequence.
+- Removing the *last* receipts, together with the checkpoints over them and
+  with the manifest adjusted, leaves a shorter chain that verifies on its own.
+  It is caught by comparison with an export received earlier
+  (`sigillo-verify --previous`), and bounded by the attested time of the last
+  checkpoint. See "What sigillo cannot detect" below.
 
 The append-only triggers on `receipts`, `checkpoints` and `timestamps` stop
 `UPDATE` and `DELETE` from any connection that speaks SQL to the database. They
@@ -237,6 +250,67 @@ the forged address.
 `max-size: 10m` and `max-file: 5`: at most 50 MB per service, the oldest file
 dropped first. A server run without Docker writes to standard output and leaves
 rotation to whatever runs it (systemd's journal rotates on its own).
+
+## What sigillo cannot detect
+
+This list matters as much as the tamper tests that pass
+(`apps/server/test/tamper.test.ts`, 17 scenarios run through the real
+verifier). A verifier that says OK has checked what is below it on this page,
+and nothing else.
+
+**What was never sent.**
+- **A source that falls silent.** An agent that stops sending events, or whose
+  instrumentation breaks, produces no error anywhere in sigillo. The web view
+  turns the system's light yellow after `SIGILLO_STALE_AFTER_MINUTES` without
+  activity (a day by default), and that is all: silence is reported as
+  inactivity, never as tampering, and an export of the period is simply
+  shorter.
+- **A source that leaves things out.** An agent that records some actions and
+  not others, a span the instrumentation never emits, a span the ingest
+  adapter does not recognise as an AI action (it is counted and dropped):
+  sigillo attests the integrity of what it received, not the completeness of
+  what happened.
+
+**What was sent, and was false.**
+- **Well-formed lies with a valid key.** A client that sends made-up actions,
+  outcomes, times or digests, authenticated with its own legitimate API key,
+  gets them recorded, signed and anchored exactly like true ones. sigillo proves
+  *what it was told and when*, not that it was true.
+- **A stolen API key.** Whoever holds a system's key writes to that system's
+  chain, indistinguishably from the agent. Revoking the key stops it from the
+  next request on; what was written before stays.
+- **`ts_event`** is the source's claim and is never checked against anything.
+- **Duplicates.** An OTLP batch retried after a partial failure can record the
+  same span twice (review point 6); the two receipts are both genuine records
+  of what arrived.
+
+**What a compromised server can do before anyone checks.**
+- **Rewrite what is not yet timestamped.** Receipts since the last anchored
+  checkpoint (up to `SIGILLO_CHECKPOINT_MINUTES`, plus however long the
+  authority is unreachable) can be rewritten and re-signed with the real key
+  through the signer's socket. Nothing in the chain shows it.
+- **Replace everything, if nothing was ever handed out.** A database replaced
+  wholesale with a consistent forged history, signed through the same signer and
+  anchored afresh, verifies. What gives it away is outside it: an export given
+  to someone earlier (`--previous`), or the authority's attested times, which
+  would all be later than the period they claim to cover.
+- **Move the clock.** `ts_received` is the server's own clock. Between two
+  timestamps, only that clock vouches for when something happened.
+
+**What a single archive cannot show about itself.**
+- **That the key is the operator's.** A wholly fabricated archive, signed with
+  a new key published in its own manifest, verifies. Caught only with the
+  operator's `key_id` from another channel (`sigillo-verify --key-id`).
+- **That nothing was cut from its end.** Removing the last receipts and the
+  checkpoints over them, and adjusting the manifest, leaves a valid shorter
+  chain. Caught only against an earlier export (`--previous`).
+- **That the timestamp authority is who it claims.** Without its certificate
+  (`--tsa-ca`), a token is only checked for the digest it carries. FreeTSA, the
+  default authority, is not qualified under eIDAS.
+
+**If the signing key is stolen,** everything signed with it from then on is in
+doubt, and a forgery is indistinguishable from a real receipt. Timestamped
+checkpoints from before the theft still bound what existed then.
 
 ## Known limits
 
