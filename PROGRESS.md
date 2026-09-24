@@ -56,6 +56,25 @@ Tutte e nove le milestone sono `fatto`. Le tre domande aperte sono state decise 
   file `.key` e `.pem`, e non c'è materiale di chiave nell'albero), ma è una scelta da fare
   consapevolmente.
 
+## Preparazione al primo pilot — fasi 1-11 (dal 2026-09-24)
+
+Piano del committente: portare la base attuale a un pilot reale, una fase alla volta, fermandosi
+dopo ogni fase in attesa di autorizzazione. Niente PostgreSQL, multi-tenancy, SaaS, HSM/KMS.
+
+| Fase | Nome | Stato | Note |
+|---|---|---|---|
+| 1 | Revisione tecnica pre-produzione | fatto | Rapporto in `docs/REVISIONE-FASE-1.md`: 20 punti, 5 di gravità alta, i principali riprodotti con codice reale; nessuna modifica al codice |
+| 2 | Limitazione dei tentativi di accesso | todo | in attesa di autorizzazione |
+| 3 | Controllo automatico delle dipendenze | todo | |
+| 4 | Dati personali nei campi testuali | todo | |
+| 5 | Hardening della configurazione di produzione | todo | |
+| 6 | Test di manomissione | todo | |
+| 7 | Test completo di esportazione e verifica | todo | |
+| 8 | Preparazione integrazione con un agente reale | todo | |
+| 9 | Prima integrazione reale | todo | |
+| 10 | Preparazione alla produzione | todo | |
+| 11 | Revisione finale prima del pilot | todo | |
+
 ## Note di sessione
 
 ### Sessione 1 — 2026-09-21
