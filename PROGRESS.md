@@ -70,8 +70,8 @@ dopo ogni fase in attesa di autorizzazione. Niente PostgreSQL, multi-tenancy, Sa
 | 5 | Hardening della configurazione di produzione, e limitazione dei tentativi di accesso | fatto | Punti 2, 10, 11, 12, 15, 16 corretti; 20 in parte. Limite ai tentativi di password (per indirizzo, blocco crescente, risposta identica a una password sbagliata) e alle API key sbagliate; revoca delle chiavi efficace sul server già avviato; scrypt asincrono; riconnessione al signer e `/healthz` che lo controlla; cookie `Secure`, sessioni revocabili, `no-store`, controllo di `Origin`, logout in POST; impostazioni numeriche validate all'avvio; container in sola lettura, senza capability, `no-new-privileges`, limiti di risorse, log a rotazione; password in un file segreto (assente da `docker compose config`, provato); log senza query string né segreti (provato con Fastify e con Caddy reale). Tre difetti nuovi trovati: la cartella dei backup non scrivibile nell'immagine, Caddy che non parte con `SIGILLO_TLS_EMAIL` vuota, la password stampata da `docker compose config`. 636 test verdi |
 | 6 | Test di manomissione | fatto | Punti 3, 8, 17 corretti. 17 scenari di manomissione (i 10 richiesti più 7) su un fascicolo vero, ciascuno verificato con il `sigillo-verify` reale; due scenari passano da soli e vengono presi solo con le nuove opzioni `--key-id` (chiave attesa) e `--previous` (export precedente). Ora vera della marca (`genTime`) nel verificatore, nel PDF, in VERIFY.md e nella pagina web. Lettore ZIP più severo. Nuova sezione "What sigillo cannot detect" in `SECURITY.md`; corrette le affermazioni false in `SECURITY.md`, `FORMAT.md`, VERIFY.md e nel PDF. 665 test |
 | 7 | Test completo di esportazione e verifica | fatto | Punti 4 e 9 corretti; punto 20 (`from_ts`/`to_ts`) corretto. Test end-to-end su tre giorni: signer vero, sistema e chiave dalla pagina web, OTLP e API nativa, checkpoint dal pulsante con marca RFC 3161 vera via HTTP, export dell'intera catena, di un giorno e da CLI, tutti verificati dal `sigillo-verify` reale con `--tsa-ca`, `--key-id`, `--previous` e `doc`. 678 test |
-| 8 | Preparazione integrazione con un agente reale | todo | Analisi e proposta, senza inventare un agente (decisione D6, punto 5) |
-| 9 | Prima integrazione reale | todo | Solo dopo l'approvazione della fase 8: in questa sessione resta sospesa |
+| 8 | Preparazione integrazione con un agente reale | fatto | Proposta in `docs/PROPOSTA-FASE-8.md`, nessuna modifica al codice. Misurato il traffico dell'SDK: la demo CV manda al server 244 KB in chiaro per 160 span, nomi dei candidati e testo dei CV compresi. Proposta D6 (impronte calcolate nell'SDK, elenco di attributi da tenere); fattibilità verificata: su 2 005 stringhe, impronte Python e TypeScript identiche. Rischi dell'integrazione reale e sette domande (A–G) per il committente |
+| 9 | Prima integrazione reale | **sospesa, in attesa** | Parte solo dopo l'approvazione della fase 8: servono le risposte alle domande A–G di `docs/PROPOSTA-FASE-8.md` (quale agente, chi gestisce il server, D6, deduplicazione, `on_behalf_of`, marca temporale) |
 | 10 | Preparazione alla produzione | todo | `docs/DEPLOY-PRODUZIONE.md` con checklist per un VPS, da eseguire su una macchina vera |
 | 11 | Revisione finale prima del pilot | todo | Tabella prima/dopo dei 20 punti della revisione |
 
@@ -273,6 +273,38 @@ senza nulla di finto tranne l'orologio:
   - l'export da CLI (`sigillo-server export`) mentre il server gira;
 - `sigillo-verify doc` trova il curriculum, e non lo trova più con una lettera cambiata;
 - nessun contenuto in chiaro (nome del candidato, argomenti, esito) compare nell'archivio.
+
+### Fase 8 — Preparazione dell'integrazione con un agente reale (fatto)
+
+Documento: `docs/PROPOSTA-FASE-8.md`. Nessuna modifica al codice, come previsto per una fase di
+analisi e proposta.
+
+- **Misura del traffico reale dell'SDK.** Ho puntato l'esempio LangGraph e la demo CV su un server
+  che registra ogni richiesta OTLP, decodificata con la libreria ufficiale. La demo manda 244 015
+  byte in 160 span. Dentro ci sono `input.value` e `output.value` (120 000 caratteri), i metadati
+  di LangGraph, le descrizioni dei tool, i messaggi del modello, e il nome di un candidato, le
+  intestazioni dei CV e `elena.rizzo`: tutto in chiaro. Il server ne usa pochi identificativi e
+  le impronte di ingresso e uscita. È il punto 5 della revisione, ora quantificato.
+- **Proposta D6.** Un filtro nell'SDK sostituisce ingresso e uscita con le loro impronte
+  (`sigillo.input.sha256`, `sigillo.output.sha256`) e lascia partire solo gli attributi di un
+  elenco. Il server accetta le impronte già calcolate. Le ricevute restano identiche byte per
+  byte, il formato non cambia e gli altri strumenti di osservabilità non sono toccati.
+- **Fattibilità verificata.** Su 2 005 stringhe (casuali, con caratteri di controllo, emoji,
+  U+2028/2029, U+FEFF, bidirezionali, NUL), l'impronta calcolata in Python con
+  `sha256(json.dumps(s, ensure_ascii=False))` coincide sempre con `hashCanonicalJson` di
+  `packages/core`.
+- **Rischi dell'integrazione reale**: server irraggiungibile (le azioni perse appaiono come
+  silenzio), duplicati dopo un ritentativo (punto 6), span non riconosciuti contati ma non
+  visibili, orologi, versioni della strumentazione.
+- **Sette domande per il committente** (A–G): quale agente; dove gira e chi gestisce il server;
+  approvazione di D6; rifiuto degli span con contenuto; deduplicazione; `on_behalf_of`
+  pseudonimo; marca temporale per il pilot. Piano della fase 9 in cinque passi, con criteri di
+  accettazione.
+
+### Fase 9 — Prima integrazione reale (sospesa, in attesa)
+
+Non eseguita, come previsto dal prompt: aspetta le risposte alle domande A–G di
+`docs/PROPOSTA-FASE-8.md`.
 
 ## Note di sessione
 
