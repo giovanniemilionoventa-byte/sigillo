@@ -99,9 +99,14 @@ What an operator **can** see:
 - digests of inputs and outputs, which are useful only to someone who already
   has the original values and wants to prove they match.
 
-Names are metadata, but a name can be abused to carry content, so every
+Names are metadata, but a name can be abused to carry content. Every
 free-text field is capped: 128 characters for a system, 256 for an agent, an
-operator or an action name. A caller cannot smuggle a prompt into a name field.
+operator or an action name. A cap limits how much fits; it does not stop a
+caller from putting a person's name, an email address or a short sentence into
+one of those fields. sigillo stores whatever the instrumentation sends there
+in clear, signs it, and because of the chain cannot remove it later. What is
+recorded in clear, where it comes from, and how to keep personal data out of
+it is set out field by field in [DATA-INVENTORY.md](DATA-INVENTORY.md).
 
 What an operator **cannot** see: anything the instrumented system did not put in
 a span, and anything that was only ever a digest.

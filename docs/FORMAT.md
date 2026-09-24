@@ -182,6 +182,17 @@ serialisation **with the `sig` member removed**. In full:
    - `null` serialised as `null`.
 3. Encode the result as UTF-8. Those bytes are the canonical form.
 
+Every string sigillo signs is well-formed Unicode. RFC 8785 is defined over
+well-formed Unicode, and a string holding half of a UTF-16 surrogate pair has no
+UTF-8 encoding at all: implementations disagree about it, or refuse it. The
+server therefore replaces a lone surrogate that arrives in an OTLP/JSON span
+with U+FFFD, cuts an over-long name only between whole characters, and refuses
+any other receipt holding one before asking for a signature. Builds before
+2026-09-24 did not check this. A receipt they signed with a lone surrogate
+still verifies with `sigillo-verify`, which serialises the character as a
+`\uXXXX` escape, but an implementation that encodes strings strictly will not
+reproduce its hash.
+
 A member whose value is absent is simply not serialised. `undefined` is not a
 JSON value: an optional member is either present with a value or not present at
 all, and the two cases produce different bytes.

@@ -534,3 +534,50 @@ describe("verifying every signature before it is stored", () => {
     expect(() => ReceiptStore.open(join(directory, "other.db"), mismatched)).toThrow(/key_id/);
   });
 });
+
+describe("refusing text that is not well-formed Unicode", () => {
+  // RFC 8785 is defined over well-formed Unicode. A receipt holding half of a
+  // surrogate pair would be signed here, but an independent implementation
+  // could not even compute its hash, so the store refuses it before it asks
+  // for a signature, whichever route the event took to get here.
+
+  const LONE = "\ud83d";
+
+  const cases: [string, Partial<ChainEvent>][] = [
+    ["action.name", { action: { kind: "tool_call", name: `cerca${LONE}` } }],
+    ["actor.agent", { actor: { agent: `agente${LONE}` } }],
+    ["actor.on_behalf_of", { actor: { agent: "planner", on_behalf_of: `${LONE}utente` } }],
+    [
+      "an artifact label",
+      { artifacts: [{ role: "input", label: `cv${LONE}`, media_type: "text/plain", sha256: "a".repeat(64) }] },
+    ],
+    ["a model name", { model: { name: `modello${LONE}`, provider: null, digest: null } }],
+  ];
+
+  for (const [where, overrides] of cases) {
+    it(`refuses a lone surrogate in ${where}, before any signature is asked for`, async () => {
+      await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
+      const signaturesBefore = signer.calls();
+
+      await expect(store.append(event(overrides))).rejects.toThrow(/well-formed Unicode/);
+      expect(signer.calls()).toBe(signaturesBefore);
+      expect(store.readChain(SYSTEM).map((receipt) => receipt.seq)).toEqual([0]);
+    });
+  }
+
+  it("refuses a system name that is not well-formed Unicode", async () => {
+    await expect(store.createSystem(`sistema${LONE}`, "2026-03-29T14:00:00.000Z")).rejects.toThrow(
+      /well-formed Unicode/,
+    );
+    expect(store.listSystems()).toEqual([]);
+  });
+
+  it("still accepts any well-formed text, astral characters included", async () => {
+    await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
+    const receipt = await store.append(
+      event({ action: { kind: "tool_call", name: "invia_email_\u{1F600}_àèìòù_日本" } }),
+    );
+    expect(receipt.action.name).toBe("invia_email_\u{1F600}_àèìòù_日本");
+    expect(signatureIsValid(receipt)).toBe(true);
+  });
+});

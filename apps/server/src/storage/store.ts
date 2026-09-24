@@ -136,6 +136,23 @@ function verificationKeyOf(signer: SigningService): KeyObject {
   return publicKeyFromRaw(raw);
 }
 
+/**
+ * The path of the first string in `value` that is not well-formed Unicode —
+ * one holding half of a surrogate pair — or null if there is none.
+ */
+function malformedStringIn(value: unknown, path: string): string | null {
+  if (typeof value === "string") {
+    return value.isWellFormed() ? null : path;
+  }
+  if (typeof value === "object" && value !== null) {
+    for (const [key, inner] of Object.entries(value)) {
+      const found = malformedStringIn(inner, path === "" ? key : `${path}.${key}`);
+      if (found !== null) return found;
+    }
+  }
+  return null;
+}
+
 function refusedSignature(what: string, keyId: string): StorageError {
   return new StorageError(
     `the signer returned a signature that does not verify over this ${what}'s hash under key ` +
@@ -553,6 +570,18 @@ export class ReceiptStore {
         ...(event.artifacts === undefined ? {} : { artifacts: event.artifacts }),
         ...(event.model === undefined ? {} : { model: event.model }),
       });
+
+      // RFC 8785 is defined over well-formed Unicode. A string holding half of
+      // a surrogate pair would be signed here and serialised somehow, but an
+      // independent implementation could not reproduce its hash, so it is
+      // refused before a signature is ever asked for.
+      const malformed = malformedStringIn(unsigned, "");
+      if (malformed !== null) {
+        throw new StorageError(
+          `receipt field ${malformed} is not well-formed Unicode (it holds half of a surrogate ` +
+            "pair), so it has no canonical form another implementation would agree on: nothing was signed or written",
+        );
+      }
 
       // One set of bytes: the ones stored as `canonical`, whose hash is stored
       // as `hash`, signed, and verified below.

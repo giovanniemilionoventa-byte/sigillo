@@ -144,6 +144,9 @@ The default, FreeTSA, is fine for a trial and is **not** qualified.
 - [docs/API.md](docs/API.md) — the endpoints and the commands.
 - [docs/SECURITY.md](docs/SECURITY.md) — where the key is, what an attacker can
   and cannot do, and what sigillo does not prove.
+- [docs/DATA-INVENTORY.md](docs/DATA-INVENTORY.md) — every member a receipt
+  records in clear, where its value comes from, and how to keep personal data
+  out of it before it is signed for good.
 
 ## What it does not do
 

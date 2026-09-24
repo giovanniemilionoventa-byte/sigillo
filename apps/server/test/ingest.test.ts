@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { hashCanonicalJson } from "@sigillo/core";
+import { GENESIS_PREV_HASH, hashCanonicalJson, safeParseUnsignedReceipt } from "@sigillo/core";
 import { adaptSpans, type AdaptedAction } from "../src/ingest/adapter.js";
 import { decodeJsonTraces, decodeProtobufTraces, OtlpDecodeError, type OtlpSpan } from "../src/ingest/otlp.js";
 
@@ -495,5 +496,138 @@ describe("adapting a batch", () => {
   it("returns nothing for an empty export", () => {
     const batch = adaptSpans([]);
     expect(batch).toEqual({ actions: [], ignored: 0, unknown: [] });
+  });
+});
+
+describe("text fields: length and well-formed Unicode", () => {
+  // RFC 8785 is defined over well-formed Unicode: a string holding half of a
+  // surrogate pair has no canonical form another implementation will agree
+  // on (Python's refuses to encode it at all), so a receipt carrying one
+  // could be signed here and never re-hashed anywhere else.
+
+  const GRINNING_FACE = "\u{1F600}"; // two UTF-16 code units
+
+  /** Every string anywhere inside a value, keys included. */
+  const stringsIn = (value: unknown): string[] =>
+    typeof value === "string"
+      ? [value]
+      : typeof value === "object" && value !== null
+        ? Object.entries(value).flatMap(([key, inner]) => [key, ...stringsIn(inner)])
+        : [];
+
+  it("cuts an over-long name without splitting a character in two", () => {
+    const span = jsonSpan({
+      attributes: {
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": `${"a".repeat(255)}${GRINNING_FACE}`,
+      },
+    });
+    const name = adaptSpans([span]).actions[0]?.action.name ?? "";
+    expect(name.isWellFormed()).toBe(true);
+    expect(name).toBe("a".repeat(255));
+  });
+
+  it("keeps a character that ends exactly at the limit", () => {
+    const span = jsonSpan({
+      attributes: {
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": `${"a".repeat(254)}${GRINNING_FACE}${"b".repeat(10)}`,
+      },
+    });
+    expect(adaptSpans([span]).actions[0]?.action.name).toBe(`${"a".repeat(254)}${GRINNING_FACE}`);
+  });
+
+  it("caps a model's provider and digest the way it caps its name", () => {
+    const span = jsonSpan({
+      attributes: {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": "m".repeat(300),
+        "gen_ai.provider.name": "p".repeat(300),
+        "sigillo.model.digest": "d".repeat(300),
+      },
+    });
+    expect(adaptSpans([span]).actions[0]?.model).toEqual({
+      name: "m".repeat(256),
+      provider: "p".repeat(256),
+      digest: "d".repeat(256),
+    });
+  });
+
+  it("replaces a lone surrogate from an OTLP/JSON attribute, as protobuf decoding already does", () => {
+    const span = jsonSpan({
+      attributes: {
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": "cerca\ud800ordini",
+        "user.id": "utente\udfff",
+      },
+      events: [
+        {
+          name: "sigillo.artifact",
+          attributes: {
+            "sigillo.artifact.role": "input",
+            "sigillo.artifact.label": "curriculum\ud83d",
+            "sigillo.artifact.media_type": "text/plain",
+            "sigillo.artifact.sha256": SHA_A,
+          },
+        },
+      ],
+    });
+    const action = adaptSpans([span]).actions[0];
+    expect(action?.action.name).toBe("cerca\ufffdordini");
+    expect(action?.actor.on_behalf_of).toBe("utente\ufffd");
+    expect(action?.artifacts?.[0]?.label).toBe("curriculum\ufffd");
+  });
+
+  it("turns any string at all into fields a receipt accepts and any RFC 8785 implementation can hash", () => {
+    // Any UTF-16 code unit, lone surrogates included, at every length up to
+    // well past the cap: fast-check's default sizes would stay short, and its
+    // "binary" unit never produces half a pair.
+    const anyText = fc.string16bits({ minLength: 1, maxLength: 600, size: "max" });
+    fc.assert(
+      fc.property(anyText, anyText, anyText, anyText, (tool, user, provider, label) => {
+        const span = jsonSpan({
+          attributes: {
+            "gen_ai.operation.name": "execute_tool",
+            "gen_ai.tool.name": tool,
+            "user.id": user,
+            "gen_ai.provider.name": provider,
+          },
+          events: [
+            {
+              name: "sigillo.artifact",
+              attributes: {
+                "sigillo.artifact.role": "output",
+                "sigillo.artifact.label": label,
+                "sigillo.artifact.media_type": "text/plain",
+                "sigillo.artifact.sha256": SHA_A,
+              },
+            },
+          ],
+        });
+        for (const action of adaptSpans([span]).actions) {
+          const unsigned = {
+            v: 2,
+            system_id: "acme-support-bot",
+            seq: 1,
+            ts_event: action.ts_event,
+            ts_received: action.ts_event,
+            actor: action.actor,
+            action: action.action,
+            input_hash: action.input_hash,
+            output_hash: action.output_hash,
+            outcome: action.outcome,
+            source: action.source,
+            prev_hash: GENESIS_PREV_HASH,
+            key_id: "0123456789abcdef",
+            ...(action.artifacts === undefined ? {} : { artifacts: action.artifacts }),
+            ...(action.model === undefined ? {} : { model: action.model }),
+          };
+          const parsed = safeParseUnsignedReceipt(unsigned);
+          expect(parsed.ok, parsed.ok ? "" : parsed.error).toBe(true);
+          expect(stringsIn(unsigned).every((text) => text.isWellFormed())).toBe(true);
+        }
+      }),
+      { numRuns: 300 },
+    );
   });
 });
