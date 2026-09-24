@@ -15,6 +15,7 @@ import {
 import { verifyBundle, type Verification } from "@sigillo/verifier";
 import type { StoredCheckpoint, StoredTimestamp } from "../storage/store.js";
 import { buildReportPdf } from "./report.js";
+import { genTimeOfToken } from "../timestamp/gentime.js";
 import { verifyInstructions } from "./verify-instructions.js";
 
 /**
@@ -38,6 +39,13 @@ export interface ArchiveInput {
   checkpoints: { stored: StoredCheckpoint; timestamps: StoredTimestamp[] }[];
   keys: ManifestKey[];
   exportedAt: string;
+  /**
+   * The hash of every receipt of the chain, from seq 0, in order: the leaves
+   * of its Merkle trees. With them, an export of a window that does not start
+   * at seq 0 still carries inclusion proofs tying its receipts to the
+   * checkpoints. Without them, only an export from seq 0 can.
+   */
+  chainLeaves?: readonly string[];
 }
 
 export interface BuiltArchive {
@@ -75,7 +83,12 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
   }
 
   const receiptsJsonl = receipts.map((receipt) => `${canonicalJson(receipt)}\n`).join("");
-  const leaves = receipts.map((receipt) => fromHex(receiptHashHex(receipt)));
+  const leaves =
+    input.chainLeaves === undefined
+      ? first.seq === 0
+        ? receipts.map((receipt) => fromHex(receiptHashHex(receipt)))
+        : []
+      : input.chainLeaves.map((hash) => fromHex(hash));
 
   // One line per artifact occurrence, so "has this document been used"
   // never requires opening every receipt to find out.
@@ -98,13 +111,28 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
   const tokens: ZipEntry[] = [];
   const entries: CheckpointEntry[] = [];
 
-  for (const { stored, timestamps } of input.checkpoints) {
+  // The checkpoints that say something about these receipts: every one whose
+  // tree holds at least one of them, up to and including the first whose tree
+  // holds them all. A checkpoint entirely before the window proves nothing
+  // about it, and one after the first that covers it all adds nothing.
+  const relevant: typeof input.checkpoints = [];
+  for (const candidate of [...input.checkpoints].sort(
+    (a, b) => a.stored.checkpoint.tree_size - b.stored.checkpoint.tree_size,
+  )) {
+    const size = candidate.stored.checkpoint.tree_size;
+    if (size <= first.seq) continue;
+    relevant.push(candidate);
+    if (size > last.seq) break;
+  }
+
+  for (const { stored, timestamps } of relevant) {
     const { checkpoint } = stored;
 
-    // A proof can only be built where the export holds the receipts the tree was
-    // made of. A window that starts after seq 0 carries the checkpoint without
-    // proofs rather than carrying a proof it cannot support.
-    const canProve = first.seq === 0 && receipts.length >= checkpoint.tree_size;
+    // A proof needs every leaf of the tree. Without the chain's hashes (see
+    // chainLeaves), a window that starts after seq 0 carries the checkpoint
+    // without proofs rather than a proof it cannot support, and the verifier
+    // reports that checkpoint as unlinked.
+    const canProve = leaves.length >= checkpoint.tree_size;
     const proofs = canProve
       ? proofPositions(receipts, checkpoint.tree_size).map((seq) => {
           const receipt = receipts.find((candidate) => candidate.seq === seq);
@@ -172,7 +200,15 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     actionCounts.set(receipt.action.kind, (actionCounts.get(receipt.action.kind) ?? 0) + 1);
   }
 
-  const report = await buildReportPdf({ manifest, checkpoints: entries, verification, actionCounts });
+  // The time each token attests, read from the token itself: the evidence of
+  // when, rather than the server's clock (review point 8).
+  const genTimes = new Map<string, string>();
+  for (const token of tokens) {
+    const attested = genTimeOfToken(token.data);
+    if (attested !== undefined) genTimes.set(token.name, attested);
+  }
+
+  const report = await buildReportPdf({ manifest, checkpoints: entries, verification, actionCounts, genTimes });
 
   const archiveEntries: ZipEntry[] = [
     { name: "manifest.json", data: encode(manifestJson) },
@@ -181,7 +217,7 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     { name: "artifacts-index.jsonl", data: encode(artifactsIndexJsonl) },
     ...tokens,
     { name: "report.pdf", data: report },
-    { name: "VERIFY.md", data: encode(verifyInstructions(manifest, entries)) },
+    { name: "VERIFY.md", data: encode(verifyInstructions(manifest, entries, genTimes)) },
   ];
 
   return { zip: createZip(archiveEntries), entries: archiveEntries, manifest, verification };

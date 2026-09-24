@@ -16,7 +16,10 @@ export const UI = {
   login: {
     label: "Password amministratore",
     submit: "Accedi",
-    wrong: "Password non corretta.",
+    // The same words for a wrong password and for a lockout, on purpose: see
+    // the login handler in ui.ts.
+    wrong:
+      "Accesso non riuscito. Controlla la password; dopo troppi tentativi sbagliati l'accesso resta sospeso per qualche minuto.",
   },
   home: {
     title: "sigillo",
@@ -71,6 +74,8 @@ export const UI = {
     title: "checkpoint",
     none: "Nessun checkpoint ancora.",
     waiting: "in attesa di marca temporale",
+    genTimeUnreadable: "ora attestata non leggibile dal token",
+    receivedAt: "ricevuta dal server il",
   },
   verifyDocument: {
     title: "verifica un documento",

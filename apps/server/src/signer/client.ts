@@ -20,6 +20,14 @@ import type { SigningService } from "../storage/store.js";
  * simply ignored. A reply that cannot be matched at all (no id, not JSON) means
  * the other end does not speak this protocol, so the connection is closed and
  * every waiting request fails with it, rather than anything being guessed.
+ *
+ * A lost connection is not the end of the client. The signer runs in its own
+ * container and may restart under a running server; the next request then
+ * connects again and repeats the handshake. It carries on only if the signer
+ * still holds the key it announced the first time: a different key would put
+ * signatures in the chain that nothing in this process has announced, so the
+ * client refuses, and says so on every request, until the server is restarted
+ * by someone who meant to change the key.
  */
 
 const SIGNATURE = /^[A-Za-z0-9+/]{86}==$/;
@@ -50,45 +58,45 @@ export class SignerClient implements SigningService {
   private readonly pending = new Map<string, Pending>();
   private lastId = 0;
   private buffer = Buffer.alloc(0);
+  /** The live connection, or null while it is lost and not yet re-established. */
+  private socket: Socket | null = null;
+  /** A reconnection in progress, shared by every request that needs it. */
+  private reconnecting: Promise<void> | null = null;
+  /** Set by close(): the owner is done, and nothing reconnects any more. */
   private closed = false;
   private identity: { keyId: string; publicKeyBase64: string } | null = null;
 
   private constructor(
-    private readonly socket: Socket,
+    private readonly socketPath: string,
     private readonly timeoutMs: number,
-  ) {
-    this.socket.on("data", (chunk) => this.receive(chunk));
-    this.socket.on("close", () =>
-      this.shutDown(new SignerUnavailableError("the signer closed the connection")),
-    );
-    this.socket.on("error", (error) =>
-      this.shutDown(new SignerUnavailableError(`the signer connection failed: ${error.message}`)),
-    );
-  }
+  ) {}
 
   static async connect(socketPath: string, options: SignerClientOptions = {}): Promise<SignerClient> {
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
       throw new Error(`timeoutMs must be a positive number of milliseconds, received ${timeoutMs}`);
     }
-    const socket = await new Promise<Socket>((resolve, reject) => {
-      const attempt = createConnection(socketPath);
-      attempt.once("connect", () => resolve(attempt));
-      attempt.once("error", (error) =>
-        reject(
-          new SignerUnavailableError(`cannot reach the signer at ${socketPath}: ${error.message}`),
-        ),
-      );
-    });
-
-    const client = new SignerClient(socket, timeoutMs);
+    const client = new SignerClient(socketPath, timeoutMs);
     try {
-      await client.handshake();
+      await client.open();
     } catch (error) {
       client.close();
       throw error;
     }
     return client;
+  }
+
+  /**
+   * Whether the signer answers now, with the key this client announced. For
+   * the server's health check: it reconnects if it has to, and never throws.
+   */
+  async healthy(): Promise<boolean> {
+    try {
+      const reply = await this.request({ method: "pubkey" });
+      return reply["key_id"] === this.identity?.keyId;
+    } catch {
+      return false;
+    }
   }
 
   get keyId(): string {
@@ -115,9 +123,6 @@ export class SignerClient implements SigningService {
     return sig;
   }
 
-  close(): void {
-    this.shutDown(new SignerUnavailableError("the signer connection was closed"));
-  }
 
   private requireIdentity(): { keyId: string; publicKeyBase64: string } {
     if (this.identity === null) {
@@ -126,8 +131,56 @@ export class SignerClient implements SigningService {
     return this.identity;
   }
 
-  private async handshake(): Promise<void> {
-    const reply = await this.request({ method: "pubkey" });
+  /** Connects and learns (or, on a reconnection, re-checks) the signer's key. */
+  private async open(): Promise<void> {
+    const socket = await new Promise<Socket>((resolve, reject) => {
+      const attempt = createConnection(this.socketPath);
+      attempt.once("connect", () => resolve(attempt));
+      attempt.once("error", (error) =>
+        reject(
+          new SignerUnavailableError(`cannot reach the signer at ${this.socketPath}: ${error.message}`),
+        ),
+      );
+    });
+    if (this.closed) {
+      socket.destroy();
+      throw new SignerUnavailableError("the signer connection was closed");
+    }
+
+    this.buffer = Buffer.alloc(0);
+    this.socket = socket;
+    socket.on("data", (chunk) => {
+      if (this.socket === socket) this.receive(chunk);
+    });
+    socket.on("close", () =>
+      this.lose(socket, new SignerUnavailableError("the signer closed the connection")),
+    );
+    socket.on("error", (error) =>
+      this.lose(socket, new SignerUnavailableError(`the signer connection failed: ${error.message}`)),
+    );
+
+    let announced: { keyId: string; publicKeyBase64: string };
+    try {
+      announced = await this.handshake();
+    } catch (error) {
+      this.lose(socket, error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
+    // The identity this client reports is set once and never replaced: a
+    // signer that comes back with another key is refused, not adopted.
+    if (this.identity !== null && announced.keyId !== this.identity.keyId) {
+      const error = new SignerUnavailableError(
+        `the signer now holds a different key (${announced.keyId}, not ${this.identity.keyId}): ` +
+          "restart the server if the key was meant to change",
+      );
+      this.lose(socket, error);
+      throw error;
+    }
+    this.identity = announced;
+  }
+
+  private async handshake(): Promise<{ keyId: string; publicKeyBase64: string }> {
+    const reply = await this.send({ method: "pubkey" });
     const keyId = reply["key_id"];
     const publicKeyBase64 = reply["public_key_base64"];
 
@@ -145,13 +198,13 @@ export class SignerClient implements SigningService {
       throw new SignerUnavailableError("the signer's key_id does not match its public key");
     }
 
-    this.identity = { keyId, publicKeyBase64 };
+    return { keyId, publicKeyBase64 };
   }
 
   private receive(chunk: Buffer): void {
     this.buffer = Buffer.concat([this.buffer, chunk]);
     let index = this.buffer.indexOf(NEWLINE);
-    while (index >= 0 && !this.closed) {
+    while (index >= 0 && this.socket !== null) {
       const line = this.buffer.subarray(0, index).toString("utf8");
       this.buffer = this.buffer.subarray(index + 1);
       this.settle(line);
@@ -164,18 +217,18 @@ export class SignerClient implements SigningService {
     try {
       reply = JSON.parse(line);
     } catch {
-      this.shutDown(new SignerUnavailableError("the signer returned something that is not JSON"));
+      this.drop(new SignerUnavailableError("the signer returned something that is not JSON"));
       return;
     }
     if (typeof reply !== "object" || reply === null || Array.isArray(reply)) {
-      this.shutDown(new SignerUnavailableError("the signer returned something that is not an object"));
+      this.drop(new SignerUnavailableError("the signer returned something that is not an object"));
       return;
     }
 
     const fields = reply as Record<string, unknown>;
     const id = fields["id"];
     if (typeof id !== "string") {
-      this.shutDown(
+      this.drop(
         new SignerUnavailableError(
           "the signer's reply carries no request id, so it cannot be matched to a request: " +
             "the signer is older than this server, or it is not a sigillo signer",
@@ -200,10 +253,32 @@ export class SignerClient implements SigningService {
     waiting.resolve(fields);
   }
 
-  /** Closes the connection for good and fails every request still waiting. */
-  private shutDown(error: Error): void {
+  close(): void {
     this.closed = true;
-    this.socket.destroy();
+    if (this.socket !== null) {
+      this.lose(this.socket, new SignerUnavailableError("the signer connection was closed"));
+    }
+  }
+
+  /**
+   * Gives up on the signer for good. Only for a peer that does not speak this
+   * protocol: connecting to it again would not make it speak it, and it is
+   * not something to keep retrying against.
+   */
+  private drop(error: Error): void {
+    this.closed = true;
+    if (this.socket !== null) this.lose(this.socket, error);
+  }
+
+  /**
+   * Forgets `socket` if it is still the current connection, and fails every
+   * request waiting on it. The next request connects again, unless the owner
+   * has closed this client.
+   */
+  private lose(socket: Socket, error: Error): void {
+    socket.destroy();
+    if (this.socket !== socket) return;
+    this.socket = null;
     for (const waiting of this.pending.values()) {
       clearTimeout(waiting.timer);
       waiting.reject(error);
@@ -211,8 +286,25 @@ export class SignerClient implements SigningService {
     this.pending.clear();
   }
 
-  private request(message: Record<string, unknown>): Promise<Record<string, unknown>> {
+  private async request(message: Record<string, unknown>): Promise<Record<string, unknown>> {
     if (this.closed) {
+      throw new SignerUnavailableError("the signer connection is closed");
+    }
+    // While a reconnection is under way, every request waits for it, so that
+    // nothing is sent before the signer's key has been checked again.
+    if (this.socket === null || this.reconnecting !== null) {
+      this.reconnecting ??= this.open().finally(() => {
+        this.reconnecting = null;
+      });
+      await this.reconnecting;
+    }
+    return this.send(message);
+  }
+
+  /** Writes one request on the current connection and waits for its reply. */
+  private send(message: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const socket = this.socket;
+    if (socket === null || this.closed) {
       return Promise.reject(new SignerUnavailableError("the signer connection is closed"));
     }
     this.lastId += 1;
@@ -225,7 +317,7 @@ export class SignerClient implements SigningService {
         reject(new SignerUnavailableError("the signer did not answer in time"));
       }, this.timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
-      this.socket.write(`${JSON.stringify({ id, ...message })}\n`);
+      socket.write(`${JSON.stringify({ id, ...message })}\n`);
     });
   }
 }

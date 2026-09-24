@@ -517,11 +517,18 @@ One line per checkpoint:
 ```
 
 - `proofs` carries the audit path (section 8.3) for the first and the last
-  receipt the export holds. Those two anchor the whole range to the checkpoint's
-  root; the receipts between them are tied to each other by the chain.
-- An export that does not start at `seq` 0 cannot build proofs against a tree it
-  does not hold in full. It carries the checkpoint with an empty `proofs` rather
-  than a proof it cannot support.
+  receipt the export holds that fall inside the checkpoint's tree. Those two
+  anchor the whole range to the checkpoint's root; the receipts between them
+  are tied to each other by the chain.
+- An export of a window that does not start at `seq` 0 carries these proofs
+  too: the exporter builds them from the hashes of the whole chain, which it
+  holds, even though the archive holds only the window. It carries the
+  checkpoints whose tree holds at least one of the window's receipts, up to
+  and including the first whose tree holds them all.
+- Archives written before that (sigillo 0.1.0 before 2026-09-24) carry the
+  checkpoints of a window with an empty `proofs`. They still verify; the
+  verifier counts such a checkpoint as **unlinked** and says that it, and its
+  timestamps, prove nothing about the receipts of that archive.
 - `file` names the token inside the archive. The token is not inlined: it is
   binary, and an auditor needs it as a file to hand to `openssl`.
 
@@ -566,7 +573,14 @@ claiming one the receipts do not have, fails verification.
 ```
 
 `range.from_ts` and `range.to_ts` are the `ts_received` of the first and last
-receipt. `keys` carries the raw 32-byte public keys in standard base64.
+receipt, and a verifier checks that they are. `keys` carries the raw 32-byte
+public keys in standard base64.
+
+An export chosen by date covers the contiguous run of positions from the first
+receipt received on or after the start to the last received on or before the
+end. A receipt in between whose `ts_received` falls outside the dates (the
+server's clock stepped back) is included, not skipped: a gap in `seq` would be
+indistinguishable from a removal.
 
 `receipt_version` is **not** "the version of this export": a chain may upgrade
 from `v: 1` to `v: 2` partway through, and one export can hold both. It is the
@@ -601,13 +615,22 @@ published under an identifier that is not its own `key_id` is rejected, because
     the export holds them all, and must match.
 11. Every inclusion proof rebuilds its checkpoint's root, and the
     `receipt_hash` it names is the hash of the receipt actually at that `seq`.
-12. `range`, `counts.receipts`, `counts.checkpoints`, `counts.timestamps` and
+12. `range` (including `from_ts` and `to_ts`), `counts.receipts`, `counts.checkpoints`, `counts.timestamps` and
     `receipt_version` describe what the archive actually holds — the last of
     these is the highest version actually present, per 10.4.
 13. Every RFC 3161 token is checked with `openssl` (section 9). With the
     authority's certificate, its signature is verified; without it, only the
     digest it carries is compared with the checkpoint root, and the verifier
-    says which of the two it did.
+    says which of the two it did. Either way it prints the time the authority
+    attests (`genTime`, the `Time stamp` line of `openssl ts -reply -text`):
+    that, not the checkpoint's own `ts` or the `obtained_at` recorded by the
+    server, is the evidence of when the checkpoint existed.
+
+Two optional inputs extend the checks with what an archive cannot supply
+itself: `--key-id <id>` (a signature by any key but these fails, at check 7
+or 9) and `--previous <archive>` (an earlier export of the same chain: every
+receipt the two share must be identical, the new export must reach at least
+as far, and one that starts right after the old one ends must link to it).
 
 A verifier stops at the first failure and names the file, the line and the
 check. Any failure means the export is not evidence of anything.
@@ -619,9 +642,22 @@ every receipt whose `artifacts` names that digest, or that none does.
 
 Four of these deserve a note, because they catch what the others miss:
 
-- Step 4 and step 12 together catch a deleted *last* receipt. Removing it
-  leaves a chain that is internally consistent; only the manifest's declared
-  range shows that the export was supposed to run further.
+- Step 4 and step 12 together catch a deleted *last* receipt **only when the
+  manifest was left as it was**. The manifest is not signed: whoever removes
+  the last receipts can lower `range.to_seq` and the counts too (and drop a
+  checkpoint over the removed ones), and what remains is a shorter chain that
+  verifies. Nothing inside one archive can show that it was cut. Two things
+  outside it can: an export of the same chain received earlier
+  (`sigillo-verify --previous <earlier archive>` requires the new one to
+  contain it unchanged and to reach at least as far), and the attested time of
+  the last timestamped checkpoint, compared with when the chain should have
+  been active.
+- The keys a verifier checks against come from the archive's own manifest.
+  An archive fabricated from nothing, under a key the forger made and
+  published in that manifest, is consistent and verifies. What ties an archive
+  to its operator is the key identifier, obtained from the operator through
+  another channel and given to the verifier (`sigillo-verify --key-id <id>`),
+  which then refuses a signature by any other key.
 - Step 8 is symmetric on purpose: an index entry with no matching artifact is
   rejected exactly like an artifact with no matching index entry. Either
   direction alone would let a document be found, or not found, incorrectly.

@@ -78,7 +78,10 @@ export class ChainHealthMonitor {
         });
         return;
       }
-      if (!verifyReceiptSignature(receipt, this.publicKey)) {
+      // Each receipt under the key it names, from the keys this database has
+      // signed with: a chain may span a change of key (review point 7).
+      const key = this.store.publicKeyFor(receipt.key_id) ?? this.publicKey;
+      if (!verifyReceiptSignature(receipt, key)) {
         this.tracked.set(systemId, {
           lastSeq,
           lastHash,

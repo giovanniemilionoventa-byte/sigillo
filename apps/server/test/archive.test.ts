@@ -41,10 +41,10 @@ beforeEach(async () => {
 });
 
 /** Anchors the checkpoint with whatever token the test wants to study. */
-function anchor(tokenBase64: string, tsaUrl = "https://freetsa.org/tsr"): void {
+async function anchor(tokenBase64: string, tsaUrl = "https://freetsa.org/tsr"): Promise<void> {
   const checkpoint = store.latestCheckpoint(SYSTEM);
   if (checkpoint === null) throw new Error("no checkpoint to anchor");
-  store.recordTimestamp(checkpoint.id, tsaUrl, tokenBase64, "2026-03-29T15:00:05.000Z");
+  await store.recordTimestamp(checkpoint.id, tsaUrl, tokenBase64, "2026-03-29T15:00:05.000Z");
 }
 
 afterEach(() => {
@@ -119,7 +119,7 @@ function expectFailure(bundle: Bundle, check: VerificationCheck): string {
 
 describe("the archive a full export produces", () => {
   it("contains every part an auditor needs", async () => {
-    anchor(FAKE_TOKEN);
+    await anchor(FAKE_TOKEN);
     const files = filesOf((await build()).zip);
     expect([...files.keys()].sort()).toEqual([
       "VERIFY.md",
@@ -166,14 +166,14 @@ describe("the archive a full export produces", () => {
   });
 
   it("declares in the manifest exactly what it holds", async () => {
-    anchor(FAKE_TOKEN);
+    await anchor(FAKE_TOKEN);
     const archive = await build();
     expect(archive.manifest.counts).toEqual({ receipts: 12, checkpoints: 1, timestamps: 1 });
     expect(archive.manifest.range).toMatchObject({ from_seq: 0, to_seq: 11 });
   });
 
   it("carries the timestamp token byte for byte", async () => {
-    anchor(FAKE_TOKEN);
+    await anchor(FAKE_TOKEN);
     const files = filesOf((await build()).zip);
     expect(Buffer.from(files.get("timestamps/checkpoint-12-1.tsr") ?? new Uint8Array())).toEqual(
       Buffer.from(FAKE_TOKEN, "base64"),
@@ -224,7 +224,7 @@ describe("the archive a full export produces", () => {
   });
 
   it("writes instructions that stand on their own", async () => {
-    anchor(FAKE_TOKEN);
+    await anchor(FAKE_TOKEN);
     const files = filesOf((await build()).zip);
     const verify = decode(files.get("VERIFY.md"));
     expect(verify).toContain(SYSTEM);
@@ -233,8 +233,14 @@ describe("the archive a full export produces", () => {
     expect(verify).toContain("openssl ts -verify");
     expect(verify).toContain(signer.keyId);
     expect(verify).toContain(signer.publicKeyBase64);
-    // It must be honest about what a log cannot prove.
-    expect(verify).toContain("does not prove that everything the system did was recorded");
+    // It must be honest about what a log cannot prove (review point 3).
+    expect(verify).toContain("that everything the system did was recorded");
+    expect(verify).toContain("that the key is the operator's");
+    expect(verify).toContain("that nothing was cut from the end");
+    expect(verify).toContain(`--key-id ${signer.keyId}`);
+    expect(verify).toContain("--previous");
+    expect(verify).not.toContain("Nothing here asks you to trust");
+    expect(verify).not.toContain("any\nremoval");
   });
 
   it("says plainly when nothing anchors the archive in time", async () => {
@@ -254,6 +260,98 @@ describe("the archive a full export produces", () => {
     const everything = decode(files.get("receipts.jsonl"));
     expect(everything).toContain("search_orders");
     expect(everything).not.toContain("prompt");
+  });
+});
+
+describe("an export of a window of the chain", () => {
+  // Review point 4. A window that does not start at seq 0 used to carry its
+  // checkpoints with no inclusion proof at all: nothing tied the timestamps in
+  // the archive to the receipts in it, and the verifier did not say so.
+
+  /** Appends up to `count` receipts in all, then checkpoints. */
+  async function growTo(count: number, at: string): Promise<void> {
+    for (let index = store.readChain(SYSTEM).length; index < count; index += 1) {
+      await store.append(event(index));
+    }
+    await store.createCheckpoint(SYSTEM, at);
+  }
+
+  async function buildWindow(fromSeq: number, toSeq: number): Promise<Awaited<ReturnType<typeof buildArchive>>> {
+    return buildArchive({
+      systemId: SYSTEM,
+      receipts: store.readChain(SYSTEM).filter((receipt) => receipt.seq >= fromSeq && receipt.seq <= toSeq),
+      checkpoints: store.readCheckpoints(SYSTEM).map((stored) => ({
+        stored,
+        timestamps: store.readTimestamps(stored.id),
+      })),
+      chainLeaves: store.readReceiptHashes(SYSTEM),
+      keys: [{ key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 }],
+      exportedAt: EXPORTED_AT,
+    });
+  }
+
+  function entriesOf(archive: Awaited<ReturnType<typeof buildArchive>>): { tree: number; proved: number[] }[] {
+    return decode(filesOf(archive.zip).get("checkpoints.jsonl"))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { checkpoint: { tree_size: number }; proofs: { seq: number }[] })
+      .map((entry) => ({ tree: entry.checkpoint.tree_size, proved: entry.proofs.map((proof) => proof.seq) }));
+  }
+
+  it("proves the window's first and last receipt against the checkpoint that covers them", async () => {
+    // beforeEach: 12 receipts and a checkpoint over all 12.
+    const archive = await buildWindow(4, 7);
+    expect(entriesOf(archive)).toEqual([{ tree: 12, proved: [4, 7] }]);
+    expect(archive.verification.ok).toBe(true);
+    if (archive.verification.ok) {
+      expect(archive.verification.summary.inclusion_proofs).toBe(2);
+      expect(archive.verification.summary.unlinked_checkpoints).toBe(0);
+    }
+  });
+
+  it("carries only the checkpoints that cover a receipt of the window, up to the first that covers it all", async () => {
+    await growTo(20, "2026-03-29T15:30:00.000Z");
+    await growTo(25, "2026-03-29T15:45:00.000Z");
+    // Checkpoints over 12, 20 and 25 receipts. The window 10..15 is covered
+    // in part by the first and wholly by the second; the third adds nothing.
+    expect(entriesOf(await buildWindow(10, 15))).toEqual([
+      { tree: 12, proved: [10, 11] },
+      { tree: 20, proved: [10, 15] },
+    ]);
+    // A window after the first checkpoint leaves it out.
+    expect(entriesOf(await buildWindow(13, 18))).toEqual([{ tree: 20, proved: [13, 18] }]);
+  });
+
+  it("is caught when one of those proofs is altered", async () => {
+    const files = filesOf((await buildWindow(4, 7)).zip);
+    const entry = JSON.parse(decode(files.get("checkpoints.jsonl")).trim()) as {
+      proofs: { path: string[] }[];
+    };
+    const proof = entry.proofs[0];
+    if (proof === undefined || proof.path[0] === undefined) throw new Error("no proof to alter");
+    proof.path[0] = flipLastHex(proof.path[0]);
+    expectFailure(
+      { ...bundleFrom(files), checkpointsJsonl: `${JSON.stringify(entry)}\n` },
+      "inclusion-proof",
+    );
+  });
+
+  it("is verified with the checkpoint reported as unlinked when no proof ties it to the window", async () => {
+    // An archive produced before this change: accepted, because it was
+    // honestly produced, but the verifier says the checkpoint proves nothing
+    // about these receipts (the committente's open decision: a warning).
+    const archive = await buildArchive({
+      systemId: SYSTEM,
+      receipts: store.readChain(SYSTEM).filter((receipt) => receipt.seq >= 4 && receipt.seq <= 7),
+      checkpoints: store.readCheckpoints(SYSTEM).map((stored) => ({ stored, timestamps: [] })),
+      keys: [{ key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 }],
+      exportedAt: EXPORTED_AT,
+    });
+    expect(archive.verification.ok).toBe(true);
+    if (archive.verification.ok) {
+      expect(archive.verification.summary.inclusion_proofs).toBe(0);
+      expect(archive.verification.summary.unlinked_checkpoints).toBe(1);
+    }
   });
 });
 
@@ -355,7 +453,7 @@ describe("tampering with the archive", () => {
   });
 
   it("is caught when the manifest's counts are changed", async () => {
-    anchor(FAKE_TOKEN);
+    await anchor(FAKE_TOKEN);
     const files = filesOf((await build()).zip);
     for (const [field, value] of [
       ["receipts", 11],
@@ -418,7 +516,7 @@ describe("the sigillo-verify command on a real archive", () => {
   }, 30_000);
 
   it("refuses an archive whose timestamp token is not a timestamp token", async () => {
-    anchor(FAKE_TOKEN);
+    await anchor(FAKE_TOKEN);
     const path = join(directory, "bad-token.zip");
     writeFileSync(path, (await build()).zip);
 
@@ -457,7 +555,7 @@ describe("the sigillo-verify command on a real archive", () => {
       context.skip();
       return;
     }
-    anchor(token);
+    await anchor(token);
 
     const path = join(directory, "anchored.zip");
     writeFileSync(path, (await build()).zip);

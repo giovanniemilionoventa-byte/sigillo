@@ -1,4 +1,4 @@
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
 import Database from "better-sqlite3";
 import { SCHEMA_SQL } from "../storage/schema.js";
 
@@ -55,11 +55,38 @@ function hashSecret(secret: string, salt: string): Buffer {
   return scryptSync(secret, salt, HASH_BYTES, SCRYPT);
 }
 
+/**
+ * The same derivation, off the event loop. Verifying a presented token is the
+ * one scrypt a stranger can ask for, and at about 55 ms each the synchronous
+ * form let some twenty requests a second stall the whole process (review
+ * point 10).
+ */
+function hashSecretAsync(secret: string, salt: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(secret, salt, HASH_BYTES, SCRYPT, (error, derived) =>
+      error === null ? resolve(derived) : reject(error),
+    );
+  });
+}
+
+export interface VerifyOptions {
+  /**
+   * Whether this call may run scrypt. When it may not, only a token this store
+   * has already checked can succeed. The server turns it off for a client that
+   * has failed too often, so that a flood of guesses costs it nothing while
+   * agents whose token is already known carry on.
+   */
+  hashAllowed?: boolean;
+}
+
 export class ApiKeyStore {
   /**
-   * Tokens that have already been checked, so that ingest does not pay for an
-   * scrypt on every request. Lives only in memory, and holds the presented
-   * token, which the caller sent us anyway.
+   * The outcome of scrypt for tokens that have already been checked, keyed by
+   * a SHA-256 of the token, so that ingest does not pay for an scrypt on every
+   * request. Only the expensive half is remembered: whether the key is still
+   * live is read from the database on every request, because a revocation is
+   * made by another process (`sigillo-server key revoke`) that cannot reach
+   * this memory (review point 2).
    */
   private readonly verified = new Map<string, string>();
 
@@ -104,7 +131,6 @@ export class ApiKeyStore {
     const result = this.db
       .prepare("UPDATE api_keys SET revoked_at = ? WHERE key_id = ? AND revoked_at IS NULL")
       .run(revokedAt, keyId);
-    this.verified.clear();
     return result.changes > 0;
   }
 
@@ -123,14 +149,8 @@ export class ApiKeyStore {
     }));
   }
 
-  /** Returns the system the token speaks for, or null if it does not. */
-  verify(token: string): string | null {
-    const cached = this.verified.get(token);
-    if (cached !== undefined) {
-      // A revocation clears the cache, so a hit here is still a live key.
-      return cached;
-    }
-
+  /** Resolves to the system the token speaks for, or null if it does not. */
+  async verify(token: string, options: VerifyOptions = {}): Promise<string | null> {
     const parsed = TOKEN.exec(token);
     if (parsed === null) return null;
     const [, keyId, secret] = parsed;
@@ -141,13 +161,17 @@ export class ApiKeyStore {
       | undefined;
     if (row === undefined || row.revoked_at !== null) return null;
 
+    const fingerprint = createHash("sha256").update(token).digest("hex");
+    if (this.verified.get(fingerprint) === row.key_id) return row.system_id;
+    if (options.hashAllowed === false) return null;
+
     const expected = Buffer.from(row.secret_hash, "base64");
-    const actual = hashSecret(secret, row.salt);
+    const actual = await hashSecretAsync(secret, row.salt);
     if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
       return null;
     }
 
-    this.verified.set(token, row.system_id);
+    this.verified.set(fingerprint, row.key_id);
     return row.system_id;
   }
 

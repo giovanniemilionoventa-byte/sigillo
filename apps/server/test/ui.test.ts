@@ -184,8 +184,8 @@ describe("signing in", () => {
 
   it("signs out", async () => {
     const cookie = await signIn();
-    const response = await app.inject({ method: "GET", url: "/ui/logout", headers: { cookie } });
-    expect(response.statusCode).toBe(302);
+    const response = await app.inject({ method: "POST", url: "/ui/logout", headers: { cookie } });
+    expect(response.statusCode).toBe(303);
     expect(String(response.headers["set-cookie"])).toContain("Max-Age=0");
   });
 });
@@ -210,7 +210,7 @@ describe("the main page: È tutto a posto?", () => {
   it("turns green once a checkpoint anchors the chain", async () => {
     const checkpoint = await store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z");
     if (checkpoint !== null) {
-      store.recordTimestamp(
+      await store.recordTimestamp(
         checkpoint.id,
         "https://freetsa.org/tsr",
         Buffer.from([0x30, 0x03]).toString("base64"),
@@ -566,7 +566,7 @@ describe("the checkpoints page", () => {
     expect(body).toContain(checkpoint?.checkpoint.root_hash ?? "");
 
     if (checkpoint !== null) {
-      store.recordTimestamp(
+      await store.recordTimestamp(
         checkpoint.id,
         "https://freetsa.org/tsr",
         Buffer.from([0x30, 0x03]).toString("base64"),

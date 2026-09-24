@@ -149,7 +149,25 @@ function findEndOfCentralDirectory(archive: Buffer): number {
   throw new ZipError("not a zip archive: no end of central directory record");
 }
 
-export function readZip(bytes: Uint8Array): ZipEntry[] {
+export interface ReadZipOptions {
+  /** The largest entry to inflate. Default: 512 MiB. */
+  maxEntryBytes?: number;
+  /** The most, all entries together, to inflate. Default: 1 GiB. */
+  maxTotalBytes?: number;
+}
+
+const FLAG_ENCRYPTED = 0x0001;
+
+/**
+ * Reads an archive someone else may have built. Besides damage, it refuses
+ * what could make one archive read differently to different people or run a
+ * reader out of memory: two entries with one name, a local header naming a
+ * different file than the directory, encryption, and entries (or a total)
+ * beyond the limits. Nothing is inflated past the size the directory declares.
+ */
+export function readZip(bytes: Uint8Array, options: ReadZipOptions = {}): ZipEntry[] {
+  const maxEntryBytes = options.maxEntryBytes ?? 512 * 1024 * 1024;
+  const maxTotalBytes = options.maxTotalBytes ?? 1024 * 1024 * 1024;
   const archive = Buffer.from(bytes);
   if (archive.length < 22) {
     throw new ZipError("not a zip archive: too short");
@@ -160,11 +178,14 @@ export function readZip(bytes: Uint8Array): ZipEntry[] {
   let cursor = archive.readUInt32LE(end + 16);
 
   const entries: ZipEntry[] = [];
+  const names = new Set<string>();
+  let total = 0;
   for (let index = 0; index < count; index += 1) {
     if (cursor + 46 > archive.length || archive.readUInt32LE(cursor) !== CENTRAL_HEADER) {
       throw new ZipError(`central directory entry ${index} is malformed`);
     }
 
+    const flags = archive.readUInt16LE(cursor + 8);
     const method = archive.readUInt16LE(cursor + 10);
     const checksum = archive.readUInt32LE(cursor + 16);
     const compressedSize = archive.readUInt32LE(cursor + 20);
@@ -173,13 +194,32 @@ export function readZip(bytes: Uint8Array): ZipEntry[] {
     const extraLength = archive.readUInt16LE(cursor + 30);
     const commentLength = archive.readUInt16LE(cursor + 32);
     const localOffset = archive.readUInt32LE(cursor + 42);
-    const name = archive.subarray(cursor + 46, cursor + 46 + nameLength).toString("utf8");
+    const nameBytes = archive.subarray(cursor + 46, cursor + 46 + nameLength);
+    const name = nameBytes.toString("utf8");
+
+    if (names.has(name)) {
+      throw new ZipError(`${name} appears twice in the archive`);
+    }
+    names.add(name);
+    if ((flags & FLAG_ENCRYPTED) !== 0) {
+      throw new ZipError(`${name} is encrypted, which an export never is`);
+    }
+    total += uncompressedSize;
+    if (uncompressedSize > maxEntryBytes || total > maxTotalBytes) {
+      throw new ZipError(
+        `${name} would take the archive past the limit of ${maxEntryBytes} bytes an entry, ${maxTotalBytes} in all`,
+      );
+    }
 
     if (localOffset + 30 > archive.length || archive.readUInt32LE(localOffset) !== LOCAL_HEADER) {
       throw new ZipError(`${name} has no local header where the directory says it does`);
     }
     const localNameLength = archive.readUInt16LE(localOffset + 26);
     const localExtraLength = archive.readUInt16LE(localOffset + 28);
+    const localName = archive.subarray(localOffset + 30, localOffset + 30 + localNameLength);
+    if (!localName.equals(nameBytes)) {
+      throw new ZipError(`${name} is called ${localName.toString("utf8")} in its local header`);
+    }
     const dataStart = localOffset + 30 + localNameLength + localExtraLength;
     const compressed = archive.subarray(dataStart, dataStart + compressedSize);
     if (compressed.length !== compressedSize) {
@@ -191,7 +231,9 @@ export function readZip(bytes: Uint8Array): ZipEntry[] {
       data = Buffer.from(compressed);
     } else if (method === METHOD_DEFLATED) {
       try {
-        data = inflateRawSync(compressed);
+        // One byte more than declared is enough to know it lies, and it is
+        // where inflating stops.
+        data = inflateRawSync(compressed, { maxOutputLength: uncompressedSize + 1 });
       } catch (error) {
         throw new ZipError(
           `${name} does not decompress: ${error instanceof Error ? error.message : String(error)}`,
@@ -202,7 +244,9 @@ export function readZip(bytes: Uint8Array): ZipEntry[] {
     }
 
     if (data.length !== uncompressedSize) {
-      throw new ZipError(`${name} is ${data.length} bytes, the directory says ${uncompressedSize}`);
+      throw new ZipError(
+        `${name} is ${data.length > uncompressedSize ? "larger than" : `${data.length} bytes, not`} the ${uncompressedSize} bytes the directory declares`,
+      );
     }
     if (crc32(data) !== checksum) {
       throw new ZipError(`${name} fails its CRC check: the archive is damaged or altered`);

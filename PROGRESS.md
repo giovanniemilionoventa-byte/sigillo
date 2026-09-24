@@ -65,16 +65,369 @@ dopo ogni fase in attesa di autorizzazione. Niente PostgreSQL, multi-tenancy, Sa
 |---|---|---|---|
 | 1 | Revisione tecnica pre-produzione | fatto | Rapporto in `docs/REVISIONE-FASE-1.md`: 20 punti, 5 di gravità alta, i principali riprodotti con codice reale; nessuna modifica al codice |
 | 2 | Correzione dell'associazione tra richiesta e firma (signer) | fatto | Punto 1 della revisione. Ogni richiesta al signer ha un `id` che il signer ripete nella risposta: una risposta arrivata dopo il timeout viene ignorata e non può più completare la richiesta successiva. Il server verifica ogni firma (ricevute e checkpoint) sui byte esatti prima di scrivere. Bug riprodotto con il signer reale congelato (SIGSTOP/SIGCONT); 24 test nuovi, 565 verdi |
-| — | Limitazione dei tentativi di accesso | todo | Era la fase 2 del piano iniziale; il committente ha anteposto la correzione del signer. Numero da ridefinire |
 | 3 | Controllo automatico delle dipendenze | fatto | `pnpm audit:deps` e workflow `dependency-audit.yml` (push, PR, ogni lunedì). Node: produzione bloccante a qualsiasi gravità, sviluppo da `high` in su; Python: `pip-audit` su SDK con tutti gli extra, esempio e demo. Guida in `docs/DEPENDENCY-AUDIT.md`. Il controllo ha trovato 7 avvisi nella catena di sviluppo (vitest 2.1.9 → vite/esbuild): vitest aggiornato a 4.1.11, ora 0 avvisi. Da confermare: `pip-audit` come strumento solo-CI |
 | 4 | Dati personali nei campi testuali | fatto | Analisi su 169 ricevute reali (demo CV + esempio): unico dato personale in chiaro `on_behalf_of` = `elena.rizzo`. Corretto senza decisioni di prodotto: Unicode sempre valido (il taglio OTLP spezzava le emoji, e il cross-check Python non riusciva a calcolare l'impronta), `model.provider`/`digest` limitati a 256, affermazione falsa in `SECURITY.md`. Nuovo `docs/DATA-INVENTORY.md`; proposte D1–D7 in `docs/PROPOSTA-FASE-4.md`, da approvare |
-| 5 | Hardening della configurazione di produzione | todo | |
-| 6 | Test di manomissione | todo | |
-| 7 | Test completo di esportazione e verifica | todo | |
-| 8 | Preparazione integrazione con un agente reale | todo | |
-| 9 | Prima integrazione reale | todo | |
-| 10 | Preparazione alla produzione | todo | |
-| 11 | Revisione finale prima del pilot | todo | |
+| 5 | Hardening della configurazione di produzione, e limitazione dei tentativi di accesso | fatto | Punti 2, 10, 11, 12, 15, 16 corretti; 20 in parte. Limite ai tentativi di password (per indirizzo, blocco crescente, risposta identica a una password sbagliata) e alle API key sbagliate; revoca delle chiavi efficace sul server già avviato; scrypt asincrono; riconnessione al signer e `/healthz` che lo controlla; cookie `Secure`, sessioni revocabili, `no-store`, controllo di `Origin`, logout in POST; impostazioni numeriche validate all'avvio; container in sola lettura, senza capability, `no-new-privileges`, limiti di risorse, log a rotazione; password in un file segreto (assente da `docker compose config`, provato); log senza query string né segreti (provato con Fastify e con Caddy reale). Tre difetti nuovi trovati: la cartella dei backup non scrivibile nell'immagine, Caddy che non parte con `SIGILLO_TLS_EMAIL` vuota, la password stampata da `docker compose config`. 636 test verdi |
+| 6 | Test di manomissione | fatto | Punti 3, 8, 17 corretti. 17 scenari di manomissione (i 10 richiesti più 7) su un fascicolo vero, ciascuno verificato con il `sigillo-verify` reale; due scenari passano da soli e vengono presi solo con le nuove opzioni `--key-id` (chiave attesa) e `--previous` (export precedente). Ora vera della marca (`genTime`) nel verificatore, nel PDF, in VERIFY.md e nella pagina web. Lettore ZIP più severo. Nuova sezione "What sigillo cannot detect" in `SECURITY.md`; corrette le affermazioni false in `SECURITY.md`, `FORMAT.md`, VERIFY.md e nel PDF. 665 test |
+| 7 | Test completo di esportazione e verifica | fatto | Punti 4 e 9 corretti; punto 20 (`from_ts`/`to_ts`) corretto. Test end-to-end su tre giorni: signer vero, sistema e chiave dalla pagina web, OTLP e API nativa, checkpoint dal pulsante con marca RFC 3161 vera via HTTP, export dell'intera catena, di un giorno e da CLI, tutti verificati dal `sigillo-verify` reale con `--tsa-ca`, `--key-id`, `--previous` e `doc`. 678 test |
+| 8 | Preparazione integrazione con un agente reale | fatto | Proposta in `docs/PROPOSTA-FASE-8.md`, nessuna modifica al codice. Misurato il traffico dell'SDK: la demo CV manda al server 244 KB in chiaro per 160 span, nomi dei candidati e testo dei CV compresi. Proposta D6 (impronte calcolate nell'SDK, elenco di attributi da tenere); fattibilità verificata: su 2 005 stringhe, impronte Python e TypeScript identiche. Rischi dell'integrazione reale e sette domande (A–G) per il committente |
+| 9 | Prima integrazione reale | **sospesa, in attesa** | Parte solo dopo l'approvazione della fase 8: servono le risposte alle domande A–G di `docs/PROPOSTA-FASE-8.md` (quale agente, chi gestisce il server, D6, deduplicazione, `on_behalf_of`, marca temporale) |
+| 10 | Preparazione alla produzione | fatto | `docs/DEPLOY-PRODUZIONE.md`: dal clone a un fascicolo verificato su un VPS con dominio e HTTPS, con checklist di 33 righe (comando e risultato atteso). I risultati attesi sono copiati da esecuzioni reali senza Docker (FreeTSA vera compresa). **La checklist resta da eseguire su una macchina vera: Docker qui non gira.** Corretti anche i punti 6 (batch OTLP atomico), 7 (storico delle chiavi di firma) e 13 (scritture fuori coda). 684 test |
+| 11 | Revisione finale prima del pilot | fatto | `docs/REVISIONE-FASE-11.md`: tabella prima/dopo dei 20 punti (15 corretti, 2 mitigati, 1 rimandato alla fase 9, 2 accettati), difetti nuovi, cosa resta al committente, valutazione complessiva |
+
+Il 2026-09-24 il committente ha mandato il prompt delle fasi 5-11, trascritto in fondo a `SPEC.md`
+("Fasi 5-11 (pre-pilot)"). Il testo arrivato è incompleto: mancano le sezioni delle fasi 7, 8 e 9.
+Per quelle fasi vale la definizione della tabella 3.2 di `docs/RAPPORTO-SESSIONE-2026-09-24.md`,
+riportata anche in `SPEC.md`. Le fasi procedono senza conferma tra l'una e l'altra; la fase 9 non si
+esegue in questa sessione.
+
+## Fasi 5-11 — note di lavoro (dal 2026-09-24)
+
+### Fase 5 — Hardening della configurazione di produzione (fatto)
+
+Base: `main` @ `a5b6058`. Test Vitest: da 579 a **636** (più 1 saltato dove `caddy` non è
+installato). Test Python SDK e demo: 26 e 17, invariati e verdi. `smoke-dist` e cross-check
+Python: verdi.
+
+**Difetti corretti, ciascuno riprodotto prima con un test che falliva.**
+
+| Punto | Difetto | Test che lo riproduce (componenti reali) |
+|---|---|---|
+| 2 (ALTA) | La revoca da CLI non aveva effetto sul server già avviato | `api-keys.test.ts`: due `ApiKeyStore` sullo stesso file SQLite; la revoca fatta dal secondo ora vale anche per il primo, che aveva il token in cache |
+| 10 | Uno scrypt sincrono (~55 ms) per ogni API key sbagliata bloccava il processo | `api-keys.test.ts`: durante la verifica di un token sbagliato l'event loop deve girare almeno una volta (con lo scrypt sincrono: zero volte) |
+| 11 | Il server non si riconnetteva al signer riavviato; `/healthz` diceva sempre "ok" | `signer-client.test.ts`: signer reale ucciso e riavviato sullo stesso socket (stessa chiave → firma di nuovo; chiave diversa → rifiuto esplicito); `server-hardening.test.ts`: `/healthz` 503 finché il signer manca |
+| 12 | Cookie senza `Secure`, sessione non revocabile, pagine senza `no-store`, logout in GET, nessun controllo di `Origin` | `ui-security.test.ts`, 12 test sul server Fastify vero |
+| 16 | `SIGILLO_CHECKPOINT_MINUTES=abc` → `setInterval(NaN)`, cioè ogni millisecondo | `cli-config.test.ts`: la CLI vera, in un processo a parte, con 7 valori sbagliati: esce con 1 e nomina la variabile, prima di cercare il signer |
+| 15 | Container senza hardening; cartella dei backup inesistente nell'immagine (Docker l'avrebbe creata di root, e `backup.sh`, che gira come `node`, non avrebbe potuto scrivere) | `deploy-config.test.ts`: `docker compose config` risolto davvero; confronto tra volumi montati e cartelle create nel Dockerfile. **Trovato leggendo i file, non riprodotto con Docker**, che qui non gira |
+| nuovo | `docker compose config` stampava la password dell'amministratore (e quella della TSA) | riprodotto con `docker compose config` vero: prima 2 righe, ora 0. Stesso controllo in `deploy-config.test.ts`, che gira in CI |
+| nuovo | Con `SIGILLO_TLS_EMAIL` vuota (il file lo permetteva) Caddy rifiuta tutta la configurazione e non parte | riprodotto con i binari reali di Caddy 2.10.2 e 2.11.4 (`caddy validate`); ora Compose si ferma prima e nomina la variabile |
+| 20 (parte) | Il 500 di Fastify rimandava il messaggio interno; `/api/v1/receipts` rispondeva 400 col signer irraggiungibile; i log contenevano le query string | `server-hardening.test.ts`: 503 (ritentabile) col signer spento, `internal error` e niente altro per un 500, log controllato riga per riga |
+
+**Limitazione dei tentativi di accesso** (richiesta del committente, ex fase 2). Funzione nuova
+con test propri, non un difetto:
+- dopo `SIGILLO_LOGIN_MAX_FAILURES` (5) password sbagliate in `SIGILLO_LOGIN_WINDOW_MINUTES`
+  (15), l'indirizzo è bloccato per `SIGILLO_LOGIN_LOCKOUT_MINUTES` (5); ogni blocco successivo
+  raddoppia fino a `SIGILLO_LOGIN_LOCKOUT_MAX_MINUTES` (60). Un accesso riuscito azzera tutto;
+- durante il blocco la password non viene nemmeno controllata, e la risposta è **identica** a
+  quella di una password sbagliata: stesso stato (401), stessa pagina, stesso testo ("Accesso non
+  riuscito. Controlla la password; dopo troppi tentativi sbagliati l'accesso resta sospeso per
+  qualche minuto."), nessun `Retry-After`. Chi attacca non può sapere se è bloccato, e nessun
+  tentativo fatto durante il blocco può rivelargli la password giusta;
+- test: N+1 tentativi bloccati anche con la password giusta; risposta bloccata identica byte per
+  byte a quella sbagliata; sblocco esattamente allo scadere, con la password giusta accettata al
+  primo colpo; un indirizzo bloccato non blocca gli altri; `X-Forwarded-For` ignorato se non si è
+  detto di fidarsi di un proxy (altrimenti basterebbe cambiarlo a ogni tentativo);
+- l'indirizzo è quello vero solo dietro Caddy: `SIGILLO_TRUST_PROXY=uniquelocal` nel Compose.
+  Fastify 5.12 rifiuta ormai i conteggi di hop, quindi si indicano le reti fidate; verificato con
+  Caddy reale che un `X-Forwarded-For` falso mandato dal client viene sostituito;
+- stesso meccanismo per le API key sbagliate (`SIGILLO_INGEST_MAX_FAILURES`, 20 al minuto): durante
+  il blocco non si calcola nessuno scrypt, ma un agente la cui chiave è già stata verificata
+  continua a lavorare anche dallo stesso indirizzo.
+
+Limite noto, accettato: i contatori stanno in memoria, un riavvio li azzera. Chi attacca da
+molti indirizzi diversi ha 5 tentativi per indirizzo ogni 15 minuti; con una password di 12+
+caratteri casuali resta impraticabile, e la checklist raccomanda `openssl rand -base64 24`.
+
+**Docker e Caddy** (`deploy/`):
+- tutti e tre i servizi: `read_only`, `no-new-privileges`, `cap_drop: ALL`, limiti di CPU,
+  memoria e processi, log `json-file` con `max-size 10m` × 5 file. Server e signer girano già come
+  `node`; Caddy resta root (la sua immagine lo richiede per scrivere certificati) ma con la sola
+  capability `NET_BIND_SERVICE`;
+- immagine Node fissata per digest; Caddy fissato alla versione `2.11.4-alpine` (l'ultima
+  pubblicata). Il digest di Caddy non l'ho potuto leggere: Docker Hub ha risposto 429 (limite di
+  richieste anonime dall'indirizzo condiviso di questo ambiente) — resta un passo della checklist
+  della fase 10;
+- Caddy: aggiunte `Permissions-Policy`, `Cross-Origin-Opener-Policy`,
+  `Cross-Origin-Resource-Policy` a quelle che c'erano già (`X-Content-Type-Options`,
+  `X-Frame-Options`, `Referrer-Policy`, CSP, HSTS); log senza query string;
+- password dell'amministratore in `deploy/secrets/admin_password`, montata come secret di
+  Compose; `.env` non contiene più segreti. Il file locale `docker-compose.local.yml` (la prova
+  sul proprio computer) tiene la password in `.env` come prima, ed è scritto nel file.
+
+**Documentazione**: `SECURITY.md` (autenticazione, nuova sezione "Secrets and logs" con i comandi
+eseguiti e i risultati, checklist "Before going to production"), `API.md` (401/503/500, `/healthz`,
+tabella delle variabili), `PROVA-LOCALE.md` (cosa succede dopo 5 password sbagliate).
+
+**Cosa non è verificato**: Docker non gira in questo ambiente (il demone non si può avviare),
+quindi `read_only`, i limiti, i secret e i permessi dei volumi sono controllati solo su
+`docker compose config`. Il primo `docker compose up` su una macchina vera è il vero collaudo:
+è nella checklist della fase 10.
+
+**Annotato per le fasi successive**
+- Punto 13 (scritture fuori dalla coda: `recordTimestamp`, emissione di chiavi dalla UI) → fase 10.
+- Punto 20, resto (`LIKE` senza escape nella ricerca; verificatore che non controlla
+  `range.from_ts`/`to_ts` e che elenca come "verified" anche senza openssl) → fasi 6 e 7.
+- Il vecchio elenco "Checklist di verifica finale M9" in fondo a questo file usa ancora la
+  password in `.env`: la fase 10 lo sostituisce con `docs/DEPLOY-PRODUZIONE.md`.
+
+### Fase 6 — Test di manomissione (fatto)
+
+Test Vitest: da 636 a **664** (più 1 saltato dove `caddy` non è installato).
+
+**Come sono fatti i test** (`apps/server/test/tamper.test.ts`). Il fascicolo di partenza è
+prodotto come lo produce il server: SQLite reale, firme Ed25519 reali, un checkpoint reale e una
+marca temporale RFC 3161 **vera**. La marca viene da un'autorità locale costruita con openssl
+(`test/helpers/local-tsa.ts`: una CA e un certificato TSA con `extendedKeyUsage=timeStamping`),
+che `openssl ts -verify` controlla come quelle di FreeTSA: niente rete, niente mock. Ogni
+scenario altera una copia del fascicolo e la passa al comando `sigillo-verify` vero, in un
+processo a parte, con `--tsa-ca`. Lo scenario passa solo se il comando esce con 1 e nomina il
+controllo e il punto esatto.
+
+| # | Scenario | Rilevato da |
+|---|---|---|
+| 1 | un byte alterato in una ricevuta | `chain-link` alla riga successiva |
+| 2 | ricevuta rimossa | `sequence` |
+| 3 | due ricevute scambiate | `sequence` |
+| 4 | ricevuta duplicata | `sequence` ("appears twice") |
+| 5 | firme sostituite con quelle di un'altra chiave valida (pubblicata nel manifest dal falsario, checkpoint e marca tolti) | **da solo passa**; con `--key-id` della chiave vera: `key` alla prima ricevuta rifirmata |
+| 6 | `prev_hash` alterato e nient'altro | `chain-link` |
+| 7 | radice Merkle del checkpoint alterata | `checkpoint-signature` |
+| 7b | idem, ma rifirmato con la chiave vera (attaccante che usa il socket del signer) | `merkle-root` |
+| 8 | prova di inclusione falsificata | `inclusion-proof` |
+| 9 | token di marca sostituito con uno vero della stessa autorità su un'altra impronta | `timestamp` ("the token is over …") |
+| 10 | manifest senza il `key_id` (o con un'altra chiave valida al suo posto) | `manifest` / `key` |
+| 11 | ultime 3 ricevute tagliate, manifest corretto di conseguenza (punto 3b) | **da solo passa**; con `--previous`: `previous-export` |
+| 12 | fascicolo interamente falso sotto una chiave nuova, marca compresa (punto 3c) | **da solo passa**; con `--key-id`: `key` |
+| 13 | storia riscritta e rifirmata con la chiave vera dopo la consegna di un export | **da solo passa**; con `--previous`: `previous-export` alla prima ricevuta cambiata |
+| 14 | token di marca tolto dallo zip | `timestamp` |
+| 15 | secondo `receipts.jsonl` infilato nello zip | lettore ZIP: "appears twice" (uscita 2) |
+| 16 | ricevuta con una firma vera della chiave giusta, ma di un'altra ricevuta | `signature` |
+
+**Difetti corretti** (ciascuno riprodotto prima con un test che falliva):
+- **Punto 3 (ALTA).** Le affermazioni false sono corrette: "Re-signing a forged chain requires
+  the key" (`SECURITY.md`: durante una compromissione il socket del signer firma qualunque cosa),
+  "removing the last ones is caught" (`SECURITY.md`, `FORMAT.md`: vero solo se il manifest non è
+  stato ritoccato), "Nothing here asks you to trust…" e "any removal breaks a hash" (VERIFY.md),
+  "nothing can be … removed" (PDF). Nel verificatore due opzioni nuove, che portano dentro la
+  verifica ciò che un archivio non può fornire da sé: `--key-id` (ripetibile) e `--previous`.
+  Senza `--key-id` il verificatore ora avvisa che le chiavi vengono dal manifest dell'archivio.
+- **Punto 8.** `genTime` è letto dal token e stampato dal verificatore (via openssl), con un avviso
+  se si discosta di più di un'ora dall'ora del checkpoint; il server lo legge con un piccolo lettore
+  DER (`apps/server/src/timestamp/gentime.ts`) e lo mostra nel PDF, in VERIFY.md, nella pagina dei
+  checkpoint e nella verifica di un documento. Le due letture sono confrontate su token veri.
+- **Punto 17.** Il lettore ZIP ora rifiuta nomi duplicati, nome locale diverso da quello della
+  directory centrale, voci cifrate, voci oltre 512 MiB o un totale oltre 1 GiB (prima di
+  decomprimere), e non decomprime mai oltre la dimensione dichiarata. I flag dei data descriptor
+  restano accettati: gli archivi rifatti con gli strumenti di sistema (per esempio quello del Mac)
+  li usano.
+- **Punto 20, una parte.** Il verificatore elencava come "verified" anche i controlli non fatti
+  (nessun token, openssl assente, radici non ricostruibili): ora li elenca a parte, sotto
+  "not verified".
+
+**`SECURITY.md`, nuova sezione "What sigillo cannot detect"**, richiesta dal committente: la
+sorgente che tace (solo semaforo giallo, mai "manomissione"), la sorgente che omette, i dati falsi
+ben formati mandati con la propria chiave legittima, la chiave API rubata, `ts_event`, i duplicati
+OTLP, ciò che un server compromesso può riscrivere prima della marca successiva o sostituire in
+blocco, l'orologio del server, e ciò che un singolo archivio non può dire di sé (chiave, coda
+tagliata, autorità).
+
+**Dimensione del verificatore** (regola 5 di `CLAUDE.md`): `packages/verifier/src` passa da 911
+a 1122 righe, `core/zip.ts` da 216 a 260; in tutto circa +250 righe. Cosa hanno comprato:
+`--key-id` e `--previous` (le uniche difese contro i due falsi del punto 3 che passavano la
+verifica), `genTime` (la prova del "quando"), il lettore ZIP che non si fa ingannare né esaurire
+la memoria, e l'elenco onesto di ciò che non è stato verificato.
+
+**Da fare nelle fasi successive**
+- Fase 7: il verificatore non controlla `range.from_ts`/`to_ts` del manifest (punto 20); e
+  l'export per date senza prove di inclusione (punto 4) oggi produce checkpoint "scollegati", di
+  cui il verificatore non dice nulla.
+
+### Fase 7 — Test completo di esportazione e verifica (fatto)
+
+Test Vitest: da 664 a **678**.
+
+**Difetti corretti** (ciascuno riprodotto prima con un test che falliva):
+- **Punto 4 (ALTA).** Un export per date non portava nessuna prova di inclusione: le marche
+  temporali nell'archivio non erano legate alle ricevute, e il verificatore non lo diceva.
+  Riprodotto in `archive.test.ts` (checkpoint con `proofs: []`). Ora l'export riceve le impronte
+  dell'intera catena (`store.readReceiptHashes`) e costruisce le prove della prima e dell'ultima
+  ricevuta della finestra anche se la finestra non parte da 0. Porta solo i checkpoint utili:
+  quelli che coprono almeno una ricevuta della finestra, fino al primo che le copre tutte. Il
+  formato dell'archivio non cambia: `proofs` passa da vuoto a pieno.
+- **Decisione ancora aperta del committente** (fase 1): un checkpoint senza alcun legame con le
+  ricevute deve dare avviso o errore? Ho applicato la raccomandazione, cioè l'**avviso**. Il
+  verificatore conta questi checkpoint (`unlinked_checkpoints`) e lo scrive due volte: tra le
+  note, e sotto "not verified" ("prove nothing about this export"). Così gli archivi prodotti
+  prima di oggi restano verificabili. Trasformarlo in errore è una riga in `verify.ts`.
+- **Punto 9.** Con l'orologio del server tornato indietro, l'export per date selezionava `seq` 1 e
+  3 saltando il 2, e l'archivio falliva la propria verifica. Riprodotto in `store.test.ts` con
+  SQLite reale (`[1, 3]` invece di `[1, 2, 3]`). Ora le date scelgono solo il primo e l'ultimo
+  `seq`, e si esporta tutto ciò che sta in mezzo.
+- **Punto 20, `from_ts`/`to_ts`.** Il periodo dichiarato nel manifest, che il PDF stampa, non
+  veniva controllato. Ora deve coincidere con `ts_received` della prima e dell'ultima ricevuta.
+
+**Il test completo** (`apps/server/test/export-e2e.test.ts`) percorre tre giorni simulati,
+senza nulla di finto tranne l'orologio:
+- un signer vero su socket con file di chiave, e il server costruito come lo costruisce `serve`;
+- il sistema `selezione-cv` e la sua chiave creati dalla pagina web;
+- ogni giorno spazi OTLP (uno con l'impronta di un curriculum) e ricevute dall'API nativa;
+- i checkpoint dei primi due giorni presi con il pulsante "Sigilla adesso", ancorati via HTTP da
+  un'autorità RFC 3161 vera (openssl locale); il terzo giorno resta senza marca;
+- quattro export, tutti verificati dal `sigillo-verify` reale:
+  - l'intera catena dalla pagina web, con `--tsa-ca` e `--key-id`: 10 ricevute, 2 checkpoint,
+    2 radici ricostruite, 2 token `verified` con l'ora attestata;
+  - un solo giorno scelto per data: 3 ricevute, 1 checkpoint, **2 prove di inclusione**, nessun
+    checkpoint scollegato;
+  - l'intera catena esportata più tardi con `--previous` sul giorno: accettata; al contrario,
+    rifiutata;
+  - l'export da CLI (`sigillo-server export`) mentre il server gira;
+- `sigillo-verify doc` trova il curriculum, e non lo trova più con una lettera cambiata;
+- nessun contenuto in chiaro (nome del candidato, argomenti, esito) compare nell'archivio.
+
+### Fase 8 — Preparazione dell'integrazione con un agente reale (fatto)
+
+Documento: `docs/PROPOSTA-FASE-8.md`. Nessuna modifica al codice, come previsto per una fase di
+analisi e proposta.
+
+- **Misura del traffico reale dell'SDK.** Ho puntato l'esempio LangGraph e la demo CV su un server
+  che registra ogni richiesta OTLP, decodificata con la libreria ufficiale. La demo manda 244 015
+  byte in 160 span. Dentro ci sono `input.value` e `output.value` (120 000 caratteri), i metadati
+  di LangGraph, le descrizioni dei tool, i messaggi del modello, e il nome di un candidato, le
+  intestazioni dei CV e `elena.rizzo`: tutto in chiaro. Il server ne usa pochi identificativi e
+  le impronte di ingresso e uscita. È il punto 5 della revisione, ora quantificato.
+- **Proposta D6.** Un filtro nell'SDK sostituisce ingresso e uscita con le loro impronte
+  (`sigillo.input.sha256`, `sigillo.output.sha256`) e lascia partire solo gli attributi di un
+  elenco. Il server accetta le impronte già calcolate. Le ricevute restano identiche byte per
+  byte, il formato non cambia e gli altri strumenti di osservabilità non sono toccati.
+- **Fattibilità verificata.** Su 2 005 stringhe (casuali, con caratteri di controllo, emoji,
+  U+2028/2029, U+FEFF, bidirezionali, NUL), l'impronta calcolata in Python con
+  `sha256(json.dumps(s, ensure_ascii=False))` coincide sempre con `hashCanonicalJson` di
+  `packages/core`.
+- **Rischi dell'integrazione reale**: server irraggiungibile (le azioni perse appaiono come
+  silenzio), duplicati dopo un ritentativo (punto 6), span non riconosciuti contati ma non
+  visibili, orologi, versioni della strumentazione.
+- **Sette domande per il committente** (A–G): quale agente; dove gira e chi gestisce il server;
+  approvazione di D6; rifiuto degli span con contenuto; deduplicazione; `on_behalf_of`
+  pseudonimo; marca temporale per il pilot. Piano della fase 9 in cinque passi, con criteri di
+  accettazione.
+
+### Fase 9 — Prima integrazione reale (sospesa, in attesa)
+
+Non eseguita, come previsto dal prompt: aspetta le risposte alle domande A–G di
+`docs/PROPOSTA-FASE-8.md`.
+
+### Fase 10 — Preparazione alla produzione (fatto)
+
+Test Vitest: da 678 a **684**. Test Python SDK (26) e demo (17), `smoke-dist` e cross-check: verdi.
+
+**La guida `docs/DEPLOY-PRODUZIONE.md`**, in italiano, per chi non ha mai visto il progetto:
+server, DNS, firewall, orologio, Docker, configurazione, password come segreto, costruzione,
+chiave (con la copia cifrata fuori dal server e la prova che si apre), avvio, controlli
+dall'esterno, primo sistema, agente di esempio dal portatile, pagina web e blocco dei tentativi,
+checkpoint, export, verifica fuori dal server con `--tsa-ca` e `--key-id`, prova di
+manomissione, backup notturno e copia fuori dal server, prova di ripristino, aggiornamenti,
+cambio o ripristino della chiave, marca qualificata, tabella dei problemi. In fondo, una
+**checklist di 33 righe**, con il comando e il risultato atteso per ciascuna.
+
+**Come sono stati ottenuti i risultati attesi.** Senza Docker, ho eseguito davvero, con gli
+eseguibili compilati:
+- `keygen`, `serve` con la password letta da file, `system create`, `key create`;
+- l'agente d'esempio attraverso l'SDK;
+- `checkpoint` con **FreeTSA vera** ("1 new checkpoint(s), 1 anchored, 0 still waiting");
+- `export` e la verifica con il certificato di FreeTSA e `--key-id` (token `verified`, con
+  l'ora attestata);
+- il blocco dopo 5 password sbagliate (`401` ×5, poi `401` anche con quella giusta);
+- `Cache-Control: no-store`, il backup e la lettura del backup.
+
+Le uscite scritte nella guida sono copiate da lì. La parte Docker (volumi, secret, `read_only`,
+`docker compose run --entrypoint tar` per la copia della chiave, `docker cp` verso stdout) è
+controllata solo sulla documentazione dei comandi e su `docker compose config`.
+
+> **Da eseguire su una macchina vera: la checklist di `docs/DEPLOY-PRODUZIONE.md`.** È il
+> collaudo che manca. Se una riga dà un risultato diverso da quello scritto, va annotato e
+> corretto.
+
+**Difetti corretti** (ciascuno riprodotto prima con un test che falliva, componenti reali):
+- **Punto 6, la parte che non richiedeva decisioni.** Gli span di un batch OTLP venivano scritti
+  uno per volta. Riprodotto in `batch-atomic.test.ts`: signer reale fermato dopo la prima firma
+  di un batch da 3; il server risponde 503, ma la prima ricevuta resta scritta (`[0, 1]`), e il
+  ritentativo dell'esportatore la duplica. Ora il batch sta in una sola transazione: tutto o
+  niente, e il ritentativo lo scrive una volta sola. **Resta la decisione E della fase 8:** la
+  deduplicazione per `trace_id`/`span_id`, che serve quando il server ha scritto ma la risposta
+  si è persa in rete.
+- **Punto 7.** Dopo un cambio di chiave, l'export pubblicava solo la chiave del momento e falliva
+  ("key … which the manifest does not publish"); il semaforo diventava rosso. Riprodotto in
+  `key-rotation.test.ts` con due chiavi Ed25519 reali sullo stesso database. Ora c'è una tabella
+  append-only `signing_keys`: ogni export pubblica tutte le chiavi, e il monitor verifica ogni
+  ricevuta con la sua. Limite: una chiave cambiata **prima** di questa versione non è nella
+  tabella, perché la sua chiave pubblica non era salvata da nessuna parte.
+- **Punto 13.** Due casi, riprodotti in `write-queue.test.ts`:
+  - una marca temporale registrata mentre una ricevuta aspettava la firma entrava nella sua
+    transazione, e andava persa quando questa falliva;
+  - una chiave API emessa dalla pagina web, nello stesso momento, bloccava l'intero processo
+    per 5 secondi e poi falliva con 400.
+
+  Ora entrambe passano dalla coda di scrittura.
+
+`SECURITY.md` (storico delle chiavi) e `README.md` (rimando alla guida, password come segreto)
+sono aggiornati.
+
+### Fase 11 — Revisione finale prima del pilot (fatto)
+
+Documento completo: `docs/REVISIONE-FASE-11.md`.
+
+#### Riepilogo finale della sessione del 24 settembre 2026 (fasi 5-11)
+
+**I 20 problemi della revisione della fase 1, oggi**
+
+| Stato | Punti |
+|---|---|
+| corretto | 1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 20 |
+| mitigato (resta una tua decisione o una verifica su macchina vera) | 6 (deduplicazione), 15 (Docker mai eseguito) |
+| rimandato alla fase 9, prima del pilot, con soluzione pronta | 5 (contenuti in chiaro verso il server: proposta D6) |
+| accettato come rischio noto, documentato | 18 (dati nei campi testuali, decisioni D1–D5), 19 (impronte prevedibili, D7 dopo il pilot) |
+
+Dei cinque problemi gravi, quattro sono corretti (1, 2, 3, 4). Il quinto (5) ha
+la soluzione progettata e verificata sulla carta, e aspetta la tua approvazione.
+
+**Difetti nuovi trovati e corretti in queste fasi:**
+- `docker compose config` stampava le password;
+- Caddy non partiva con l'email vuota;
+- la cartella dei backup non era scrivibile.
+
+Tutti e tre vengono da una configurazione Docker mai eseguita.
+
+**Cosa è pronto**
+- Nucleo crittografico e verificatore: nessun difetto trovato nel nucleo.
+  Due verifiche nuove per ciò che un archivio non può provare da solo:
+  `--key-id` e `--previous`.
+- Verifica messa alla prova:
+  - 17 scenari di manomissione, ciascuno controllato con il verificatore vero;
+  - un percorso completo di tre giorni, con un'autorità di marcatura vera (openssl
+    locale nei test, FreeTSA nella prova manuale).
+- Server: limiti ai tentativi, sessioni revocabili, riconnessione al signer, batch
+  atomici, storico delle chiavi, log puliti, configurazione validata.
+- Deploy indurito; guida `docs/DEPLOY-PRODUZIONE.md` con checklist di 33 righe.
+- `SECURITY.md`: cosa sigillo non può rilevare, e la checklist prima della
+  produzione.
+- 684 test Node (erano 579), più i 26 dell'SDK Python e i 17 della demo. CI verde.
+
+**Cosa resta esplicitamente a tuo carico**
+1. **Docker reale**: mai eseguito qui (il demone non si avvia in questo ambiente).
+2. **Deploy su VPS**: eseguire la checklist di `docs/DEPLOY-PRODUZIONE.md` su un
+   server vero, con dominio e HTTPS. È il collaudo di 1 e 2 insieme.
+3. **Marca temporale qualificata eIDAS**: non configurata; FreeTSA non è
+   qualificata. Per il pilot va accettata per iscritto, oppure sostituita.
+
+Più le decisioni elencate in `docs/REVISIONE-FASE-11.md`:
+- le domande A–G della fase 8, che sbloccano la fase 9;
+- avviso o errore per un checkpoint scollegato (punto 4);
+- chi custodisce la copia cifrata della chiave;
+- D1–D5 e D7.
+
+**La valutazione complessiva cambia?** Sì, in due direzioni:
+- **in meglio**: le garanzie promesse reggono sotto prova, e nessuna correzione
+  ha toccato il formato o le regole di verifica;
+- **più precisa sui limiti**: un fascicolo da solo non dimostra né di chi è la
+  chiave né che non manchi la coda. Tre cose esterne vanno trattate come parte
+  del prodotto:
+  - il `key_id` pubblicato per un altro canale;
+  - gli export consegnati nel tempo, con le loro marche temporali;
+  - un intervallo tra checkpoint breve (suggerisco 15 minuti per il pilot).
+
+Il rischio principale del pilot oggi è **operativo**, non crittografico: il
+Docker mai avviato, e il contenuto in chiaro verso il server finché D6 non è
+approvata.
 
 ## Note di sessione
 
@@ -1141,6 +1494,12 @@ sullo stesso nome, da `main` aggiornato (come da istruzioni), non impilato sulla
 mergiata.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
+
+> **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
+> non va più in `.env` ma nel file `deploy/secrets/admin_password`, e `SIGILLO_TLS_EMAIL` è
+> obbligatoria: seguendo alla lettera i comandi qui sotto `docker compose up` si ferma. La
+> procedura aggiornata è `docs/DEPLOY-PRODUZIONE.md` (fase 10). Questa sezione resta come
+> documento storico di M9.
 
 > Esiste anche una versione **per chi non usa il terminale**: `PROVA-LOCALE.md`, in italiano,
 > separata per Windows e Mac, che usa `deploy/docker-compose.local.yml` (senza dominio, senza

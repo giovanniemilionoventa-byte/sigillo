@@ -30,7 +30,7 @@ export type {
 } from "./export.js";
 
 export { createZip, crc32, readZip, ZipError } from "./zip.js";
-export type { ZipEntry } from "./zip.js";
+export type { ReadZipOptions, ZipEntry } from "./zip.js";
 
 export {
   canonicalCheckpointBytes,

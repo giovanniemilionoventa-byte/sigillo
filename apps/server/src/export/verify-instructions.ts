@@ -10,11 +10,14 @@ import type { CheckpointEntry, Manifest } from "@sigillo/core";
 export function verifyInstructions(
   manifest: Manifest,
   checkpoints: readonly CheckpointEntry[],
+  /** The time each token attests (genTime), by the token's file name, where it could be read. */
+  genTimes: ReadonlyMap<string, string> = new Map(),
 ): string {
   const key = manifest.keys[0];
   const anchored = checkpoints.filter((entry) => entry.timestamps.length > 0);
   const firstToken = anchored[0]?.timestamps[0];
   const firstRoot = anchored[0]?.checkpoint.root_hash;
+  const firstGenTime = firstToken === undefined ? undefined : genTimes.get(firstToken.file);
 
   return `# How to verify this file
 
@@ -22,8 +25,11 @@ This archive is a record of the actions of the AI system \`${manifest.system_id}
 covering positions ${manifest.range.from_seq} to ${manifest.range.to_seq} of its chain
 (${manifest.counts.receipts} receipts), exported on ${manifest.exported_at}.
 
-Nothing here asks you to trust the system that produced it. Every claim in
-\`report.pdf\` can be rechecked from the files beside it.
+Every claim in \`report.pdf\` can be rechecked from the files beside it. Two
+things cannot come from the archive itself, because whoever made the archive
+also made everything in it, and you need them from elsewhere (see "What this
+proves, and what it does not" below): **the identifier of the operator's signing
+key**, and, if you have one, **an export of the same chain you received earlier**.
 
 ## What is in the archive
 
@@ -65,6 +71,25 @@ sigillo-verify <this archive> --tsa-ca <authority-ca>.pem
 
 Without it, the tokens are checked only for the digest they carry, and the tool
 says so rather than reporting a pass.
+
+The keys are published in \`manifest.json\`, inside the archive. An archive
+fabricated from scratch would carry the forger's key there, and verify. Ask the
+operator for the identifier of their signing key through a channel that does
+not pass through this archive (a contract, a signed letter, their website), and
+give it to the verifier, which then refuses any signature by another key:
+
+\`\`\`sh
+sigillo-verify <this archive> --key-id ${key?.key_id ?? "<the operator's key_id>"}
+\`\`\`
+
+If you received an export of this chain before, give that too. The verifier
+then requires this one to contain it unchanged and to reach at least as far:
+receipts cut from the end, or history rewritten since, are caught this way and
+in no other.
+
+\`\`\`sh
+sigillo-verify <this archive> --previous <the earlier archive>
+\`\`\`
 
 ## Checking whether a specific document was used
 
@@ -141,20 +166,38 @@ openssl ts -verify -digest ${firstRoot} \\
   -in ${firstToken.file} -CAfile <authority-ca>.pem
 \`\`\`
 
-The token was issued by \`${firstToken.tsa_url}\`, at ${firstToken.obtained_at}.
-Obtain that authority's certificate from the authority itself, not from this
-archive.`
+The token was issued by \`${firstToken.tsa_url}\`. ${
+        firstGenTime === undefined
+          ? "Its attested time is"
+          : `The authority dates it ${firstGenTime}: that is`
+      } the \`Time stamp\` line of the output above, and it is the evidence of when this
+checkpoint existed. (The server received the token at ${firstToken.obtained_at}, by
+its own clock.) Obtain the authority's certificate from the authority itself,
+not from this archive.`
 }
 
 ## What this proves, and what it does not
 
-It proves that these receipts existed in this order at the times attested, and
-that none of them has been altered since. Any change to any of them, any
-removal, any reordering, breaks a hash or a signature and the verifier says
-where.
+It proves that the receipts covered by a timestamped checkpoint existed, in
+this order, no later than the time the authority attests, signed by the key in
+the manifest. A change to any receipt, a receipt removed from the middle, two
+receipts swapped or one repeated, breaks a hash, a signature or the sequence,
+and the verifier says where.
 
-It does not prove that everything the system did was recorded. That depends on
-the instrumentation of the system itself, which is outside what any log format
-can attest. If a record is missing, this file cannot tell you.
+It does not prove, on its own:
+
+- **that the key is the operator's.** A wholly fabricated archive, signed with
+  a new key and published in its own manifest, verifies. Check the key's
+  identifier with \`--key-id\`, as above.
+- **that nothing was cut from the end.** Removing the last receipts (and the
+  checkpoints over them) and adjusting the manifest leaves a shorter chain that
+  is still valid. Compare with an earlier export with \`--previous\`, or check
+  that the last checkpoint's attested time is recent enough.
+- **that receipts after the last timestamp are untouched.** Until a checkpoint
+  over them is timestamped, whoever controls the server can rewrite them, and
+  have them signed.
+- **that everything the system did was recorded.** That depends on the
+  instrumentation of the system itself, which is outside what any log format
+  can attest. If a record is missing, this file cannot tell you.
 `;
 }

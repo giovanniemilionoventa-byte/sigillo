@@ -5,13 +5,31 @@
 #           no way to read a key.
 #   caddy   terminates TLS. It is the only service on a public port.
 #
-# Before the first start:
+# Before the first start (docs/DEPLOY-PRODUZIONE.md has every step):
+#   install -d -m 700 secrets
+#   (write the web view's password, at least 12 characters, to secrets/admin_password)
 #   docker compose run --rm signer keygen --key /var/lib/sigillo-key/signer.key
 #   docker compose up -d
 #   docker compose exec server node dist/cli.js system create <system id>
 #   docker compose exec server node dist/cli.js key create <system id>
+#
+# Hardening, the same for every service unless noted: no new privileges, no
+# Linux capabilities, a read-only root filesystem (only volumes and a small
+# /tmp are writable), memory, CPU and process limits, and logs that rotate
+# instead of growing without end. The server and the signer run as the
+# unprivileged `node` user of their image.
+#
+# Secrets are files, not environment variables: the administrator password
+# reaches the server as /run/secrets/admin_password, so it appears neither in
+# `docker compose config` nor in `docker inspect`.
 
 name: sigillo
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
 
 services:
   signer:
@@ -27,6 +45,20 @@ services:
       - signer-socket:/run/sigillo
     # It speaks only over the socket: no network at all.
     network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128M
+          pids: 64
+    logging: *logging
     healthcheck:
       test: ["CMD", "test", "-S", "/run/sigillo/signer.sock"]
       interval: 10s
@@ -46,30 +78,66 @@ services:
       - sigillo-data:/var/lib/sigillo
       - signer-socket:/run/sigillo
       - backups:/var/lib/sigillo-backups
+    read_only: true
+    tmpfs:
+      # The verifier that checks each export before it is handed out writes
+      # timestamp tokens here for openssl to read.
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+          pids: 256
+    logging: *logging
+    secrets:
+      - admin_password
     environment:
       SIGILLO_DB: /var/lib/sigillo/sigillo.db
       SIGILLO_SIGNER_SOCKET: /run/sigillo/signer.sock
       SIGILLO_HOST: 0.0.0.0
       SIGILLO_PORT: 8080
       SIGILLO_CHECKPOINT_MINUTES: ${SIGILLO_CHECKPOINT_MINUTES:-60}
-      # In production this points at a qualified eIDAS provider, with
-      # TSA_USERNAME and TSA_PASSWORD where the provider authenticates.
+      SIGILLO_STALE_AFTER_MINUTES: ${SIGILLO_STALE_AFTER_MINUTES:-1440}
+      # The web view's password, from a file. Without it the view is not served.
+      SIGILLO_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      # Attempts at the password: after this many failures in the window, the
+      # client waits, and each further lockout doubles up to the maximum.
+      SIGILLO_LOGIN_MAX_FAILURES: ${SIGILLO_LOGIN_MAX_FAILURES:-5}
+      SIGILLO_LOGIN_WINDOW_MINUTES: ${SIGILLO_LOGIN_WINDOW_MINUTES:-15}
+      SIGILLO_LOGIN_LOCKOUT_MINUTES: ${SIGILLO_LOGIN_LOCKOUT_MINUTES:-5}
+      SIGILLO_LOGIN_LOCKOUT_MAX_MINUTES: ${SIGILLO_LOGIN_LOCKOUT_MAX_MINUTES:-60}
+      SIGILLO_INGEST_MAX_FAILURES: ${SIGILLO_INGEST_MAX_FAILURES:-20}
+      # Only Caddy can reach this port, over the compose network, which uses
+      # private addresses: believe its X-Forwarded-For and -Proto, so that the
+      # attempt limits see each client's own address and the session cookie
+      # is marked Secure.
+      SIGILLO_TRUST_PROXY: uniquelocal
+      SIGILLO_COOKIE_SECURE: "true"
+      # In production this points at a qualified eIDAS provider. Where the
+      # provider authenticates, set TSA_USERNAME here and give the password as
+      # a secret: uncomment tsa_password below and in `secrets:` at the end.
       TSA_URL: ${TSA_URL:-https://freetsa.org/tsr}
       TSA_USERNAME: ${TSA_USERNAME:-}
-      TSA_PASSWORD: ${TSA_PASSWORD:-}
-      # Without this the web view is not served at all.
-      SIGILLO_ADMIN_PASSWORD: ${SIGILLO_ADMIN_PASSWORD:?set an administrator password}
+      # TSA_PASSWORD_FILE: /run/secrets/tsa_password
     healthcheck:
+      # /healthz also asks the signer: 503 while the server cannot sign.
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 15s
-      timeout: 5s
+      timeout: 10s
       retries: 5
     # No published port: Caddy is the way in.
     expose:
       - "8080"
 
   caddy:
-    image: caddy:2-alpine
+    # A fixed release. To move to a newer one, change the tag, then
+    # `docker compose pull caddy && docker compose up -d caddy`.
+    image: caddy:2.11.4-alpine
     restart: unless-stopped
     depends_on:
       - server
@@ -80,9 +148,36 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    # Caddy's image runs as root; it keeps only the one capability it needs,
+    # to listen on 80 and 443.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+          pids: 128
+    logging: *logging
     environment:
       SIGILLO_DOMAIN: ${SIGILLO_DOMAIN:?set the domain to serve}
-      SIGILLO_TLS_EMAIL: ${SIGILLO_TLS_EMAIL:-}
+      # Required: the Caddyfile's global `email` line takes exactly one
+      # argument, and with an empty value Caddy refuses the whole
+      # configuration and does not start at all.
+      SIGILLO_TLS_EMAIL: ${SIGILLO_TLS_EMAIL:?set an email address for certificate notices}
+
+secrets:
+  admin_password:
+    file: ./secrets/admin_password
+  # tsa_password:
+  #   file: ./secrets/tsa_password
 
 volumes:
   signer-key:
