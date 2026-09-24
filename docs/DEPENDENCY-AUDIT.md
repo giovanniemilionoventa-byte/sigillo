@@ -63,5 +63,8 @@ be reached, the check fails rather than passing unchecked. Run it again.
 - **By hand**, before building an image for a deployment and before tagging a
   release.
 
-The Docker base images (`node:22-bookworm-slim`, `caddy:2-alpine`) and their
-operating-system packages are **not** covered by this check.
+The Docker base images (`node:22-bookworm-slim`, pinned by digest in
+`deploy/Dockerfile`, and `caddy:2.11.4-alpine`) and their operating-system
+packages are **not** covered by this check. Moving them to a newer release is a
+deliberate edit of those two files (see `docs/DEPLOY-PRODUZIONE.md`, 2.5 and
+6.3).

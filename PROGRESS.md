@@ -73,7 +73,7 @@ dopo ogni fase in attesa di autorizzazione. Niente PostgreSQL, multi-tenancy, Sa
 | 8 | Preparazione integrazione con un agente reale | fatto | Proposta in `docs/PROPOSTA-FASE-8.md`, nessuna modifica al codice. Misurato il traffico dell'SDK: la demo CV manda al server 244 KB in chiaro per 160 span, nomi dei candidati e testo dei CV compresi. Proposta D6 (impronte calcolate nell'SDK, elenco di attributi da tenere); fattibilità verificata: su 2 005 stringhe, impronte Python e TypeScript identiche. Rischi dell'integrazione reale e sette domande (A–G) per il committente |
 | 9 | Prima integrazione reale | **sospesa, in attesa** | Parte solo dopo l'approvazione della fase 8: servono le risposte alle domande A–G di `docs/PROPOSTA-FASE-8.md` (quale agente, chi gestisce il server, D6, deduplicazione, `on_behalf_of`, marca temporale) |
 | 10 | Preparazione alla produzione | fatto | `docs/DEPLOY-PRODUZIONE.md`: dal clone a un fascicolo verificato su un VPS con dominio e HTTPS, con checklist di 33 righe (comando e risultato atteso). I risultati attesi sono copiati da esecuzioni reali senza Docker (FreeTSA vera compresa). **La checklist resta da eseguire su una macchina vera: Docker qui non gira.** Corretti anche i punti 6 (batch OTLP atomico), 7 (storico delle chiavi di firma) e 13 (scritture fuori coda). 684 test |
-| 11 | Revisione finale prima del pilot | todo | Tabella prima/dopo dei 20 punti della revisione |
+| 11 | Revisione finale prima del pilot | fatto | `docs/REVISIONE-FASE-11.md`: tabella prima/dopo dei 20 punti (15 corretti, 2 mitigati, 1 rimandato alla fase 9, 2 accettati), difetti nuovi, cosa resta al committente, valutazione complessiva |
 
 Il 2026-09-24 il committente ha mandato il prompt delle fasi 5-11, trascritto in fondo a `SPEC.md`
 ("Fasi 5-11 (pre-pilot)"). Il testo arrivato è incompleto: mancano le sezioni delle fasi 7, 8 e 9.
@@ -361,6 +361,73 @@ controllata solo sulla documentazione dei comandi e su `docker compose config`.
 
 `SECURITY.md` (storico delle chiavi) e `README.md` (rimando alla guida, password come segreto)
 sono aggiornati.
+
+### Fase 11 — Revisione finale prima del pilot (fatto)
+
+Documento completo: `docs/REVISIONE-FASE-11.md`.
+
+#### Riepilogo finale della sessione del 24 settembre 2026 (fasi 5-11)
+
+**I 20 problemi della revisione della fase 1, oggi**
+
+| Stato | Punti |
+|---|---|
+| corretto | 1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 20 |
+| mitigato (resta una tua decisione o una verifica su macchina vera) | 6 (deduplicazione), 15 (Docker mai eseguito) |
+| rimandato alla fase 9, prima del pilot, con soluzione pronta | 5 (contenuti in chiaro verso il server: proposta D6) |
+| accettato come rischio noto, documentato | 18 (dati nei campi testuali, decisioni D1–D5), 19 (impronte prevedibili, D7 dopo il pilot) |
+
+Dei cinque problemi gravi, quattro sono corretti (1, 2, 3, 4). Il quinto (5) ha
+la soluzione progettata e verificata sulla carta, e aspetta la tua approvazione.
+
+**Difetti nuovi trovati e corretti in queste fasi:**
+- `docker compose config` stampava le password;
+- Caddy non partiva con l'email vuota;
+- la cartella dei backup non era scrivibile.
+
+Tutti e tre vengono da una configurazione Docker mai eseguita.
+
+**Cosa è pronto**
+- Nucleo crittografico e verificatore: nessun difetto trovato nel nucleo.
+  Due verifiche nuove per ciò che un archivio non può provare da solo:
+  `--key-id` e `--previous`.
+- Verifica messa alla prova:
+  - 17 scenari di manomissione, ciascuno controllato con il verificatore vero;
+  - un percorso completo di tre giorni, con un'autorità di marcatura vera (openssl
+    locale nei test, FreeTSA nella prova manuale).
+- Server: limiti ai tentativi, sessioni revocabili, riconnessione al signer, batch
+  atomici, storico delle chiavi, log puliti, configurazione validata.
+- Deploy indurito; guida `docs/DEPLOY-PRODUZIONE.md` con checklist di 33 righe.
+- `SECURITY.md`: cosa sigillo non può rilevare, e la checklist prima della
+  produzione.
+- 684 test Node (erano 579), più i 26 dell'SDK Python e i 17 della demo. CI verde.
+
+**Cosa resta esplicitamente a tuo carico**
+1. **Docker reale**: mai eseguito qui (il demone non si avvia in questo ambiente).
+2. **Deploy su VPS**: eseguire la checklist di `docs/DEPLOY-PRODUZIONE.md` su un
+   server vero, con dominio e HTTPS. È il collaudo di 1 e 2 insieme.
+3. **Marca temporale qualificata eIDAS**: non configurata; FreeTSA non è
+   qualificata. Per il pilot va accettata per iscritto, oppure sostituita.
+
+Più le decisioni elencate in `docs/REVISIONE-FASE-11.md`:
+- le domande A–G della fase 8, che sbloccano la fase 9;
+- avviso o errore per un checkpoint scollegato (punto 4);
+- chi custodisce la copia cifrata della chiave;
+- D1–D5 e D7.
+
+**La valutazione complessiva cambia?** Sì, in due direzioni:
+- **in meglio**: le garanzie promesse reggono sotto prova, e nessuna correzione
+  ha toccato il formato o le regole di verifica;
+- **più precisa sui limiti**: un fascicolo da solo non dimostra né di chi è la
+  chiave né che non manchi la coda. Tre cose esterne vanno trattate come parte
+  del prodotto:
+  - il `key_id` pubblicato per un altro canale;
+  - gli export consegnati nel tempo, con le loro marche temporali;
+  - un intervallo tra checkpoint breve (suggerisco 15 minuti per il pilot).
+
+Il rischio principale del pilot oggi è **operativo**, non crittografico: il
+Docker mai avviato, e il contenuto in chiaro verso il server finché D6 non è
+approvata.
 
 ## Note di sessione
 
