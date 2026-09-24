@@ -184,8 +184,8 @@ describe("signing in", () => {
 
   it("signs out", async () => {
     const cookie = await signIn();
-    const response = await app.inject({ method: "GET", url: "/ui/logout", headers: { cookie } });
-    expect(response.statusCode).toBe(302);
+    const response = await app.inject({ method: "POST", url: "/ui/logout", headers: { cookie } });
+    expect(response.statusCode).toBe(303);
     expect(String(response.headers["set-cookie"])).toContain("Max-Age=0");
   });
 });

@@ -640,6 +640,12 @@ Ricontrollala con `Get-Content .env` (Windows) o `cat .env` (Mac). Se contiene
 simboli come `$` o `#`, riscrivila con sole lettere e numeri e riavvia con
 `docker compose up -d`.
 
+Dopo 5 password sbagliate in 15 minuti la pagina smette di accettare tentativi
+per 5 minuti, anche quello con la password giusta, e mostra lo stesso messaggio
+di una password sbagliata. Aspetta 5 minuti e riprova con calma. Se succede di
+nuovo, l'attesa raddoppia (10, 20, 40 minuti, al massimo un'ora). Riavviare il
+server con `docker compose restart server` azzera il conteggio.
+
 ### La costruzione (Passo 5) si ferma con un errore
 
 Quasi sempre è la rete: il computer non è riuscito a scaricare qualcosa.

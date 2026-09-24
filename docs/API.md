@@ -22,7 +22,20 @@ lookup handle, stored in the clear, so that checking a token costs one scrypt
 rather than one per key.
 
 A request without a valid key gets `401`. A key that has been revoked stops
-working immediately.
+working on the next request, including on a server that is already running:
+`sigillo-server key revoke` runs in a process of its own, and the server reads
+whether a key is still live from the database on every request.
+
+An address that sends too many wrong keys (`SIGILLO_INGEST_MAX_FAILURES` in a
+minute, 20 by default) is locked out for a minute, doubling on each further
+lockout up to 15 minutes. While it is locked out, a key the server has not
+already checked is refused with the same `401`, without being checked; a key
+the server has already accepted keeps working, so an agent sharing that
+address carries on.
+
+A request the server cannot complete because the signer is not reachable gets
+`503`, which OTLP exporters retry. Any other failure inside the server gets
+`500` with `{"error":"internal error"}` and nothing more.
 
 ## `POST /v1/traces` — OpenTelemetry ingest
 
@@ -138,7 +151,11 @@ different system than the key writes to.
 
 ## `GET /healthz`
 
-Returns `{"status":"ok"}`. No authentication, no information about any system.
+Returns `{"status":"ok"}` while the signer answers with the key the server
+started with, and `503 {"status":"signer unavailable"}` otherwise. No
+authentication, no information about any system. The server reconnects to a
+restarted signer on its own; a signer that comes back with a different key is
+refused until the server is restarted.
 
 ## Command line
 
@@ -170,6 +187,30 @@ sigillo-verify ./fascicolo
 
 `sigillo-server` also reads `SIGILLO_DB`, `SIGILLO_SIGNER_SOCKET`,
 `SIGILLO_HOST` and `SIGILLO_PORT`, so the flags can be left out in a container.
+
+`serve` reads the rest of its configuration from the environment, and checks
+all of it before it opens anything: a value that is not what it should be stops
+it, with the variable's name in the message.
+
+| variable | default | meaning |
+|---|---|---|
+| `SIGILLO_ADMIN_PASSWORD` or `SIGILLO_ADMIN_PASSWORD_FILE` | unset: no web view | the web view's password, at least 12 characters; the `_FILE` form names a file holding it |
+| `SIGILLO_CHECKPOINT_MINUTES` | 60 | how often each chain is checkpointed |
+| `SIGILLO_STALE_AFTER_MINUTES` | 1440 | inactivity before a system's light turns yellow |
+| `SIGILLO_LOGIN_MAX_FAILURES` | 5 | wrong passwords allowed per address within the window |
+| `SIGILLO_LOGIN_WINDOW_MINUTES` | 15 | that window |
+| `SIGILLO_LOGIN_LOCKOUT_MINUTES` | 5 | the first lockout; each further one doubles |
+| `SIGILLO_LOGIN_LOCKOUT_MAX_MINUTES` | 60 | the longest lockout |
+| `SIGILLO_INGEST_MAX_FAILURES` | 20 | wrong API keys allowed per address per minute |
+| `SIGILLO_TRUST_PROXY` | unset: none | addresses of the reverse proxies whose `X-Forwarded-For` and `-Proto` to believe (`uniquelocal` behind the supplied Compose file); `true` and hop counts are refused |
+| `SIGILLO_COOKIE_SECURE` | `auto` | `true`, `false`, or `auto`: `Secure` whenever the browser came over HTTPS |
+| `TSA_URL`, `TSA_USERNAME`, `TSA_PASSWORD` or `TSA_PASSWORD_FILE` | no authority | the RFC 3161 authority and its credentials |
+
+The web view's password attempts are limited per address: after
+`SIGILLO_LOGIN_MAX_FAILURES` wrong ones in the window, the address waits, and
+while it waits every attempt, the right password included, gets the same page
+and the same `401` as a wrong password. Nothing in the answer says which of the
+two happened.
 
 An issued token is printed once and is not recoverable: the database holds only
 its scrypt hash.

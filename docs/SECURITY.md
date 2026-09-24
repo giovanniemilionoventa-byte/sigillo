@@ -125,10 +125,39 @@ The key identifier inside a token is stored in the clear. It is a lookup handle,
 not a credential: it tells the server which row to check, so verifying costs one
 scrypt rather than one per key in the database.
 
-The web view is guarded by a single administrator password from
-`SIGILLO_ADMIN_PASSWORD`. Without that variable the view is not served at all.
-Its session is an HMAC cookie with a per-process secret, so a restart signs
-everyone out and nothing about the session is stored.
+Checking a token runs scrypt off the event loop, and whether the key is still
+live is read from the database on every request: a key revoked with
+`sigillo-server key revoke`, from another process, stops working on the next
+request of the server that is already running. An address that sends too many
+wrong tokens is locked out for a while, during which no scrypt is run for it,
+while tokens the server has already accepted keep working.
+
+The web view is guarded by a single administrator password, from
+`SIGILLO_ADMIN_PASSWORD_FILE` (a file, as the supplied Compose file provides
+it) or `SIGILLO_ADMIN_PASSWORD`. Without either the view is not served at all.
+
+- **Attempts are limited per address.** After 5 wrong passwords in 15 minutes
+  (both configurable), the address is locked out for 5 minutes, doubling on
+  each further lockout up to an hour. While it is locked out its attempts are
+  not evaluated, the right password included, and they get the very page and
+  status a wrong password gets: from outside, a lockout cannot be told apart
+  from a wrong guess, and no guess made during one can be learned to be right.
+  The limits are in memory: a restart forgets them.
+- **The address is the real client's**, not the proxy's, only where
+  `SIGILLO_TRUST_PROXY` names the proxy. The supplied Compose file names the
+  private network Caddy reaches the server on; Caddy replaces any
+  `X-Forwarded-For` a client sends. Without that setting the server believes no
+  forwarding header at all, so a client cannot pick a new address per guess.
+- **The session** is an HMAC cookie, `HttpOnly; SameSite=Strict`, and `Secure`
+  whenever the browser came over HTTPS (always, in the supplied Compose file).
+  Its secret is per process, so a restart signs everyone out and nothing about
+  the session is stored. Signing out, which is a POST, ends every session
+  issued until then, a copied cookie included: there is one password, so every
+  session is the same person's.
+- **Every page behind the password is `Cache-Control: no-store`**, including
+  the one that shows a new API key the only time it exists.
+- **A form posted from another site is refused** (`403`) when the browser says
+  where it comes from, on top of what `SameSite=Strict` already does.
 
 The view is server-rendered with one deliberate exception: "verifica un
 documento" carries a small inline script that computes a file's SHA-256 in the
@@ -137,6 +166,77 @@ allows exactly that script and no other, by its SHA-256 (`script-src
 'sha256-...'`), rather than relaxing the content security policy in general. A
 test recomputes the hash from the actual script and fails if the two ever
 disagree.
+
+## Secrets and logs
+
+**Secrets never appear in `docker compose config`.** The administrator
+password is a file (`deploy/secrets/admin_password`), which Compose mounts in
+the server as `/run/secrets/admin_password`; the server is told only the
+file's path. The timestamp authority's password, when there is one, works the
+same way (`TSA_PASSWORD_FILE`). Neither is an environment variable of any
+container, so neither shows in `docker compose config` or `docker inspect`.
+The signing key never leaves the signer's volume.
+
+Proof, run on 2026-09-24 in the development environment (Docker Compose
+v5.1.1; no Docker daemon was needed, `config` only resolves the file), with the
+password `Segreto-Di-Prova-1234` in `secrets/admin_password` and, for good
+measure, also left behind in `.env` as `SIGILLO_ADMIN_PASSWORD` and
+`TSA_PASSWORD`:
+
+```sh
+$ cd deploy && docker compose config | grep -c 'Segreto-Di-Prova-1234'
+0
+```
+
+Before this change the same command printed it twice:
+
+```text
+48:      SIGILLO_ADMIN_PASSWORD: Segreto-Di-Prova-1234
+54:      TSA_PASSWORD: Tsa-Segreto-5678
+```
+
+`apps/server/test/deploy-config.test.ts` repeats the check in CI, on every
+push. `deploy/docker-compose.local.yml`, the trial on one's own computer, still
+takes the password from `.env` and does print it; it is not a deployment.
+
+**What the server logs.** One JSON line per request, at level `info`: the
+method, the path **without its query string**, the client's address, the status
+and the time taken. Never a header (so never an API key or a session cookie),
+never a body, never a query string (which in the web view holds document
+fingerprints and search terms). Errors are logged by type, code and stack
+trace, without their message, because a message can quote the input that
+caused it (`JSON.parse` does). The password is never printed, and neither is a
+token: `sigillo-server key create` prints the new token once, on its own
+standard output, for the operator who asked for it.
+
+Proof: `apps/server/test/server-hardening.test.ts` logs in, searches, verifies
+a document, sends a receipt whose payload carries a marker, sends a body that
+does not parse and makes the server fail, all against a real server with a
+real signer, then requires the log to hold none of: the password, the token,
+its secret half, the marker, the fingerprint, `sha256=`, the session cookie.
+With Fastify's default request serializer the same test fails, on the marker
+that reached the log through a query string. `apps/server/test/cli-config.test.ts`
+starts the real `sigillo-server serve` with the password in a file and requires
+its whole output to be free of it.
+
+**What Caddy logs.** One line per request, with the query string cut off by a
+filter in `deploy/Caddyfile`. Caddy itself writes `REDACTED` in place of the
+`Authorization` and `Cookie` headers. Checked by running Caddy v2.11.4, the
+version the Compose file pins, with the production Caddyfile in front of a test
+backend, and requesting `/ui/verify-document?sha256=...&name=...` with a bearer
+token, a cookie and a forged `X-Forwarded-For`. The log line:
+
+```text
+"uri": "/ui/verify-document", "headers": {..., "Authorization": ["REDACTED"], "Cookie": ["REDACTED"], ...}
+```
+
+and the backend received `X-Forwarded-For: 127.0.0.1`, the real client, not
+the forged address.
+
+**Rotation.** Every container logs through Docker's `json-file` driver with
+`max-size: 10m` and `max-file: 5`: at most 50 MB per service, the oldest file
+dropped first. A server run without Docker writes to standard output and leaves
+rotation to whatever runs it (systemd's journal rotates on its own).
 
 ## Known limits
 
@@ -174,6 +274,64 @@ file, so the token can be checked offline. Nothing else changes.
 
 **No HSM or KMS.** The key is a file. Moving it into hardware would change the
 signer and nothing else, which is part of why the signer is a separate process.
+
+## Before going to production
+
+*(prima di andare in produzione)* Derived from the hardening of phase 5. The
+exact commands, for a server that has never run sigillo, are in
+[DEPLOY-PRODUZIONE.md](DEPLOY-PRODUZIONE.md).
+
+**The host**
+- [ ] A domain whose DNS record points at this machine, and a firewall that
+      lets in only SSH, 80 and 443.
+- [ ] The clock synchronised (NTP): `ts_received`, the checkpoints and the
+      timestamp requests all come from it.
+- [ ] Docker with Compose v2, updated.
+
+**Secrets**
+- [ ] `deploy/secrets/admin_password` written once, 12 characters at least
+      (better: `openssl rand -base64 24`), the folder `0700`.
+- [ ] `deploy/.env` holds no password: `docker compose config | grep -i password`
+      shows only `SIGILLO_ADMIN_PASSWORD_FILE: /run/secrets/admin_password`.
+- [ ] The signer's key generated **once**, then copied off the host, encrypted,
+      to a place whose access is decided and written down. Without it, the
+      receipts signed so far can still be verified, but nothing new can be
+      signed with the same key.
+- [ ] The key's `key_id` written down and published through a channel that does
+      not depend on this server (a contract annex, a signed email): it is what
+      an auditor compares with the one in an export.
+
+**The containers** (all already set in `deploy/docker-compose.yml`; check
+they are still there if the file has been edited)
+- [ ] Only Caddy publishes ports; the server `expose`s 8080 to the compose
+      network only; the signer has no network at all.
+- [ ] `read_only`, `no-new-privileges`, `cap_drop: ALL`, resource limits and
+      log rotation on every service.
+- [ ] `SIGILLO_TRUST_PROXY` set only because Caddy is in front. Never publish
+      8080 with it set: a client could then choose its own address, and the
+      attempt limits would not hold.
+- [ ] `SIGILLO_COOKIE_SECURE=true`.
+
+**Data**
+- [ ] `backup.sh` in the host's cron, **and** the backups copied off the host:
+      the `backups` volume is on the same disk as the database.
+- [ ] A restore tried once, from a backup to a scratch directory, with an
+      export and a verification of the restored copy.
+
+**Evidence**
+- [ ] `TSA_URL`: FreeTSA is not qualified under eIDAS. Either accept that for
+      the pilot, in writing, or configure a qualified provider.
+- [ ] One full round done by hand: a system, an agent sending to it, a
+      checkpoint, an export, and `sigillo-verify` run on another machine.
+- [ ] The web view reached over HTTPS, and 6 wrong passwords in a row checked
+      to lock the address out.
+
+**Running it**
+- [ ] `docker compose ps` watched (or its health checks fed to monitoring):
+      the server turns unhealthy when it cannot reach the signer.
+- [ ] Images rebuilt from time to time for security updates (the base image is
+      pinned by digest: moving it is a deliberate edit of `deploy/Dockerfile`),
+      and the dependency audit workflow kept green.
 
 ## Reporting a problem
 

@@ -32,26 +32,26 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-describe("issuing a key", () => {
-  it("returns a token that authenticates its system", () => {
+describe("issuing a key", async () => {
+  it("returns a token that authenticates its system", async () => {
     const issued = keys.issue(SYSTEM, AT);
     expect(issued.token).toMatch(/^sigillo_[0-9a-f]{16}_[0-9a-f]{64}$/);
     expect(issued.token).toContain(issued.keyId);
-    expect(keys.verify(issued.token)).toBe(SYSTEM);
+    expect(await keys.verify(issued.token)).toBe(SYSTEM);
   });
 
-  it("keeps each system's keys to that system", () => {
+  it("keeps each system's keys to that system", async () => {
     const first = keys.issue(SYSTEM, AT);
     const second = keys.issue(OTHER, AT);
-    expect(keys.verify(first.token)).toBe(SYSTEM);
-    expect(keys.verify(second.token)).toBe(OTHER);
+    expect(await keys.verify(first.token)).toBe(SYSTEM);
+    expect(await keys.verify(second.token)).toBe(OTHER);
   });
 
-  it("issues distinct keys every time", () => {
+  it("issues distinct keys every time", async () => {
     const tokens = new Set(Array.from({ length: 5 }, () => keys.issue(SYSTEM, AT).token));
     expect(tokens.size).toBe(5);
     for (const token of tokens) {
-      expect(keys.verify(token)).toBe(SYSTEM);
+      expect(await keys.verify(token)).toBe(SYSTEM);
     }
   });
 
@@ -107,7 +107,7 @@ describe("what the database holds", () => {
 });
 
 describe("rejecting a token", () => {
-  it("rejects anything that is not a token this store issued", () => {
+  it("rejects anything that is not a token this store issued", async () => {
     const issued = keys.issue(SYSTEM, AT);
     const [prefix, keyId, secret] = issued.token.split("_") as [string, string, string];
 
@@ -129,34 +129,93 @@ describe("rejecting a token", () => {
     ];
 
     for (const token of rejected) {
-      expect(keys.verify(token), token).toBeNull();
+      expect(await keys.verify(token), token).toBeNull();
     }
-    expect(keys.verify(issued.token)).toBe(SYSTEM);
+    expect(await keys.verify(issued.token)).toBe(SYSTEM);
   });
 
-  it("rejects a secret that differs from the real one in a single character", () => {
+  it("rejects a secret that differs from the real one in a single character", async () => {
     const issued = keys.issue(SYSTEM, AT);
     const [prefix, keyId, secret] = issued.token.split("_") as [string, string, string];
     const flipped = `${secret[0] === "a" ? "b" : "a"}${secret.slice(1)}`;
-    expect(keys.verify(`${prefix}_${keyId}_${flipped}`)).toBeNull();
+    expect(await keys.verify(`${prefix}_${keyId}_${flipped}`)).toBeNull();
+  });
+});
+
+describe("the cost of a guess", () => {
+  // Review point 10: a wrong secret under a real key id costs one scrypt, and
+  // done synchronously that stalled the whole process for about 55 ms a guess.
+  it("runs scrypt off the event loop", async () => {
+    const issued = keys.issue(SYSTEM, AT);
+    const wrong = `${issued.token.slice(0, -1)}${issued.token.endsWith("a") ? "b" : "a"}`;
+
+    let turns = 0;
+    let done = false;
+    const spin = (): void => {
+      if (done) return;
+      turns += 1;
+      setImmediate(spin);
+    };
+    setImmediate(spin);
+
+    expect(await keys.verify(wrong)).toBeNull();
+    done = true;
+    // Synchronous scrypt resolves before a single turn of the loop can run.
+    expect(turns).toBeGreaterThan(0);
+  });
+
+  it("without hashing, accepts only a token already checked", async () => {
+    const known = keys.issue(SYSTEM, AT);
+    const unknown = keys.issue(SYSTEM, AT);
+    expect(await keys.verify(known.token)).toBe(SYSTEM);
+
+    expect(await keys.verify(known.token, { hashAllowed: false })).toBe(SYSTEM);
+    expect(await keys.verify(unknown.token, { hashAllowed: false })).toBeNull();
+    // ...and the refusal was only for lack of hashing, not a verdict on the key.
+    expect(await keys.verify(unknown.token)).toBe(SYSTEM);
+  });
+
+  it("does not let a remembered token outlive its revocation", async () => {
+    const issued = keys.issue(SYSTEM, AT);
+    expect(await keys.verify(issued.token)).toBe(SYSTEM);
+    keys.revoke(issued.keyId, "2026-03-29T15:00:00.000Z");
+    expect(await keys.verify(issued.token, { hashAllowed: false })).toBeNull();
   });
 });
 
 describe("revoking a key", () => {
-  it("stops the key working, even one that had been used", () => {
+  it("stops the key working, even one that had been used", async () => {
     const issued = keys.issue(SYSTEM, AT);
-    expect(keys.verify(issued.token)).toBe(SYSTEM);
+    expect(await keys.verify(issued.token)).toBe(SYSTEM);
 
     expect(keys.revoke(issued.keyId, "2026-03-29T15:00:00.000Z")).toBe(true);
-    expect(keys.verify(issued.token)).toBeNull();
+    expect(await keys.verify(issued.token)).toBeNull();
   });
 
-  it("leaves the other keys of the same system alone", () => {
+  it("leaves the other keys of the same system alone", async () => {
     const revoked = keys.issue(SYSTEM, AT);
     const kept = keys.issue(SYSTEM, AT);
     keys.revoke(revoked.keyId, "2026-03-29T15:00:00.000Z");
-    expect(keys.verify(revoked.token)).toBeNull();
-    expect(keys.verify(kept.token)).toBe(SYSTEM);
+    expect(await keys.verify(revoked.token)).toBeNull();
+    expect(await keys.verify(kept.token)).toBe(SYSTEM);
+  });
+
+  // Review point 2. `sigillo-server key revoke` runs in a process of its own,
+  // so the revocation happens on another connection to the same file. The
+  // server's store had already verified the token, and it must not keep
+  // accepting it from memory.
+  it("takes effect in a store that is already running, even for a token it has verified", async () => {
+    const issued = keys.issue(SYSTEM, AT);
+    expect(await keys.verify(issued.token)).toBe(SYSTEM);
+
+    const administrator = ApiKeyStore.open(databasePath);
+    try {
+      expect(administrator.revoke(issued.keyId, "2026-03-29T15:00:00.000Z")).toBe(true);
+    } finally {
+      administrator.close();
+    }
+
+    expect(await keys.verify(issued.token)).toBeNull();
   });
 
   it("reports that there was nothing to revoke", () => {

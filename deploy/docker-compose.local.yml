@@ -10,10 +10,21 @@
 # interface, which never leaves the machine. Do not put real data in it and do
 # not expose port 8080 to a network.
 #
+# The password is also an ordinary variable here, read from deploy/.env, so
+# `docker compose -f docker-compose.local.yml config` prints it. That is
+# accepted for a trial on one's own computer; the production file keeps it in
+# a secret file instead (see docker-compose.yml).
+#
 # Step-by-step instructions, for someone who does not use a terminal:
 # see PROVA-LOCALE.md in the root of this repository.
 
 name: sigillo-locale
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   signer:
@@ -28,6 +39,7 @@ services:
       - signer-socket:/run/sigillo
     # It speaks only over the socket: no network at all.
     network_mode: none
+    logging: *logging
     healthcheck:
       test: ["CMD", "test", "-S", "/run/sigillo/signer.sock"]
       interval: 10s
@@ -61,6 +73,7 @@ services:
     # for 8080; the container's own port stays 8080 either way.
     ports:
       - "127.0.0.1:${SIGILLO_LOCAL_PORT:-8080}:8080"
+    logging: *logging
 
   # Not started by `up`: it is run on demand with
   #   docker compose -f docker-compose.local.yml run --rm esempio

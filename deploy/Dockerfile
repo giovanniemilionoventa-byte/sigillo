@@ -6,8 +6,14 @@
 #
 #   docker build -f deploy/Dockerfile --target server -t sigillo-server .
 #   docker build -f deploy/Dockerfile --target signer -t sigillo-signer .
+#
+# The base image is pinned by digest, so that two builds of the same commit
+# start from the same bytes. To take a newer Node 22 (security updates do
+# arrive this way), look up the digest of node:22-bookworm-slim, for example
+# with `docker buildx imagetools inspect node:22-bookworm-slim`, and replace it
+# in the three FROM lines together.
 
-FROM node:22-bookworm-slim AS build
+FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS build
 WORKDIR /src
 
 RUN corepack enable
@@ -42,7 +48,7 @@ RUN pnpm --filter @sigillo/server --prod --legacy deploy /out/server \
  && pnpm --filter @sigillo/verifier --prod --legacy deploy /out/verifier
 
 
-FROM node:22-bookworm-slim AS server
+FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS server
 # openssl builds the RFC 3161 timestamp requests and verifies the tokens.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -54,8 +60,12 @@ COPY --from=build /out/verifier /verifier
 COPY apps/server/proto ./proto
 COPY deploy/backup.sh ./backup.sh
 
-# The database and the socket directory are volumes; the key is not here at all.
-RUN install -d -o node -g node /var/lib/sigillo /run/sigillo
+# The database, the backups and the socket directory are volumes; the key is
+# not here at all. Each directory is created here, owned by node, because a
+# fresh named volume takes the ownership of the directory it is mounted on: a
+# directory the image does not have would come up owned by root, and the
+# server, which runs as node, could not write to it.
+RUN install -d -o node -g node /var/lib/sigillo /var/lib/sigillo-backups /run/sigillo
 USER node
 ENV SIGILLO_DB=/var/lib/sigillo/sigillo.db \
     SIGILLO_SIGNER_SOCKET=/run/sigillo/signer.sock \
@@ -66,7 +76,7 @@ ENTRYPOINT ["node", "dist/cli.js"]
 CMD ["serve"]
 
 
-FROM node:22-bookworm-slim AS signer
+FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS signer
 WORKDIR /app
 COPY --from=build /out/signer ./
 

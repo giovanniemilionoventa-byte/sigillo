@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
+import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { buildArchive } from "../export/archive.js";
 import type { ChainHealthMonitor, ChainStatus } from "../health/chain-health.js";
@@ -32,7 +33,22 @@ export interface UiOptions {
   healthMonitor: ChainHealthMonitor;
   checkpointer: Checkpointer;
   now: () => Date;
+  /** Limits on wrong passwords, per client address. Defaults: see parseThrottleSettings. */
+  loginLimits?: ThrottleSettings;
+  /**
+   * Whether the session cookie carries `Secure`. "auto", the default, sets it
+   * whenever the browser reached the server over HTTPS, as the request (and a
+   * trusted proxy's X-Forwarded-Proto) shows it.
+   */
+  cookieSecure?: boolean | "auto";
 }
+
+export const DEFAULT_LOGIN_LIMITS: ThrottleSettings = {
+  maxFailures: 5,
+  windowMs: 15 * 60_000,
+  lockoutMs: 5 * 60_000,
+  maxLockoutMs: 60 * 60_000,
+};
 
 /** Everything that reaches HTML goes through here. */
 function escape(value: unknown): string {
@@ -88,6 +104,8 @@ button:hover { filter: brightness(0.95); }
 .dot.yellow { background: var(--yellow); }
 .dot.red { background: var(--red); }
 .status-word { font-weight: 600; }
+form.inline { display: inline; margin: 0; }
+button.link { background: none; border: none; padding: 0; color: var(--focus); text-decoration: underline; font-size: inherit; }
 .status-word.green { color: var(--green); }
 .status-word.yellow { color: var(--yellow); }
 .status-word.red { color: var(--red); }
@@ -123,7 +141,7 @@ function page(title: string, body: string): string {
     <a href="/ui">${escape(UI.home.title)}</a>
     <a href="/ui/sistemi">${escape(UI.nav.sistemi)}</a>
     <a href="/ui/verify-document">${escape(UI.nav.verificaDocumento)}</a>
-    <a href="/ui/logout">${escape(UI.nav.esci)}</a>
+    <form class="inline" method="post" action="/ui/logout"><button type="submit" class="link">${escape(UI.nav.esci)}</button></form>
   </nav>
 </header>
 ${body}
@@ -218,21 +236,29 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   // A fresh secret per process: a restart signs everyone out, which for an
   // operator's view is the right trade against storing anything.
   const sessionSecret = randomBytes(32);
+  // Part of what every session cookie signs. Signing out moves it on, and with
+  // it every cookie issued before, copies included, stops working: there is
+  // one password, so every session is the same person's (review point 12).
+  let epoch = 0;
   const { store, keys } = options;
+  const loginThrottle = new AttemptThrottle(options.loginLimits ?? DEFAULT_LOGIN_LIMITS);
+  const cookieSecure = options.cookieSecure ?? "auto";
 
-  const sign = (expiry: number): string =>
-    `${expiry}.${createHmac("sha256", sessionSecret).update(String(expiry)).digest("hex")}`;
+  const mac = (expiry: string, sessionEpoch: number): string =>
+    createHmac("sha256", sessionSecret).update(`${expiry}.${sessionEpoch}`).digest("hex");
+
+  const sign = (expiry: number): string => `${expiry}.${mac(String(expiry), epoch)}`;
 
   const sessionValid = (cookie: string | undefined): boolean => {
     if (cookie === undefined) return false;
-    const [expiry, mac] = cookie.split(".");
-    if (expiry === undefined || mac === undefined) return false;
+    const [expiry, given] = cookie.split(".");
+    if (expiry === undefined || given === undefined) return false;
     const deadline = Number(expiry);
     if (!Number.isFinite(deadline) || deadline < options.now().getTime()) return false;
-    const expected = createHmac("sha256", sessionSecret).update(expiry).digest("hex");
+    const expected = mac(expiry, epoch);
     return (
-      mac.length === expected.length &&
-      timingSafeEqual(Buffer.from(mac, "hex"), Buffer.from(expected, "hex"))
+      given.length === expected.length &&
+      timingSafeEqual(Buffer.from(given, "hex"), Buffer.from(expected, "hex"))
     );
   };
 
@@ -244,6 +270,11 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       if (name === COOKIE) return rest.join("=");
     }
     return undefined;
+  };
+
+  const cookieAttributes = (request: FastifyRequest): string => {
+    const secure = cookieSecure === "auto" ? request.protocol === "https" : cookieSecure;
+    return `HttpOnly; SameSite=Strict; Path=/${secure ? "; Secure" : ""}`;
   };
 
   const requireSession = (request: FastifyRequest, reply: FastifyReply): boolean => {
@@ -258,6 +289,34 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   const html = (reply: FastifyReply, body: string, status = 200): FastifyReply =>
     reply.code(status).type("text/html; charset=utf-8").send(body);
 
+  const isUi = (request: FastifyRequest): boolean =>
+    request.url === "/ui" || request.url.startsWith("/ui/") || request.url.startsWith("/ui?");
+
+  // Nothing behind the password is worth keeping in a cache, and one page
+  // shows an API key the only time it exists.
+  app.addHook("onSend", async (request, reply) => {
+    if (isUi(request)) void reply.header("cache-control", "no-store");
+  });
+
+  // SameSite=Strict already keeps the cookie off cross-site requests in
+  // current browsers. A form posted from another origin is refused as well,
+  // without relying on that: when a browser says where a POST comes from and
+  // it is not this host, nothing is done.
+  app.addHook("preHandler", async (request, reply) => {
+    if (request.method !== "POST" || !isUi(request)) return;
+    const origin = request.headers.origin;
+    if (origin === undefined) return;
+    let sameHost = false;
+    try {
+      sameHost = new URL(origin).host === request.headers.host;
+    } catch {
+      sameHost = false;
+    }
+    if (!sameHost) {
+      await reply.code(403).type("text/plain; charset=utf-8").send("cross-origin request refused\n");
+    }
+  });
+
   app.get("/", async (_request, reply) => reply.redirect("/ui", 302));
 
   app.get("/ui/login", async (request, reply) =>
@@ -267,6 +326,17 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   );
 
   app.post("/ui/login", async (request, reply) => {
+    const client = request.ip;
+    const now = options.now().getTime();
+
+    // A locked-out client gets the very answer a wrong password gets, and its
+    // password is not even looked at: from outside, a lockout cannot be told
+    // apart from a guess that was wrong, and no guess made during one can be
+    // learned to be right.
+    if (loginThrottle.isLocked(client, now)) {
+      return html(reply, loginPage(UI.login.wrong), 401);
+    }
+
     const body = request.body as { password?: unknown } | undefined;
     const given = typeof body?.password === "string" ? body.password : "";
     const expected = options.password;
@@ -277,24 +347,26 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       givenBytes.length === expectedBytes.length && timingSafeEqual(givenBytes, expectedBytes);
 
     if (!correct) {
+      loginThrottle.recordFailure(client, now);
       return html(reply, loginPage(UI.login.wrong), 401);
     }
 
-    const expiry = options.now().getTime() + SESSION_HOURS * 3600 * 1000;
+    loginThrottle.recordSuccess(client);
+    const expiry = now + SESSION_HOURS * 3600 * 1000;
     return reply
       .header(
         "set-cookie",
-        `${COOKIE}=${sign(expiry)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_HOURS * 3600}`,
+        `${COOKIE}=${sign(expiry)}; ${cookieAttributes(request)}; Max-Age=${SESSION_HOURS * 3600}`,
       )
       .redirect("/ui", 302);
   });
 
-  app.get("/ui/logout", async (_request, reply) =>
-    reply.header("set-cookie", `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`).redirect(
-      "/ui/login",
-      302,
-    ),
-  );
+  app.post("/ui/logout", async (request, reply) => {
+    if (sessionValid(cookieFrom(request))) epoch += 1;
+    return reply
+      .header("set-cookie", `${COOKIE}=; ${cookieAttributes(request)}; Max-Age=0`)
+      .redirect("/ui/login", 303);
+  });
 
   app.get("/ui", async (request, reply) => {
     if (!requireSession(request, reply)) return reply;

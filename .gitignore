@@ -17,6 +17,8 @@ keys/
 
 # the local configuration holds the admin password and an API key
 .env
+# production secrets (deploy/secrets/admin_password and the like)
+deploy/secrets/
 
 # python
 __pycache__/

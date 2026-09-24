@@ -4,7 +4,9 @@ import Database from "better-sqlite3";
 import { Command } from "commander";
 import { publicKeyFromRaw } from "@sigillo/core";
 import { ApiKeyStore } from "./auth/api-keys.js";
+import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
+import { cookieSecure, port, positiveInteger, readSecret, trustProxy } from "./config.js";
 import { buildArchive } from "./export/archive.js";
 import { ChainHealthMonitor } from "./health/chain-health.js";
 import { buildServer } from "./http/server.js";
@@ -31,11 +33,25 @@ const now = (): string => new Date().toISOString();
 function tsaFromOptions(url: string | undefined): TsaOptions | undefined {
   if (url === undefined || url.length === 0) return undefined;
   const username = process.env["TSA_USERNAME"];
-  const password = process.env["TSA_PASSWORD"];
-  return username !== undefined && password !== undefined
+  const password = readSecret(process.env, "TSA_PASSWORD");
+  return username !== undefined && username.length > 0 && password !== undefined
     ? { url, username, password }
     : { url };
 }
+
+/** The authority's address as it may be printed: never with credentials in it. */
+function printableUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.username = "";
+    parsed.password = "";
+    return parsed.toString();
+  } catch {
+    return "(an address that does not parse)";
+  }
+}
+
+const WEEK_MINUTES = 7 * 24 * 60;
 
 async function withSigner<T>(
   socketPath: string,
@@ -85,34 +101,55 @@ program
     checkpointMinutes: string;
     staleAfterMinutes: string;
   }) => {
-    const signer = await SignerClient.connect(options.signerSocket);
-    const store = ReceiptStore.open(options.db, signer);
-    const keys = ApiKeyStore.open(options.db);
+    // Every setting is checked before anything is opened or connected: a bad
+    // value stops the server here, with the variable's name, rather than
+    // after it has started doing the wrong thing.
+    const listenPort = port("SIGILLO_PORT (--port)", options.port, 8080);
+    const checkpointMinutes = positiveInteger(
+      "SIGILLO_CHECKPOINT_MINUTES (--checkpoint-minutes)",
+      options.checkpointMinutes,
+      60,
+      WEEK_MINUTES,
+    );
+    const staleAfterMinutes = positiveInteger(
+      "SIGILLO_STALE_AFTER_MINUTES (--stale-after-minutes)",
+      options.staleAfterMinutes,
+      1440,
+      10 * 365 * 24 * 60,
+    );
+    const loginLimits = parseThrottleSettings(process.env);
+    const ingestLimits = parseIngestThrottleSettings(process.env);
+    const proxies = trustProxy(process.env["SIGILLO_TRUST_PROXY"]);
+    const secureCookie = cookieSecure(process.env["SIGILLO_COOKIE_SECURE"]);
+    const tsa = tsaFromOptions(options.tsaUrl);
 
     // The operator's view is mounted only when a password is set. An audit log
     // behind no password is worse than an audit log behind no web page.
-    const adminPassword = process.env["SIGILLO_ADMIN_PASSWORD"];
-    if (adminPassword === undefined || adminPassword.length === 0) {
+    const adminPassword = readSecret(process.env, "SIGILLO_ADMIN_PASSWORD");
+    if (adminPassword === undefined) {
       process.stdout.write("SIGILLO_ADMIN_PASSWORD is not set: the web view is not served\n");
     } else if (adminPassword.length < 12) {
       throw new Error("SIGILLO_ADMIN_PASSWORD must be at least 12 characters");
     }
 
-    const uiMounted = adminPassword !== undefined && adminPassword.length > 0;
+    const signer = await SignerClient.connect(options.signerSocket);
+    const store = ReceiptStore.open(options.db, signer);
+    const keys = ApiKeyStore.open(options.db);
+
+    const uiMounted = adminPassword !== undefined;
     const healthMonitor = uiMounted
       ? new ChainHealthMonitor(
           store,
           publicKeyFromRaw(new Uint8Array(Buffer.from(signer.publicKeyBase64, "base64"))),
-          Number(options.staleAfterMinutes) * 60 * 1000,
+          staleAfterMinutes * 60 * 1000,
         )
       : undefined;
 
-    const tsa = tsaFromOptions(options.tsaUrl);
     const checkpointer = new Checkpointer({
       store,
       now: () => new Date(),
       ...(tsa === undefined ? {} : { tsa }),
-      intervalMinutes: Number(options.checkpointMinutes),
+      intervalMinutes: checkpointMinutes,
       onError: (message) => process.stderr.write(`${message}\n`),
     });
 
@@ -120,6 +157,9 @@ program
       store,
       keys,
       logger: true,
+      trustProxy: proxies,
+      ingestLimits,
+      signerHealthy: () => signer.healthy(),
       ...(!uiMounted || healthMonitor === undefined
         ? {}
         : {
@@ -131,6 +171,8 @@ program
               },
               healthMonitor,
               checkpointer,
+              loginLimits,
+              cookieSecure: secureCookie,
             },
           }),
     });
@@ -150,10 +192,10 @@ program
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
 
-    await app.listen({ host: options.host, port: Number(options.port) });
+    await app.listen({ host: options.host, port: listenPort });
     process.stdout.write(`signing with key ${signer.keyId}\n`);
     process.stdout.write(
-      `checkpointing every ${options.checkpointMinutes} minutes, anchoring with ${tsa?.url ?? "no authority"}\n`,
+      `checkpointing every ${checkpointMinutes} minutes, anchoring with ${tsa === undefined ? "no authority" : printableUrl(tsa.url)}\n`,
     );
   });
 

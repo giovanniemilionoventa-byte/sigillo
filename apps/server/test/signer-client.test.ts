@@ -209,6 +209,59 @@ describe("a server talking to a signer in another process", () => {
   }, 30_000);
 });
 
+describe("a signer that restarts under a running server", () => {
+  // Review point 11: the signer container restarts (an upgrade, a crash, the
+  // host rebooting it) while the server keeps running. Real signer processes,
+  // the same key file, the same socket path.
+  const restartSigner = async (key = keyPath): Promise<void> => {
+    killSigner(daemon);
+    daemon = await runSignerCli(["serve", "--key", key, "--socket", socketPath], /listening on/);
+  };
+
+  it("reconnects on the next request, and signs again with the same key", async () => {
+    const client = await SignerClient.connect(socketPath);
+    try {
+      await client.sign(fromHex(DIGEST));
+      killSigner(daemon);
+      daemon = undefined;
+      await expect(client.sign(fromHex(DIGEST))).rejects.toBeInstanceOf(SignerUnavailableError);
+      expect(await client.healthy()).toBe(false);
+
+      await restartSigner();
+      const signature = await client.sign(fromHex(DIGEST));
+      expect(verify(null, fromHex(DIGEST), publicKeyFromKeyFile(), Buffer.from(signature, "base64"))).toBe(true);
+      expect(await client.healthy()).toBe(true);
+    } finally {
+      client.close();
+    }
+  }, 60_000);
+
+  it("refuses to carry on with a signer that now holds a different key", async () => {
+    const client = await SignerClient.connect(socketPath);
+    const originalKeyId = client.keyId;
+    try {
+      const otherKey = join(directory, "other.key");
+      killSigner(await runSignerCli(["keygen", "--key", otherKey], /public_key_base64/));
+      await restartSigner(otherKey);
+
+      // Signatures under a key the server never announced would be refused by
+      // the store anyway; the client says why, and does not adopt the new key.
+      await expect(client.sign(fromHex(DIGEST))).rejects.toThrow(/different key/);
+      expect(client.keyId).toBe(originalKeyId);
+      expect(await client.healthy()).toBe(false);
+    } finally {
+      client.close();
+    }
+  }, 60_000);
+
+  it("stays closed once its owner has closed it", async () => {
+    const client = await SignerClient.connect(socketPath);
+    client.close();
+    await expect(client.sign(fromHex(DIGEST))).rejects.toBeInstanceOf(SignerUnavailableError);
+    expect(await client.healthy()).toBe(false);
+  }, 30_000);
+});
+
 describe("a signer that stalls past the timeout", () => {
   // The real signer process, frozen with SIGSTOP the way a GC pause, swap or an
   // overloaded host would freeze it. Requests written meanwhile wait in the

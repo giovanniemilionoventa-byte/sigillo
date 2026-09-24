@@ -67,7 +67,7 @@ dopo ogni fase in attesa di autorizzazione. Niente PostgreSQL, multi-tenancy, Sa
 | 2 | Correzione dell'associazione tra richiesta e firma (signer) | fatto | Punto 1 della revisione. Ogni richiesta al signer ha un `id` che il signer ripete nella risposta: una risposta arrivata dopo il timeout viene ignorata e non può più completare la richiesta successiva. Il server verifica ogni firma (ricevute e checkpoint) sui byte esatti prima di scrivere. Bug riprodotto con il signer reale congelato (SIGSTOP/SIGCONT); 24 test nuovi, 565 verdi |
 | 3 | Controllo automatico delle dipendenze | fatto | `pnpm audit:deps` e workflow `dependency-audit.yml` (push, PR, ogni lunedì). Node: produzione bloccante a qualsiasi gravità, sviluppo da `high` in su; Python: `pip-audit` su SDK con tutti gli extra, esempio e demo. Guida in `docs/DEPENDENCY-AUDIT.md`. Il controllo ha trovato 7 avvisi nella catena di sviluppo (vitest 2.1.9 → vite/esbuild): vitest aggiornato a 4.1.11, ora 0 avvisi. Da confermare: `pip-audit` come strumento solo-CI |
 | 4 | Dati personali nei campi testuali | fatto | Analisi su 169 ricevute reali (demo CV + esempio): unico dato personale in chiaro `on_behalf_of` = `elena.rizzo`. Corretto senza decisioni di prodotto: Unicode sempre valido (il taglio OTLP spezzava le emoji, e il cross-check Python non riusciva a calcolare l'impronta), `model.provider`/`digest` limitati a 256, affermazione falsa in `SECURITY.md`. Nuovo `docs/DATA-INVENTORY.md`; proposte D1–D7 in `docs/PROPOSTA-FASE-4.md`, da approvare |
-| 5 | Hardening della configurazione di produzione, e limitazione dei tentativi di accesso | in corso | Assorbe la limitazione dei tentativi di accesso (ex fase 2 del piano iniziale, spostata qui dal committente il 2026-09-24). Punti della revisione: 2, 10, 11, 12, 15, 16 |
+| 5 | Hardening della configurazione di produzione, e limitazione dei tentativi di accesso | fatto | Punti 2, 10, 11, 12, 15, 16 corretti; 20 in parte. Limite ai tentativi di password (per indirizzo, blocco crescente, risposta identica a una password sbagliata) e alle API key sbagliate; revoca delle chiavi efficace sul server già avviato; scrypt asincrono; riconnessione al signer e `/healthz` che lo controlla; cookie `Secure`, sessioni revocabili, `no-store`, controllo di `Origin`, logout in POST; impostazioni numeriche validate all'avvio; container in sola lettura, senza capability, `no-new-privileges`, limiti di risorse, log a rotazione; password in un file segreto (assente da `docker compose config`, provato); log senza query string né segreti (provato con Fastify e con Caddy reale). Tre difetti nuovi trovati: la cartella dei backup non scrivibile nell'immagine, Caddy che non parte con `SIGILLO_TLS_EMAIL` vuota, la password stampata da `docker compose config`. 636 test verdi |
 | 6 | Test di manomissione | todo | Punti 3, 8, 17. Almeno 10 scenari, e i limiti di ciò che non si può rilevare in `SECURITY.md` |
 | 7 | Test completo di esportazione e verifica | todo | Punti 4, 9 |
 | 8 | Preparazione integrazione con un agente reale | todo | Analisi e proposta, senza inventare un agente (decisione D6, punto 5) |
@@ -80,6 +80,85 @@ Il 2026-09-24 il committente ha mandato il prompt delle fasi 5-11, trascritto in
 Per quelle fasi vale la definizione della tabella 3.2 di `docs/RAPPORTO-SESSIONE-2026-09-24.md`,
 riportata anche in `SPEC.md`. Le fasi procedono senza conferma tra l'una e l'altra; la fase 9 non si
 esegue in questa sessione.
+
+## Fasi 5-11 — note di lavoro (dal 2026-09-24)
+
+### Fase 5 — Hardening della configurazione di produzione (fatto)
+
+Base: `main` @ `a5b6058`. Test Vitest: da 579 a **636** (più 1 saltato dove `caddy` non è
+installato). Test Python SDK e demo: 26 e 17, invariati e verdi. `smoke-dist` e cross-check
+Python: verdi.
+
+**Difetti corretti, ciascuno riprodotto prima con un test che falliva.**
+
+| Punto | Difetto | Test che lo riproduce (componenti reali) |
+|---|---|---|
+| 2 (ALTA) | La revoca da CLI non aveva effetto sul server già avviato | `api-keys.test.ts`: due `ApiKeyStore` sullo stesso file SQLite; la revoca fatta dal secondo ora vale anche per il primo, che aveva il token in cache |
+| 10 | Uno scrypt sincrono (~55 ms) per ogni API key sbagliata bloccava il processo | `api-keys.test.ts`: durante la verifica di un token sbagliato l'event loop deve girare almeno una volta (con lo scrypt sincrono: zero volte) |
+| 11 | Il server non si riconnetteva al signer riavviato; `/healthz` diceva sempre "ok" | `signer-client.test.ts`: signer reale ucciso e riavviato sullo stesso socket (stessa chiave → firma di nuovo; chiave diversa → rifiuto esplicito); `server-hardening.test.ts`: `/healthz` 503 finché il signer manca |
+| 12 | Cookie senza `Secure`, sessione non revocabile, pagine senza `no-store`, logout in GET, nessun controllo di `Origin` | `ui-security.test.ts`, 12 test sul server Fastify vero |
+| 16 | `SIGILLO_CHECKPOINT_MINUTES=abc` → `setInterval(NaN)`, cioè ogni millisecondo | `cli-config.test.ts`: la CLI vera, in un processo a parte, con 7 valori sbagliati: esce con 1 e nomina la variabile, prima di cercare il signer |
+| 15 | Container senza hardening; cartella dei backup inesistente nell'immagine (Docker l'avrebbe creata di root, e `backup.sh`, che gira come `node`, non avrebbe potuto scrivere) | `deploy-config.test.ts`: `docker compose config` risolto davvero; confronto tra volumi montati e cartelle create nel Dockerfile. **Trovato leggendo i file, non riprodotto con Docker**, che qui non gira |
+| nuovo | `docker compose config` stampava la password dell'amministratore (e quella della TSA) | riprodotto con `docker compose config` vero: prima 2 righe, ora 0. Stesso controllo in `deploy-config.test.ts`, che gira in CI |
+| nuovo | Con `SIGILLO_TLS_EMAIL` vuota (il file lo permetteva) Caddy rifiuta tutta la configurazione e non parte | riprodotto con i binari reali di Caddy 2.10.2 e 2.11.4 (`caddy validate`); ora Compose si ferma prima e nomina la variabile |
+| 20 (parte) | Il 500 di Fastify rimandava il messaggio interno; `/api/v1/receipts` rispondeva 400 col signer irraggiungibile; i log contenevano le query string | `server-hardening.test.ts`: 503 (ritentabile) col signer spento, `internal error` e niente altro per un 500, log controllato riga per riga |
+
+**Limitazione dei tentativi di accesso** (richiesta del committente, ex fase 2). Funzione nuova
+con test propri, non un difetto:
+- dopo `SIGILLO_LOGIN_MAX_FAILURES` (5) password sbagliate in `SIGILLO_LOGIN_WINDOW_MINUTES`
+  (15), l'indirizzo è bloccato per `SIGILLO_LOGIN_LOCKOUT_MINUTES` (5); ogni blocco successivo
+  raddoppia fino a `SIGILLO_LOGIN_LOCKOUT_MAX_MINUTES` (60). Un accesso riuscito azzera tutto;
+- durante il blocco la password non viene nemmeno controllata, e la risposta è **identica** a
+  quella di una password sbagliata: stesso stato (401), stessa pagina, stesso testo ("Accesso non
+  riuscito. Controlla la password; dopo troppi tentativi sbagliati l'accesso resta sospeso per
+  qualche minuto."), nessun `Retry-After`. Chi attacca non può sapere se è bloccato, e nessun
+  tentativo fatto durante il blocco può rivelargli la password giusta;
+- test: N+1 tentativi bloccati anche con la password giusta; risposta bloccata identica byte per
+  byte a quella sbagliata; sblocco esattamente allo scadere, con la password giusta accettata al
+  primo colpo; un indirizzo bloccato non blocca gli altri; `X-Forwarded-For` ignorato se non si è
+  detto di fidarsi di un proxy (altrimenti basterebbe cambiarlo a ogni tentativo);
+- l'indirizzo è quello vero solo dietro Caddy: `SIGILLO_TRUST_PROXY=uniquelocal` nel Compose.
+  Fastify 5.12 rifiuta ormai i conteggi di hop, quindi si indicano le reti fidate; verificato con
+  Caddy reale che un `X-Forwarded-For` falso mandato dal client viene sostituito;
+- stesso meccanismo per le API key sbagliate (`SIGILLO_INGEST_MAX_FAILURES`, 20 al minuto): durante
+  il blocco non si calcola nessuno scrypt, ma un agente la cui chiave è già stata verificata
+  continua a lavorare anche dallo stesso indirizzo.
+
+Limite noto, accettato: i contatori stanno in memoria, un riavvio li azzera. Chi attacca da
+molti indirizzi diversi ha 5 tentativi per indirizzo ogni 15 minuti; con una password di 12+
+caratteri casuali resta impraticabile, e la checklist raccomanda `openssl rand -base64 24`.
+
+**Docker e Caddy** (`deploy/`):
+- tutti e tre i servizi: `read_only`, `no-new-privileges`, `cap_drop: ALL`, limiti di CPU,
+  memoria e processi, log `json-file` con `max-size 10m` × 5 file. Server e signer girano già come
+  `node`; Caddy resta root (la sua immagine lo richiede per scrivere certificati) ma con la sola
+  capability `NET_BIND_SERVICE`;
+- immagine Node fissata per digest; Caddy fissato alla versione `2.11.4-alpine` (l'ultima
+  pubblicata). Il digest di Caddy non l'ho potuto leggere: Docker Hub ha risposto 429 (limite di
+  richieste anonime dall'indirizzo condiviso di questo ambiente) — resta un passo della checklist
+  della fase 10;
+- Caddy: aggiunte `Permissions-Policy`, `Cross-Origin-Opener-Policy`,
+  `Cross-Origin-Resource-Policy` a quelle che c'erano già (`X-Content-Type-Options`,
+  `X-Frame-Options`, `Referrer-Policy`, CSP, HSTS); log senza query string;
+- password dell'amministratore in `deploy/secrets/admin_password`, montata come secret di
+  Compose; `.env` non contiene più segreti. Il file locale `docker-compose.local.yml` (la prova
+  sul proprio computer) tiene la password in `.env` come prima, ed è scritto nel file.
+
+**Documentazione**: `SECURITY.md` (autenticazione, nuova sezione "Secrets and logs" con i comandi
+eseguiti e i risultati, checklist "Before going to production"), `API.md` (401/503/500, `/healthz`,
+tabella delle variabili), `PROVA-LOCALE.md` (cosa succede dopo 5 password sbagliate).
+
+**Cosa non è verificato**: Docker non gira in questo ambiente (il demone non si può avviare),
+quindi `read_only`, i limiti, i secret e i permessi dei volumi sono controllati solo su
+`docker compose config`. Il primo `docker compose up` su una macchina vera è il vero collaudo:
+è nella checklist della fase 10.
+
+**Annotato per le fasi successive**
+- Punto 13 (scritture fuori dalla coda: `recordTimestamp`, emissione di chiavi dalla UI) → fase 10.
+- Punto 20, resto (`LIKE` senza escape nella ricerca; verificatore che non controlla
+  `range.from_ts`/`to_ts` e che elenca come "verified" anche senza openssl) → fasi 6 e 7.
+- Il vecchio elenco "Checklist di verifica finale M9" in fondo a questo file usa ancora la
+  password in `.env`: la fase 10 lo sostituisce con `docs/DEPLOY-PRODUZIONE.md`.
 
 ## Note di sessione
 
@@ -1146,6 +1225,12 @@ sullo stesso nome, da `main` aggiornato (come da istruzioni), non impilato sulla
 mergiata.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
+
+> **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
+> non va più in `.env` ma nel file `deploy/secrets/admin_password`, e `SIGILLO_TLS_EMAIL` è
+> obbligatoria: seguendo alla lettera i comandi qui sotto `docker compose up` si ferma. La
+> procedura aggiornata è `docs/DEPLOY-PRODUZIONE.md` (fase 10). Questa sezione resta come
+> documento storico di M9.
 
 > Esiste anche una versione **per chi non usa il terminale**: `PROVA-LOCALE.md`, in italiano,
 > separata per Windows e Mac, che usa `deploy/docker-compose.local.yml` (senza dominio, senza

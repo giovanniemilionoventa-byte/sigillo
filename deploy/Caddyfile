@@ -20,6 +20,11 @@
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "no-referrer"
+		# Nothing here uses the camera, the microphone or the location, and no
+		# other site's window may hold a reference to this one.
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
 		# The web view is server-rendered with one deliberate exception: the
 		# "verifica un documento" page hashes a file in the browser with Web
 		# Crypto, so the document itself is never sent here. That one inline
@@ -30,12 +35,22 @@
 		-Server
 	}
 
-	reverse_proxy server:8080 {
-		header_up X-Forwarded-Proto {scheme}
-	}
+	# Caddy sends X-Forwarded-For and X-Forwarded-Proto upstream, and replaces
+	# whatever a client sent under those names: the server believes them only
+	# from this proxy (SIGILLO_TRUST_PROXY).
+	reverse_proxy server:8080
 
+	# One line per request, without the query string: in the web view it holds
+	# document fingerprints and search terms, which do not belong in a log.
+	# Caddy already leaves out the values of Authorization and Cookie. Docker
+	# rotates what is written to stderr (see logging in docker-compose.yml).
 	log {
 		output stderr
-		format console
+		format filter {
+			wrap console
+			fields {
+				request>uri regexp "\?.*$" ""
+			}
+		}
 	}
 }
