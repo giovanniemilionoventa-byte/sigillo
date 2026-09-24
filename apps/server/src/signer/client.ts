@@ -9,18 +9,33 @@ import type { SigningService } from "../storage/store.js";
  *
  * What comes back over the socket is checked, not trusted: the announced
  * key_id must match the public key, and a signature must have the shape the
- * receipt format requires.
+ * receipt format requires. Whether a signature actually verifies over the
+ * receipt it is for is checked by the store, before anything is written.
+ *
+ * Every request carries an id of its own, and a reply is matched to the request
+ * whose id it echoes, never by arrival order. Order alone is not enough: once
+ * a request has timed out, its reply can still arrive, and matched by order it
+ * would complete whichever request came next — with a signature over the
+ * wrong digest. By id, a reply to a request nobody is waiting for any more is
+ * simply ignored. A reply that cannot be matched at all (no id, not JSON) means
+ * the other end does not speak this protocol, so the connection is closed and
+ * every waiting request fails with it, rather than anything being guessed.
  */
 
 const SIGNATURE = /^[A-Za-z0-9+/]{86}==$/;
 const KEY_ID = /^[0-9a-f]{16}$/;
 const NEWLINE = 0x0a;
-const REQUEST_TIMEOUT_MS = 5000;
+const DEFAULT_TIMEOUT_MS = 5000;
 
 interface Pending {
   resolve: (reply: Record<string, unknown>) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
+}
+
+export interface SignerClientOptions {
+  /** How long one request may wait for its reply before it fails. */
+  timeoutMs?: number;
 }
 
 export class SignerUnavailableError extends Error {
@@ -31,22 +46,31 @@ export class SignerUnavailableError extends Error {
 }
 
 export class SignerClient implements SigningService {
-  private readonly pending: Pending[] = [];
+  /** Requests still waiting for their reply, by the id each was sent with. */
+  private readonly pending = new Map<string, Pending>();
+  private lastId = 0;
   private buffer = Buffer.alloc(0);
   private closed = false;
   private identity: { keyId: string; publicKeyBase64: string } | null = null;
 
-  private constructor(private readonly socket: Socket) {
+  private constructor(
+    private readonly socket: Socket,
+    private readonly timeoutMs: number,
+  ) {
     this.socket.on("data", (chunk) => this.receive(chunk));
     this.socket.on("close", () =>
-      this.failPending(new SignerUnavailableError("the signer closed the connection")),
+      this.shutDown(new SignerUnavailableError("the signer closed the connection")),
     );
     this.socket.on("error", (error) =>
-      this.failPending(new SignerUnavailableError(`the signer connection failed: ${error.message}`)),
+      this.shutDown(new SignerUnavailableError(`the signer connection failed: ${error.message}`)),
     );
   }
 
-  static async connect(socketPath: string): Promise<SignerClient> {
+  static async connect(socketPath: string, options: SignerClientOptions = {}): Promise<SignerClient> {
+    const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new Error(`timeoutMs must be a positive number of milliseconds, received ${timeoutMs}`);
+    }
     const socket = await new Promise<Socket>((resolve, reject) => {
       const attempt = createConnection(socketPath);
       attempt.once("connect", () => resolve(attempt));
@@ -57,7 +81,7 @@ export class SignerClient implements SigningService {
       );
     });
 
-    const client = new SignerClient(socket);
+    const client = new SignerClient(socket, timeoutMs);
     try {
       await client.handshake();
     } catch (error) {
@@ -92,9 +116,7 @@ export class SignerClient implements SigningService {
   }
 
   close(): void {
-    this.closed = true;
-    this.socket.destroy();
-    this.failPending(new SignerUnavailableError("the signer connection was closed"));
+    this.shutDown(new SignerUnavailableError("the signer connection was closed"));
   }
 
   private requireIdentity(): { keyId: string; publicKeyBase64: string } {
@@ -129,7 +151,7 @@ export class SignerClient implements SigningService {
   private receive(chunk: Buffer): void {
     this.buffer = Buffer.concat([this.buffer, chunk]);
     let index = this.buffer.indexOf(NEWLINE);
-    while (index >= 0) {
+    while (index >= 0 && !this.closed) {
       const line = this.buffer.subarray(0, index).toString("utf8");
       this.buffer = this.buffer.subarray(index + 1);
       this.settle(line);
@@ -138,27 +160,39 @@ export class SignerClient implements SigningService {
   }
 
   private settle(line: string): void {
-    const waiting = this.pending.shift();
-    if (waiting === undefined) {
-      return;
-    }
-    clearTimeout(waiting.timer);
-
     let reply: unknown;
     try {
       reply = JSON.parse(line);
     } catch {
-      waiting.reject(new SignerUnavailableError("the signer returned something that is not JSON"));
+      this.shutDown(new SignerUnavailableError("the signer returned something that is not JSON"));
       return;
     }
     if (typeof reply !== "object" || reply === null || Array.isArray(reply)) {
-      waiting.reject(
-        new SignerUnavailableError("the signer returned something that is not an object"),
-      );
+      this.shutDown(new SignerUnavailableError("the signer returned something that is not an object"));
       return;
     }
 
     const fields = reply as Record<string, unknown>;
+    const id = fields["id"];
+    if (typeof id !== "string") {
+      this.shutDown(
+        new SignerUnavailableError(
+          "the signer's reply carries no request id, so it cannot be matched to a request: " +
+            "the signer is older than this server, or it is not a sigillo signer",
+        ),
+      );
+      return;
+    }
+
+    const waiting = this.pending.get(id);
+    if (waiting === undefined) {
+      // The reply to a request that already timed out (or to none this client
+      // sent). Nobody is waiting for it, and it must not complete anything else.
+      return;
+    }
+    this.pending.delete(id);
+    clearTimeout(waiting.timer);
+
     if (fields["ok"] !== true) {
       waiting.reject(new SignerUnavailableError(`the signer refused: ${String(fields["error"])}`));
       return;
@@ -166,28 +200,32 @@ export class SignerClient implements SigningService {
     waiting.resolve(fields);
   }
 
-  private failPending(error: Error): void {
-    while (this.pending.length > 0) {
-      const waiting = this.pending.shift();
-      if (waiting !== undefined) {
-        clearTimeout(waiting.timer);
-        waiting.reject(error);
-      }
+  /** Closes the connection for good and fails every request still waiting. */
+  private shutDown(error: Error): void {
+    this.closed = true;
+    this.socket.destroy();
+    for (const waiting of this.pending.values()) {
+      clearTimeout(waiting.timer);
+      waiting.reject(error);
     }
+    this.pending.clear();
   }
 
   private request(message: Record<string, unknown>): Promise<Record<string, unknown>> {
     if (this.closed) {
       return Promise.reject(new SignerUnavailableError("the signer connection is closed"));
     }
+    this.lastId += 1;
+    const id = String(this.lastId);
     return new Promise((resolve, reject) => {
-      // Replies are matched to requests by order. A request that times out means
-      // that order can no longer be trusted, so every pending request fails with it.
+      // Only this request fails at its deadline. Its reply may still arrive;
+      // with its id no longer pending, it is ignored when it does.
       const timer = setTimeout(() => {
-        this.failPending(new SignerUnavailableError("the signer did not answer in time"));
-      }, REQUEST_TIMEOUT_MS);
-      this.pending.push({ resolve, reject, timer });
-      this.socket.write(`${JSON.stringify(message)}\n`);
+        this.pending.delete(id);
+        reject(new SignerUnavailableError("the signer did not answer in time"));
+      }, this.timeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
+      this.socket.write(`${JSON.stringify({ id, ...message })}\n`);
     });
   }
 }

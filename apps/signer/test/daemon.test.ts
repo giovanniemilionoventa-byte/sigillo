@@ -208,3 +208,65 @@ describe("rejecting anything that is not a known request", () => {
     expect(JSON.parse(lines[1] ?? "{}")["ok"]).toBe(true);
   });
 });
+
+describe("request ids", () => {
+  // A reply is only ever matched to the request that carries the same id.
+  // Without it, a client can do no better than match by arrival order, which
+  // hands a reply that arrives late to whichever request is waiting next.
+
+  it("echoes the id of a sign request, with the signature over that request's digest", async () => {
+    const reply = await request({ id: "17", method: "sign", digest: DIGEST });
+    expect(reply["ok"]).toBe(true);
+    expect(reply["id"]).toBe("17");
+    expect(verifyDigestSignature(fromHex(DIGEST), String(reply["sig"]), key.publicKey)).toBe(true);
+  });
+
+  it("echoes the id of a pubkey request", async () => {
+    const reply = await request({ id: "handshake-1", method: "pubkey" });
+    expect(reply["ok"]).toBe(true);
+    expect(reply["id"]).toBe("handshake-1");
+    expect(reply["key_id"]).toBe(key.keyId);
+  });
+
+  it("echoes the id on a refusal too, so the client can fail that one request", async () => {
+    const refusals = await Promise.all([
+      request({ id: "a", method: "sign", digest: "z".repeat(64) }),
+      request({ id: "b", method: "sign" }),
+      request({ id: "c", method: "export" }),
+      request({ id: "d", method: "sign", digest: DIGEST, also: "please sign this" }),
+    ]);
+    expect(refusals.map((reply) => reply["ok"])).toEqual([false, false, false, false]);
+    expect(refusals.map((reply) => reply["id"])).toEqual(["a", "b", "c", "d"]);
+    expect(refusals.every((reply) => reply["sig"] === undefined)).toBe(true);
+  });
+
+  it("answers each request on one connection under its own id", async () => {
+    const other = "a".repeat(64);
+    const lines = await exchange(
+      `${JSON.stringify({ id: "1", method: "sign", digest: DIGEST })}\n` +
+        `${JSON.stringify({ id: "2", method: "sign", digest: other })}\n`,
+      2,
+    );
+    const replies = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const byId = new Map(replies.map((reply) => [reply["id"], String(reply["sig"])]));
+    expect(verifyDigestSignature(fromHex(DIGEST), byId.get("1") ?? "", key.publicKey)).toBe(true);
+    expect(verifyDigestSignature(fromHex(other), byId.get("2") ?? "", key.publicKey)).toBe(true);
+  });
+
+  it("refuses an id that is not a short token, and does not echo it", async () => {
+    const badIds: unknown[] = ["", "x".repeat(65), "has space", "new\nline", 7, null, ["1"], { id: 1 }];
+    for (const id of badIds) {
+      const reply = await request({ id, method: "sign", digest: DIGEST });
+      expect(reply["ok"], `id ${JSON.stringify(id)}`).toBe(false);
+      expect(String(reply["error"])).toMatch(/id/);
+      expect(reply["id"]).toBeUndefined();
+      expect(reply["sig"]).toBeUndefined();
+    }
+  });
+
+  it("still answers a request without an id, as before", async () => {
+    const reply = await request({ method: "sign", digest: DIGEST });
+    expect(reply["ok"]).toBe(true);
+    expect(reply["id"]).toBeUndefined();
+  });
+});

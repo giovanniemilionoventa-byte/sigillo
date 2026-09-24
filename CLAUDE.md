@@ -19,6 +19,9 @@ This file collects the permanent rules for anyone (human or AI) working on this 
 
 - **Node runtime**: `fastify`, `better-sqlite3`, `canonicalize` (RFC 8785), `zod`, `protobufjs`, `pdfkit`, `commander`. Cryptography uses only `node:crypto` (SHA-256, Ed25519, scrypt) — no external crypto libraries.
 - **Node dev**: `typescript`, `tsx`, `vitest`, `fast-check`, `@types/*`.
+- **CI-only tooling** (never a dependency of any package): `pip-audit`, pinned in
+  `.github/workflows/dependency-audit.yml`. Added in pilot phase 3 for the
+  dependency check; pending the project owner's confirmation.
 - **Python**: `opentelemetry-sdk`, `opentelemetry-exporter-otlp-proto-http`; optional extras `openinference-instrumentation-langchain`, `openinference-instrumentation-crewai`, `openinference-instrumentation-openai` (added in phase 2, N2, for agents that call an OpenAI-compatible server directly).
 - Anything else: ask the project owner before adding it.
 
@@ -51,6 +54,7 @@ Run from the repository root. Node 22 and pnpm 10 are required.
 | `node scripts/smoke-dist.mjs` | verify the built package under plain Node (run after `pnpm build`) |
 | `python3 scripts/crosscheck_vectors.py` | re-derive the receipt test vectors with an independent Python implementation |
 | `pnpm tsx scripts/gen-vectors.ts` | regenerate `packages/core/test/vectors.json` |
+| `pnpm audit:deps` | known-vulnerability check of Node and Python dependencies (`audit:node`, `audit:python`); see `docs/DEPENDENCY-AUDIT.md` |
 
 Tests import `@sigillo/core` and resolve to `packages/core/src` through a vitest
 alias, so no build is needed to run them. `scripts/smoke-dist.mjs` is what covers
@@ -62,7 +66,9 @@ dependency allowlist, no `.only()` left in tests, no explicit `any`, no key
 material in the tree. Style is left to the author.
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck, build, test and the dist
-smoke check on Node 22, plus the Python cross-check as a separate job.
+smoke check on Node 22, plus the Python cross-check as a separate job. A second
+workflow, `.github/workflows/dependency-audit.yml`, runs the dependency audit on
+every push and pull request and every Monday on its own.
 
 ## Workflow reminders (session process)
 

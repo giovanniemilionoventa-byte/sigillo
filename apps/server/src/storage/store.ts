@@ -1,3 +1,4 @@
+import type { KeyObject } from "node:crypto";
 import Database from "better-sqlite3";
 import {
   canonicalReceiptBytes,
@@ -5,14 +6,17 @@ import {
   CHECKPOINT_VERSION,
   fromHex,
   GENESIS_PREV_HASH,
+  keyIdFromRawPublicKey,
   merkleRoot,
   parseCheckpoint,
   parseReceipt,
   parseUnsignedReceipt,
-  receiptHash,
+  publicKeyFromRaw,
   RECEIPT_VERSION_1,
   RECEIPT_VERSION_2,
+  sha256,
   toHex,
+  verifyDigestSignature,
   type Action,
   type Actor,
   type ArtifactEntry,
@@ -27,6 +31,11 @@ import { SCHEMA_SQL } from "./schema.js";
 /** Whatever holds the private key. In production this is the separate signer process. */
 export interface SigningService {
   readonly keyId: string;
+  /**
+   * The raw 32 bytes of the public key, base64. The store verifies every
+   * signature it is handed against this key before it writes anything.
+   */
+  readonly publicKeyBase64: string;
   sign(digest: Uint8Array): Promise<string>;
 }
 
@@ -112,6 +121,28 @@ function rowToCheckpoint(row: CheckpointRow): StoredCheckpoint {
   };
 }
 
+/**
+ * The key every signature is checked against before it is stored. It must be
+ * the key the signer's key_id names: that key_id goes into every receipt, and
+ * a verifier finds the key by it.
+ */
+function verificationKeyOf(signer: SigningService): KeyObject {
+  const raw = new Uint8Array(Buffer.from(signer.publicKeyBase64, "base64"));
+  if (raw.length !== 32 || keyIdFromRawPublicKey(raw) !== signer.keyId) {
+    throw new StorageError(
+      `the signer's key_id ${signer.keyId} is not the identifier of the public key it announces`,
+    );
+  }
+  return publicKeyFromRaw(raw);
+}
+
+function refusedSignature(what: string, keyId: string): StorageError {
+  return new StorageError(
+    `the signer returned a signature that does not verify over this ${what}'s hash under key ` +
+      `${keyId}, so nothing was written`,
+  );
+}
+
 function rowToReceipt(row: StoredRow): Receipt {
   return parseReceipt({ ...(JSON.parse(row.canonical) as object), sig: row.sig });
 }
@@ -141,6 +172,7 @@ export class ReceiptStore {
     private readonly write: Database.Database,
     private readonly read: Database.Database,
     private readonly signer: SigningService | undefined,
+    private readonly verificationKey: KeyObject | undefined,
   ) {
     this.tipStatement = this.write.prepare(
       "SELECT seq, hash FROM receipts WHERE system_id = ? ORDER BY seq DESC LIMIT 1",
@@ -169,6 +201,8 @@ export class ReceiptStore {
    * or an export needs.
    */
   static open(location: string, signer?: SigningService): ReceiptStore {
+    const verificationKey = signer === undefined ? undefined : verificationKeyOf(signer);
+
     const write = new Database(location);
     write.pragma("journal_mode = WAL");
     // Evidence is worth an fsync per commit.
@@ -180,7 +214,7 @@ export class ReceiptStore {
     const read = new Database(location, { readonly: true });
     read.pragma("busy_timeout = 5000");
 
-    return new ReceiptStore(write, read, signer);
+    return new ReceiptStore(write, read, signer, verificationKey);
   }
 
   /** Registers a system and opens its chain by writing the genesis receipt. */
@@ -399,7 +433,8 @@ export class ReceiptStore {
 
   private async writeCheckpoint(systemId: string, ts: string): Promise<StoredCheckpoint | null> {
     const signer = this.signer;
-    if (signer === undefined) {
+    const verificationKey = this.verificationKey;
+    if (signer === undefined || verificationKey === undefined) {
       throw new StorageError("this store was opened for reading only: it has no signer");
     }
     this.write.exec("BEGIN IMMEDIATE");
@@ -431,8 +466,13 @@ export class ReceiptStore {
         key_id: signer.keyId,
       } as const;
 
-      const sig = await signer.sign(checkpointHash(unsigned));
+      const digest = checkpointHash(unsigned);
+      const sig = await signer.sign(digest);
       const checkpoint = parseCheckpoint({ ...unsigned, sig });
+      // Checked, not trusted, exactly as for a receipt below.
+      if (!verifyDigestSignature(digest, checkpoint.sig, verificationKey)) {
+        throw refusedSignature("checkpoint", signer.keyId);
+      }
 
       const result = this.write
         .prepare(
@@ -475,7 +515,8 @@ export class ReceiptStore {
    */
   private async writeReceipt(event: ChainEvent, mode: "genesis" | "continuation"): Promise<Receipt> {
     const signer = this.signer;
-    if (signer === undefined) {
+    const verificationKey = this.verificationKey;
+    if (signer === undefined || verificationKey === undefined) {
       throw new StorageError("this store was opened for reading only: it has no signer");
     }
     this.write.exec("BEGIN IMMEDIATE");
@@ -513,12 +554,22 @@ export class ReceiptStore {
         ...(event.model === undefined ? {} : { model: event.model }),
       });
 
-      const canonical = new TextDecoder().decode(canonicalReceiptBytes(unsigned));
-      const digest = receiptHash(unsigned);
+      // One set of bytes: the ones stored as `canonical`, whose hash is stored
+      // as `hash`, signed, and verified below.
+      const canonicalBytes = canonicalReceiptBytes(unsigned);
+      const canonical = new TextDecoder().decode(canonicalBytes);
+      const digest = sha256(canonicalBytes);
       const sig = await signer.sign(digest);
       // Validated again after signing: the signer is a separate process, and
-      // what it returns is not taken on trust.
+      // what it returns is not taken on trust. The shape first, then the
+      // signature itself: it must verify over exactly these bytes, under the
+      // signer's own key, or the transaction is rolled back and the position
+      // stays free. A signature over any other digest — another receipt's,
+      // say — is refused here whatever route it took to arrive.
       const receipt = parseReceipt({ ...unsigned, sig });
+      if (!verifyDigestSignature(digest, receipt.sig, verificationKey)) {
+        throw refusedSignature("receipt", signer.keyId);
+      }
 
       this.insertStatement.run({
         system_id: receipt.system_id,

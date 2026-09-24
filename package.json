@@ -13,14 +13,17 @@
     "build": "pnpm -r build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test"
+    "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test",
+    "audit:node": "pnpm audit --prod && pnpm audit --dev --audit-level high",
+    "audit:python": "python3 scripts/audit_python.py",
+    "audit:deps": "pnpm audit:node && pnpm audit:python"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "fast-check": "^3.23.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.11"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

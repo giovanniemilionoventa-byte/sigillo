@@ -56,6 +56,26 @@ Tutte e nove le milestone sono `fatto`. Le tre domande aperte sono state decise 
   file `.key` e `.pem`, e non c'è materiale di chiave nell'albero), ma è una scelta da fare
   consapevolmente.
 
+## Preparazione al primo pilot — fasi 1-11 (dal 2026-09-24)
+
+Piano del committente: portare la base attuale a un pilot reale, una fase alla volta, fermandosi
+dopo ogni fase in attesa di autorizzazione. Niente PostgreSQL, multi-tenancy, SaaS, HSM/KMS.
+
+| Fase | Nome | Stato | Note |
+|---|---|---|---|
+| 1 | Revisione tecnica pre-produzione | fatto | Rapporto in `docs/REVISIONE-FASE-1.md`: 20 punti, 5 di gravità alta, i principali riprodotti con codice reale; nessuna modifica al codice |
+| 2 | Correzione dell'associazione tra richiesta e firma (signer) | fatto | Punto 1 della revisione. Ogni richiesta al signer ha un `id` che il signer ripete nella risposta: una risposta arrivata dopo il timeout viene ignorata e non può più completare la richiesta successiva. Il server verifica ogni firma (ricevute e checkpoint) sui byte esatti prima di scrivere. Bug riprodotto con il signer reale congelato (SIGSTOP/SIGCONT); 24 test nuovi, 565 verdi |
+| — | Limitazione dei tentativi di accesso | todo | Era la fase 2 del piano iniziale; il committente ha anteposto la correzione del signer. Numero da ridefinire |
+| 3 | Controllo automatico delle dipendenze | fatto | `pnpm audit:deps` e workflow `dependency-audit.yml` (push, PR, ogni lunedì). Node: produzione bloccante a qualsiasi gravità, sviluppo da `high` in su; Python: `pip-audit` su SDK con tutti gli extra, esempio e demo. Guida in `docs/DEPENDENCY-AUDIT.md`. Il controllo ha trovato 7 avvisi nella catena di sviluppo (vitest 2.1.9 → vite/esbuild): vitest aggiornato a 4.1.11, ora 0 avvisi. Da confermare: `pip-audit` come strumento solo-CI |
+| 4 | Dati personali nei campi testuali | todo | |
+| 5 | Hardening della configurazione di produzione | todo | |
+| 6 | Test di manomissione | todo | |
+| 7 | Test completo di esportazione e verifica | todo | |
+| 8 | Preparazione integrazione con un agente reale | todo | |
+| 9 | Prima integrazione reale | todo | |
+| 10 | Preparazione alla produzione | todo | |
+| 11 | Revisione finale prima del pilot | todo | |
+
 ## Note di sessione
 
 ### Sessione 1 — 2026-09-21
