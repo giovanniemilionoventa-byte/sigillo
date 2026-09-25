@@ -1596,6 +1596,19 @@ Nota di processo: la PR #2 era già mergiata, quindi questo lavoro è ripartito 
 sullo stesso nome, da `main` aggiornato (come da istruzioni), non impilato sulla cronologia già
 mergiata.
 
+### Sessione 4 — 2026-09-25 — login rifiutato in produzione (`403 cross-origin request refused`)
+
+Trovato in produzione, non dai test: nessun test copriva un `Origin: null` senza `Referer`, ed è
+così che ogni browser, su ogni dispositivo, manda il form di login attraverso Caddy. Causa sospettata
+all'inizio: un redirect HTTP→HTTPS. **Causa vera, verificata:** il `Referrer-Policy: no-referrer` del
+`Caddyfile`; lo standard Fetch impone `Origin: null` e nessun `Referer` su una POST non-CORS con quella
+policy, e una pagina locale servita così lo riproduce in Chromium senza alcun redirect. Correzione
+(hook `preHandler` in `apps/server/src/http/ui.ts`): `Sec-Fetch-Site` come controllo primario,
+`Origin` ancora controllato quando nomina un host, `Referer` come ripiego solo se `Origin` è `null` e
+`Sec-Fetch-Site` manca; `cross-site` e `same-site` restano sempre rifiutati. Già verificata a mano in
+produzione con una patch d'emergenza prima di essere formalizzata qui, con 7 test nuovi in
+`apps/server/test/ui-security.test.ts` (4 fallivano prima della correzione); **703 test Node** verdi.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

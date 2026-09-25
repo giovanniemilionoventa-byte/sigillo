@@ -190,7 +190,27 @@ it) or `SIGILLO_ADMIN_PASSWORD`. Without either the view is not served at all.
 - **Every page behind the password is `Cache-Control: no-store`**, including
   the one that shows a new API key the only time it exists.
 - **A form posted from another site is refused** (`403`) when the browser says
-  where it comes from, on top of what `SameSite=Strict` already does.
+  where it comes from, on top of what `SameSite=Strict` already does. Three
+  headers are read, and each can only refuse:
+  `Sec-Fetch-Site` when present must be `same-origin` (or `none`, a request
+  the user started, not a page); `Origin` when it names a host must name this
+  one; and when `Origin` is `null` and `Sec-Fetch-Site` is missing, the
+  `Referer` must name this host. A request with neither `Origin` nor
+  `Sec-Fetch-Site` is not a browser's and is let through, as before.
+
+  `Sec-Fetch-Site` is the primary signal because `Origin` is not reliable
+  behind the supplied Caddy. Caddy sends `Referrer-Policy: no-referrer`, and
+  for a non-CORS POST under that policy the Fetch standard ("append a request
+  `Origin` header") sets `Origin` to `null` and sends no `Referer`: every
+  login from every browser arrived that way, and was refused, until
+  2026-09-25. That cause is established, not guessed: it is what the standard
+  says, and a local page served with `no-referrer` reproduces it in Chromium
+  (`Origin: null`, no `Referer`, `Sec-Fetch-Site: same-origin`), with no
+  redirect anywhere. The first suspicion, an HTTP→HTTPS redirect, turned out
+  not to be the cause. A browser too old to send `Sec-Fetch-Site` (before
+  Chrome 76, Firefox 90, Safari 16.4) therefore cannot log in through the
+  supplied Caddy; changing its policy to `same-origin` would let `Origin`
+  through again, at the cost of a `Referer` on same-site navigation.
 
 The view is server-rendered with one deliberate exception: "verifica un
 documento" carries a small inline script that computes a file's SHA-256 in the
