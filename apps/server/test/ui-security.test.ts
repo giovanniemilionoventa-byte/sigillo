@@ -237,3 +237,77 @@ describe("the pages behind the password", () => {
     expect(response.headers["set-cookie"]).toBeUndefined();
   });
 });
+
+/**
+ * Found in production, not by the tests above: behind Caddy, which sends
+ * `Referrer-Policy: no-referrer`, every browser posts the login form with
+ * `Origin: null` and no `Referer` (the Fetch standard requires exactly that
+ * for a non-CORS POST under that policy), so the check refused every login.
+ */
+describe("where a POST to the web view comes from", () => {
+  const HOST = "sigillo.example.com";
+
+  async function expectAccepted(headers: Record<string, string>): Promise<void> {
+    const response = await login(PASSWORD, { host: HOST, ...headers });
+    expect(response.statusCode).not.toBe(403);
+    expect(response.headers["set-cookie"]).toBeDefined();
+  }
+
+  async function expectRefused(headers: Record<string, string>): Promise<void> {
+    const response = await login(PASSWORD, { host: HOST, ...headers });
+    expect(response.statusCode).toBe(403);
+    expect(response.body).toBe("cross-origin request refused\n");
+    expect(response.headers["set-cookie"]).toBeUndefined();
+  }
+
+  it("accepts Origin null when Sec-Fetch-Site says the form is this site's own", async () => {
+    await expectAccepted({ origin: "null", "sec-fetch-site": "same-origin" });
+    await expectAccepted({ origin: "null", "sec-fetch-site": "none" });
+  });
+
+  it("refuses Origin null when nothing else says where the POST comes from", async () => {
+    await expectRefused({ origin: "null" });
+  });
+
+  it("falls back on the Referer when Origin is null and Sec-Fetch-Site is missing", async () => {
+    await expectAccepted({ origin: "null", referer: `https://${HOST}/ui/login` });
+    await expectRefused({ origin: "null", referer: "https://evil.example.net/ui/login" });
+    await expectRefused({ origin: "null", referer: "not a url" });
+  });
+
+  it("refuses anything Sec-Fetch-Site marks as cross-site or same-site, whatever the Origin", async () => {
+    for (const site of ["cross-site", "same-site"]) {
+      await expectRefused({ "sec-fetch-site": site });
+      await expectRefused({ "sec-fetch-site": site, origin: "null" });
+      await expectRefused({ "sec-fetch-site": site, origin: "null", referer: `https://${HOST}/ui/login` });
+      await expectRefused({ "sec-fetch-site": site, origin: `https://${HOST}` });
+      await expectRefused({ "sec-fetch-site": site, origin: "https://evil.example.net" });
+    }
+  });
+
+  it("still checks a real Origin, with or without Sec-Fetch-Site", async () => {
+    await expectAccepted({ origin: `https://${HOST}` });
+    await expectAccepted({ origin: `https://${HOST}`, "sec-fetch-site": "same-origin" });
+    await expectRefused({ origin: "https://evil.example.net" });
+    await expectRefused({ origin: "https://evil.example.net", "sec-fetch-site": "same-origin" });
+  });
+
+  it("leaves clients that send neither header alone, as before", async () => {
+    await expectAccepted({});
+  });
+
+  it("applies to the other forms behind the password too", async () => {
+    const cookie = sessionOf(await login(PASSWORD));
+    const post = (headers: Record<string, string>, system: string) =>
+      app.inject({
+        method: "POST",
+        url: "/ui/sistemi",
+        headers: { cookie, host: HOST, "content-type": "application/x-www-form-urlencoded", ...headers },
+        payload: `system_id=${system}`,
+      });
+    expect((await post({ origin: "null", "sec-fetch-site": "same-origin" }, "welcome")).statusCode).toBe(200);
+    expect(store.hasSystem("welcome")).toBe(true);
+    expect((await post({ origin: "null", "sec-fetch-site": "cross-site" }, "planted")).statusCode).toBe(403);
+    expect(store.hasSystem("planted")).toBe(false);
+  });
+});

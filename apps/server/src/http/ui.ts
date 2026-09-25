@@ -304,17 +304,32 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   // current browsers. A form posted from another origin is refused as well,
   // without relying on that: when a browser says where a POST comes from and
   // it is not this host, nothing is done.
+  //
+  // Each of the three signals below can only refuse. Sec-Fetch-Site comes
+  // first: a browser always sends it, and no referrer policy blanks it. Origin
+  // is checked whenever it names a host. It is "null" on every form post
+  // behind Caddy, whose Referrer-Policy: no-referrer makes the Fetch standard
+  // send Origin: null and no Referer on a non-CORS POST; then Sec-Fetch-Site
+  // decides, and only a browser too old to send that falls back on the
+  // Referer. docs/SECURITY.md has the whole story.
   app.addHook("preHandler", async (request, reply) => {
     if (request.method !== "POST" || !isUi(request)) return;
     const origin = request.headers.origin;
-    if (origin === undefined) return;
-    let sameHost = false;
-    try {
-      sameHost = new URL(origin).host === request.headers.host;
-    } catch {
-      sameHost = false;
-    }
-    if (!sameHost) {
+    const site = request.headers["sec-fetch-site"];
+    if (origin === undefined && site === undefined) return;
+    const isThisHost = (url: string | undefined): boolean => {
+      if (url === undefined) return false;
+      try {
+        return new URL(url).host === request.headers.host;
+      } catch {
+        return false;
+      }
+    };
+    const refused =
+      (site !== undefined && site !== "same-origin" && site !== "none") ||
+      (origin !== undefined && origin !== "null" && !isThisHost(origin)) ||
+      (origin === "null" && site === undefined && !isThisHost(request.headers.referer));
+    if (refused) {
       await reply.code(403).type("text/plain; charset=utf-8").send("cross-origin request refused\n");
     }
   });
