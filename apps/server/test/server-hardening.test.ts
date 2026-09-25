@@ -267,4 +267,58 @@ describe("what the log holds", () => {
     }
     expect(log).not.toMatch(/sigillo_session=/);
   });
+
+  it("counts a span whose content it had to hash itself, but never logs the content (fase 9, decision D)", async () => {
+    const marker = "content an older SDK sent in the clear, that must never reach the log";
+    const spanWith = (attributes: Record<string, string>): Record<string, unknown> => ({
+      resourceSpans: [
+        {
+          resource: { attributes: [] },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: "0af7651916cd43dd8448eb211c80319c",
+                  spanId: "b7ad6b7169203331",
+                  name: "tool",
+                  startTimeUnixNano: "1774795801000000000",
+                  endTimeUnixNano: "1774795802000000000",
+                  attributes: Object.entries(attributes).map(([key, value]) => ({
+                    key,
+                    value: { stringValue: value },
+                  })),
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const unfiltered = await app.inject({
+      method: "POST",
+      url: "/v1/traces",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      payload: spanWith({ "openinference.span.kind": "TOOL", "tool.name": "lookup", "input.value": marker }),
+    });
+    expect(unfiltered.statusCode).toBe(200);
+    expect(unfiltered.json()).toMatchObject({ sigillo: { rawContentHashed: 1 } });
+
+    const alreadyHashed = await app.inject({
+      method: "POST",
+      url: "/v1/traces",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      payload: spanWith({
+        "openinference.span.kind": "TOOL",
+        "tool.name": "lookup",
+        "sigillo.input.sha256": "a".repeat(64),
+      }),
+    });
+    expect(alreadyHashed.statusCode).toBe(200);
+    expect(alreadyHashed.json()).toMatchObject({ sigillo: { rawContentHashed: 0 } });
+
+    const log = logLines.join("");
+    expect(log).toContain("rawContentHashed");
+    expect(log).not.toContain(marker);
+  });
 });

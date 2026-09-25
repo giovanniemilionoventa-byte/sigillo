@@ -71,15 +71,16 @@ dopo ogni fase in attesa di autorizzazione. Niente PostgreSQL, multi-tenancy, Sa
 | 6 | Test di manomissione | fatto | Punti 3, 8, 17 corretti. 17 scenari di manomissione (i 10 richiesti più 7) su un fascicolo vero, ciascuno verificato con il `sigillo-verify` reale; due scenari passano da soli e vengono presi solo con le nuove opzioni `--key-id` (chiave attesa) e `--previous` (export precedente). Ora vera della marca (`genTime`) nel verificatore, nel PDF, in VERIFY.md e nella pagina web. Lettore ZIP più severo. Nuova sezione "What sigillo cannot detect" in `SECURITY.md`; corrette le affermazioni false in `SECURITY.md`, `FORMAT.md`, VERIFY.md e nel PDF. 665 test |
 | 7 | Test completo di esportazione e verifica | fatto | Punti 4 e 9 corretti; punto 20 (`from_ts`/`to_ts`) corretto. Test end-to-end su tre giorni: signer vero, sistema e chiave dalla pagina web, OTLP e API nativa, checkpoint dal pulsante con marca RFC 3161 vera via HTTP, export dell'intera catena, di un giorno e da CLI, tutti verificati dal `sigillo-verify` reale con `--tsa-ca`, `--key-id`, `--previous` e `doc`. 678 test |
 | 8 | Preparazione integrazione con un agente reale | fatto | Proposta in `docs/PROPOSTA-FASE-8.md`, nessuna modifica al codice. Misurato il traffico dell'SDK: la demo CV manda al server 244 KB in chiaro per 160 span, nomi dei candidati e testo dei CV compresi. Proposta D6 (impronte calcolate nell'SDK, elenco di attributi da tenere); fattibilità verificata: su 2 005 stringhe, impronte Python e TypeScript identiche. Rischi dell'integrazione reale e sette domande (A–G) per il committente |
-| 9 | Prima integrazione reale | **sospesa, in attesa** | Parte solo dopo l'approvazione della fase 8: servono le risposte alle domande A–G di `docs/PROPOSTA-FASE-8.md` (quale agente, chi gestisce il server, D6, deduplicazione, `on_behalf_of`, marca temporale) |
+| 9 | Prima integrazione reale | fatto | Il committente ha approvato le domande A–G con la mia raccomandazione su ciascuna (25/09). D6 (impronte nell'SDK, attivo per default), F (pseudonimo `on_behalf_of`), E (deduplicazione OTLP) e D (contenuto in chiaro registrato e segnalato, mai rifiutato) implementati e testati. **Nessun agente nuovo**: come nella fase 8, ho usato i due agenti già nel repository (punto A). Il rischio 1 della fase 8 (server irraggiungibile) è stato misurato per davvero, non solo stimato: la perdita è quasi totale. 701 test Node verdi (erano 684 alla fine della fase 10), più 39 dell'SDK Python (erano 26) e 18 della demo (erano 17) |
 | 10 | Preparazione alla produzione | fatto | `docs/DEPLOY-PRODUZIONE.md`: dal clone a un fascicolo verificato su un VPS con dominio e HTTPS, con checklist di 33 righe (comando e risultato atteso). I risultati attesi sono copiati da esecuzioni reali senza Docker (FreeTSA vera compresa). **La checklist resta da eseguire su una macchina vera: Docker qui non gira.** Corretti anche i punti 6 (batch OTLP atomico), 7 (storico delle chiavi di firma) e 13 (scritture fuori coda). 684 test |
 | 11 | Revisione finale prima del pilot | fatto | `docs/REVISIONE-FASE-11.md`: tabella prima/dopo dei 20 punti (15 corretti, 2 mitigati, 1 rimandato alla fase 9, 2 accettati), difetti nuovi, cosa resta al committente, valutazione complessiva |
 
 Il 2026-09-24 il committente ha mandato il prompt delle fasi 5-11, trascritto in fondo a `SPEC.md`
 ("Fasi 5-11 (pre-pilot)"). Il testo arrivato è incompleto: mancano le sezioni delle fasi 7, 8 e 9.
 Per quelle fasi vale la definizione della tabella 3.2 di `docs/RAPPORTO-SESSIONE-2026-09-24.md`,
-riportata anche in `SPEC.md`. Le fasi procedono senza conferma tra l'una e l'altra; la fase 9 non si
-esegue in questa sessione.
+riportata anche in `SPEC.md`. Le fasi procedono senza conferma tra l'una e l'altra; la fase 9,
+sospesa in attesa della fase 8, è stata sbloccata il 25/09 quando il committente ha approvato le
+domande A–G di `docs/PROPOSTA-FASE-8.md` con la raccomandazione indicata per ciascuna.
 
 ## Fasi 5-11 — note di lavoro (dal 2026-09-24)
 
@@ -301,10 +302,112 @@ analisi e proposta.
   pseudonimo; marca temporale per il pilot. Piano della fase 9 in cinque passi, con criteri di
   accettazione.
 
-### Fase 9 — Prima integrazione reale (sospesa, in attesa)
+### Fase 9 — Prima integrazione reale (fatto)
 
-Non eseguita, come previsto dal prompt: aspetta le risposte alle domande A–G di
-`docs/PROPOSTA-FASE-8.md`.
+Sospesa fino al 25/09, quando il committente ha scritto "usa le tue raccomandazioni": le domande
+A–G di `docs/PROPOSTA-FASE-8.md` sono state approvate così come proposte lì (tabella al §4). Test
+Vitest: da 684 a **701**. Test Python SDK: da 26 a **39**. Test della demo: da 17 a **18** (il
+nuovo `test_content_privacy.py`). `smoke-dist` e cross-check Python: verdi.
+
+**Decisione E, punto 6 (la parte rimasta aperta dalla fase 10): deduplicazione degli span OTLP.**
+La fase 10 aveva reso atomico un batch, ma non copriva il caso in cui il server scrive con
+successo e **la risposta si perde** prima di tornare al chiamante: l'esportatore rimanda lo stesso
+batch, e senza deduplicazione ogni span rimandato produce una ricevuta nuova, indistinguibile
+dalla prima. Riprodotto in `apps/server/test/dedup.test.ts` con un signer Ed25519 vero: lo stesso
+span mandato due volte produceva due ricevute, e la seconda chiedeva comunque una firma. Corretto
+con:
+- due colonne nuove nella tabella `receipts` (`source_trace_id`, `source_span_id`), popolate da
+  ogni ricevuta di origine OTLP, con un indice unico parziale;
+- prima di costruire una ricevuta, lo store cerca `(system_id, trace_id, span_id)`: se la trova,
+  restituisce la ricevuta già scritta **senza consumare un `seq` né chiedere una firma**;
+- una migrazione (`applySchema`, in `storage/schema.ts`) aggiunge le due colonne ai database aperti
+  con lo schema precedente, prima di creare l'indice — provata aprendo un database con lo schema
+  vecchio e una ricevuta genesi vera, firmata con una chiave Ed25519 reale, inserita a mano;
+- la risposta di `/v1/traces` riporta `duplicates`, e il server lo registra nel log.
+
+Nessun cambiamento al formato delle ricevute: `source.trace_id`/`source.span_id` erano già nel
+formato dalla fase 1 (M5); qui diventano anche una colonna, per la ricerca.
+
+**Decisione C / D6: le impronte si calcolano nell'SDK, attivo per default.** Nell'SDK Python,
+`sigillo.init(..., redact_content=True)` (il default) mette davanti all'esportatore OTLP un
+filtro che, per ogni span:
+- sostituisce `input.value`/`output.value` (e, per un'eventuale strumentazione GenAI futura,
+  `gen_ai.input.messages`/`gen_ai.prompt`/`gen_ai.output.messages`/`gen_ai.completion`) con la
+  loro impronta, come `sigillo.input.sha256`/`sigillo.output.sha256`;
+- lascia partire solo un elenco esplicito di attributi (identificativi: tipo di span, nome del
+  tool, nome e fornitore del modello, chi ha ordinato l'azione) — tutto il resto (`metadata`,
+  `tool.description`, `llm.invocation_parameters`, i messaggi del modello) non parte;
+- non tocca gli eventi `sigillo.artifact`, che portavano già solo impronte.
+
+Impossibile farlo modificando lo span dopo la sua fine (`on_end`): ho verificato leggendo il
+codice sorgente di `opentelemetry-sdk` 1.44.0 installato che uno span rende i propri attributi
+immutabili (`BoundedAttributes._immutable = True`) esattamente nell'istante in cui finisce, prima
+che qualunque `SpanProcessor.on_end` possa vederlo, e `Span.set_attribute` si rifiuta (con un
+avviso silenzioso) di scrivere su uno span già finito. Il filtro sta invece nell'esportatore:
+avvolge `OTLPSpanExporter.export()` e ricostruisce ogni `ReadableSpan` con gli attributi
+sostituiti, lasciando intatti nome, tempi, traccia ed eventi.
+
+Lato server, l'adattatore (`ingest/adapter.ts`) preferisce `sigillo.input.sha256`/
+`.output.sha256`, se presenti e sono davvero 64 caratteri esadecimali, all'impronta calcolata sul
+valore in chiaro; altrimenti si comporta come prima. Nessuna modifica al formato: `input_hash`
+resta un'impronta SHA-256, calcolata prima nell'SDK invece che nel server.
+
+**Fattibilità, non solo sulla carta.** Oltre alle 2 005 stringhe della fase 8, `test_init.py` ha
+un test che calcola l'impronta in Python e la confronta con `hashCanonicalJson` **vero**, eseguito
+per davvero in Node (non reimplementato), su stringhe con caratteri di controllo, emoji e persino
+un NUL — coincidono sempre. Il test end-to-end esistente (`sdk-python/tests/test_end_to_end.py`,
+mai toccato) continua a produrre una catena verificabile con il filtro attivo per default: la
+prova che l'intero percorso reale (SDK → server → firma → export → verifica) funziona con le
+impronte calcolate lato client.
+
+**Misura ripetuta sulla demo CV** (`demo/selezione-cv/tests/test_content_privacy.py`, nuovo): fa
+girare l'agente vero contro un server-fasullo che registra ogni richiesta OTLP, come nella fase 8,
+ma ora con il filtro attivo per default. **Nessuno dei 20 nomi dei candidati e nessuna riga di
+nessun CV raggiunge la rete.** Il test è stato provato anche al contrario: con
+`redact_content=False` forzato, fallisce subito mostrando "Luca Ferraris" e il testo del CV nel
+traffico catturato — la prova che il controllo ha davvero un difetto da trovare, non solo la
+condizione già vera.
+
+**Decisione D: il server non rifiuta il contenuto in chiaro, lo registra e lo segnala.** Un nuovo
+contatore, `rawContentHashed`, conta quante volte l'adattatore ha dovuto calcolare un'impronta lui
+stesso invece di riceverla già calcolata — segno di un SDK vecchio, o di un chiamante che non usa
+il filtro. Non blocca mai: lo span viene comunque registrato. Compare nella risposta di
+`/v1/traces` e, se maggiore di zero, in una riga di log **con il numero, mai il testo** —
+verificato con un test che manda contenuto in chiaro apposta e controlla che quel testo non
+compaia nel log, solo il conteggio.
+
+**Decisione F / D1: `sigillo.pseudonym(valore, chiave)`.** HMAC-SHA256 troncato a 32 caratteri
+esadecimali con prefisso `p:`, così sta dentro il limite di 64 caratteri di `on_behalf_of`
+(fase 4, D4). La chiave non lascia mai il processo del chiamante. Sette test, incluso il confronto
+byte per byte con `hmac.new(...).hexdigest()` calcolato a mano. La demo CV **non** è stata
+cambiata per usarlo di default: la mia stessa proposta raccomandava "una funzione nell'SDK", non
+di riscrivere la demo, e `elena.rizzo` in chiaro resta utile per seguire `ISPEZIONE.md`. Un
+commento nel codice della demo rimanda alla funzione per chi fa un'integrazione vera.
+
+**Rischio 1 della fase 8 (server irraggiungibile), misurato per davvero, non solo stimato.**
+Con le impostazioni predefinite dell'SDK OpenTelemetry Python 1.44.0 (lette dal sorgente
+installato, non dalla documentazione): un tentativo di invio riprova con backoff per circa 10
+secondi (fino a 6 tentativi), poi **quel lotto di span (fino a 512) viene scartato per sempre** —
+non riprovato al giro successivo, solo sostituito dal tentativo del lotto dopo. Prova reale: un
+agente che genera 20 azioni al secondo per 60 secondi verso un indirizzo irraggiungibile (rifiuto
+di connessione immediato, non un timeout) non ha **mai** un invio riuscito: dei 1 192 span emessi,
+zero sono mai stati consegnati. `tracing.flush()` che restituisce "riuscito" alla fine dice solo
+che ha finito, non che qualcosa sia arrivato. Sotto i 10 secondi un'interruzione è quasi sempre
+assorbita gratis, dentro i tentativi dello stesso invio; oltre, si perde praticamente tutto ciò
+che è stato generato nel frattempo, non una parte proporzionale. Scritto in `SECURITY.md`, "What
+sigillo cannot detect".
+
+**Nessun agente nuovo.** Come nella fase 8, non ne ho inventato uno: ho riusato l'esempio LangGraph
+e la demo di selezione CV già nel repository, che sono anche ciò che la strumentazione dell'SDK
+copre oggi (punto A). La domanda B (dove gira il server, chi lo gestisce) resta, per la sua stessa
+natura, una scelta del pilot vero: in questa sessione il server gira in locale come nelle fasi
+precedenti.
+
+**Documentazione aggiornata**: `docs/API.md` (i campi nuovi della risposta di `/v1/traces`,
+`sigillo.input.sha256`/`.output.sha256`, la deduplicazione); `docs/DATA-INVENTORY.md` (cosa
+attraversa la rete, per davvero, con e senza il filtro); `docs/SECURITY.md` ("What the operator of
+the service can and cannot see" e "What sigillo cannot detect", con la misura della caduta);
+`sdk-python/README.md` (`redact_content`, `sigillo.pseudonym`).
 
 ### Fase 10 — Preparazione alla produzione (fatto)
 

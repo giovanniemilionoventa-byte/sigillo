@@ -80,19 +80,38 @@ digest can be checked by anyone who holds, or can guess, the original.
 
 ## What travels to the server without being stored
 
-The ingest adapter reduces `input.value` and `output.value` to digests, and
-discards every other payload attribute of a span (`llm.input_messages`, tool
-parameters and so on). But the OpenTelemetry exporter still **sends** those
-attributes to the server, in clear over the connection, and they are in the
-server's memory while the request is processed. In the CV demo, that includes
-the full text of each CV, which the `leggi_curriculum` tool returns. They are
-not written to the database, the export or the logs.
+The ingest adapter always reduces `input.value` and `output.value` to digests,
+and discards every other payload attribute of a span (`llm.input_messages`,
+tool parameters and so on): none of it is ever written to the database, the
+export or the logs. Whether it reaches the server **at all** depends on where
+the digest is computed.
+
+**By default, since fase 9 of the pilot plan, it does not.** The Python SDK
+hashes `input.value` / `output.value` in the caller's own process, and sends
+only the digest (`sigillo.input.sha256` / `sigillo.output.sha256`) and an
+allow-list of identifiers; the raw value never leaves the agent's machine.
+Measured on the CV demo: with the filter on, no candidate's name and no line
+of any CV appears anywhere in the traffic sent to sigillo (before, the demo
+sent the full text of every CV — see `docs/PROPOSTA-FASE-8.md` §1 for the
+measurement that led to this). This is `sigillo.init(..., redact_content=True)`,
+the default; `redact_content=False` reverts to sending the raw value, which
+the server still reduces to a digest, but only after receiving it.
+
+An SDK that predates fase 9, or a caller of the OTLP endpoint that is not this
+SDK, still sends the raw value, and the server hashes it there instead — in
+its memory for the length of the request, never stored. The `rawContentHashed`
+count in `POST /v1/traces`' response (see `docs/API.md`) is exactly this: how
+many fields the server had to hash itself rather than receiving an
+already-computed digest. It is a signal for the operator, not a block: such a
+span is still recorded.
 
 ## Recommendations for an integration
 
 - **`on_behalf_of`**: an opaque identifier, not a name or an email address. For
   example, the id of the user's account in the system the agent serves, whose
-  meaning stays in that system.
+  meaning stays in that system. The Python SDK's `sigillo.pseudonym(value,
+  key)` turns an existing identifier into one, with a key that stays with the
+  caller and is never sent to sigillo.
 - **Action names**: code identifiers such as tool names, node names or model
   names. Do not create spans whose *name* is built from data (`"reply to Mario
   Rossi"`): for an unrecognised tool or node, the span name is what becomes

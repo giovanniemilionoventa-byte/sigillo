@@ -27,7 +27,7 @@ import {
   type Source,
 } from "@sigillo/core";
 import { genTimeOfToken } from "../timestamp/gentime.js";
-import { SCHEMA_SQL } from "./schema.js";
+import { applySchema } from "./schema.js";
 
 /** Whatever holds the private key. In production this is the separate signer process. */
 export interface SigningService {
@@ -188,6 +188,7 @@ export class ReceiptStore {
   private readonly insertStatement: Database.Statement;
   private readonly insertArtifactStatement: Database.Statement;
   private readonly registerStatement: Database.Statement;
+  private readonly duplicateStatement: Database.Statement;
 
   private constructor(
     private readonly write: Database.Database,
@@ -203,13 +204,24 @@ export class ReceiptStore {
     );
     this.insertStatement = this.write.prepare(
       `INSERT INTO receipts (system_id, seq, hash, prev_hash, canonical, sig, key_id,
-                             ts_event, ts_received, action_kind, action_name, outcome)
+                             ts_event, ts_received, action_kind, action_name, outcome,
+                             source_trace_id, source_span_id)
        VALUES (@system_id, @seq, @hash, @prev_hash, @canonical, @sig, @key_id,
-               @ts_event, @ts_received, @action_kind, @action_name, @outcome)`,
+               @ts_event, @ts_received, @action_kind, @action_name, @outcome,
+               @source_trace_id, @source_span_id)`,
     );
     this.insertArtifactStatement = this.write.prepare(
       `INSERT INTO artifacts (system_id, seq, role, label, media_type, sha256)
        VALUES (@system_id, @seq, @role, @label, @media_type, @sha256)`,
+    );
+    // A span an OTLP batch already wrote, found by the identifiers that name
+    // it (fase 9 / review point 6): an exporter whose response was lost
+    // resends the whole batch unchanged, and this is what lets that batch be
+    // recognised rather than duplicated.
+    this.duplicateStatement = this.write.prepare(
+      `SELECT canonical, sig FROM receipts
+       WHERE system_id = ? AND source_trace_id = ? AND source_span_id = ?
+       LIMIT 1`,
     );
   }
 
@@ -230,7 +242,7 @@ export class ReceiptStore {
     write.pragma("synchronous = FULL");
     write.pragma("foreign_keys = ON");
     write.pragma("busy_timeout = 5000");
-    write.exec(SCHEMA_SQL);
+    applySchema(write);
 
     if (signer !== undefined) {
       // Remembered before anything is signed with it, and never forgotten.
@@ -293,18 +305,26 @@ export class ReceiptStore {
    * Appends several receipts in one transaction: all of them, or none. An OTLP
    * exporter resends a whole batch when a request fails, so a batch half
    * written before a failure would have its first half written twice, for
-   * good (review point 6).
+   * good (review point 6). It also resends a batch the server *did* finish,
+   * whenever the response never reached it — that half of the same problem is
+   * `duplicates`: how many of `events` were already on the chain, by the
+   * `trace_id`/`span_id` that name a span, and so were not written again.
    */
-  async appendBatch(events: readonly ChainEvent[]): Promise<Receipt[]> {
+  async appendBatch(events: readonly ChainEvent[]): Promise<{ receipts: Receipt[]; duplicates: number }> {
     if (events.some((event) => event.action.kind === "genesis")) {
       throw new StorageError("a genesis receipt is written by createSystem, not by append");
     }
-    if (events.length === 0) return [];
+    if (events.length === 0) return { receipts: [], duplicates: 0 };
     return this.enqueue(() =>
       this.inTransaction(async () => {
-        const written: Receipt[] = [];
-        for (const event of events) written.push(await this.insertReceipt(event, "continuation"));
-        return written;
+        const receipts: Receipt[] = [];
+        let duplicates = 0;
+        for (const event of events) {
+          const written = await this.insertReceipt(event, "continuation");
+          receipts.push(written.receipt);
+          if (written.duplicate) duplicates += 1;
+        }
+        return { receipts, duplicates };
       }),
     );
   }
@@ -612,8 +632,9 @@ export class ReceiptStore {
    * called while that transaction is open: a signature that cannot be obtained
    * must not leave a gap in the chain.
    */
-  private writeReceipt(event: ChainEvent, mode: "genesis" | "continuation"): Promise<Receipt> {
-    return this.inTransaction(() => this.insertReceipt(event, mode));
+  private async writeReceipt(event: ChainEvent, mode: "genesis" | "continuation"): Promise<Receipt> {
+    const written = await this.inTransaction(() => this.insertReceipt(event, mode));
+    return written.receipt;
   }
 
   /** One IMMEDIATE transaction around `work`: committed if it succeeds, rolled back if it throws. */
@@ -631,13 +652,37 @@ export class ReceiptStore {
     }
   }
 
-  /** Builds, signs, checks and inserts one receipt. The caller holds the transaction. */
-  private async insertReceipt(event: ChainEvent, mode: "genesis" | "continuation"): Promise<Receipt> {
+  /**
+   * Builds, signs, checks and inserts one receipt. The caller holds the
+   * transaction. `duplicate` is true when this span was already on the
+   * chain — found by `trace_id`/`span_id`, not written again, and no
+   * signature was asked for it — rather than newly written now.
+   */
+  private async insertReceipt(
+    event: ChainEvent,
+    mode: "genesis" | "continuation",
+  ): Promise<{ receipt: Receipt; duplicate: boolean }> {
     const signer = this.signer;
     const verificationKey = this.verificationKey;
     if (signer === undefined || verificationKey === undefined) {
       throw new StorageError("this store was opened for reading only: it has no signer");
     }
+
+    // An OTLP exporter resends a whole batch when it never sees the server's
+    // response, even one the server did write; the span it names is found
+    // here before anything else is touched, so a duplicate costs no seq and
+    // no signature (fase 9 / review point 6).
+    if (mode === "continuation" && event.source.trace_id !== undefined && event.source.span_id !== undefined) {
+      const existing = this.duplicateStatement.get(
+        event.system_id,
+        event.source.trace_id,
+        event.source.span_id,
+      ) as StoredRow | undefined;
+      if (existing !== undefined) {
+        return { receipt: rowToReceipt(existing), duplicate: true };
+      }
+    }
+
     const tip = this.tipStatement.get(event.system_id) as ChainTip | undefined;
 
     if (mode === "genesis" && tip !== undefined) {
@@ -713,6 +758,8 @@ export class ReceiptStore {
       action_kind: receipt.action.kind,
       action_name: receipt.action.name,
       outcome: receipt.outcome,
+      source_trace_id: event.source.trace_id ?? null,
+      source_span_id: event.source.span_id ?? null,
     });
 
     if (receipt.v === 2 && receipt.artifacts !== undefined) {
@@ -728,6 +775,6 @@ export class ReceiptStore {
       }
     }
 
-    return receipt;
+    return { receipt, duplicate: false };
   }
 }

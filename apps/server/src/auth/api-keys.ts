@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
 import Database from "better-sqlite3";
-import { SCHEMA_SQL } from "../storage/schema.js";
+import { applySchema } from "../storage/schema.js";
 
 /**
  * One API key per system, stored only as an scrypt hash.
@@ -97,7 +97,7 @@ export class ApiKeyStore {
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
     db.pragma("busy_timeout = 5000");
-    db.exec(SCHEMA_SQL);
+    applySchema(db);
     return new ApiKeyStore(db);
   }
 

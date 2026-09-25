@@ -122,6 +122,17 @@ function isoNow(now: () => Date): string {
   return now().toISOString();
 }
 
+/**
+ * `adaptSpans`' `unknown` set holds entries like `gen_ai.operation.name=chat`,
+ * a convention's attribute name and the value it did not recognise, meant for
+ * the caller who sent that batch to read back in the HTTP response. The
+ * server's own log keeps only the name: a value can be free text a source put
+ * in a field this build does not know, and a log is not where that belongs.
+ */
+function unknownAttributeNames(unknown: readonly string[]): string[] {
+  return [...new Set(unknown.map((entry) => entry.split("=")[0] ?? entry))].sort();
+}
+
 function bearer(request: FastifyRequest): string | null {
   const header = request.headers.authorization;
   if (typeof header !== "string") return null;
@@ -257,8 +268,10 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     const receivedAt = isoNow(now);
 
     // The whole batch in one transaction: if anything fails, nothing of it is
-    // kept, and the exporter's retry writes it exactly once.
-    const written = await store.appendBatch(
+    // kept, and the exporter's retry writes it exactly once. A span the
+    // exporter is resending because it never saw the earlier response is
+    // recognised by trace_id/span_id and not written again (review point 6).
+    const { receipts: written, duplicates } = await store.appendBatch(
       batch.actions.map((action) => ({
         system_id: systemId,
         ts_event: action.ts_event,
@@ -275,10 +288,44 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     );
     const accepted = written.length;
 
+    // What the batch held that this build could not place is worth knowing
+    // about during a pilot's first days, but only by attribute name: a value
+    // here could be free text a source put in an unrecognised field, and a
+    // log is not somewhere that belongs (fase 8, risk 3).
+    if (batch.ignored > 0 || batch.unknown.length > 0) {
+      request.log.info(
+        {
+          system: systemId,
+          spans: spans.length,
+          accepted,
+          duplicates,
+          ignored: batch.ignored,
+          unknownAttributes: unknownAttributeNames(batch.unknown),
+        },
+        "some spans were not recognised as an AI action",
+      );
+    }
+    // Fase 9, decision D: accepted either way, never refused — but a span
+    // whose input or output had to be hashed here, rather than already hashed
+    // by the caller, means content still crossed the network in the clear to
+    // get to this point. Worth a look during a pilot's first days.
+    if (batch.rawContentHashed > 0) {
+      request.log.info(
+        { system: systemId, rawContentHashed: batch.rawContentHashed },
+        "a span's input or output was hashed by the server, not the caller",
+      );
+    }
+
     // OTLP expects a partial-success body; an empty object means "all accepted".
     return reply.code(200).send({
       partialSuccess: {},
-      sigillo: { accepted, ignored: batch.ignored, unknown: batch.unknown },
+      sigillo: {
+        accepted,
+        duplicates,
+        ignored: batch.ignored,
+        unknown: batch.unknown,
+        rawContentHashed: batch.rawContentHashed,
+      },
     });
   });
 

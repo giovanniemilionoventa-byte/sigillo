@@ -60,10 +60,39 @@ the last spans may never leave the process.
 
 ## What is recorded
 
-Nothing your agent said or received. The server records the digest of an input
-or an output, never the value, and each receipt carries only metadata: which
+Nothing your agent said or received. Each receipt carries only metadata: which
 agent, what kind of action, its name, whether it succeeded, and where it sits in
-the chain. See [docs/FORMAT.md](../docs/FORMAT.md).
+the chain, plus the digest of an input or an output, never the value. See
+[docs/FORMAT.md](../docs/FORMAT.md).
+
+By default, `init` computes that digest right here too, before anything is
+sent, rather than letting the raw text travel to the server and be hashed
+there (`redact_content=True`, the default since fase 9 of the pilot plan). It
+also drops every span attribute the server does not read — a tool's
+docstring, a framework's own bookkeeping, the full text of every message —
+keeping identifiers (which tool, which model, who the action was for) and
+nothing an agent produced. Pass `redact_content=False` to send exactly what
+the instrumentation attached, as every version of this SDK did before fase 9;
+the server still stores only a digest either way — this setting decides what
+crosses the network and sits in the server's memory while a request is
+handled, not what a receipt ends up holding.
+
+## Pseudonymous identities
+
+`actor.on_behalf_of` — who an action was for — is the one receipt field an
+instrumentation is likely to fill with a real identifier (`user.id`,
+`enduser.id`) by convention, not by your own choice. Once it is in a receipt
+it cannot be corrected or erased. `sigillo.pseudonym(value, key)` turns it
+into an opaque stand-in instead:
+
+```python
+actor_id = sigillo.pseudonym(user_id, key=os.environ["SIGILLO_PSEUDONYM_KEY"])
+```
+
+`key` never leaves this process and is never sent to sigillo. The same
+`value` and `key` always give the same pseudonym, useful for recognising the
+same actor across receipts; without the key, the pseudonym does not lead back
+to `value`. See its docstring for the exact construction.
 
 ## Documents and model identity
 

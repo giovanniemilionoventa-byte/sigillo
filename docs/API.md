@@ -66,6 +66,23 @@ know is still recorded, as an `agent_step`, and reported back in the response.
 A span that describes no AI action at all — an HTTP handler, a database query —
 is ignored and counted.
 
+A span may carry the digest already computed, instead of the raw value:
+`sigillo.input.sha256` / `sigillo.output.sha256`, each 64 lowercase hex
+characters, take the place of `input.value` / `output.value` (OpenInference)
+or `gen_ai.input.messages` / `gen_ai.prompt` and `gen_ai.output.messages` /
+`gen_ai.completion` (GenAI). This is what the Python SDK's `redact_content`
+(on by default since fase 9 of the pilot plan) sends: the content is hashed in
+the caller's own process, and the raw value never reaches this server at all.
+A value there that is not a well-formed digest is not trusted as one, and
+falls back to hashing the raw attribute exactly as before — counted in
+`rawContentHashed` below, never rejected.
+
+Whichever OTLP span carries a `trace_id` and a `span_id` that this system's
+chain already has a receipt for is recognised as a duplicate — the same span,
+sent again because the exporter never saw the first response — and is not
+written a second time: no new `seq`, no new signature. `sigillo.duplicates`
+below counts how many of a batch's spans this was true for.
+
 Two members of the receipt format, both added in phase 2, are filled from the
 same span, when present, and the resulting receipt is `v: 2` rather than `v: 1`:
 
@@ -92,15 +109,22 @@ Response `200`:
   "partialSuccess": {},
   "sigillo": {
     "accepted": 5,
+    "duplicates": 0,
     "ignored": 1,
-    "unknown": ["gen_ai.operation.name=rerank_documents"]
+    "unknown": ["gen_ai.operation.name=rerank_documents"],
+    "rawContentHashed": 0
   }
 }
 ```
 
 `partialSuccess` is there because OTLP clients expect it. `sigillo` is the part
-worth reading: how many receipts were written, how many spans were not AI
-actions, and which convention values were unrecognised.
+worth reading: how many receipts exist for this batch's spans (`accepted`,
+whether newly written or already on the chain), how many of those were
+duplicates rather than new writes, how many spans were not AI actions, which
+convention values were unrecognised, and how many input/output fields had
+their content hashed here rather than already hashed by the caller
+(`rawContentHashed`; see above) — a number worth watching early in a pilot,
+never a reason this endpoint refuses a request.
 
 Response `400` with `{"error": "..."}` if the body is not an OTLP export.
 
