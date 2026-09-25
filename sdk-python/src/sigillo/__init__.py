@@ -18,7 +18,13 @@ A second function, `sigillo.artifact(...)`, attaches a document's fingerprint
 lets a locally-run model's digest ride along on its own receipt. Both are
 optional: code that calls neither behaves exactly as before. A third,
 `sigillo.current_span_from_callbacks(...)`, is the one piece most LangChain
-tools need alongside `artifact`: see its docstring.
+tools need alongside `artifact`: see its docstring. A fourth,
+`sigillo.pseudonym(...)`, turns an identifier into an opaque stand-in before it
+goes into `on_behalf_of` — see its docstring.
+
+By default, `init` also hashes a span's input and output right here, before
+anything is sent, instead of letting the raw text travel to the server: see
+`redact_content` below.
 
 What this package does not do: it does not sign anything, and it does not decide
 where a receipt lands. The API key does: a key belongs to exactly one system,
@@ -29,9 +35,11 @@ back to when a span does not name its agent.
 
 from __future__ import annotations
 
-# Imported under private names: this package's public surface is init and
-# artifact, and a stray `sigillo.TracerProvider` would be part of it otherwise.
+# Imported under private names: this package's public surface is init,
+# artifact, current_span_from_callbacks and pseudonym, and a stray
+# `sigillo.TracerProvider` would be part of it otherwise.
 import hashlib as _hashlib
+import hmac as _hmac
 import json as _json
 import logging as _logging
 import mimetypes as _mimetypes
@@ -50,8 +58,9 @@ from opentelemetry.sdk.trace import Span as _Span
 from opentelemetry.sdk.trace import SpanProcessor as _SpanProcessor
 from opentelemetry.sdk.trace import TracerProvider as _TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor as _BatchSpanProcessor
+from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
 
-__all__ = ["init", "artifact", "current_span_from_callbacks", "Tracing"]
+__all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"]
 __version__ = "0.1.0"
 
 _LOG = _logging.getLogger("sigillo")
@@ -189,12 +198,119 @@ class _ModelDigestProcessor(_SpanProcessor):
         return True
 
 
+# Fase 9, decision D6. Which attribute holds a span's input or output — and so
+# gets replaced with a digest, never sent as it arrived — under either
+# convention this package's instrumentations, or a future one, might use. The
+# OpenInference names are what LangChain, CrewAI and the OpenAI instrumentation
+# actually emit today; the GenAI names are not emitted by anything `init` turns
+# on yet, listed anyway so that this stays in step with what
+# apps/server/src/ingest/adapter.ts itself treats as content, dialect for
+# dialect, if a GenAI-convention instrumentation is ever added to _SUPPORTED.
+_CONTENT_ATTRIBUTES: dict[str, str] = {
+    "input.value": "sigillo.input.sha256",
+    "gen_ai.input.messages": "sigillo.input.sha256",
+    "gen_ai.prompt": "sigillo.input.sha256",
+    "output.value": "sigillo.output.sha256",
+    "gen_ai.output.messages": "sigillo.output.sha256",
+    "gen_ai.completion": "sigillo.output.sha256",
+}
+
+# Everything else the server adapter actually reads from a span's attributes —
+# identifiers and categories, never a value an agent produced. An attribute
+# not named here, and not one of _CONTENT_ATTRIBUTES' keys, does not leave
+# this process once the filter is on: see `redact_content` on `init`.
+_KEEP_ATTRIBUTES = frozenset(
+    {
+        "gen_ai.operation.name",
+        "gen_ai.tool.name",
+        "gen_ai.tool.type",
+        "gen_ai.request.model",
+        "gen_ai.response.model",
+        "gen_ai.agent.name",
+        "gen_ai.provider.name",
+        "gen_ai.system",
+        "openinference.span.kind",
+        "tool.name",
+        "llm.model_name",
+        "llm.provider",
+        "llm.system",
+        "user.id",
+        "enduser.id",
+        "sigillo.model.digest",
+    }
+)
+
+
+def _hash_content_value(value: str) -> str:
+    """The digest `apps/server/src/ingest/adapter.ts` computes for a text
+    attribute: SHA-256 of the RFC 8785 canonical JSON form of the string.
+
+    For a plain string that form is exactly `json.dumps(value,
+    ensure_ascii=False)` — verified against `packages/core`'s
+    `hashCanonicalJson`, the same function the server itself calls, over more
+    than 2000 arbitrary strings in fase 8, and cross-checked again for real in
+    `sdk-python/tests/test_init.py`.
+    """
+    return _hashlib.sha256(_json.dumps(value, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def _filtered_attributes(attributes: object) -> dict[str, object]:
+    kept: dict[str, object] = {}
+    if not attributes:
+        return kept
+    for key, value in attributes.items():  # type: ignore[union-attr]
+        digest_name = _CONTENT_ATTRIBUTES.get(key)
+        if digest_name is not None:
+            if isinstance(value, str) and digest_name not in kept:
+                kept[digest_name] = _hash_content_value(value)
+            continue
+        if key in _KEEP_ATTRIBUTES:
+            kept[key] = value
+    return kept
+
+
+def _filtered_span(span: _ReadableSpan) -> _ReadableSpan:
+    """A copy of `span`, its attributes replaced — nothing else about it
+    changes: same name, same timing, same trace, same events (so
+    `sigillo.artifact`, which never carried content in the first place, is
+    untouched). `ReadableSpan.attributes` is read-only past `on_end` (OpenTelemetry
+    marks a span's own attribute mapping immutable the moment it ends), so this
+    builds a new `ReadableSpan` rather than editing the one that arrived.
+    """
+    return _ReadableSpan(
+        name=span.name,
+        context=span.context,
+        parent=span.parent,
+        resource=span.resource,
+        attributes=_filtered_attributes(span.attributes),
+        events=span.events,
+        links=span.links,
+        kind=span.kind,
+        status=span.status,
+        start_time=span.start_time,
+        end_time=span.end_time,
+        instrumentation_scope=span.instrumentation_scope,
+    )
+
+
+class _ContentFilteringExporter(_OTLPSpanExporter):
+    """The real OTLP exporter, wrapped: every span is rewritten by
+    `_filtered_span` before it is handed to the exporter that serialises and
+    sends it, so a value this build does not need to see never leaves this
+    process (fase 9, decision D6).
+    """
+
+    def export(self, spans: _Sequence[_ReadableSpan]) -> _SpanExportResult:
+        return super().export([_filtered_span(span) for span in spans])
+
+
 def init(
     endpoint: str,
     api_key: str,
     system_id: str,
     instrument: _Sequence[str] = _SUPPORTED,
     ollama_url: str | None = None,
+    redact_content: bool = True,
 ) -> Tracing:
     """Point OpenTelemetry at a sigillo server and turn on the instrumentations.
 
@@ -211,6 +327,17 @@ def init(
             span as `sigillo.model.digest`. If Ollama does not answer, `init`
             still succeeds: the digest is simply absent, and this is logged
             rather than raised.
+        redact_content: true by default. Hashes a span's input and output
+            right here, with SHA-256, before anything is sent, and drops every
+            other attribute the server does not read (a tool's docstring, a
+            framework's own metadata, the full text of every message).
+            Without it, the raw text an instrumentation attached travels to
+            the server exactly as before this version — that was every
+            version's behaviour before fase 9 of the pilot plan, kept for
+            whoever explicitly asks for it. The server, either way, still
+            stores only a digest: this setting decides what crosses the
+            network and sits in the server's memory while a request is
+            handled, not what a receipt ends up holding.
 
     Returns:
         A handle with `flush()` and `shutdown()`, and the list of the
@@ -233,9 +360,10 @@ def init(
     if ollama_url:
         provider.add_span_processor(_ModelDigestProcessor(_fetch_ollama_digests(ollama_url)))
 
+    exporter_class = _ContentFilteringExporter if redact_content else _OTLPSpanExporter
     provider.add_span_processor(
         _BatchSpanProcessor(
-            _OTLPSpanExporter(
+            exporter_class(
                 endpoint=traces_endpoint,
                 headers={"Authorization": f"Bearer {api_key}"},
             )
@@ -333,6 +461,39 @@ def current_span_from_callbacks(callbacks: object) -> _Span | None:
             if found is not None:
                 return found
     return None
+
+
+def pseudonym(value: str, key: bytes | str) -> str:
+    """An opaque stand-in for `value`, to pass as `on_behalf_of` in place of it.
+
+    `actor.on_behalf_of` is the one field an instrumentation is likely to fill
+    with a real identifier (`user.id`, `enduser.id`) by convention, not by
+    choice of the person integrating sigillo (see
+    docs/DATA-INVENTORY.md and docs/PROPOSTA-FASE-4.md, decision D1). Once it
+    is in a receipt it cannot be corrected or erased, so this turns the
+    identifier into something opaque before it ever gets there:
+
+        actor_id = sigillo.pseudonym(user_id, key=os.environ["SIGILLO_PSEUDONYM_KEY"])
+        # set it as the user.id / enduser.id attribute the instrumentation
+        # reads, or pass it through wherever your framework lets you name
+        # who an action is for.
+
+    `key` never leaves this process and is never sent to sigillo: it is HMAC-
+    SHA256(`key`, `value`), truncated to 32 hex characters and prefixed `p:`,
+    so the result fits `on_behalf_of`'s 64-character limit with room to
+    spare. The same `value` and `key` always give the same pseudonym — useful
+    for spotting the same actor across receipts — and a different `key`
+    (which only the caller holds) gives an unrelated one: without it, the
+    pseudonym does not lead back to `value`. It is still a personal
+    identifier for whoever holds the key, not an anonymisation.
+
+    Raises `ValueError` if `key` is empty: an empty key is not a secret.
+    """
+    key_bytes = key.encode("utf-8") if isinstance(key, str) else key
+    if not key_bytes:
+        raise ValueError("key must not be empty")
+    digest = _hmac.new(key_bytes, value.encode("utf-8"), _hashlib.sha256).hexdigest()
+    return f"p:{digest[:32]}"
 
 
 def _artifact_bytes(data: bytes | str | _os.PathLike) -> tuple[bytes, str]:

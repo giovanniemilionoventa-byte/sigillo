@@ -106,8 +106,19 @@ A document a receipt names (`sigillo.artifact()` in the Python SDK, or a file
 checked on the "verifica un documento" page) is hashed **before it reaches
 sigillo**: the SDK hashes it in the caller's own process, and the page hashes
 it in the visitor's browser with Web Crypto. Neither ever transmits the
-document itself, only its digest — the same property `input_hash` and
-`output_hash` already had, extended to whole files.
+document itself, only its digest.
+
+Since fase 9 of the pilot plan, `input_hash` and `output_hash` have that same
+property by default too: the Python SDK hashes a span's input and output in
+the caller's own process (`sigillo.init(..., redact_content=True)`, the
+default) and sends only the digest, never the value — an operator running the
+server never receives the content at all, not even transiently. Before fase
+9, and still with `redact_content=False` or from any other OTLP source, the
+raw value **does** reach the server: it is reduced to a digest as the request
+is read and never written anywhere, but it exists in the server's memory for
+the length of that one request. `POST /v1/traces`' response counts how often
+this happened (`rawContentHashed`; `docs/API.md`), so an operator can tell
+whether their agents are actually sending only digests.
 
 What an operator **can** see:
 
@@ -274,6 +285,22 @@ and nothing else.
   activity (a day by default), and that is all: silence is reported as
   inactivity, never as tampering, and an export of the period is simply
   shorter.
+- **sigillo itself being unreachable, from the agent's side.** Measured for
+  real (fase 9), against the Python SDK's default settings
+  (`opentelemetry-sdk` 1.44.0): a batch of spans that fails to export is not
+  retried later, only replaced by the next batch's own attempt. One export
+  attempt keeps trying for about 10 seconds (up to 6 tries with backoff); once
+  that window passes, the up to 512 spans in that attempt are gone for good,
+  and the cycle repeats roughly every 12–17 seconds while the outage lasts.
+  Over a real 60-second outage at 20 actions/second, **none** of the 1192
+  spans emitted were ever recorded — not a fraction, all of them — because no
+  export attempt fell inside a working window. `Tracing.flush()` returning
+  success at the end says only that it finished, not that anything was
+  delivered: it does not distinguish "sent" from "given up". An outage shorter
+  than about 10 seconds is usually absorbed for free, inside one attempt's own
+  retries; anything longer costs everything sent during it. There is no
+  local, persistent queue: what is in memory when the process exits, or when
+  an attempt gives up, does not come back.
 - **A source that leaves things out.** An agent that records some actions and
   not others, a span the instrumentation never emits, a span the ingest
   adapter does not recognise as an AI action (it is counted and dropped):

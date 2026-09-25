@@ -13,6 +13,8 @@ import http.server
 import importlib.util
 import json
 import logging
+import shutil
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -34,6 +36,44 @@ try:
     from langchain_core.callbacks.manager import CallbackManager
 except ImportError:
     CallbackManager = None
+
+# For cross-checking sigillo's content digest against the real server-side
+# implementation (fase 9, decision D6): built, not reimplemented here.
+_CORE_INDEX = Path(__file__).resolve().parent.parent.parent / "packages" / "core" / "dist" / "index.js"
+
+
+def _core_requirements_met() -> str | None:
+    if shutil.which("node") is None:
+        return "node is not on PATH"
+    if not _CORE_INDEX.exists():
+        return f"{_CORE_INDEX} is missing: run pnpm build first"
+    return None
+
+
+def _hash_canonical_json_in_node(value: str) -> str:
+    """The real `hashCanonicalJson` from `packages/core`, run for real in Node.
+
+    Not a reimplementation to compare against: the same built module the
+    server itself imports, so a digest that matches this is a digest the
+    server would compute too. `value` travels over stdin, not argv: argv
+    strings are NUL-terminated at the OS level, and JSON allows a NUL byte
+    inside a string.
+    """
+    script = (
+        f"import {{ hashCanonicalJson }} from {json.dumps(str(_CORE_INDEX))};\n"
+        "const chunks = [];\n"
+        "process.stdin.on('data', (chunk) => chunks.push(chunk));\n"
+        "process.stdin.on('end', () => {\n"
+        "  process.stdout.write(hashCanonicalJson(Buffer.concat(chunks).toString('utf8')));\n"
+        "});\n"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        input=value.encode("utf-8"),
+        capture_output=True,
+        check=True,
+    )
+    return result.stdout.decode("utf-8")
 
 
 class _Capture(http.server.BaseHTTPRequestHandler):
@@ -475,13 +515,198 @@ class SigilloInitTest(unittest.TestCase):
 
     def test_the_public_surface_is_three_functions_and_a_handle(self) -> None:
         self.assertEqual(
-            sigillo.__all__, ["init", "artifact", "current_span_from_callbacks", "Tracing"]
+            sigillo.__all__,
+            ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"],
         )
         public = [name for name in dir(sigillo) if not name.startswith("_")]
         self.assertEqual(
             sorted(name for name in public if callable(getattr(sigillo, name))),
-            ["Tracing", "artifact", "current_span_from_callbacks", "init"],
+            ["Tracing", "artifact", "current_span_from_callbacks", "init", "pseudonym"],
         )
+
+
+class ContentFilterTest(unittest.TestCase):
+    """Fase 9, decision C (D6): input.value and output.value are hashed here,
+    in this process, before anything is sent — never in the clear, and never
+    computed by the server. On by default, since the whole point is that a
+    caller who does nothing extra gets the private behaviour.
+    """
+
+    def setUp(self) -> None:
+        _Capture.bodies = []
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), _Capture)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def tearDown(self) -> None:
+        self.server.shutdown()
+        self.thread.join(timeout=5)
+        self.server.server_close()
+
+    def _emit(self, tracing: sigillo.Tracing, attributes: dict[str, str]) -> bytes:
+        tracer = tracing.provider.get_tracer("sigillo.tests")
+        with tracer.start_as_current_span("leggi_curriculum") as span:
+            for key, value in attributes.items():
+                span.set_attribute(key, value)
+        tracing.flush()
+        return _Capture.bodies[-1]
+
+    def test_replaces_input_and_output_with_matching_digests(self) -> None:
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+        self.addCleanup(tracing.shutdown)
+        input_value = '{"order_id": "A-1099", "candidate": "Maria Bianchi"}'
+        output_value = "Il candidato è stato ammesso al colloquio del 12 marzo."
+
+        body = self._emit(
+            tracing,
+            {
+                "openinference.span.kind": "TOOL",
+                "tool.name": "leggi_curriculum",
+                "input.value": input_value,
+                "output.value": output_value,
+            },
+        )
+
+        attributes = _string_attributes(_first_span(body).attributes)
+        self.assertNotIn("input.value", attributes)
+        self.assertNotIn("output.value", attributes)
+        self.assertEqual(
+            attributes["sigillo.input.sha256"],
+            hashlib.sha256(json.dumps(input_value, ensure_ascii=False).encode("utf-8")).hexdigest(),
+        )
+        self.assertEqual(
+            attributes["sigillo.output.sha256"],
+            hashlib.sha256(json.dumps(output_value, ensure_ascii=False).encode("utf-8")).hexdigest(),
+        )
+        self.assertNotIn(input_value.encode("utf-8"), body)
+        self.assertNotIn(output_value.encode("utf-8"), body)
+        self.assertNotIn(b"Maria Bianchi", body)
+
+    @unittest.skipIf(_core_requirements_met() is not None, _core_requirements_met() or "")
+    def test_the_digest_matches_what_the_server_itself_would_compute(self) -> None:
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+        self.addCleanup(tracing.shutdown)
+        for value in [
+            '{"messages": [{"role": "user", "content": "dov\'è il mio ordine?"}]}',
+            "caffè ☕ 検索",
+            "",
+            "\x00\x1f control characters, a tab\t and a newline\n",
+        ]:
+            with self.subTest(value=value):
+                body = self._emit(
+                    tracing,
+                    {"openinference.span.kind": "TOOL", "tool.name": "t", "input.value": value},
+                )
+                digest = _string_attributes(_first_span(body).attributes)["sigillo.input.sha256"]
+                self.assertEqual(digest, _hash_canonical_json_in_node(value))
+
+    def test_strips_attributes_the_server_does_not_read(self) -> None:
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+        self.addCleanup(tracing.shutdown)
+        body = self._emit(
+            tracing,
+            {
+                "openinference.span.kind": "TOOL",
+                "tool.name": "leggi_curriculum",
+                "metadata": '{"langgraph_step": 3, "thread_id": "abc"}',
+                "tool.description": "Reads a candidate's CV from disk and returns its text.",
+                "llm.invocation_parameters": '{"temperature": 0.2}',
+                "input.mime_type": "text/plain",
+            },
+        )
+        attributes = _string_attributes(_first_span(body).attributes)
+        for stripped in ("metadata", "tool.description", "llm.invocation_parameters", "input.mime_type"):
+            self.assertNotIn(stripped, attributes)
+        for kept in ("openinference.span.kind", "tool.name"):
+            self.assertIn(kept, attributes)
+
+    def test_keeps_the_identifiers_the_server_actually_reads(self) -> None:
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+        self.addCleanup(tracing.shutdown)
+        body = self._emit(
+            tracing,
+            {
+                "openinference.span.kind": "LLM",
+                "llm.model_name": "claude-sonnet-5",
+                "llm.provider": "anthropic",
+                "user.id": "u-123",
+            },
+        )
+        attributes = _string_attributes(_first_span(body).attributes)
+        self.assertEqual(attributes["llm.model_name"], "claude-sonnet-5")
+        self.assertEqual(attributes["llm.provider"], "anthropic")
+        self.assertEqual(attributes["user.id"], "u-123")
+
+    def test_leaves_sigillo_artifact_events_untouched(self) -> None:
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+        self.addCleanup(tracing.shutdown)
+        tracer = tracing.provider.get_tracer("sigillo.tests")
+        with tracer.start_as_current_span("leggi_curriculum") as span:
+            span.set_attribute("openinference.span.kind", "TOOL")
+            sigillo.artifact("il testo del CV", role="input", label="curriculum")
+        tracing.flush()
+        body = _Capture.bodies[-1]
+        span = _first_span(body)
+        self.assertEqual(len(span.events), 1)
+        self.assertEqual(span.events[0].name, "sigillo.artifact")
+
+    def test_can_be_turned_off_explicitly(self) -> None:
+        tracing = sigillo.init(
+            endpoint=self.base, api_key="k", system_id="s", instrument=[], redact_content=False
+        )
+        self.addCleanup(tracing.shutdown)
+        body = self._emit(
+            tracing,
+            {"openinference.span.kind": "TOOL", "tool.name": "t", "input.value": "in chiaro di proposito"},
+        )
+        attributes = _string_attributes(_first_span(body).attributes)
+        self.assertEqual(attributes["input.value"], "in chiaro di proposito")
+        self.assertNotIn("sigillo.input.sha256", attributes)
+
+
+class PseudonymTest(unittest.TestCase):
+    """Fase 9, decision F (D1 of docs/PROPOSTA-FASE-4.md): an opaque stand-in
+    for `on_behalf_of`, so the one field the instrumentation puts in clear by
+    convention need not carry a real identifier into a receipt. The key never
+    leaves the caller's process; sigillo never sees it.
+    """
+
+    def test_is_deterministic_for_the_same_value_and_key(self) -> None:
+        self.assertEqual(
+            sigillo.pseudonym("elena.rizzo", key=b"a-key-only-the-client-holds"),
+            sigillo.pseudonym("elena.rizzo", key=b"a-key-only-the-client-holds"),
+        )
+
+    def test_differs_for_a_different_value_or_a_different_key(self) -> None:
+        base = sigillo.pseudonym("elena.rizzo", key=b"key-one")
+        self.assertNotEqual(base, sigillo.pseudonym("m.rossi", key=b"key-one"))
+        self.assertNotEqual(base, sigillo.pseudonym("elena.rizzo", key=b"key-two"))
+
+    def test_never_contains_the_original_value(self) -> None:
+        result = sigillo.pseudonym("elena.rizzo", key=b"a-key-only-the-client-holds")
+        self.assertNotIn("elena.rizzo", result)
+
+    def test_accepts_a_string_key_too(self) -> None:
+        self.assertEqual(
+            sigillo.pseudonym("elena.rizzo", key="a text key"),
+            sigillo.pseudonym("elena.rizzo", key=b"a text key"),
+        )
+
+    def test_fits_the_on_behalf_of_length_limit(self) -> None:
+        # docs/DATA-INVENTORY.md, D4: 64 characters for on_behalf_of.
+        result = sigillo.pseudonym("a very very very long identifier indeed, much longer than usual", key=b"k")
+        self.assertLessEqual(len(result), 64)
+
+    def test_is_a_real_hmac_sha256_truncated_and_prefixed(self) -> None:
+        import hmac
+
+        expected = "p:" + hmac.new(b"k", "elena.rizzo".encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+        self.assertEqual(sigillo.pseudonym("elena.rizzo", key=b"k"), expected)
+
+    def test_rejects_an_empty_key(self) -> None:
+        with self.assertRaises(ValueError):
+            sigillo.pseudonym("elena.rizzo", key=b"")
 
 
 if __name__ == "__main__":

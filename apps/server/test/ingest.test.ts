@@ -443,6 +443,133 @@ describe("extracting artifacts and model (phase 2)", () => {
   });
 });
 
+// Fase 9, decision C (D6): the SDK may hash a span's content itself, before
+// sending anything, and attach the digest as sigillo.input.sha256 /
+// sigillo.output.sha256 instead of the raw value. Both dialects read these
+// the same way, since the SDK's filter is not dialect-specific.
+describe("content already hashed by the SDK (fase 9, D6)", () => {
+  it("uses the SDK's digest directly, GenAI dialect, instead of hashing anything itself", () => {
+    const span = jsonSpan({
+      attributes: {
+        "gen_ai.operation.name": "chat",
+        "sigillo.input.sha256": SHA_A,
+        "sigillo.output.sha256": SHA_B,
+      },
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.input_hash).toBe(SHA_A);
+    expect(action?.output_hash).toBe(SHA_B);
+  });
+
+  it("uses the SDK's digest directly, OpenInference dialect", () => {
+    const span = jsonSpan({
+      attributes: {
+        "openinference.span.kind": "TOOL",
+        "tool.name": "leggi_curriculum",
+        "sigillo.input.sha256": SHA_A,
+        "sigillo.output.sha256": SHA_B,
+      },
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.input_hash).toBe(SHA_A);
+    expect(action?.output_hash).toBe(SHA_B);
+  });
+
+  it("prefers the SDK's digest over a raw value present on the same span", () => {
+    // Should never happen from this SDK's own filter (it removes the raw
+    // value when it sends a digest), but an older SDK, or another OTLP
+    // source, might send both: the trusted digest wins, not a hash computed
+    // here over content that should not have been sent at all.
+    const span = jsonSpan({
+      attributes: {
+        "openinference.span.kind": "TOOL",
+        "tool.name": "leggi_curriculum",
+        "input.value": '{"order_id":"A-1099"}',
+        "sigillo.input.sha256": SHA_A,
+      },
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.input_hash).toBe(SHA_A);
+    expect(action?.input_hash).not.toBe(hashCanonicalJson('{"order_id":"A-1099"}'));
+  });
+
+  it("falls back to hashing the raw value when the SDK's digest is not a real SHA-256", () => {
+    const span = jsonSpan({
+      attributes: {
+        "openinference.span.kind": "TOOL",
+        "tool.name": "leggi_curriculum",
+        "input.value": '{"order_id":"A-1099"}',
+        "sigillo.input.sha256": "not-a-digest",
+      },
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.input_hash).toBe(hashCanonicalJson('{"order_id":"A-1099"}'));
+  });
+
+  it("is absent, as before, when neither a digest nor a value is present", () => {
+    const span = jsonSpan({ attributes: { "openinference.span.kind": "TOOL", "tool.name": "noop" } });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.input_hash).toBeNull();
+    expect(action?.output_hash).toBeNull();
+  });
+});
+
+// Fase 9, decision D: the server keeps accepting a span that still carries raw
+// content — an older SDK, or an agent that turned `redact_content` off — but
+// counts how many fields it had to hash itself, so an operator can tell
+// whether a pilot's agents are actually sending only digests. It never blocks
+// on this, and the count is a number, never the content.
+describe("counting content hashed here rather than already hashed by the caller", () => {
+  it("counts each field hashed from a raw value", () => {
+    const span = jsonSpan({
+      attributes: {
+        "openinference.span.kind": "TOOL",
+        "tool.name": "leggi_curriculum",
+        "input.value": '{"order_id":"A-1099"}',
+        "output.value": '{"status":"shipped"}',
+      },
+    });
+    expect(adaptSpans([span]).rawContentHashed).toBe(2);
+  });
+
+  it("does not count a field the SDK had already hashed", () => {
+    const span = jsonSpan({
+      attributes: {
+        "openinference.span.kind": "TOOL",
+        "tool.name": "leggi_curriculum",
+        "sigillo.input.sha256": SHA_A,
+        "sigillo.output.sha256": SHA_B,
+      },
+    });
+    expect(adaptSpans([span]).rawContentHashed).toBe(0);
+  });
+
+  it("counts only the field that arrived raw, in a span with one of each", () => {
+    const span = jsonSpan({
+      attributes: {
+        "openinference.span.kind": "TOOL",
+        "tool.name": "leggi_curriculum",
+        "sigillo.input.sha256": SHA_A,
+        "output.value": '{"status":"shipped"}',
+      },
+    });
+    expect(adaptSpans([span]).rawContentHashed).toBe(1);
+  });
+
+  it("counts nothing for a span with no content at all", () => {
+    const span = jsonSpan({ attributes: { "openinference.span.kind": "TOOL", "tool.name": "noop" } });
+    expect(adaptSpans([span]).rawContentHashed).toBe(0);
+  });
+
+  it("sums across every span of a batch", () => {
+    const withContent = jsonSpan({
+      attributes: { "openinference.span.kind": "TOOL", "tool.name": "a", "input.value": "x" },
+    });
+    const withoutContent = jsonSpan({ attributes: { "openinference.span.kind": "TOOL", "tool.name": "b" } });
+    expect(adaptSpans([withContent, withoutContent, withContent]).rawContentHashed).toBe(2);
+  });
+});
+
 describe("adapting a batch", () => {
   it("produces the same result from every encoding of the same payload", () => {
     for (const dialect of ["otel-genai", "openinference"]) {
@@ -495,7 +622,7 @@ describe("adapting a batch", () => {
 
   it("returns nothing for an empty export", () => {
     const batch = adaptSpans([]);
-    expect(batch).toEqual({ actions: [], ignored: 0, unknown: [] });
+    expect(batch).toEqual({ actions: [], ignored: 0, unknown: [], rawContentHashed: 0 });
   });
 });
 

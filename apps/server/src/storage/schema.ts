@@ -1,3 +1,5 @@
+import type Database from "better-sqlite3";
+
 /**
  * The whole database schema, applied on open.
  *
@@ -41,6 +43,11 @@ CREATE TABLE IF NOT EXISTS receipts (
   action_kind TEXT    NOT NULL,
   action_name TEXT    NOT NULL,
   outcome     TEXT    NOT NULL,
+  -- Present only for a receipt built from an OTLP span. What lets a resent
+  -- batch be recognised as the one already written (fase 9 / review point 6):
+  -- an exporter whose response was lost retries the whole batch, unchanged.
+  source_trace_id TEXT,
+  source_span_id  TEXT,
   UNIQUE (system_id, seq),
   UNIQUE (hash)
 ) STRICT;
@@ -127,3 +134,37 @@ BEGIN SELECT RAISE(ABORT, 'append-only: a signing key cannot be modified'); END;
 CREATE TRIGGER IF NOT EXISTS signing_keys_no_delete BEFORE DELETE ON signing_keys
 BEGIN SELECT RAISE(ABORT, 'append-only: a signing key cannot be deleted'); END;
 `;
+
+/**
+ * Columns added to `receipts` after databases already held rows: SQLite's
+ * `CREATE TABLE IF NOT EXISTS` cannot add a column to a table that already
+ * exists, so a database created before this migration was written needs its
+ * columns added here instead. Safe to run on every open: a no-op once the
+ * column is there.
+ */
+function ensureColumn(db: Database.Database, table: string, column: string, type: string): void {
+  const columns = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
+    (row) => row.name,
+  );
+  if (!columns.includes(column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+
+/**
+ * Applies the schema and every migration, in the order a database needs them:
+ * the tables first (a no-op on one that already has them), then any column a
+ * later version added, then the indexes that depend on those columns. Every
+ * caller that opens a database file — the receipt store, the API key store —
+ * goes through here, so it does not matter which one opens the file first.
+ */
+export function applySchema(db: Database.Database): void {
+  db.exec(SCHEMA_SQL);
+  ensureColumn(db, "receipts", "source_trace_id", "TEXT");
+  ensureColumn(db, "receipts", "source_span_id", "TEXT");
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS receipts_by_source
+      ON receipts (system_id, source_trace_id, source_span_id)
+      WHERE source_trace_id IS NOT NULL AND source_span_id IS NOT NULL;
+  `);
+}

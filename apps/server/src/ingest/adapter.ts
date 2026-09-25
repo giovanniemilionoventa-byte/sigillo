@@ -49,6 +49,14 @@ export interface AdaptedBatch {
   ignored: number;
   /** Convention values this build does not know, reported rather than dropped. */
   unknown: string[];
+  /**
+   * How many input/output fields this batch had hashed here, from a raw
+   * value, rather than already hashed by the caller (fase 9, decision D). A
+   * pilot whose agents run with the SDK's default settings should see this
+   * stay at zero; anything else is a caller still sending content in the
+   * clear, and is worth a look, not a rejection.
+   */
+  rawContentHashed: number;
 }
 
 const GENAI_PREFIX = "gen_ai.";
@@ -106,6 +114,35 @@ function isoFromUnixNano(nanos: bigint): string {
 function digestOf(attributes: Map<string, AttributeValue>, ...names: string[]): string | null {
   const value = text(attributes, ...names);
   return value === null ? null : hashCanonicalJson(value);
+}
+
+/**
+ * Input and output, hashed where the digest was computed: `sigillo.input.sha256`
+ * / `sigillo.output.sha256`, which the Python SDK's filter attaches instead of
+ * the raw value it would otherwise send (fase 9, decision D6). Both dialects
+ * read the same two names, since the filter that attaches them runs ahead of
+ * whichever instrumentation produced the span.
+ *
+ * A value there that is not a real SHA-256 — not this SDK's doing, but nothing
+ * on the wire promises that — is not trusted as one: this falls back to
+ * hashing `names` exactly as it always has, rather than recording something
+ * that only looks like a digest. That fallback still counts in `rawContent`:
+ * fase 9, decision D. It is never refused (an older SDK, or one built by
+ * someone else, still gets recorded), but a span whose content had to be
+ * hashed here, rather than by the caller, is worth knowing about during a
+ * pilot's first days — see `AdaptedBatch.rawContentHashed`.
+ */
+function preferPreHashed(
+  attributes: Map<string, AttributeValue>,
+  preHashedName: string,
+  rawContent: { count: number },
+  ...names: string[]
+): string | null {
+  const preHashed = text(attributes, preHashedName);
+  if (preHashed !== null && SHA256_HEX.test(preHashed)) return preHashed;
+  const raw = digestOf(attributes, ...names);
+  if (raw !== null) rawContent.count += 1;
+  return raw;
 }
 
 /**
@@ -172,7 +209,7 @@ const OPENINFERENCE_KINDS = new Map<string, Action["kind"]>([
   ["EVALUATOR", "decision"],
 ]);
 
-function adaptGenAi(span: OtlpSpan, unknown: Set<string>): OrderedAction | null {
+function adaptGenAi(span: OtlpSpan, unknown: Set<string>, rawContent: { count: number }): OrderedAction | null {
   const operation = text(span.attributes, "gen_ai.operation.name");
   let kind = operation === null ? null : GENAI_OPERATIONS.get(operation);
 
@@ -206,8 +243,8 @@ function adaptGenAi(span: OtlpSpan, unknown: Set<string>): OrderedAction | null 
     action: { kind, name: cap(name ?? span.name ?? operation ?? "unknown") },
     actor: buildActor(span, agent),
     outcome: outcomeOf(span),
-    input_hash: digestOf(span.attributes, "gen_ai.input.messages", "gen_ai.prompt"),
-    output_hash: digestOf(span.attributes, "gen_ai.output.messages", "gen_ai.completion"),
+    input_hash: preferPreHashed(span.attributes, "sigillo.input.sha256", rawContent, "gen_ai.input.messages", "gen_ai.prompt"),
+    output_hash: preferPreHashed(span.attributes, "sigillo.output.sha256", rawContent, "gen_ai.output.messages", "gen_ai.completion"),
     source: { type: "otlp", trace_id: span.traceId, span_id: span.spanId },
     ts_event: isoFromUnixNano(span.startUnixNano),
     startUnixNano: span.startUnixNano,
@@ -216,7 +253,7 @@ function adaptGenAi(span: OtlpSpan, unknown: Set<string>): OrderedAction | null 
   };
 }
 
-function adaptOpenInference(span: OtlpSpan, unknown: Set<string>): OrderedAction | null {
+function adaptOpenInference(span: OtlpSpan, unknown: Set<string>, rawContent: { count: number }): OrderedAction | null {
   const declared = text(span.attributes, OPENINFERENCE_KIND);
   if (declared === null) return null;
 
@@ -237,8 +274,8 @@ function adaptOpenInference(span: OtlpSpan, unknown: Set<string>): OrderedAction
     action: { kind, name: cap(name ?? span.name ?? declared) },
     actor: buildActor(span, text(span.attributes, "llm.system")),
     outcome: outcomeOf(span),
-    input_hash: digestOf(span.attributes, "input.value"),
-    output_hash: digestOf(span.attributes, "output.value"),
+    input_hash: preferPreHashed(span.attributes, "sigillo.input.sha256", rawContent, "input.value"),
+    output_hash: preferPreHashed(span.attributes, "sigillo.output.sha256", rawContent, "output.value"),
     source: { type: "otlp", trace_id: span.traceId, span_id: span.spanId },
     ts_event: isoFromUnixNano(span.startUnixNano),
     startUnixNano: span.startUnixNano,
@@ -281,6 +318,7 @@ function hasGenAiAttributes(span: OtlpSpan): boolean {
 
 export function adaptSpans(spans: OtlpSpan[]): AdaptedBatch {
   const unknown = new Set<string>();
+  const rawContent = { count: 0 };
   const ordered: OrderedAction[] = [];
   let ignored = 0;
 
@@ -288,9 +326,9 @@ export function adaptSpans(spans: OtlpSpan[]): AdaptedBatch {
     // OpenInference is checked first: an instrumentation that emits both
     // vocabularies has said explicitly what kind of span this is.
     const adapted = span.attributes.has(OPENINFERENCE_KIND)
-      ? adaptOpenInference(span, unknown)
+      ? adaptOpenInference(span, unknown, rawContent)
       : hasGenAiAttributes(span)
-        ? adaptGenAi(span, unknown)
+        ? adaptGenAi(span, unknown, rawContent)
         : null;
 
     if (adapted === null) {
@@ -310,5 +348,5 @@ export function adaptSpans(spans: OtlpSpan[]): AdaptedBatch {
   });
 
   const actions = ordered.map(({ startUnixNano: _start, spanId: _span, ...action }) => action);
-  return { actions, ignored, unknown: [...unknown].sort() };
+  return { actions, ignored, unknown: [...unknown].sort(), rawContentHashed: rawContent.count };
 }
