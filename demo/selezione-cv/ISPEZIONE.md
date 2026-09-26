@@ -60,8 +60,8 @@ Carica il file, non incollarne il testo. Lo stesso testo può essere salvato
 con due modi diversi di andare a capo: quello di Windows (CRLF) e quello di
 Mac e Linux (LF). Per sigillo sono due documenti diversi, perché i byte sono
 diversi, e il browser legge il testo incollato nella casella sempre con gli a
-capo LF. Su Windows, dove git di solito scrive i file di questa cartella con
-gli a capo CRLF, il testo incollato non corrisponde mai. Se la verifica non
+capo LF. Il testo incollato da un file con gli a capo CRLF, come li scrivono
+di solito i programmi di Windows, non corrisponde mai. Se la verifica non
 trova niente, la pagina mostra l'impronta che ha cercato: confrontala con
 quella del file (`Get-FileHash candidato-07.txt -Algorithm SHA256` su Windows,
 `sha256sum candidato-07.txt` su Linux). Sotto l'impronta la pagina dice anche
@@ -80,6 +80,74 @@ Il risultato atteso è una conferma di questa forma:
 Questa è la prova che il file che il candidato dice di aver inviato è
 **esattamente** quello che l'agente ha letto — non una versione simile, non
 un file con lo stesso nome ma contenuto diverso.
+
+### Se avevi fatto girare la demo prima del 26 settembre 2026: gli a capo dei curricula
+
+Fino a quella data il repository non diceva a git come andare a capo nei
+curricula della demo, e git per Windows li scriveva con gli a capo CRLF,
+mentre su Mac e Linux li scriveva con gli a capo LF. Da allora una regola
+(`demo/selezione-cv/curricula/.gitattributes`) li fissa ad **LF su ogni
+sistema operativo**. Il testo dei curricula non è cambiato, gli a capo sì,
+e quindi anche i byte e l'impronta. Per `candidato-07.txt`:
+
+| la tua copia | dimensione | impronta SHA-256 |
+|---|---|---|
+| scritta da git su Windows **prima** della regola (a capo CRLF) | 406 byte | `ecfe08f13aba545b439aa4cbd6e09edddeec73ccd1dc024060793da0d9214347` |
+| scritta da git **dopo** la regola, su qualunque sistema; oppure su Mac o Linux da sempre (a capo LF) | 392 byte | `d819ede88a6701f43f96b03c186db6c59ab8946a997f59cfa79cfeadcdbb204b` |
+
+**Le ricevute già scritte non cambiano, ed è giusto così.** Ogni ricevuta
+scritta da un'esecuzione precedente dell'agente, nel database della demo o in
+un sistema di prova in produzione, contiene l'impronta del file **come l'agente
+lo ha letto quella volta**. Su Windows, prima della regola, era la versione
+CRLF da 406 byte. Una ricevuta non deve cambiare quando il file cambia
+altrove: è proprio la garanzia che sigillo offre. Nessuno deve correggerle,
+e non vanno toccate.
+
+La conseguenza pratica: se verifichi un file scritto **dopo** la regola
+contro una ricevuta scritta **prima**, la pagina risponde "Nessuna azione
+registrata ha usato questo documento", mostra l'impronta `d819ede8…` e dice
+"Calcolata dal browser sul file scelto". **Non si è rotto niente**: il file
+è davvero diverso da quello che l'agente aveva letto.
+
+Cosa succede alla tua copia su Windows:
+
+- **Un `git pull` non la cambia.** Git non riscrive un file il cui contenuto nel
+  repository non è cambiato: la tua copia resta CRLF, 406 byte, e continua a
+  corrispondere alle ricevute scritte prima.
+- **Diventa LF** solo con un clone nuovo, oppure se la cancelli e la fai
+  riscrivere a git. Se vuoi conservare la versione CRLF, che serve a verificare
+  le ricevute vecchie, copiala prima in un'altra cartella:
+
+  ```powershell
+  Copy-Item demo\selezione-cv\curricula -Destination $HOME\curricula-crlf -Recurse
+  Remove-Item demo\selezione-cv\curricula\candidato-*.txt
+  git checkout -- demo/selezione-cv/curricula
+  ```
+
+  Dopo questi comandi, se fai girare di nuovo l'agente, le ricevute nuove
+  conterranno le impronte LF, e i file del checkout corrisponderanno a quelle.
+
+**Come sapere quale versione hai.** In PowerShell, dalla cartella del
+repository (il comando conta i byte uno per uno, non modifica il file):
+
+```powershell
+$f = "demo\selezione-cv\curricula\candidato-07.txt"
+$b = [System.IO.File]::ReadAllBytes((Resolve-Path $f))
+$crlf = 0; $lf = 0; $cr = 0
+for ($i = 0; $i -lt $b.Length; $i++) {
+    if ($b[$i] -eq 13 -and $i + 1 -lt $b.Length -and $b[$i + 1] -eq 10) { $crlf++; $i++ }
+    elseif ($b[$i] -eq 13) { $cr++ }
+    elseif ($b[$i] -eq 10) { $lf++ }
+}
+"$($b.Length) byte, CRLF: $crlf, LF isolati: $lf, CR isolati: $cr"
+(Get-FileHash -Algorithm SHA256 $f).Hash.ToLower()
+```
+
+Risposte possibili: `406 byte, CRLF: 14, LF isolati: 0` con `ecfe08f1…` (prima
+della regola), oppure `392 byte, CRLF: 0, LF isolati: 14` con `d819ede8…` (dopo).
+Qualunque altra risposta vuol dire che il file è stato modificato da qualcosa
+che non è git, per esempio salvato di nuovo da un editor: non corrisponde a
+nessuna delle due versioni.
 
 ## Passo 4 — Vedere le azioni intorno a quel momento
 

@@ -25,8 +25,9 @@ import { createTestSigner } from "./helpers/signer.js";
  *
  * The document is demo/selezione-cv/curricula/candidato-07.txt, in the two
  * forms that matter: as the repository holds it (LF line endings) and as a
- * Windows checkout writes it (CRLF), which is what the agent read and what
- * the receipt's fingerprint is of.
+ * Windows checkout wrote it before demo/selezione-cv/curricula/.gitattributes
+ * (CRLF), which is what the pilot's agent read and what the receipt's
+ * fingerprint is of.
  */
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
