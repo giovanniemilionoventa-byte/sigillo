@@ -1,0 +1,7 @@
+# The agent records the SHA-256 of each curriculum's bytes, and line endings
+# are part of the bytes. Without this rule a Windows checkout (core.autocrlf)
+# wrote these files with CRLF and every other checkout with LF: two different
+# documents for sigillo. LF everywhere, whatever the checkout's settings; a
+# CRLF file is converted to LF when it is added. PROGRESS.md, session 7.
+# demo/selezione-cv/tests/test_line_endings.py fails for a file outside it.
+*.txt text eol=lf

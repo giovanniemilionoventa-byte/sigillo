@@ -1684,7 +1684,7 @@ Verifiche: `pnpm check` verde, **715 test Node** (erano 708, +7), 1 saltato come
 - *Togliere la casella "incolla il testo"*: la SPEC (sezione 4) la chiede. Resta, con l'avviso.
 
 **Aperto, per una decisione del committente.**
-1. **`.gitattributes` per `demo/selezione-cv/curricula/*.txt`** (`eol=lf` o `-text`), così i
+1. **`.gitattributes` per `demo/selezione-cv/curricula/*.txt`** *(fatto nella sessione 7, `eol=lf`)* (`eol=lf` o `-text`), così i
    curricula della demo hanno gli stessi byte su ogni sistema operativo. Raccomandato, ma non fatto
    stanotte. Su un nuovo checkout Windows i file passerebbero da CRLF a LF, e le ricevute già scritte
    nel pilota (CRLF, come la `seq 50`) non corrisponderebbero più ai file di un checkout nuovo. Il
@@ -1869,6 +1869,191 @@ impronte coincidano.
 
 **Resta aperto, dalla sessione 5:** `.gitattributes` per i curricula della demo, e la
 "corrispondenza vicina" per gli a capo. Nessuno dei due è stato toccato.
+*`.gitattributes` fatto nella sessione 7. La "corrispondenza vicina" resta aperta.*
+
+### Sessione 7 — 2026-09-26 — `.gitattributes` per i curricula della demo
+
+**Il punto di partenza.** Il committente ha misurato su Windows, dopo un `git pull`,
+`candidato-07.txt` con "14 CRLF e 13 LF isolati", e ha concluso che il file era misto. Il prompt
+chiede di decidere l'a capo dei curricula e di fissarlo con `.gitattributes` (punto 1 aperto della
+sessione 5).
+
+**Punto 1: lo stato del repository, misurato byte per byte.** Ambiente Linux 6.18, checkout
+pulito di `main` a `6d3455b` (PR #10 unita), nessun `core.autocrlf` né `core.eol` configurato. Ho
+contato con Python sui byte grezzi (`open(…, "rb")`): CRLF = coppie 13-10, LF isolati = byte 10
+non preceduti da 13, CR isolati = byte 13 non seguiti da 10. Ho contato sia sul file su disco sia
+sul blob in `HEAD` letto con `git cat-file blob`, che non applica filtri né conversioni, e i due
+sono risultati identici per tutti e 20 i file.
+
+| file | byte | CRLF | LF isolati | CR isolati | a capo | SHA-256 (inizio) |
+|---|---|---|---|---|---|---|
+| candidato-01.txt | 372 | 0 | 14 | 0 | LF uniforme | `309d89b8754cad88` |
+| candidato-02.txt | 344 | 0 | 14 | 0 | LF uniforme | `8d13572cf78e5fae` |
+| candidato-03.txt | 365 | 0 | 15 | 0 | LF uniforme | `6f263fbb708af82b` |
+| candidato-04.txt | 319 | 0 | 14 | 0 | LF uniforme | `2edcea9cdd026005` |
+| candidato-05.txt | 352 | 0 | 14 | 0 | LF uniforme | `5e6a99ad6d09697a` |
+| candidato-06.txt | 386 | 0 | 15 | 0 | LF uniforme | `2b18f4c0af581bd6` |
+| candidato-07.txt | 392 | 0 | 14 | 0 | LF uniforme | `d819ede88a6701f4` |
+| candidato-08.txt | 381 | 0 | 14 | 0 | LF uniforme | `269aba9a76e55988` |
+| candidato-09.txt | 324 | 0 | 14 | 0 | LF uniforme | `fff9abe515904287` |
+| candidato-10.txt | 334 | 0 | 14 | 0 | LF uniforme | `797793cc26beda5b` |
+| candidato-11.txt | 414 | 0 | 15 | 0 | LF uniforme | `e90a507663a4f6c0` |
+| candidato-12.txt | 349 | 0 | 14 | 0 | LF uniforme | `bc843460d0715df3` |
+| candidato-13.txt | 351 | 0 | 14 | 0 | LF uniforme | `4f08dc2ac1bd6034` |
+| candidato-14.txt | 339 | 0 | 14 | 0 | LF uniforme | `54501a287846faf2` |
+| candidato-15.txt | 332 | 0 | 14 | 0 | LF uniforme | `1966d23328aeec41` |
+| candidato-16.txt | 344 | 0 | 14 | 0 | LF uniforme | `c1a9dc6347678e12` |
+| candidato-17.txt | 354 | 0 | 14 | 0 | LF uniforme | `a568fa8cb8660ad3` |
+| candidato-18.txt | 316 | 0 | 14 | 0 | LF uniforme | `9f375292f0b1ef33` |
+| candidato-19.txt | 344 | 0 | 14 | 0 | LF uniforme | `1f07a8652b45640f` |
+| candidato-20.txt | 353 | 0 | 14 | 0 | LF uniforme | `f3baff78fd563b12` |
+
+**Tutti e 20 i file sono uniformi, LF. Nessuno era misto nel repository.** Sono stati aggiunti
+una sola volta, in N5 (`66ce0ae`), e non sono mai stati modificati. In quell'unica versione nessun
+blob contiene un solo byte 13. `git ls-files --eol` dava `i/lf w/lf attr/` per tutti.
+
+**Cosa scrive git su Windows, con le impostazioni di Git per Windows.** Ho clonato `main` con
+`core.autocrlf=true`, cioè il default di Git per Windows. La conversione avviene nello stesso
+modo su qualunque sistema. Risultato: tutti e 20 i file **CRLF uniformi**, 0 LF isolati.
+`candidato-07.txt` risulta di 406 byte, 14 CRLF, `ecfe08f1…d9214347`, che è esattamente l'impronta
+della ricevuta del pilota. Git trasforma ogni LF in CRLF e non aggiunge a capo. Da un blob con 14 a
+capo non può uscire un file con 14 + 13 = 27 a capo.
+
+**Sul "14 CRLF e 13 LF isolati" misurato su Windows: due spiegazioni, e non scelgo.** Ho
+installato PowerShell 7.4.6 in questo ambiente (Linux, non Windows, e fuori dal repository) per
+controllarle tutte e due con il linguaggio del committente.
+- Un file davvero misto con 14 CRLF e 13 LF isolati pesa **419 byte**, ha un a capo in più tra
+  ogni riga e ha un'impronta ancora diversa (`8479d578…`, nel caso che ho costruito io).
+- Un errore di conteggio frequente dà **esattamente "14 e 13"** sul file CRLF da 406 byte, cioè
+  proprio quello che scrive git. È il ciclo che si ferma un byte prima della fine (`$i -lt
+  $b.Length - 1`) e conta ogni byte 10, non solo quelli non preceduti da 13. Provato in
+  PowerShell: sul file CRLF dà "CRLF 14, LF 13", sul file LF "CRLF 0, LF 13".
+
+Non vedo il comando usato né il file, quindi non posso dire quale delle due sia successa. La
+dimensione del file le distingue: 406 byte = CRLF uniforme, 392 = LF uniforme, 419 = davvero misto.
+In `ISPEZIONE.md` ho messo un conteggio corretto, eseguito in PowerShell su tutte e tre le varianti,
+che stampa dimensione, conteggi e impronta. Una cosa invece è certa: se il file è davvero misto,
+non l'ha prodotto la conversione degli a capo di git a partire da questo repository.
+
+**Punto 2: l'a capo canonico è LF.**
+- I file nel repository sono già LF: nessun byte del repository cambia, e i checkout Mac e Linux
+  scrivono gli stessi byte di prima. Cambia solo quello che scrive un checkout Windows **nuovo**.
+- È la convenzione normale per i file di testo in un repository usato da più sistemi. L'agente
+  Python ne calcola l'impronta sui byte grezzi (`sigillo.artifact`) e poi legge il testo con
+  `read_text`, che gestisce tutti e due gli a capo, quindi la valutazione non cambia.
+- I test esistenti (`verify-document-browser.test.ts`) leggono `candidato-07.txt` dal checkout e
+  si aspettano l'impronta LF. Su un checkout Windows fallivano. Con la regola passano ovunque.
+- Alternativa scartata: `-text`, cioè nessuna conversione, i byte così come sono stati committati.
+  Anche questa dà gli stessi byte su ogni sistema, ma lascerebbe entrare nel repository un
+  ventunesimo curriculum salvato CRLF da Windows, e allora i file tornerebbero a non essere
+  uniformi tra loro. Con `text eol=lf` git converte in LF al momento di `git add` (provato: un
+  `candidato-21.txt` CRLF finisce nell'indice con soli LF).
+
+Regola: `demo/selezione-cv/curricula/.gitattributes` con `*.txt text eol=lf`. L'ho messa nella
+cartella e non alla radice, così tocca solo questi file, e chi aggiunge un curriculum la trova
+accanto agli altri. L'agente legge solo `candidato-*.txt`, quindi il file `.gitattributes` non
+diventa un candidato. Commit `a7fb2c5`, insieme al test del punto 5.
+
+**Punto 3: rinormalizzazione.** `git add --renormalize demo/selezione-cv/curricula`, cioè il
+meccanismo standard, **non cambia nessun file** (0 file nell'indice), perché i blob sono già LF.
+Per questo non c'è un commit di normalizzazione: sarebbe un commit vuoto, e lo dico invece di
+crearlo. Verifica, con lo stesso conteggio byte per byte del punto 1, dopo la regola:
+- checkout Linux: 20 file LF uniformi, 0 CRLF, 0 CR isolati (identico alla tabella);
+- **clone nuovo con `core.autocrlf=true` e `core.eol=crlf`** (le impostazioni di Windows): 20 file
+  LF uniformi, 0 CRLF, 0 CR, e `candidato-07.txt` = `d819ede8…`. Senza la regola lo stesso clone
+  scriveva 20 file CRLF;
+- `git ls-files --eol`: `i/lf w/lf attr/text eol=lf` per tutti e 20.
+
+**Cosa succede a un checkout Windows che esiste già (misurato, con `core.autocrlf=true`).** Dopo il
+`git pull` di questa modifica **il file resta CRLF**, 406 byte, `ecfe08f1…`, e `git status` non
+segnala niente. Git non riscrive un file il cui blob non è cambiato, e nemmeno `git checkout --`
+lo riscrive. Il file diventa LF solo con un clone nuovo, oppure cancellandolo e facendolo
+riscrivere a git (`Remove-Item …; git checkout -- demo/selezione-cv/curricula`). Ho eseguito in
+PowerShell i comandi di `ISPEZIONE.md` su un checkout così: prima 406 byte, `ecfe08f1…`; dopo 392
+byte, `d819ede8…`; la copia di riserva resta CRLF. Quindi, per il committente, la copia attuale
+continua a corrispondere alle ricevute del pilota finché non la rinfresca.
+
+**Punto 4: la conseguenza, scritta per il committente.** Nuova sottosezione in
+`demo/selezione-cv/ISPEZIONE.md`, dopo il Passo 3: "Se avevi fatto girare la demo prima del 26
+settembre 2026". Contiene la tabella delle due versioni di `candidato-07.txt` (406 byte `ecfe08f1…`
+prima, 392 byte `d819ede8…` dopo). Spiega che le ricevute già scritte, compresa la `seq 50` del
+sistema di prova in produzione, restano come sono e sono corrette. Spiega che un file scaricato
+dopo la regola, verificato contro una ricevuta scritta prima, dà "nessuna corrispondenza" perché il
+file è cambiato, non perché si è rotto qualcosa. Poi cosa fa `git pull` (niente) e come passare a
+LF conservando la copia CRLF, fuori dal repository. Infine il conteggio byte per byte in
+PowerShell, con le risposte possibili. Nel Passo 3 ho cambiato una sola frase, quella che diceva
+che git su Windows scrive CRLF i file di questa cartella: non è più vero. Il resto della
+spiegazione sugli a capo è invariato. **La pagina "Verifica un documento" non è toccata**, e
+nemmeno `PROVA-LOCALE.md` e `docs/FORMAT.md`, che parlano di file salvati su Windows in generale,
+cosa che resta vera. Ho corretto il tempo verbale in due commenti dei test
+(`verify-document-browser.test.ts`, `verify-document-e2e.test.ts`): la versione CRLF è quella che un
+checkout Windows *scriveva*. Nessuna modifica alla logica.
+
+**Punto 5: il test.** `demo/selezione-cv/tests/test_line_endings.py`, 4 test, scritto prima della
+regola. **Senza `.gitattributes`, 2 falliscono su tutti e 20 i file**: nessun attributo
+dichiarato, e un `checkout-index` con `core.autocrlf=true core.eol=crlf` scrive 14 o 15 CRLF.
+Con la regola passano tutti e 4. Controlla:
+1. che ogni curriculum, tracciato oppure appena copiato nella cartella dove l'agente lo leggerebbe,
+   sia dichiarato `text` con `eol=lf` (`git check-attr`);
+2. che su disco nessun curriculum contenga un CR (conteggio sui byte grezzi);
+3. che nell'indice nessun blob contenga un CR (`git cat-file blob`, senza conversioni);
+4. che un checkout con le impostazioni di Git per Windows scriva gli stessi byte del blob.
+
+Provato anche nel verso della regressione: un `candidato-21.txt` CRLF copiato nella cartella fa
+fallire il test 2; un `candidato-21.pdf` aggiunto all'indice fa fallire i test 1, 2 e 3. Gira nel job
+Python della CI, che esegue già `demo/selezione-cv/tests`. Fuori da un checkout git, per esempio
+con la demo scaricata come zip, viene saltato.
+
+**Punto 6: altri file di testo usati come input, da decidere.** Ho controllato tutti i 189 file
+tracciati. Nessun file di testo ha un CR nell'indice. I file binari (`*.png`, `*.bin`) git li
+riconosce da solo come binari. Nessuna correzione in questa sessione, come chiede il prompt.
+- **`deploy/backup.sh` e `demo/selezione-cv/run_demo.sh`: raccomando `*.sh text eol=lf`.** Sono
+  script di shell. Il `Dockerfile` copia `backup.sh` nell'immagine Linux (riga 61), e la guida di
+  produzione lo esegue con `docker compose exec -T server /app/backup.sh`. Se l'immagine viene
+  costruita da un checkout Windows (Docker Desktop), lo script arriva con CRLF e `/bin/sh` non lo
+  esegue: la prima riga diventa `#!/bin/sh\r`. Lo stesso vale per `run_demo.sh` lanciato da WSL o
+  Git Bash. Oggi il server di produzione costruisce da un checkout Linux e il problema non si pone.
+  Non l'ho riprodotto su Windows.
+- **`apps/server/test/fixtures/*.protobuf.bin`: raccomando `*.bin binary`.** I test li leggono byte
+  per byte. Oggi git li classifica come binari con un'euristica (`i/-text`), e quindi non li
+  converte. Un fixture nuovo senza byte 0 potrebbe essere classificato come testo e riscritto su
+  Windows. Rischio basso, correzione di una riga.
+- **Nessuna azione per** i JSON dei vettori e dei fixture (`packages/core/test/*.json`,
+  `apps/server/test/fixtures/*.json`), i `.proto`, il `Caddyfile`, `.env.example` e i YAML: vengono
+  interpretati, non confrontati byte per byte, e un CR in più è uno spazio bianco. L'unica impronta
+  di un file che un test confronta con un valore fisso è quella di `candidato-07.txt`, già coperta
+  dalla regola. Il test di `sdk-python` che calcola l'impronta di un file scrive quel file da sé.
+- **Una regola unica alla radice** (`* text=auto eol=lf`, più `*.png`/`*.bin binary`, più
+  `*.ps1 text eol=crlf` se si vuole): è la scelta più completa. Tocca però l'intero repository e il
+  modo in cui lo vede chi lavora su Windows. È una decisione del committente, non l'ho presa.
+
+**Decisione del committente (26/09, nella stessa sessione): sì a `*.sh text eol=lf` e a `*.bin
+binary`, no alla regola unica per tutto il repository.** Le due regole stanno in un `.gitattributes`
+alla radice che contiene solo quelle due righe: gli altri file restano come prima, con i default di
+git. I file coinvolti oggi sono `deploy/backup.sh`, `demo/selezione-cv/run_demo.sh` e i due
+`apps/server/test/fixtures/*.protobuf.bin`. `git add --renormalize .` non cambia nessun file: gli
+script erano già LF, e i fixture non vengono convertiti.
+Test nuovo `apps/server/test/line-endings.test.ts` (7 test), scritto prima delle regole. **Senza le
+regole ne falliscono 3**: nessun attributo sugli script, nessun attributo sui fixture, e soprattutto
+un checkout con `core.autocrlf=true core.eol=crlf` **scrive gli script con CRLF**. Questo conferma
+per davvero il rischio di `#!/bin/sh\r` per `backup.sh` in un'immagine costruita da Windows. Con le
+regole passano tutti e 7. La regola dei curricula (`demo/selezione-cv/curricula/.gitattributes`)
+non cambia.
+
+**Non toccati**: formato delle ricevute, firma, logica di verifica, `packages/core`,
+`packages/verifier`, la pagina "Verifica un documento" e nessuna ricevuta in nessun database.
+
+Verifiche: `pnpm check` verde, **731 test Node** (erano 724, +7 di `line-endings.test.ts`) e 1
+saltato, come prima. `smoke-dist` e cross-check Python ok. Test della demo **22** (erano 18, +4),
+test dell'SDK Python 39, tutti verdi.
+
+Un'osservazione, non causata da questa modifica: su 4 esecuzioni complete della suite Node, alla
+prima, subito dopo la build, è fallito una volta il test del browser della sessione 6 "does not
+leave an earlier attempt's result on screen when the chosen file cannot be read"
+(`TimeoutError: locator.waitFor`, 5 s per vedere l'avviso). Passa nelle altre 3 esecuzioni complete
+e in 3 esecuzioni isolate. In quel file questa PR cambia solo un commento. Il sospetto è il limite
+di 5 s sotto il carico di 36 file di test in parallelo, ma non l'ho dimostrato. Se ricapita in CI,
+va guardato lì.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

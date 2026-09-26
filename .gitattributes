@@ -1,0 +1,10 @@
+# Only the file types listed here; every other file is left to git's
+# defaults, by the project owner's decision (PROGRESS.md, session 7).
+# apps/server/test/line-endings.test.ts checks these rules.
+
+# Shell scripts run on Linux (deploy/backup.sh is copied into the server
+# image): LF on every checkout, or `#!/bin/sh\r` does not run.
+*.sh text eol=lf
+
+# Fixtures read byte for byte: never converted, never diffed as text.
+*.bin binary

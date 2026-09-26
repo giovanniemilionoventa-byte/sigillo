@@ -240,7 +240,7 @@ describe("verifica un documento, for a system whose name has a space in it", () 
 
 /**
  * What the pilot actually hit. The receipt holds the fingerprint of
- * candidato-07.txt as a Windows checkout writes it, with CRLF line endings;
+ * candidato-07.txt as a Windows checkout wrote it, with CRLF line endings;
  * the same text with LF line endings — a copy from any other checkout, or the
  * text pasted into the page's box, which a browser always reads back with LF
  * (HTML's textarea value normalisation) — is, correctly, not the same
