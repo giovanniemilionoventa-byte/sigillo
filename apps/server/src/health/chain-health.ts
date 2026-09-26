@@ -1,5 +1,6 @@
 import { type KeyObject } from "node:crypto";
 import { GENESIS_PREV_HASH, receiptHashHex, verifyReceiptSignature } from "@sigillo/core";
+import { formatTs } from "../http/strings.js";
 import type { ReceiptStore } from "../storage/store.js";
 
 /**
@@ -44,6 +45,16 @@ export class ChainHealthMonitor {
     for (const systemId of this.store.listSystems()) {
       this.checkSystem(systemId);
     }
+  }
+
+  /**
+   * Drops what was remembered about a system, for one that was just deleted:
+   * its identifier is not reused (ReceiptStore.createSystem), but a monitor
+   * that kept the old chain's tip would call any later chain under that name
+   * broken.
+   */
+  forget(systemId: string): void {
+    this.tracked.delete(systemId);
   }
 
   /** Same shape as Checkpointer.start(): a timer the process does not wait on. */
@@ -120,7 +131,7 @@ export class ChainHealthMonitor {
     if (anchored && !stale) {
       return {
         status: "green",
-        message: `Registro integro. ${total} azion${total === 1 ? "e" : "i"} registrat${total === 1 ? "a" : "e"}, ultimo sigillo del ${checkpoint.checkpoint.ts}.`,
+        message: `Registro integro. ${total} azion${total === 1 ? "e" : "i"} registrat${total === 1 ? "a" : "e"}, ultimo sigillo del ${formatTs(checkpoint.checkpoint.ts)}.`,
       };
     }
 

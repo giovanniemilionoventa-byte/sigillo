@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { statSync, writeFileSync } from "node:fs";
+import { hostname, userInfo } from "node:os";
 import Database from "better-sqlite3";
 import { Command } from "commander";
 import { publicKeyFromRaw } from "@sigillo/core";
@@ -11,7 +12,7 @@ import { buildArchive } from "./export/archive.js";
 import { ChainHealthMonitor } from "./health/chain-health.js";
 import { buildServer } from "./http/server.js";
 import { SignerClient } from "./signer/client.js";
-import { ReceiptStore } from "./storage/store.js";
+import { ReceiptStore, SystemNotDeletableError, type AdminRequest } from "./storage/store.js";
 import type { TsaOptions } from "./timestamp/rfc3161.js";
 
 /**
@@ -52,6 +53,31 @@ function printableUrl(url: string): string {
 }
 
 const WEEK_MINUTES = 7 * 24 * 60;
+
+/**
+ * Who is running an administrative command, for the administrative log: the
+ * operating system's user and machine. There is no sigillo account to name;
+ * this is what the host itself says about who typed it.
+ */
+function cliRequest(): AdminRequest {
+  let user = "unknown";
+  try {
+    user = userInfo().username;
+  } catch {
+    // A container user without a passwd entry has no name to give.
+  }
+  return { actor: `cli ${user}@${hostname()}`, ts: now() };
+}
+
+/** Opens the store for a change that signs nothing: renaming, archiving, deleting. */
+async function withStore<T>(databasePath: string, work: (store: ReceiptStore) => Promise<T>): Promise<T> {
+  const store = ReceiptStore.open(databasePath);
+  try {
+    return await work(store);
+  } finally {
+    store.close();
+  }
+}
 
 async function withSigner<T>(
   socketPath: string,
@@ -217,14 +243,113 @@ system
 
 system
   .command("list")
-  .description("List the systems that have a chain")
+  .description("List the systems that have a chain: system_id, receipts, state, display name")
+  .option("--all", "include archived systems")
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
-  .action((options: DatabaseOption) => {
+  .action((options: DatabaseOption & { all?: boolean }) => {
     const store = ReceiptStore.open(options.db);
     try {
-      for (const systemId of store.listSystems()) {
-        const tip = store.tip(systemId);
-        process.stdout.write(`${systemId}\t${tip === null ? 0 : tip.seq + 1} receipts\n`);
+      for (const record of store.listSystemRecords()) {
+        if (record.archived_at !== null && options.all !== true) continue;
+        const state = record.archived_at === null ? "active" : `archived ${record.archived_at}`;
+        process.stdout.write(
+          `${record.system_id}\t${record.receipts} receipts\t${state}\t${record.display_name ?? ""}\n`,
+        );
+      }
+    } finally {
+      store.close();
+    }
+  });
+
+system
+  .command("rename")
+  .description(
+    "Set the name the web view shows for a system; an empty name clears it. " +
+      "The system_id, the chain and every export already made stay as they are",
+  )
+  .argument("<system_id>")
+  .argument("<display_name>")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action(async (systemId: string, displayName: string, options: DatabaseOption) => {
+    await withStore(options.db, async (store) => {
+      await store.renameSystem(systemId, displayName, cliRequest());
+      const record = store.systemRecord(systemId);
+      process.stdout.write(
+        record?.display_name === null || record === null
+          ? `${systemId} has no display name: the web view shows its system_id\n`
+          : `${systemId} is now shown as "${record.display_name}"\n`,
+      );
+    });
+  });
+
+system
+  .command("archive")
+  .description("Take a system off the main listings. Its chain stays whole, exportable and verifiable")
+  .argument("<system_id>")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action(async (systemId: string, options: DatabaseOption) => {
+    await withStore(options.db, async (store) => {
+      await store.archiveSystem(systemId, cliRequest());
+      process.stdout.write(`archived ${systemId}\n`);
+    });
+  });
+
+system
+  .command("unarchive")
+  .description("Put an archived system back on the main listings")
+  .argument("<system_id>")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action(async (systemId: string, options: DatabaseOption) => {
+    await withStore(options.db, async (store) => {
+      await store.unarchiveSystem(systemId, cliRequest());
+      process.stdout.write(`unarchived ${systemId}\n`);
+    });
+  });
+
+system
+  .command("delete")
+  .description(
+    "Delete a system whose chain holds nothing but its genesis. A system with any recorded " +
+      "action cannot be deleted, by this command or any other: archive it instead",
+  )
+  .argument("<system_id>")
+  .requiredOption("--confirm <system_id>", "the same system_id again, typed out")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action(async (systemId: string, options: DatabaseOption & { confirm: string }) => {
+    if (options.confirm !== systemId) {
+      throw new Error(`--confirm must repeat the system_id exactly (${systemId}): nothing was deleted`);
+    }
+    await withStore(options.db, async (store) => {
+      try {
+        const deleted = await store.deleteEmptySystem(systemId, cliRequest());
+        process.stdout.write(
+          `deleted ${systemId}: its genesis ${deleted.genesis_hash}, ${deleted.checkpoints} checkpoint(s), ` +
+            `${deleted.timestamps} timestamp token(s) and ${deleted.api_keys.length} API key(s)\n`,
+        );
+        process.stdout.write("the deletion is in the administrative log (sigillo-server admin-log)\n");
+      } catch (error) {
+        if (error instanceof SystemNotDeletableError) {
+          process.stderr.write(`${error.message}: sigillo-server system archive ${systemId}\n`);
+          process.exit(1);
+        }
+        throw error;
+      }
+    });
+  });
+
+program
+  .command("admin-log")
+  .description("Print the administrative log: renames, archivals and deletions of systems, newest first")
+  .option("--limit <n>", "how many entries", "100")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action((options: DatabaseOption & { limit: string }) => {
+    const limit = positiveInteger("--limit", options.limit, 100, 10_000);
+    const store = ReceiptStore.open(options.db);
+    try {
+      for (const entry of store.adminLog(limit)) {
+        process.stdout.write(
+          `${entry.ts}\t${entry.action}\t${entry.system_id}\t${entry.actor}\t${JSON.stringify(entry.detail)}\n`,
+        );
       }
     } finally {
       store.close();
@@ -348,6 +473,7 @@ program
     try {
       const archive = await buildArchive({
         systemId,
+        displayName: store.systemRecord(systemId)?.display_name ?? null,
         receipts: store.readChain(systemId),
         checkpoints: store.readCheckpoints(systemId).map((stored) => ({
           stored,

@@ -29,6 +29,8 @@ export interface ReportInput {
   actionCounts: ReadonlyMap<string, number>;
   /** The time each token attests (genTime), by the token's file name. */
   genTimes?: ReadonlyMap<string, string>;
+  /** The system's label in the web view when the file was exported: see ArchiveInput. */
+  displayName?: string;
 }
 
 export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
@@ -37,7 +39,7 @@ export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
     size: "A4",
     margin: MARGIN,
     info: {
-      Title: `sigillo evidence file — ${manifest.system_id}`,
+      Title: `sigillo evidence file — ${manifest.system_id}${input.displayName === undefined ? "" : ` (${input.displayName})`}`,
       Author: "sigillo",
       Subject: "Record of AI system actions, with the means to verify it",
     },
@@ -83,6 +85,15 @@ export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
 
   heading("The system and the period");
   row("System", manifest.system_id);
+  if (input.displayName !== undefined) {
+    row("Name at export", input.displayName);
+    document.fontSize(8).fillColor("#444444");
+    document.text(
+      "The name the operator's web view showed for this system when the file was exported. It " +
+        "is a label, not part of the signed record: the system is identified by its system_id above.",
+    );
+    document.fontSize(10).fillColor("black");
+  }
   row("Receipts", `${manifest.counts.receipts}`);
   row(
     "Positions",

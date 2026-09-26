@@ -12,7 +12,12 @@ import type { Receipt } from "@sigillo/core";
  */
 
 export const UI = {
-  nav: { sistemi: "sistemi", verificaDocumento: "verifica documento", esci: "esci" },
+  nav: { registro: "registro", sistemi: "sistemi", verificaDocumento: "verifica documento", esci: "esci" },
+  brand: {
+    tagline: "registro delle azioni AI",
+    skip: "Vai al contenuto",
+    signingKey: "Ricevute e sigilli firmati con la chiave",
+  },
   login: {
     label: "Password amministratore",
     submit: "Accedi",
@@ -23,6 +28,8 @@ export const UI = {
   },
   home: {
     title: "sigillo",
+    heading: "Il registro",
+    eyebrow: "le tre domande",
     q1: "È tutto a posto?",
     q2: "Cosa ha fatto l'AI?",
     q3: "Mi prepari le prove?",
@@ -39,6 +46,12 @@ export const UI = {
     checkpointHint:
       "Normalmente non serve: ogni sistema viene sigillato da solo a intervalli regolari. " +
       "Usa questo se non vuoi aspettare.",
+    archivedHidden: (count: number): string =>
+      `${count === 1 ? "Un sistema archiviato non è mostrato" : `${count} sistemi archiviati non sono mostrati`} qui: li trovi nella pagina «sistemi».`,
+    archivedShownBecause: "archiviato, ma mostrato qui perché",
+    archivedRed: "la verifica è fallita",
+    archivedActive: "ha ricevuto azioni dopo l'archiviazione",
+    archivedGroup: "archiviati",
     checkpointDone:
       "Fatto: ogni sistema con azioni nuove è stato sigillato. Se uno resta giallo, il sigillo " +
       "è scritto ma la marca temporale non è ancora arrivata — riprova tra poco.",
@@ -50,17 +63,67 @@ export const UI = {
   },
   systemsPage: {
     title: "sistemi",
+    heading: "Sistemi",
+    eyebrow: "chi scrive nel registro",
     existing: "Sistemi esistenti",
+    views: { attivi: "attivi", archiviati: "archiviati", tutti: "tutti" },
+    noneInView: {
+      attivi: "Nessun sistema attivo.",
+      archiviati: "Nessun sistema archiviato.",
+      tutti: "Nessun sistema ancora.",
+    },
+    archivedBadge: "archiviato",
+    receipts: (count: number): string => `${count} ${count === 1 ? "ricevuta" : "ricevute"}`,
+    onlyGenesis: "solo l'apertura del registro",
+    lastActivity: "ultima attività",
+    history: "cronologia",
+    manage: "gestisci",
     createTitle: "Crea un nuovo sistema",
-    nameLabel: "Nome del sistema",
+    nameLabel: "Identificativo del sistema",
     namePlaceholder: "acme-support-bot",
+    displayNameLabel: "Nome mostrato (facoltativo)",
+    idHint:
+      "L'identificativo entra in ogni ricevuta, chiave ed export e non cambierà mai. Il nome mostrato si potrà scegliere e cambiare dopo, in «gestisci».",
     submit: "Crea sistema e chiave",
     createdTitle: "Sistema creato",
     tokenWarning:
       "Questo è l'unico momento in cui la chiave viene mostrata. Copiala ora: non potrà essere recuperata di nuovo.",
     howToConnect: "Come collegare un chatbot o un agente",
+    deleted: (systemId: string): string =>
+      `Il sistema ${systemId} è stato eliminato. L'operazione è scritta nel registro amministrativo.`,
+    adminLogTitle: "Registro amministrativo",
+    adminLogHint:
+      "Rinomine, archiviazioni ed eliminazioni di sistemi: chi, quando, cosa. È fuori dalle catene, e come loro non si modifica.",
+    adminLogEmpty: "Nessuna operazione ancora.",
+  },
+  manage: {
+    eyebrow: "gestisci il sistema",
+    nameTitle: "Nome mostrato",
+    nameLabel: "Nome",
+    nameHint: (systemId: string): string =>
+      `È solo un'etichetta per questa interfaccia. L'identificativo ${systemId} resta lo stesso in ricevute, chiavi ed export, e un fascicolo già esportato conserva il nome che aveva. Lascia vuoto per mostrare l'identificativo.`,
+    nameSubmit: "Salva il nome",
+    renamed: "Nome salvato.",
+    archiveTitle: "Archiviazione",
+    archiveHint:
+      "Un sistema archiviato esce dalla pagina principale e dall'elenco dei sistemi attivi. Il suo registro resta intero: consultabile, esportabile e verificabile. Se l'agente continua a scrivere, le azioni vengono registrate lo stesso. Si può riattivare in ogni momento.",
+    archiveSubmit: "Archivia",
+    archived: "Sistema archiviato.",
+    archivedOn: "Archiviato il",
+    unarchiveSubmit: "Riattiva",
+    unarchived: "Sistema riattivato.",
+    deleteTitle: "Eliminazione",
+    deleteAllowed:
+      "Questo sistema ha solo la ricevuta di apertura del registro: nessuna azione è mai stata registrata. Si può eliminare per davvero, con i suoi sigilli e le sue chiavi API. L'operazione non si annulla, viene scritta nel registro amministrativo, e l'identificativo non potrà essere riusato.",
+    deleteConfirmLabel: (systemId: string): string => `Per confermare, scrivi l'identificativo esatto: ${systemId}`,
+    deleteSubmit: "Elimina definitivamente",
+    deleteRefused: (receipts: number): string =>
+      `Questo sistema non si può eliminare: il suo registro contiene ${receipts - 1} ${receipts - 1 === 1 ? "azione registrata" : "azioni registrate"} oltre all'apertura. Le prove registrate non si cancellano, da nessuna parte e con nessuna conferma. Se non serve più, archivialo.`,
+    confirmMismatch:
+      "Il testo scritto non corrisponde all'identificativo del sistema: niente è stato eliminato.",
   },
   history: {
+    eyebrow: "cronologia",
     technicalDetails: "Dettagli tecnici",
     noMatches: "Nessuna ricevuta corrisponde ai filtri scelti.",
     searchButton: "Cerca",
@@ -73,12 +136,16 @@ export const UI = {
   checkpoints: {
     title: "checkpoint",
     none: "Nessun checkpoint ancora.",
+    explain:
+      "Ogni checkpoint sigilla tutte le ricevute scritte fino a quel momento; la marca temporale di un'autorità esterna dice quando esistevano.",
     waiting: "in attesa di marca temporale",
     genTimeUnreadable: "ora attestata non leggibile dal token",
     receivedAt: "ricevuta dal server il",
   },
   verifyDocument: {
     title: "verifica un documento",
+    heading: "Verifica un documento",
+    eyebrow: "è quello che ha usato l'AI?",
     privacyNote: "Il documento non lascia il tuo computer: calcoliamo solo la sua impronta.",
     fileLabel: "File",
     textLabel: "oppure incolla il testo",
@@ -112,15 +179,65 @@ export const UI = {
 /** The one sentence the "verifica un documento" page shows for a match. */
 export function describeDocumentMatch(match: {
   system_id: string;
+  display_name?: string | null;
   ts_received: string;
   label: string;
   action_name: string;
   role: string;
 }): string {
+  const who =
+    match.display_name === undefined || match.display_name === null
+      ? match.system_id
+      : `«${match.display_name}» (sistema ${match.system_id})`;
   return (
-    `✓ Questo documento è esattamente quello usato da ${match.system_id} il ${match.ts_received}, ` +
+    `✓ Questo documento è esattamente quello usato da ${who} il ${formatTs(match.ts_received)}, ` +
     `come «${match.label}», nell'azione ${match.action_name} (${match.role}). ${UI.verifyDocument.notModified}.`
   );
+}
+
+const MONTHS = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
+
+/**
+ * A server timestamp as a person reads it, still in UTC and to the second:
+ * "29 mar 2026, 14:35:01 UTC". The exact ISO form stays in the technical
+ * details. Anything that does not parse is shown as it is.
+ */
+export function formatTs(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/.exec(iso);
+  if (match === null) return iso;
+  const [, year, month, day, hours, minutes, seconds] = match;
+  const monthName = MONTHS[Number(month) - 1];
+  if (monthName === undefined) return iso;
+  return `${Number(day)} ${monthName} ${year}, ${hours}:${minutes}:${seconds} UTC`;
+}
+
+/** How a system is named for a reader: its label if it has one, else its system_id. */
+export function systemTitle(system: { system_id: string; display_name: string | null }): string {
+  return system.display_name ?? system.system_id;
+}
+
+const ADMIN_ACTIONS: Record<string, string> = {
+  "system.rename": "nome cambiato",
+  "system.archive": "archiviato",
+  "system.unarchive": "riattivato",
+  "system.delete": "eliminato",
+};
+
+/** One line of the administrative log, for the systems page. */
+export function describeAdminEntry(entry: {
+  ts: string;
+  action: string;
+  system_id: string;
+  actor: string;
+  detail: Record<string, unknown>;
+}): string {
+  const what = ADMIN_ACTIONS[entry.action] ?? entry.action;
+  let extra = "";
+  if (entry.action === "system.rename") {
+    const name = (value: unknown): string => (typeof value === "string" ? `«${value}»` : "nessun nome");
+    extra = `: da ${name(entry.detail["from"])} a ${name(entry.detail["to"])}`;
+  }
+  return `${formatTs(entry.ts)} — ${entry.system_id} ${what}${extra} (${entry.actor})`;
 }
 
 const KIND_LABELS: Record<Receipt["action"]["kind"], string> = {

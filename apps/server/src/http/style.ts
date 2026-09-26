@@ -1,0 +1,233 @@
+/**
+ * The look of the operator's view: a notary's register, not a dashboard.
+ *
+ * Paper and ink. A warm ivory page in the light theme, blue-black ink in the
+ * dark one, both following the reader's operating system. One accent for
+ * what can be clicked (register ink blue), one for the seal itself (sealing
+ * wax), and the three traffic-light colours kept apart from both, always with
+ * a word beside them. Serif type throughout, because this is a record to be
+ * read, with small capitals for labels and monospace only for identifiers
+ * and fingerprints.
+ *
+ * Everything is system fonts and inline CSS: the content security policy
+ * (deploy/Caddyfile) allows no font, image or stylesheet from anywhere, and
+ * this view needs none. The seal in the masthead is inline SVG.
+ */
+
+export const STYLE = `
+:root {
+  color-scheme: light dark;
+  --paper: #f4efe4; --sheet: #fbf8f1; --well: #ebe4d4;
+  --ink: #1f1c18; --ink-soft: #544d42; --rule: #d9cfbb; --rule-strong: #b3a488;
+  --accent: #1f3b63; --accent-ink: #fbf8f1; --wax: #9c2a22; --margin: #d9a79a;
+  --green: #2a6639; --yellow: #875800; --red: #a3161b;
+  --green-bg: #e3eedf; --yellow-bg: #f5e8c8; --red-bg: #f6dcd6;
+  --display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", P052, Georgia, serif;
+  --text: Charter, "Bitstream Charter", "Sitka Text", Cambria, "Noto Serif", "DejaVu Serif", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14171c; --sheet: #1a1e25; --well: #232833;
+    --ink: #ece5d8; --ink-soft: #aba292; --rule: #2f3540; --rule-strong: #4a515e;
+    --accent: #a9c3e6; --accent-ink: #14171c; --wax: #e27a6d; --margin: #5b2e2a;
+    --green: #86d39a; --yellow: #e6bd55; --red: #ff9189;
+    --green-bg: #1d3325; --yellow-bg: #3a3018; --red-bg: #3f1f1f;
+  }
+}
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink);
+  font: 17px/1.6 var(--text); font-feature-settings: "kern", "liga", "onum"; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: .18em; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.skip { position: absolute; left: -999px; top: 0; }
+.skip:focus { left: 1rem; top: 1rem; background: var(--sheet); padding: .5rem 1rem; z-index: 2; }
+
+/* the masthead */
+.masthead { border-bottom: 3px double var(--rule-strong); background: var(--sheet); }
+.masthead-inner { max-width: 64rem; margin: 0 auto; padding: .9rem 1.5rem .7rem;
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.5rem; }
+.brand { display: flex; align-items: center; gap: .7rem; color: var(--ink); text-decoration: none; }
+.brand svg { width: 2.4rem; height: 2.4rem; flex: none; }
+.wordmark { font: italic 600 1.55rem/1 var(--display); letter-spacing: .01em; }
+.tagline { display: block; font-size: .78rem; color: var(--ink-soft);
+  font-variant-caps: all-small-caps; letter-spacing: .08em; font-style: normal; font-weight: 400; margin-top: .2rem; }
+.masthead nav { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .2rem; }
+.masthead nav a, .masthead nav button.link { color: var(--ink); text-decoration: none; padding: .45rem .7rem;
+  border-radius: .25rem; font-variant-caps: all-small-caps; letter-spacing: .07em; font-size: 1.05rem; }
+.masthead nav a:hover, .masthead nav button.link:hover { background: var(--well); }
+.masthead nav a[aria-current="page"] { box-shadow: inset 0 -2px 0 var(--wax); }
+
+main { max-width: 64rem; margin: 0 auto; padding: 1.75rem 1.5rem 3rem; }
+.colophon { max-width: 64rem; margin: 0 auto; padding: 1rem 1.5rem 2.5rem; color: var(--ink-soft);
+  font-size: .85rem; border-top: 1px solid var(--rule); }
+
+/* headings */
+.page-head { margin: 0 0 1.75rem; }
+.eyebrow { margin: 0 0 .2rem; color: var(--ink-soft); font-variant-caps: all-small-caps; letter-spacing: .09em; }
+h1 { font: 600 2rem/1.15 var(--display); margin: 0; letter-spacing: -.005em; overflow-wrap: anywhere; }
+h2 { font: 600 1.35rem/1.25 var(--display); margin: 2.25rem 0 .9rem; }
+h3 { font: 600 1.1rem/1.3 var(--display); margin: 1.5rem 0 .5rem; }
+.sid { font-family: var(--mono); font-size: .8rem; color: var(--ink-soft); overflow-wrap: anywhere; }
+.page-head .sid { display: inline-block; margin-top: .45rem; }
+
+/* the three questions */
+.question { margin: 0 0 2.75rem; }
+.question > .question-head { display: flex; align-items: baseline; gap: .9rem;
+  border-bottom: 1px solid var(--rule); padding-bottom: .5rem; margin-bottom: 1rem; }
+.numeral { font: 600 1.6rem/1 var(--display); color: var(--wax); min-width: 2.2rem; }
+.question-head h2 { margin: 0; font-size: 1.55rem; }
+
+/* sheets and wells */
+.sheet { background: var(--sheet); border: 1px solid var(--rule); border-radius: .35rem;
+  padding: 1.1rem 1.25rem; box-shadow: 0 1px 0 var(--rule); margin: 0 0 1rem; }
+.sheet.formal { border: 3px double var(--rule-strong); }
+.sheet.danger { border-color: var(--wax); }
+.sheet > :first-child { margin-top: 0; }
+.sheet > :last-child { margin-bottom: 0; }
+.notice { border-left: 3px solid var(--accent); background: var(--sheet); padding: .7rem 1rem; margin: 0 0 1.25rem; }
+.notice.bad { border-left-color: var(--wax); }
+
+/* systems */
+.systems { list-style: none; padding: 0; margin: 0 0 1rem; border-top: 1px solid var(--rule); }
+.systems > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .2rem 1rem;
+  padding: .85rem 0; border-bottom: 1px solid var(--rule); }
+.system-name { font: 600 1.15rem/1.3 var(--display); overflow-wrap: anywhere; }
+.system-name a { color: var(--ink); text-decoration: none; }
+.system-name a:hover { text-decoration: underline; }
+.system-meta { grid-column: 1 / -1; color: var(--ink-soft); font-size: .92rem; margin: 0; }
+.system-links { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .2rem 1.1rem; font-size: .95rem; }
+.badge { display: inline-block; font-size: .8rem; font-variant-caps: all-small-caps; letter-spacing: .07em;
+  border: 1px solid var(--rule-strong); color: var(--ink-soft); border-radius: .2rem; padding: 0 .4rem; margin-left: .35rem;
+  vertical-align: .15em; font-family: var(--text); font-weight: 400; }
+
+/* the traffic light: a stamp, always with its word */
+.stamp { display: inline-flex; align-items: center; gap: .45rem; padding: .15rem .6rem .15rem .5rem;
+  border: 1.5px solid currentColor; border-radius: .25rem; font-weight: 600;
+  font-variant-caps: all-small-caps; letter-spacing: .1em; white-space: nowrap; align-self: start; }
+.stamp.green { color: var(--green); background: var(--green-bg); }
+.stamp.yellow { color: var(--yellow); background: var(--yellow-bg); }
+.stamp.red { color: var(--red); background: var(--red-bg); }
+.dot { display: inline-block; width: .7em; height: .7em; border-radius: 50%; }
+.dot.green { background: var(--green); }
+.dot.yellow { background: var(--yellow); }
+.dot.red { background: var(--red); }
+.status-word.green { color: var(--green); }
+.status-word.yellow { color: var(--yellow); }
+.status-word.red { color: var(--red); }
+
+/* the ledger: one entry per receipt, its number in the margin */
+.ledger { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--rule); }
+.ledger > li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); column-gap: 1rem;
+  padding: .75rem 0; border-bottom: 1px solid var(--rule); }
+.ledger .margin { font-family: var(--mono); font-size: .76rem; color: var(--ink-soft); line-height: 1.5;
+  padding-right: .6rem; border-right: 2px solid var(--margin); }
+.ledger .margin .no { display: block; color: var(--ink); font-size: .82rem; }
+.ledger .entry { min-width: 0; }
+.ledger .entry .who { font-variant-caps: all-small-caps; letter-spacing: .06em; color: var(--ink-soft); display: block; font-size: .92rem; }
+.tag { display: inline-block; background: var(--well); border-radius: .2rem; padding: .05rem .5rem;
+  font-size: .85em; margin: .3rem .3rem 0 0; }
+
+/* technical details, closed by default */
+details { margin: .45rem 0 0; }
+summary { cursor: pointer; color: var(--ink-soft); font-size: .88rem; font-variant-caps: all-small-caps; letter-spacing: .07em; }
+details[open] > summary { margin-bottom: .4rem; }
+
+/* tables */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; white-space: nowrap; font-variant-caps: all-small-caps; letter-spacing: .06em; color: var(--ink-soft); }
+table.wide { min-width: 36rem; }
+code, .hash { font-family: var(--mono); font-size: .82em; }
+.hash { color: var(--ink-soft); word-break: break-all; }
+.muted { color: var(--ink-soft); }
+.small { font-size: .88rem; }
+.warn { color: var(--red); }
+.empty { color: var(--ink-soft); font-style: italic; padding: .5rem 0; }
+
+/* forms */
+form.fields { display: flex; flex-wrap: wrap; gap: .8rem 1rem; align-items: end; margin: 0 0 .8rem; }
+label { display: flex; flex-direction: column; gap: .3rem; font-size: .92rem; color: var(--ink-soft);
+  font-variant-caps: all-small-caps; letter-spacing: .06em; }
+label > input, label > select, label > textarea { font-variant-caps: normal; letter-spacing: normal; color: var(--ink); }
+input, select, textarea, button { font: inherit; font-size: 1rem; padding: .55rem .7rem; color: var(--ink);
+  background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: .25rem; min-height: 2.75rem; }
+textarea { width: 100%; max-width: 40rem; min-height: 8rem; }
+input[type="text"], input[type="password"] { min-width: min(20rem, 100%); }
+input[type="file"] { padding: .45rem; max-width: 100%; }
+button { cursor: pointer; background: var(--sheet); font-variant-caps: all-small-caps; letter-spacing: .08em;
+  font-weight: 600; padding: .55rem 1.1rem; }
+button:hover { background: var(--well); }
+button.primary, #sigillo-doc-button { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.primary:hover, #sigillo-doc-button:hover { filter: brightness(1.12); }
+button.danger { background: var(--wax); color: var(--sheet); border-color: var(--wax); }
+button.danger:hover { filter: brightness(1.1); }
+button:disabled { cursor: not-allowed; opacity: .5; }
+form.inline { display: inline; margin: 0; }
+button.link { background: none; border: none; min-height: 0; color: var(--accent); text-decoration: underline;
+  font: inherit; letter-spacing: inherit; font-weight: 400; padding: 0; }
+.hint { color: var(--ink-soft); font-size: .9rem; margin: .3rem 0 0; }
+
+/* views of the systems page */
+.tabs { display: flex; flex-wrap: wrap; gap: .3rem; margin: 0 0 1rem; padding: 0; list-style: none; }
+.tabs a { display: inline-block; padding: .35rem .8rem; border: 1px solid var(--rule-strong); border-radius: 999px;
+  text-decoration: none; color: var(--ink); font-variant-caps: all-small-caps; letter-spacing: .07em; }
+.tabs a[aria-current="page"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+.token-box { font-family: var(--mono); background: var(--well); padding: .75rem; border-radius: .3rem;
+  word-break: break-all; margin: .5rem 0; font-size: .9rem; }
+pre.code { background: var(--well); padding: 1rem; border-radius: .3rem; overflow-x: auto; font: .85rem/1.5 var(--mono); }
+.log { list-style: none; padding: 0; margin: .5rem 0 0; font-size: .9rem; }
+.log li { padding: .4rem 0; border-bottom: 1px dotted var(--rule-strong); }
+
+/* the login page */
+.login { max-width: 24rem; margin: 12vh auto 0; padding: 0 1.25rem; text-align: center; }
+.login .sheet { text-align: left; }
+.login svg { width: 4.5rem; height: 4.5rem; }
+.login .wordmark { display: block; font-size: 2.2rem; margin: .4rem 0 .2rem; }
+.login input { width: 100%; }
+
+@media (max-width: 640px) {
+  body { font-size: 16.5px; }
+  .masthead-inner { padding: .7rem 1rem .4rem; }
+  .masthead nav { margin-left: -.7rem; width: calc(100% + .7rem); flex-wrap: nowrap; overflow-x: auto; }
+  .masthead nav a, .masthead nav button.link { white-space: nowrap; }
+  main { padding: 1.25rem 1rem 2.5rem; }
+  .colophon { padding: 1rem; }
+  h1 { font-size: 1.65rem; }
+  .question-head h2 { font-size: 1.3rem; }
+  .numeral { min-width: 1.8rem; font-size: 1.35rem; }
+  .sheet { padding: .9rem 1rem; }
+  .ledger > li { grid-template-columns: minmax(0, 1fr); row-gap: .25rem; }
+  .ledger .margin { border-right: none; border-left: 2px solid var(--margin); padding: 0 0 0 .5rem; }
+  .ledger .margin .no { display: inline; margin-right: .5rem; }
+  form.fields > label, form.fields > button { width: 100%; }
+  input[type="text"], input[type="password"], input[type="date"], select { width: 100%; }
+}
+`;
+
+/**
+ * The seal: a wax disc with a scalloped edge and an "s" pressed into it.
+ * Drawn here rather than shipped as an image, because the content security
+ * policy allows no image from anywhere.
+ */
+function sealEdge(): string {
+  const points: string[] = [];
+  const lobes = 18;
+  for (let index = 0; index < lobes * 2; index += 1) {
+    const angle = (Math.PI * index) / lobes;
+    const radius = index % 2 === 0 ? 23.5 : 21.2;
+    points.push(`${(24 + radius * Math.cos(angle)).toFixed(2)},${(24 + radius * Math.sin(angle)).toFixed(2)}`);
+  }
+  return points.join(" ");
+}
+
+export const SEAL_SVG = `<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+<polygon points="${sealEdge()}" style="fill: var(--wax)"/>
+<circle cx="24" cy="24" r="16.5" style="fill: none; stroke: var(--sheet); stroke-width: 1; opacity: .75"/>
+<circle cx="24" cy="24" r="14" style="fill: none; stroke: var(--sheet); stroke-width: .6; opacity: .5"/>
+<text x="24" y="31.5" text-anchor="middle" font-family="Iowan Old Style, Palatino Linotype, Palatino, Georgia, serif" font-style="italic" font-weight="700" font-size="22" style="fill: var(--sheet)">s</text>
+</svg>`;
