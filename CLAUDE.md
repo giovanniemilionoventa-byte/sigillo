@@ -18,7 +18,10 @@ This file collects the permanent rules for anyone (human or AI) working on this 
 ## Approved dependencies
 
 - **Node runtime**: `fastify`, `better-sqlite3`, `canonicalize` (RFC 8785), `zod`, `protobufjs`, `pdfkit`, `commander`. Cryptography uses only `node:crypto` (SHA-256, Ed25519, scrypt) — no external crypto libraries.
-- **Node dev**: `typescript`, `tsx`, `vitest`, `fast-check`, `@types/*`.
+- **Node dev**: `typescript`, `tsx`, `vitest`, `fast-check`, `@types/*`; `playwright-core`, only for
+  the browser tests of the "verifica un documento" page (`apps/server/test/verify-document-browser.test.ts`),
+  added on the project owner's instruction of 2026-09-26 (PROGRESS.md, session 6). It downloads no
+  browser: it drives an installed Chromium or Chrome, or the one named by `SIGILLO_TEST_BROWSER`.
 - **CI-only tooling** (never a dependency of any package): `pip-audit`, pinned in
   `.github/workflows/dependency-audit.yml`. Added in pilot phase 3 for the
   dependency check; pending the project owner's confirmation.

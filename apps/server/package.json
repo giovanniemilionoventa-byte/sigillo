@@ -25,7 +25,8 @@
   "devDependencies": {
     "@sigillo/signer": "workspace:*",
     "@types/better-sqlite3": "^7.6.12",
-    "@types/pdfkit": "^0.13.5"
+    "@types/pdfkit": "^0.13.5",
+    "playwright-core": "^1.63.0"
   },
   "bin": {
     "sigillo-server": "./dist/cli.js"

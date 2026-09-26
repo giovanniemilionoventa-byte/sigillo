@@ -718,6 +718,27 @@ describe("the verify-document page", () => {
     expect(response.body).toContain("&lt;script&gt;");
   });
 
+  it("says which input the fingerprint came from, for the two values the script sends and no others", async () => {
+    const cookie = await signIn();
+    const page = async (query: string): Promise<string> =>
+      (await app.inject({ method: "GET", url: `/ui/verify-document?sha256=${"e".repeat(64)}${query}`, headers: { cookie } })).body;
+    expect(await page("&from=file")).toContain(UI.verifyDocument.fromFile);
+    expect(await page("&from=text")).toContain(UI.verifyDocument.fromText);
+    for (const other of ["", "&from=%3Cb%3Ex%3C%2Fb%3E", "&from=FILE"]) {
+      const body = await page(other);
+      expect(body).not.toContain(UI.verifyDocument.fromFile);
+      expect(body).not.toContain(UI.verifyDocument.fromText);
+      expect(body).not.toContain("<b>x</b>");
+    }
+  });
+
+  it("serves Verifica disabled under a warning, for the script to enable", async () => {
+    const cookie = await signIn();
+    const body = (await app.inject({ method: "GET", url: "/ui/verify-document", headers: { cookie } })).body;
+    expect(body).toContain('<button type="button" id="sigillo-doc-button" disabled>');
+    expect(body).toContain(`<p class="warn" id="sigillo-doc-inactive">${UI.verifyDocument.scriptInactive.replace(/'/g, "&#39;")}</p>`);
+  });
+
   it("keeps deploy/Caddyfile's CSP hash in step with the script it actually allows", () => {
     const caddyfile = readFileSync(join(REPOSITORY_ROOT, "deploy", "Caddyfile"), "utf8");
     const actualHash = createHash("sha256").update(VERIFY_DOCUMENT_SCRIPT, "utf8").digest("base64");

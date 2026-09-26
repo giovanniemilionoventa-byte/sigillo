@@ -127,14 +127,19 @@ async function urlTheBrowserWouldOpen(fileBytes: Uint8Array): Promise<string> {
     },
     "sigillo-doc-text": { value: "" },
     "sigillo-doc-button": {
+      disabled: true,
       addEventListener: (_type: string, handler: () => Promise<void>) => {
         onClick = handler;
       },
     },
+    "sigillo-doc-inactive": { hidden: false },
+    "sigillo-doc-failed": { hidden: true },
+    "sigillo-doc-error": { textContent: "" },
   };
   runInNewContext(VERIFY_DOCUMENT_SCRIPT, {
-    document: { getElementById: (id: string) => elements[id] },
+    document: { getElementById: (id: string) => elements[id] ?? null },
     window: { location },
+    history: { replaceState: () => undefined },
     crypto: globalThis.crypto,
     TextEncoder,
     Uint8Array,
@@ -187,7 +192,7 @@ describe("verifica un documento, for a system whose name has a space in it", () 
     await sendSpans(token, "sistema cv", [cvSpan(sha256Hex(cv))]);
 
     const url = await urlTheBrowserWouldOpen(cv);
-    expect(url).toBe(`/ui/verify-document?sha256=${sha256Hex(cv)}`);
+    expect(url).toBe(`/ui/verify-document?sha256=${sha256Hex(cv)}&from=file`);
     const body = await verifyDocumentPage(cookie, url);
     expect(body).toContain("Risultato");
     expect(body).toContain("Questo documento è esattamente quello usato da sistema cv");

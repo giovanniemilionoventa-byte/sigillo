@@ -17,7 +17,10 @@ const ALLOWED_RUNTIME_DEPS = new Set([
   "commander",
 ]);
 
-const ALLOWED_DEV_DEPS = new Set(["typescript", "tsx", "vitest", "fast-check"]);
+// playwright-core drives a real browser in apps/server's "verifica un
+// documento" tests, the one page whose behaviour lives in the browser. Added
+// on the project owner's instruction of 2026-09-26 (PROGRESS.md, session 6).
+const ALLOWED_DEV_DEPS = new Set(["typescript", "tsx", "vitest", "fast-check", "playwright-core"]);
 
 // packages/verifier must stay auditable on its own: core plus a CLI parser.
 const VERIFIER_ALLOWED_DEPS = new Set(["@sigillo/core", "commander"]);

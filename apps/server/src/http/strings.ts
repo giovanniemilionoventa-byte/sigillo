@@ -88,8 +88,18 @@ export const UI = {
     textNote:
       "Attenzione: il browser legge il testo incollato con gli a capo di Mac e Linux. Se il documento è un file salvato su Windows, caricalo invece di incollarlo.",
     submit: "Verifica",
+    // Shown until the page's script runs, and so left on screen when the
+    // browser does not run it (a CSP that no longer matches, say): the button
+    // stays disabled then, instead of doing nothing without a word (session 6).
+    scriptInactive:
+      "Il calcolo dell'impronta non è attivo in questa pagina: il browser non ha eseguito lo script che lo fa, quindi il pulsante Verifica è disattivato. Ricarica la pagina; se il messaggio resta, chi gestisce sigillo deve riavviare Caddy dopo l'ultimo aggiornamento (docs/DEPLOY-PRODUZIONE.md, 6.3).",
+    computeFailed:
+      "Non è stato possibile calcolare l'impronta del documento scelto. Il risultato che era sulla pagina è stato tolto, perché riguardava un tentativo precedente e non questo documento. Se il file è stato modificato, spostato o salvato di nuovo dopo averlo scelto, sceglilo di nuovo e premi Verifica.",
+    browserError: "Errore del browser",
     resultTitle: "Risultato",
     searchedFingerprint: "Impronta cercata (SHA-256)",
+    fromFile: "Calcolata dal browser sul file scelto.",
+    fromText: "Calcolata dal browser sul testo incollato nella casella.",
     noMatch:
       "Nessuna azione registrata ha usato questo documento. Se ne hai una versione diversa, anche un solo carattere cambia il risultato.",
     lineEndingsHint:

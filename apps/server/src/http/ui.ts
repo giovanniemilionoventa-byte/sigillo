@@ -97,6 +97,7 @@ input, select, textarea, button { font: inherit; padding: .45rem .55rem; color: 
   background: var(--bg); border: 1px solid var(--line); border-radius: .3rem; }
 button { cursor: pointer; background: var(--tag-bg); }
 button:hover { filter: brightness(0.95); }
+button:disabled { cursor: not-allowed; opacity: .5; }
 .empty { color: var(--muted); padding: 1rem 0; }
 .dot { display: inline-block; width: .8em; height: .8em; border-radius: 50%; margin-right: .5em;
        vertical-align: middle; }
@@ -158,7 +159,15 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
  * Its exact bytes are what deploy/Caddyfile's CSP allows by `script-src
  * 'sha256-...'`: changing so much as a character here means recomputing that
  * hash (packages/verifier, sorry — apps/server/test/ui.test.ts checks the two
- * stay in step, so a mismatch fails in CI rather than in production).
+ * stay in step, so a mismatch fails in CI rather than in production). A
+ * running Caddy keeps the policy it started with: after an update that
+ * changes this script, Caddy has to be restarted too.
+ *
+ * It never fails in silence (session 6). Whatever is on the page when
+ * Verifica is pressed is the result of an earlier attempt, for other bytes,
+ * so a press that ends in anything but a navigation removes it and says why.
+ * And the button is served disabled, under a warning, for the script to
+ * enable: a browser that does not run it shows both.
  */
 export const VERIFY_DOCUMENT_SCRIPT = `(function () {
   function toHex(buffer) {
@@ -166,29 +175,47 @@ export const VERIFY_DOCUMENT_SCRIPT = `(function () {
       .map(function (byte) { return byte.toString(16).padStart(2, "0"); })
       .join("");
   }
-  document.getElementById("sigillo-doc-button").addEventListener("click", async function () {
+  var button = document.getElementById("sigillo-doc-button");
+  var failed = document.getElementById("sigillo-doc-failed");
+  document.getElementById("sigillo-doc-inactive").hidden = true;
+  button.disabled = false;
+  button.addEventListener("click", async function () {
     var fileInput = document.getElementById("sigillo-doc-file");
     var textInput = document.getElementById("sigillo-doc-text");
-    var bytes;
-    if (fileInput.files.length > 0) {
-      bytes = await fileInput.files[0].arrayBuffer();
-    } else if (textInput.value.length > 0) {
-      bytes = new TextEncoder().encode(textInput.value);
-    } else {
-      return;
+    failed.hidden = true;
+    try {
+      var bytes;
+      var from;
+      if (fileInput.files.length > 0) {
+        bytes = await fileInput.files[0].arrayBuffer();
+        from = "file";
+      } else if (textInput.value.length > 0) {
+        bytes = new TextEncoder().encode(textInput.value);
+        from = "text";
+      } else {
+        return;
+      }
+      var digest = await crypto.subtle.digest("SHA-256", bytes);
+      window.location.href = "/ui/verify-document?sha256=" + toHex(digest) + "&from=" + from;
+    } catch (error) {
+      var previous = document.getElementById("sigillo-doc-result");
+      if (previous !== null) previous.remove();
+      history.replaceState(null, "", "/ui/verify-document");
+      document.getElementById("sigillo-doc-error").textContent = String(error && error.name);
+      failed.hidden = false;
     }
-    var digest = await crypto.subtle.digest("SHA-256", bytes);
-    window.location.href = "/ui/verify-document?sha256=" + toHex(digest);
   });
 })();`;
 
 function verifyDocumentForm(): string {
   const t = UI.verifyDocument;
   return `<p>${escape(t.privacyNote)}</p>
+<p class="warn" id="sigillo-doc-inactive">${escape(t.scriptInactive)}</p>
 <p><label>${escape(t.fileLabel)}<br><input type="file" id="sigillo-doc-file"></label></p>
 <p><label>${escape(t.textLabel)}<br><textarea id="sigillo-doc-text" rows="6" cols="60"></textarea></label><br>
 <span class="muted">${escape(t.textNote)}</span></p>
-<p><button type="button" id="sigillo-doc-button">${escape(t.submit)}</button></p>
+<p><button type="button" id="sigillo-doc-button" disabled>${escape(t.submit)}</button></p>
+<p class="warn" id="sigillo-doc-failed" role="alert" hidden>${escape(t.computeFailed)} ${escape(t.browserError)}: <span id="sigillo-doc-error"></span>.</p>
 <script>${VERIFY_DOCUMENT_SCRIPT}</script>`;
 }
 
@@ -203,15 +230,23 @@ function timestampStatus(store: ReceiptStore, systemId: string, seq: number): st
     : `con marca temporale del ${token.genTime}`;
 }
 
-function verifyDocumentResult(store: ReceiptStore, sha256: string, matches: ArtifactMatch[]): string {
+function verifyDocumentResult(
+  store: ReceiptStore,
+  sha256: string,
+  from: "file" | "text" | undefined,
+  matches: ArtifactMatch[],
+): string {
   const t = UI.verifyDocument;
   // The fingerprint the browser computed, shown either way: set beside
   // Get-FileHash or sha256sum, it tells at once whether the page was given
-  // the same bytes the agent read.
-  const searched = `<p>${escape(t.searchedFingerprint)}: <span class="hash">${escape(sha256)}</span></p>`;
+  // the same bytes the agent read. Which input it was computed on, file or
+  // text, the page's script says in `from`: when the two could disagree,
+  // that is the next question.
+  const source = from === undefined ? "" : `<p class="muted">${escape(from === "file" ? t.fromFile : t.fromText)}</p>`;
+  const searched = `<p>${escape(t.searchedFingerprint)}: <span class="hash">${escape(sha256)}</span></p>${source}`;
   if (matches.length === 0) {
-    return `<h2>${escape(t.resultTitle)}</h2>${searched}<p>${escape(t.noMatch)}</p>` +
-      `<p class="muted">${escape(t.lineEndingsHint)}</p>`;
+    return `<section id="sigillo-doc-result"><h2>${escape(t.resultTitle)}</h2>${searched}<p>${escape(t.noMatch)}</p>` +
+      `<p class="muted">${escape(t.lineEndingsHint)}</p></section>`;
   }
   const items = matches
     .map((match) => {
@@ -221,7 +256,7 @@ function verifyDocumentResult(store: ReceiptStore, sha256: string, matches: Arti
         `<span class="muted">${escape(timestampStatus(store, match.system_id, match.seq))}</span></li>`;
     })
     .join("\n");
-  return `<h2>${escape(t.resultTitle)}</h2>${searched}<ul>${items}</ul>`;
+  return `<section id="sigillo-doc-result"><h2>${escape(t.resultTitle)}</h2>${searched}<ul>${items}</ul></section>`;
 }
 
 function loginPage(message?: string): string {
@@ -448,12 +483,13 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   app.get("/ui/verify-document", async (request, reply) => {
     if (!requireSession(request, reply)) return reply;
 
-    const query = request.query as { sha256?: string };
+    const query = request.query as { sha256?: string; from?: string };
     const sha256 = query.sha256;
     const searched = typeof sha256 === "string" && SHA256_HEX.test(sha256);
+    const from = query.from === "file" || query.from === "text" ? query.from : undefined;
 
     const body = `${verifyDocumentForm()}${
-      searched ? verifyDocumentResult(store, sha256, store.findArtifactsBySha256(sha256)) : ""
+      searched ? verifyDocumentResult(store, sha256, from, store.findArtifactsBySha256(sha256)) : ""
     }`;
     return html(reply, page(UI.verifyDocument.title, body));
   });

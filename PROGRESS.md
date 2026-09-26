@@ -1692,6 +1692,183 @@ Verifiche: `pnpm check` verde, **715 test Node** (erano 708, +7), 1 saltato come
 2. **"Corrispondenza vicina"** per gli a capo, come sopra: sì o no.
 3. Conferma, sulla pagina corretta in produzione, di quale impronta calcola il browser per il file
    caricato: se è `d819ede8…`, alla pagina è arrivata la copia LF.
+   *Superato dalla sessione 6: `d819ede8…` sulla pagina ha anche un'altra spiegazione, riprodotta, e
+   la pagina ora dice su quale input ha calcolato l'impronta.*
+
+### Sessione 6 — 2026-09-26 — il file CRLF scelto con "Scegli file" dà di nuovo `d819ede8…`
+
+**Il sintomo.** Il committente ha rifatto il test della sessione 5 in produzione. Ha scelto il
+file con "Scegli file", senza incollare testo, e il file era byte per byte identico a quello letto
+dall'agente (`Get-FileHash` = `ecfe08f1…d9214347`, CRLF). Risultato: di nuovo "nessuna
+corrispondenza", con l'indirizzo `https://get-sigillo.eu/ui/verify-document?sha256=d819ede8…dcbb204b`,
+cioè con l'impronta LF. La stessa impronta era già comparsa in un tentativo precedente fatto con il
+testo incollato.
+
+**Esito, in breve.** Con il file CRLF scelto, **il fallimento non si riproduce**: in 7 scenari su 7,
+con due build di Chromium e contro lo stack di produzione, l'impronta nella richiesta è ricalcolata
+dal file appena scelto. Lo schermo dello screenshot si ottiene in due soli modi, riprodotti tutti e
+due:
+- **(a)** il browser legge dei byte LF: una copia LF del file, di 392 byte (scenario 2);
+- **(b)** la pressione di Verifica non porta a nessuna navigazione, e sulla pagina resta, **senza
+  nessun avviso**, il risultato del tentativo precedente, cioè quello del testo incollato
+  (`d819ede8…`) (scenari 8 e 9).
+
+Non ho potuto stabilire da qui quale dei due sia successo sul PC del committente, e lo scrivo senza
+scegliere un'ipotesi. (b) però è un difetto reale della pagina: l'ho corretto partendo da un test con
+browser vero che falliva prima della correzione. In più la pagina ora dice su quale input ha
+calcolato l'impronta, così il prossimo tentativo in produzione distingue (a) da (b).
+
+**Ambiente di riproduzione (passi 1 e 2 del prompt).**
+- In questo ambiente cloud Docker funziona (il demone va avviato a mano). Server e firmatario sono
+  costruiti da `deploy/Dockerfile`. Unica differenza: nella fase `build`, e solo lì, due righe per il
+  certificato del proxy di rete di questo ambiente, che serve a scaricare pnpm. Le fasi `server` e
+  `signer` sono identiche. Il resto è quello del repository: `deploy/docker-compose.yml`,
+  `deploy/Caddyfile`, `caddy:2.11.4-alpine`, dominio `localhost` con il certificato della CA interna
+  di Caddy. In più solo un override con i nomi delle immagini e il file della password fuori dal
+  repository.
+- Intestazioni confrontate con la produzione vera (`curl -I https://get-sigillo.eu/ui/verify-document`,
+  senza login). La produzione manda la stessa CSP del repository (`script-src 'sha256-IM9LfY8B…'`) e
+  `cache-control: no-store`, e lo stack locale manda le stesse.
+- Dati: la **demo Python vera** (`demo/selezione-cv/agent.py`), sistema `sistema cv`, OTLP
+  attraverso Caddy, su una copia dei 20 curricula convertiti in CRLF, come li scrive un checkout
+  Windows. L'indice `artifacts` letto dal database ha `ecfe08f1…` alla `seq 51` di `sistema cv` e
+  nessuna riga per `d819ede8…`. Lo conferma il verificatore offline su un export dello stesso stack
+  (`sigillo-verify doc`): il file da 406 byte è "exactly the one used by sistema cv … (seq 51)", il
+  file da 392 byte è "No registered action used this document" (passo 7 del prompt).
+- Browser: Playwright 1.56.1, già installato globalmente in questo ambiente e non aggiunto al
+  progetto. Chromium 141.0.7390.37 in due build (`chromium` e `headless-shell`). Un contesto nuovo
+  per ogni scenario, quindi niente cache, cookie o cronologia. Il file è scelto con `setInputFiles`
+  sull'input della pagina, e vengono registrate tutte le richieste, la console, gli errori della
+  pagina e le violazioni CSP. Prima di ogni pressione di Verifica l'impronta del `File` presente
+  nell'input viene letta dentro la pagina e annotata.
+
+**Il file (passo 4).** Su Linux 6.18 x86_64, `sha256sum demo/selezione-cv/curricula/candidato-07.txt`
+dà **`d819ede88a6701f43f96b03c186db6c59ab8946a997f59cfa79cfeadcdbb204b`**: 392 byte, 14 LF, 0 CR,
+`git ls-files --eol` = `i/lf w/lf`, nessun attributo. Il blob in `HEAD` dà lo stesso valore. Il
+repository **non ha `.gitattributes`**: il file è LF nel repository, mentre un checkout Windows con
+`core.autocrlf=true` (il default di Git per Windows) lo scrive CRLF, 406 byte,
+**`ecfe08f13aba545b439aa4cbd6e09edddeec73ccd1dc024060793da0d9214347`** (calcolata qui convertendo
+gli a capo). Quindi i byte dipendono dal sistema operativo del checkout. È la stessa causa di copie
+diverse descritta nella sessione 5, non una causa nuova.
+
+**Cosa è stato catturato (passi 3, 5, 6 e 8).** Per ogni scenario: la richiesta partita alla
+pressione di Verifica e cosa mostra la pagina. Codice di `main`, prima della correzione.
+
+| # | Partenza | Input al momento del clic | Richiesta catturata | Pagina |
+|---|---|---|---|---|
+| 1 | contesto pulito, `/ui/verify-document` senza query | file CRLF, 406 B, `ecfe08f1…` | `GET /ui/verify-document?sha256=ecfe08f13aba545b439aa4cbd6e09edddeec73ccd1dc024060793da0d9214347` | trovato, seq 51 |
+| 2 | contesto pulito, senza query | file LF del repository, 392 B, `d819ede8…` | `GET …?sha256=d819ede88a6701f43f96b03c186db6c59ab8946a997f59cfa79cfeadcdbb204b` | nessuna corrispondenza |
+| 3 | `?sha256=abab…ab` (finto), senza ricaricare (passo 8) | file CRLF | `GET …?sha256=ecfe08f1…d9214347` | trovato |
+| 4 | `?sha256=d819ede8…` (l'URL dello screenshot), senza ricaricare | file CRLF | `GET …?sha256=ecfe08f1…d9214347` | trovato |
+| 5 | testo incollato con un vero Ctrl+V → `?sha256=d819ede8…`; poi sulla pagina del risultato | file CRLF | `GET …?sha256=ecfe08f1…d9214347` | trovato |
+| 6 | come 5, con "Indietro" prima di scegliere il file (il browser rimette il testo nella casella) | file CRLF + casella con 391 caratteri | `GET …?sha256=ecfe08f1…d9214347` | trovato: il file ha la precedenza |
+| 7 | come 5, con F5 sulla pagina del risultato | file CRLF | `GET …?sha256=ecfe08f1…d9214347` | trovato |
+
+In ogni scenario l'impronta del `File` letta nella pagina prima del clic coincide con quella della
+richiesta. I risultati sono identici nelle due build di Chromium, con 0 errori della pagina e 0
+violazioni CSP. Nello scenario 5 il vero incolla ha lasciato nella casella 391 caratteri contro i 405
+del file: il browser toglie i 14 CR, come già misurato nella sessione 5. Negli scenari 6 e 7 il primo
+tentativo ha scritto il testo con `page.fill`, che a differenza dell'incolla lascia i CR, e per questo
+il loro primo URL è `ecfe08f1…` e non `d819ede8…`. La cosa non tocca il passo che conta, cioè il file
+scelto dopo.
+
+**Il sospetto primario (un'impronta rimasta da una richiesta precedente) è escluso per il percorso
+normale, con queste prove.**
+- **Cache del browser**: ogni pagina `/ui` ha `cache-control: no-store`, in produzione e in locale.
+  Ogni pressione di Verifica ha prodotto una richiesta nuova, anche verso lo stesso URL (nello
+  scenario 7 sono catturate due richieste identiche, ed entrambe arrivano al server).
+- **Valore di default rimasto nel form**: dopo "Indietro" il browser rimette nella casella il testo
+  di prima (scenario 6, 391 caratteri), ma con un file scelto lo script usa il file.
+- **Corsa tra il calcolo asincrono e l'invio**: non c'è un form che parte da solo. La navigazione
+  parte solo quando il digest è pronto, con il valore appena calcolato.
+- **Ripiego su un valore già presente nella pagina**: lo script legge solo l'input file e la casella.
+  Però, se la pressione non arriva a una navigazione, resta sulla pagina quello che c'era prima.
+
+**Lo schermo dello screenshot, con il file CRLF scelto (scenari 8 e 9, codice di `main`).**
+- **8.** Testo incollato → `?sha256=d819ede8…`. Poi scelgo il file CRLF e il file viene riscritto su
+  disco con gli stessi byte: cambia solo la data di modifica, come quando un editor o un programma di
+  sincronizzazione lo salva di nuovo. Premo Verifica: `NotReadableError`, visibile solo nella console
+  di sviluppo, e **nessuna richiesta**. La pagina resta `?sha256=d819ede8…` con "nessuna
+  corrispondenza" e con il nome del file CRLF nel selettore.
+- **9.** Lo script è rifiutato da una CSP che non gli corrisponde. Stessa scena, nessuna richiesta.
+
+In tutti e due i casi l'utente non vede nessun segnale. Lo schermo è quello dello screenshot, e
+l'impronta è proprio quella del tentativo precedente con il testo incollato.
+
+**Cosa resta non stabilito, e perché.**
+- Quale tra (a) e (b) sia successo sul PC del committente, e, nel caso (b), per quale motivo. Da qui
+  non ho accesso a quel browser, né al server di produzione dietro il login.
+- Un indizio contro (b) per colpa della CSP: il tentativo precedente, con il testo incollato, ha
+  prodotto un URL `?sha256=d819ede8…`, e solo lo script può produrlo. Quindi lo script girava in quel
+  browser, su quella distribuzione, e da allora né lo script né la CSP della produzione sono
+  cambiati. Non ho una prova analoga per l'altra causa di (b), il file cambiato dopo la scelta.
+- Non ho provato Windows, né Edge o Chrome per Windows. Per specifica la lettura di un file con l'API
+  File restituisce i byte grezzi, senza toccare gli a capo, ma su Windows non l'ho verificato.
+
+**Correzione, con il test scritto prima.**
+- `apps/server/test/verify-document-browser.test.ts` (nuovo, 7 test). Chromium vero, guidato da
+  `playwright-core`, contro il server vero su una porta vera, con la CSP letta da `deploy/Caddyfile`
+  e il vero `candidato-07.txt` in forma LF e CRLF. **Prima della correzione** ne passano 4 (CSP
+  servita, contesto pulito, URL con un'impronta precedente, testo incollato) e ne falliscono 3: file
+  illeggibile dopo un incolla (`TimeoutError: locator.waitFor`, perché nessun messaggio compare e il
+  risultato vecchio resta), script rifiutato dalla CSP (`expected false to be true`, cioè il
+  pulsante resta attivo), nessuna indicazione della fonte. **Dopo la correzione** passano tutti e 7.
+- `apps/server/src/http/ui.ts` e `strings.ts`:
+  1. se la pressione di Verifica non finisce in una navigazione, lo script toglie il risultato che
+     era sulla pagina, toglie `?sha256=` dall'indirizzo e mostra in rosso (`role="alert"`) che
+     l'impronta non è stata calcolata, con il nome dell'errore del browser e cosa fare;
+  2. il pulsante Verifica arriva **disattivato**, sotto un avviso in rosso, e lo attiva lo script.
+     Se il browser non esegue lo script, per CSP o perché JavaScript è spento, restano visibili
+     l'avviso e il pulsante disattivato;
+  3. lo script aggiunge `&from=file` o `&from=text`, e sotto l'impronta la pagina dice "Calcolata
+     dal browser sul file scelto" oppure "…sul testo incollato nella casella". Il server accetta solo
+     questi due valori e non riflette nient'altro. Al server continua ad arrivare solo l'impronta,
+     più l'indicazione di quale input è stato usato: né il documento né il nome del file.
+- `deploy/Caddyfile`: nuova impronta dello script (`sha256-/7Wp8lsy…`). Il test già esistente in
+  `ui.test.ts` controlla che le due restino allineate.
+- `playwright-core` è una nuova dipendenza di sviluppo di `apps/server`, aggiunta perché il prompt di
+  questa sessione chiede un test permanente con browser automatizzato. Ha zero dipendenze e non
+  scarica browser. È annotata in `CLAUDE.md` e nell'elenco di `scripts/lint.mjs`. In CI usa il Google
+  Chrome dei runner GitHub. Se in CI non trova un browser, il file di test fallisce invece di essere
+  saltato. In locale viene saltato, oppure si indica il browser con `SIGILLO_TEST_BROWSER`.
+- Verifiche: `pnpm check` verde, **724 test Node** (erano 715: +7 browser, +2 in `ui.test.ts`), 1
+  saltato come prima. `smoke-dist` e cross-check Python ok. Formato delle ricevute, firma,
+  `packages/core` e `packages/verifier` **non toccati**.
+- **Scenari 1-9 rieseguiti sullo stack di produzione ricostruito con la correzione.** Scenari 1, 3,
+  4, 5, 6 e 7: richiesta `?sha256=ecfe08f1…d9214347&from=file`, trovato. Scenario 2:
+  `?sha256=d819ede8…&from=file`, nessuna corrispondenza. Il primo passo dello scenario 5:
+  `?sha256=d819ede8…&from=text`. Scenario 8: nessuna richiesta, risultato tolto, indirizzo
+  `/ui/verify-document`, messaggio rosso "Non è stato possibile calcolare l'impronta…
+  NotReadableError". Scenario 9: pulsante disattivato e avviso "Il calcolo dell'impronta non è
+  attivo…".
+
+**Un difetto trovato lungo la strada: la procedura di aggiornamento di `docs/DEPLOY-PRODUZIONE.md`.**
+Il punto 6.3 (`git pull`, `docker compose build && docker compose up -d`) **lascia a Caddy il
+Caddyfile di prima**. Verificato sullo stack: dopo la procedura, `grep script-src` sul Caddyfile
+del repository dà `/7Wp8lsy…`, mentre Caddy manda ancora `IM9LfY8B…`, e dentro il container c'è
+ancora il file vecchio. Il motivo è che `up -d` non ricrea Caddy, e il file è montato da solo, per
+cui il container continua a vedere quello sostituito. L'ho verificato anche con un vero `git
+checkout` su un file montato così: il container legge il contenuto vecchio finché non viene
+riavviato, e quello nuovo dopo. Con questa correzione l'impronta cambia: seguendo
+la guida alla lettera, la pagina in produzione mostrerebbe l'avviso rosso con Verifica disattivato
+(verificato anche questo, con una schermata). Dopo `docker compose restart caddy` Caddy manda la
+nuova impronta (verificato). Aggiunto alla guida, con due comandi per controllare che le due
+impronte coincidano.
+
+**Per il committente, dopo aver unito questa PR.**
+1. Sul server: `git pull`, `cd deploy && docker compose build && docker compose up -d`, **`docker
+   compose restart caddy`**. Poi controllare che `grep -o "script-src '[^']*'" Caddyfile` e
+   `curl -sI https://get-sigillo.eu/ui/login | grep -io "script-src '[^']*'"` diano la stessa riga.
+2. Rifare il test, e calcolare `Get-FileHash` sul file **esattamente come è scelto nel selettore**,
+   cioè stesso percorso e stesso PC del browser. La pagina ora dà una di queste risposte:
+   - conferma con `ecfe08f1…`: risolto;
+   - messaggio rosso con il nome di un errore: era (b), e l'errore dice perché;
+   - "Calcolata dal browser sul file scelto" con `d819ede8…`: era (a), cioè il browser ha letto un
+     file di 392 byte con gli a capo LF, diverso da quello di cui si è calcolata l'impronta;
+   - avviso rosso "Il calcolo dell'impronta non è attivo": Caddy non è stato riavviato (punto 1).
+
+**Resta aperto, dalla sessione 5:** `.gitattributes` per i curricula della demo, e la
+"corrispondenza vicina" per gli a capo. Nessuno dei due è stato toccato.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
