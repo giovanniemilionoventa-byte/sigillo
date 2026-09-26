@@ -2027,11 +2027,24 @@ riconosce da solo come binari. Nessuna correzione in questa sessione, come chied
   `*.ps1 text eol=crlf` se si vuole): è la scelta più completa. Tocca però l'intero repository e il
   modo in cui lo vede chi lavora su Windows. È una decisione del committente, non l'ho presa.
 
+**Decisione del committente (26/09, nella stessa sessione): sì a `*.sh text eol=lf` e a `*.bin
+binary`, no alla regola unica per tutto il repository.** Le due regole stanno in un `.gitattributes`
+alla radice che contiene solo quelle due righe: gli altri file restano come prima, con i default di
+git. I file coinvolti oggi sono `deploy/backup.sh`, `demo/selezione-cv/run_demo.sh` e i due
+`apps/server/test/fixtures/*.protobuf.bin`. `git add --renormalize .` non cambia nessun file: gli
+script erano già LF, e i fixture non vengono convertiti.
+Test nuovo `apps/server/test/line-endings.test.ts` (7 test), scritto prima delle regole. **Senza le
+regole ne falliscono 3**: nessun attributo sugli script, nessun attributo sui fixture, e soprattutto
+un checkout con `core.autocrlf=true core.eol=crlf` **scrive gli script con CRLF**. Questo conferma
+per davvero il rischio di `#!/bin/sh\r` per `backup.sh` in un'immagine costruita da Windows. Con le
+regole passano tutti e 7. La regola dei curricula (`demo/selezione-cv/curricula/.gitattributes`)
+non cambia.
+
 **Non toccati**: formato delle ricevute, firma, logica di verifica, `packages/core`,
 `packages/verifier`, la pagina "Verifica un documento" e nessuna ricevuta in nessun database.
 
-Verifiche: `pnpm check` verde, **724 test Node** e 1 saltato, come prima (in questa sessione non
-ho aggiunto test Node). `smoke-dist` e cross-check Python ok. Test della demo **22** (erano 18, +4),
+Verifiche: `pnpm check` verde, **731 test Node** (erano 724, +7 di `line-endings.test.ts`) e 1
+saltato, come prima. `smoke-dist` e cross-check Python ok. Test della demo **22** (erano 18, +4),
 test dell'SDK Python 39, tutti verdi.
 
 Un'osservazione, non causata da questa modifica: su 4 esecuzioni complete della suite Node, alla
