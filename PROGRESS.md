@@ -2068,8 +2068,8 @@ per la UI, senza framework né build step. Base: `main` @ `c8686a1`.
 | M3 | Eliminazione ristretta | fatto | Solo catene con la sola genesi, conferma scrivendo il `system_id`, registro amministrativo; regola imposta anche dai trigger del database |
 | M4 | Nuova interfaccia | fatto | "Registro notarile": carta e inchiostro, serif, sigillo in SVG; 25 screenshot in `docs/screenshots/` |
 
-Verifiche: `pnpm check` verde, **774 test Node** (erano 731: +19 in `system-admin.test.ts`, +3
-in `cli-admin.test.ts`, +21 in `ui.test.ts`) e 1 saltato come prima; `smoke-dist` e cross-check
+Verifiche: `pnpm check` verde, **774 test Node** (erano 731: +22 in `system-admin.test.ts`, +3
+in `cli-admin.test.ts`, +18 in `ui.test.ts`) e 1 saltato come prima; `smoke-dist` e cross-check
 Python ok. SDK Python e demo non toccati. `packages/core` e `packages/verifier` **non toccati**:
 formato delle ricevute, firma, catena, Merkle e marca temporale sono invariati, e la regola 5 non
 si applica. Lo script della pagina "verifica un documento" è invariato byte per byte, quindi l'hash
