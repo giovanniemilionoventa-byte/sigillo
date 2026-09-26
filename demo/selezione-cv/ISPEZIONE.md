@@ -53,8 +53,19 @@ esattamente al candidato n. 7 è il passo successivo.
 
 Procurati la copia del curriculum che il candidato ha inviato (in questa
 demo: `demo/selezione-cv/curricula/candidato-07.txt`). Vai su **"verifica
-documento"** nel menu, carica il file (o incollane il testo), e premi
-**"Verifica"**.
+documento"** nel menu, carica **il file** — lo stesso file che ha letto
+l'agente — e premi **"Verifica"**.
+
+Carica il file, non incollarne il testo. Lo stesso testo può essere salvato
+con due modi diversi di andare a capo: quello di Windows (CRLF) e quello di
+Mac e Linux (LF). Per sigillo sono due documenti diversi, perché i byte sono
+diversi, e il browser legge il testo incollato nella casella sempre con gli a
+capo LF. Su Windows, dove git di solito scrive i file di questa cartella con
+gli a capo CRLF, il testo incollato non corrisponde mai. Se la verifica non
+trova niente, la pagina mostra l'impronta che ha cercato: confrontala con
+quella del file (`Get-FileHash candidato-07.txt -Algorithm SHA256` su Windows,
+`sha256sum candidato-07.txt` su Linux). Se le due impronte sono diverse, alla
+pagina è arrivato un file diverso da quello usato dall'agente.
 
 Il risultato atteso è una conferma di questa forma:
 

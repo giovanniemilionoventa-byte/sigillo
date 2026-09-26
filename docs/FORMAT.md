@@ -134,8 +134,11 @@ never an empty array — the same discipline as `actor.on_behalf_of`.
 - `sha256`: 64 lowercase hex characters. The digest of the artifact's **exact
   raw bytes** — not of any canonical form, since a document is not JSON. For
   text, this means its exact UTF-8 bytes: one extra space or line ending
-  changes the digest. Computing it is exactly `openssl dgst -sha256 <file>`,
-  nothing more.
+  changes the digest. That includes the line-ending convention: the same
+  text saved with CRLF (Windows) and with LF (macOS, Linux, and any text a
+  browser reads back from a `<textarea>`) is two different documents with
+  two different digests. Nothing normalises line endings, deliberately.
+  Computing it is exactly `openssl dgst -sha256 <file>`, nothing more.
 
 Order is preserved: an array is never reordered by canonicalisation (section
 3 sorts object *members*, not array elements), so two artifacts of the same

@@ -82,10 +82,18 @@ export const UI = {
     privacyNote: "Il documento non lascia il tuo computer: calcoliamo solo la sua impronta.",
     fileLabel: "File",
     textLabel: "oppure incolla il testo",
+    // A browser reads a textarea back with LF line endings whatever was
+    // pasted (HTML's newline normalisation), so text from a file saved with
+    // Windows line endings can never match from here (session 5).
+    textNote:
+      "Attenzione: il browser legge il testo incollato con gli a capo di Mac e Linux. Se il documento è un file salvato su Windows, caricalo invece di incollarlo.",
     submit: "Verifica",
     resultTitle: "Risultato",
+    searchedFingerprint: "Impronta cercata (SHA-256)",
     noMatch:
       "Nessuna azione registrata ha usato questo documento. Se ne hai una versione diversa, anche un solo carattere cambia il risultato.",
+    lineEndingsHint:
+      "Conta anche il modo di andare a capo: lo stesso testo salvato su Windows (a capo CRLF) e su Mac o Linux (a capo LF) ha due impronte diverse, e il testo incollato nella casella viene sempre letto con gli a capo LF. Se il documento è un file, carica il file originale invece di incollarne il testo, e confronta l'impronta qui sopra con quella del file (Get-FileHash su Windows, sha256sum su Linux, shasum -a 256 su Mac).",
     seeReceipt: "vedi la ricevuta",
     notModified: "Non è stato modificato",
   },

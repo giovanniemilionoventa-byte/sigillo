@@ -1609,6 +1609,90 @@ policy, e una pagina locale servita così lo riproduce in Chromium senza alcun r
 produzione con una patch d'emergenza prima di essere formalizzata qui, con 7 test nuovi in
 `apps/server/test/ui-security.test.ts` (4 fallivano prima della correzione); **703 test Node** verdi.
 
+### Sessione 5 — 2026-09-26 — "Verifica un documento" dice "nessuna corrispondenza" per un curriculum usato davvero
+
+**Sintomo riportato.** Sistema `sistema cv` (nome con uno spazio), demo `demo/selezione-cv/agent.py`
+puntata a mano al server di produzione. `candidato-07.txt`, caricato sulla pagina "Verifica un
+documento", risulta senza corrispondenza. Il fascicolo esportato però contiene, alla `seq 50`,
+l'artifact `curriculum` con sha256 `ecfe08f1…d9214347`, identico a `Get-FileHash` sul file usato
+dall'agente.
+
+**Causa trovata, con evidenza.** Non è lo spazio nel nome, e non è la ricerca sul server. È il **modo
+di andare a capo** del file che arriva alla pagina.
+- `ecfe08f1…d9214347` è l'impronta di `candidato-07.txt` con **a capo Windows (CRLF)**, cioè come lo
+  scrive un checkout git su Windows (nel repository non c'è `.gitattributes`). Lo stesso file con **a
+  capo LF**, com'è nel repository e in ogni checkout Mac o Linux, ha impronta `d819ede8…dcbb204b`.
+  Calcolato qui su entrambe le varianti (e su BOM e senza a capo finale, che danno altre impronte
+  ancora).
+- **Chromium vero** (Playwright, non simulato) contro server e firmatario veri, con la CSP del
+  `Caddyfile` applicata e dati scritti dalla **demo Python vera** (20 candidati, curricula convertiti
+  in CRLF, sistema `sistema cv`):
+  - carico il file CRLF usato dall'agente → **trovato**;
+  - carico la copia LF dello stesso testo → **"nessuna corrispondenza"**;
+  - incollo nella casella il testo del file CRLF, con un vero Ctrl+V → **"nessuna corrispondenza"**.
+    Il browser rilegge sempre una `<textarea>` con a capo LF, come impone lo standard HTML (verificato:
+    `"a\r\nb\r\n"` incollato torna `"a\nb\n"`). Su Windows quindi la strada "incolla il testo" **non
+    può mai** trovare un documento con a capo CRLF, e `ISPEZIONE.md` la proponeva come alternativa
+    equivalente al caricamento.
+- Il database era corretto: l'indice `artifacts` conteneva la riga, alla stessa `seq`, per il sistema
+  con lo spazio. Il sintomo si riproduce solo quando alla pagina arrivano byte diversi da quelli
+  letti dall'agente. Da qui non posso sapere quale delle due strade abbia preso il committente (copia
+  LF o testo incollato). Il passo successivo della pagina corretta, cioè l'impronta mostrata, lo dice
+  al primo tentativo.
+
+**Controllato e scartato lungo il percorso.**
+- Spazio nel nome del sistema: test end-to-end (creazione dalla UI, chiave, span OTLP con evento
+  `sigillo.artifact`, script del browser eseguito davvero con Web Crypto di Node, route della pagina)
+  **passa** già senza correzioni. Nessun ruolo dello spazio.
+- Più sistemi con gli stessi file e 20 candidati: passa.
+- Nomi con `/`, `?`, `&`, `#`, `+`, `%20`, accenti: creazione, pagina del sistema, checkpoint, export
+  e il link "vedi la ricevuta" della pagina di verifica funzionano tutti (`encodeURIComponent` nei
+  link, parametri di percorso decodificati da Fastify, nome file dell'export già ripulito). Nessun
+  difetto latente. Aggiunto un test che lo fissa. Nessuna regola sui nomi da documentare in
+  `docs/API.md`, né validazione da aggiungere alla creazione.
+- Connessione di lettura con istantanea vecchia (WAL): esclusa, perché export e ricerca usano la
+  stessa connessione e l'export vedeva la ricevuta. Percorsi di scrittura che saltano l'indice
+  `artifacts`: esclusi, perché ce n'è uno solo, nella stessa transazione della ricevuta, da N3.
+- CSP che blocca lo script: esclusa nel browser vero (0 violazioni). Script e `Caddyfile` sono
+  **invariati**, quindi non serve ridistribuire Caddy.
+
+**Correzione applicata (test prima: 3 dei 7 test nuovi fallivano prima della correzione).**
+- `apps/server/src/http/ui.ts`, `strings.ts`: il risultato mostra sempre **"Impronta cercata
+  (SHA-256)"**, trovata o no, da confrontare con `Get-FileHash` / `sha256sum`. Se non trova niente,
+  resta la frase della SPEC e se ne aggiunge una sugli a capo, con il consiglio di caricare il file
+  originale. Sotto la casella di testo c'è un avviso: il testo incollato viene letto con a capo LF.
+  Solo HTML generato dal server: lo script inline non cambia.
+- `apps/server/test/verify-document-e2e.test.ts` (nuovo, 7 test): il percorso completo con nome con
+  spazio, 20 candidati e due sistemi, nomi con caratteri speciali, CRLF contro LF, impronta mostrata,
+  avvisi.
+- Documentazione: `demo/selezione-cv/ISPEZIONE.md` (Passo 3: caricare il file, non incollarlo, e
+  come confrontare le impronte), `PROVA-LOCALE.md` (stessa nota), `docs/FORMAT.md` (gli a capo fanno
+  parte dei byte; nessuna normalizzazione, per scelta). Formato ricevute, firma e verifica della
+  catena **non toccati**. `packages/core` e `packages/verifier` invariati.
+
+Verifiche: `pnpm check` verde, **715 test Node** (erano 708, +7), 1 saltato come prima;
+`smoke-dist` e cross-check Python ok.
+
+**Alternative scartate (scelta prudente in assenza del committente).**
+- *Normalizzare gli a capo* nella ricerca o nell'impronta (cercare anche la variante CRLF/LF):
+  scartata. La pagina dice "esattamente quello usato… Non è stato modificato", e con la
+  normalizzazione due file con byte diversi risulterebbero lo stesso documento. È la garanzia che
+  sigillo vende.
+- *Segnalare una "corrispondenza vicina"* ("stesso testo, a capo diversi — NON lo stesso file"): utile,
+  ma cambia lo script inline (nuovo hash CSP nel `Caddyfile`, da ridistribuire) e introduce un secondo
+  tipo di esito da spiegare. Lasciata come decisione aperta, qui sotto.
+- *Togliere la casella "incolla il testo"*: la SPEC (sezione 4) la chiede. Resta, con l'avviso.
+
+**Aperto, per una decisione del committente.**
+1. **`.gitattributes` per `demo/selezione-cv/curricula/*.txt`** (`eol=lf` o `-text`), così i
+   curricula della demo hanno gli stessi byte su ogni sistema operativo. Raccomandato, ma non fatto
+   stanotte. Su un nuovo checkout Windows i file passerebbero da CRLF a LF, e le ricevute già scritte
+   nel pilota (CRLF, come la `seq 50`) non corrisponderebbero più ai file di un checkout nuovo. Il
+   file originale del committente resta valido finché non viene riscritto da git.
+2. **"Corrispondenza vicina"** per gli a capo, come sopra: sì o no.
+3. Conferma, sulla pagina corretta in produzione, di quale impronta calcola il browser per il file
+   caricato: se è `d819ede8…`, alla pagina è arrivata la copia LF.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
