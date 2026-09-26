@@ -517,7 +517,7 @@ describe("the receipts page: Cosa ha fatto l'AI? for one system", () => {
     let match: RegExpExecArray | null;
     while ((match = hexHash.exec(body)) !== null) {
       const before = body.slice(0, match.index);
-      const opens = (before.match(/<details>/g) ?? []).length;
+      const opens = (before.match(/<details\b[^>]*>/g) ?? []).length;
       const closes = (before.match(/<\/details>/g) ?? []).length;
       expect(opens).toBeGreaterThan(closes);
     }
@@ -588,7 +588,7 @@ describe("the checkpoints page", () => {
 describe("keyboard accessibility", () => {
   it("gives every text input and select an associated label", async () => {
     const cookie = await signIn();
-    for (const url of ["/ui", "/ui/sistemi", `/ui/systems/${SYSTEM}`, "/ui/verify-document"]) {
+    for (const url of ["/ui", "/ui/sistemi", `/ui/systems/${SYSTEM}`, `/ui/systems/${SYSTEM}/manage`, "/ui/verify-document"]) {
       const body = (await app.inject({ method: "GET", url, headers: { cookie } })).body;
       const inputs = [...body.matchAll(/<(?:input|select|textarea)\b[^>]*>/g)];
       for (const [tag] of inputs) {
@@ -743,5 +743,302 @@ describe("the verify-document page", () => {
     const caddyfile = readFileSync(join(REPOSITORY_ROOT, "deploy", "Caddyfile"), "utf8");
     const actualHash = createHash("sha256").update(VERIFY_DOCUMENT_SCRIPT, "utf8").digest("base64");
     expect(caddyfile).toContain(`'sha256-${actualHash}'`);
+  });
+});
+
+describe("managing a system: display name (M1)", () => {
+  const form = { "content-type": "application/x-www-form-urlencoded" };
+
+  it("renames from the manage page, and shows the name everywhere with the system_id beside it", async () => {
+    const cookie = await signIn();
+    const response = await app.inject({
+      method: "POST",
+      url: `/ui/systems/${SYSTEM}/rename`,
+      headers: { cookie, ...form },
+      payload: `display_name=${encodeURIComponent("Assistente clienti")}`,
+    });
+    expect(response.statusCode).toBe(303);
+    expect(response.headers["location"]).toBe(`/ui/systems/${SYSTEM}/manage?fatto=nome`);
+    expect(store.systemRecord(SYSTEM)?.display_name).toBe("Assistente clienti");
+
+    for (const url of ["/ui", "/ui/sistemi", `/ui/systems/${SYSTEM}`, `/ui/systems/${SYSTEM}/checkpoints`, `/ui/systems/${SYSTEM}/manage`]) {
+      const body = (await app.inject({ method: "GET", url, headers: { cookie } })).body;
+      expect(body, url).toContain("Assistente clienti");
+      expect(body, url).toContain(`<code class="sid">${SYSTEM}</code>`);
+    }
+    const home = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
+    expect(home).toContain(`<option value="${SYSTEM}">Assistente clienti (${SYSTEM})</option>`);
+  });
+
+  it("records the rename in the administrative log, with the address it came from", async () => {
+    const cookie = await signIn();
+    await app.inject({
+      method: "POST",
+      url: `/ui/systems/${SYSTEM}/rename`,
+      headers: { cookie, ...form },
+      payload: "display_name=Primo",
+    });
+    const [entry] = store.adminLog();
+    expect(entry).toMatchObject({ action: "system.rename", system_id: SYSTEM, ts: NOW });
+    expect(entry?.actor).toMatch(/^web /);
+    const body = (await app.inject({ method: "GET", url: "/ui/sistemi", headers: { cookie } })).body;
+    expect(body).toContain("nome cambiato: da nessun nome a «Primo»");
+  });
+
+  it("refuses a name it cannot store, and says why, without changing anything", async () => {
+    const cookie = await signIn();
+    const response = await app.inject({
+      method: "POST",
+      url: `/ui/systems/${SYSTEM}/rename`,
+      headers: { cookie, ...form },
+      payload: `display_name=${encodeURIComponent("due\nrighe")}`,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain("control characters");
+    expect(store.systemRecord(SYSTEM)?.display_name).toBeNull();
+  });
+
+  it("can give a new system its name when it is created", async () => {
+    const cookie = await signIn();
+    const response = await app.inject({
+      method: "POST",
+      url: "/ui/sistemi",
+      headers: { cookie, ...form },
+      payload: `system_id=nuovo&display_name=${encodeURIComponent("Il nuovo")}`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(store.systemRecord("nuovo")?.display_name).toBe("Il nuovo");
+    expect(store.readChain("nuovo")[0]?.action.name).toBe("nuovo");
+  });
+
+  it("puts the name at export time into the evidence file, and not into its manifest", async () => {
+    await store.renameSystem(SYSTEM, "Nome di allora", { actor: "test", ts: NOW });
+    const cookie = await signIn();
+    const response = await app.inject({ method: "POST", url: `/ui/systems/${SYSTEM}/export`, headers: { cookie } });
+    const files = new Map(
+      readZip(new Uint8Array(response.rawPayload)).map((entry) => [entry.name, new TextDecoder().decode(entry.data)]),
+    );
+    expect(files.get("VERIFY.md")).toContain('"Nome di allora"');
+    expect(files.get("manifest.json")).not.toContain("Nome di allora");
+  });
+
+  it("names the system by its label in a document match, with the system_id beside it", async () => {
+    await store.renameSystem(SYSTEM, "Selezione", { actor: "test", ts: NOW });
+    const sha256 = "f".repeat(64);
+    await store.append(
+      event(9, {
+        artifacts: [{ role: "input", label: "curriculum", media_type: "text/plain", sha256 }],
+      }),
+    );
+    const cookie = await signIn();
+    const body = (await app.inject({ method: "GET", url: `/ui/verify-document?sha256=${sha256}`, headers: { cookie } })).body;
+    expect(body).toContain(`usato da «Selezione» (sistema ${SYSTEM})`);
+  });
+});
+
+describe("managing a system: archiving (M2)", () => {
+  it("takes an archived system off the main page and the default list, and back again", async () => {
+    const cookie = await signIn();
+    const archived = await app.inject({ method: "POST", url: `/ui/systems/${SYSTEM}/archive`, headers: { cookie } });
+    expect(archived.statusCode).toBe(303);
+    expect(store.systemRecord(SYSTEM)?.archived_at).toBe(NOW);
+
+    const home = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
+    expect(home).not.toContain(`<a href="/ui/systems/${SYSTEM}">`);
+    expect(home).toContain("Un sistema archiviato non è mostrato");
+    // Still offered for an evidence file.
+    expect(home).toContain(`<optgroup label="archiviati"><option value="${SYSTEM}">`);
+
+    const active = (await app.inject({ method: "GET", url: "/ui/sistemi", headers: { cookie } })).body;
+    expect(active).not.toContain(`<a href="/ui/systems/${SYSTEM}">`);
+    expect(active).toContain("archiviati (1)");
+    for (const view of ["archiviati", "tutti"]) {
+      const body = (await app.inject({ method: "GET", url: `/ui/sistemi?vista=${view}`, headers: { cookie } })).body;
+      expect(body, view).toContain(`<a href="/ui/systems/${SYSTEM}">`);
+    }
+
+    const unarchived = await app.inject({ method: "POST", url: `/ui/systems/${SYSTEM}/unarchive`, headers: { cookie } });
+    expect(unarchived.statusCode).toBe(303);
+    const back = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
+    expect(back).toContain(`<a href="/ui/systems/${SYSTEM}">`);
+    expect(store.adminLog().map((entry) => entry.action)).toEqual(["system.unarchive", "system.archive"]);
+  });
+
+  it("keeps an archived system's history, checkpoints and evidence file one click away", async () => {
+    await store.archiveSystem(SYSTEM, { actor: "test", ts: NOW });
+    const cookie = await signIn();
+    const history = await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}`, headers: { cookie } });
+    expect(history.statusCode).toBe(200);
+    expect(history.body).toContain("6 ricevute");
+    expect(history.body).toContain('<span class="badge">archiviato</span>');
+    const exported = await app.inject({ method: "POST", url: `/ui/systems/${SYSTEM}/export`, headers: { cookie } });
+    expect(exported.statusCode).toBe(200);
+    expect(exported.headers["content-type"]).toContain("application/zip");
+  });
+
+  it("still shows an archived system on the main page when it keeps receiving actions", async () => {
+    await store.archiveSystem(SYSTEM, { actor: "test", ts: "2026-03-29T15:00:00.000Z" });
+    await store.append(event(1, { ts_received: "2026-03-29T15:30:00.000Z" }));
+    const cookie = await signIn();
+    const home = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
+    expect(home).toContain(`<a href="/ui/systems/${SYSTEM}">`);
+    expect(home).toContain(UI.home.archivedActive.replace(/'/g, "&#39;"));
+  });
+});
+
+describe("managing a system: archiving never hides a broken chain", () => {
+  it("shows an archived system on the main page when its chain fails verification", async () => {
+    await store.archiveSystem(SYSTEM, { actor: "test", ts: NOW });
+    const raw = new Database(join(directory, "sigillo.db"));
+    raw.exec("DROP TRIGGER receipts_no_update");
+    const row = raw.prepare("SELECT canonical FROM receipts WHERE system_id = ? AND seq = 2").get(SYSTEM) as {
+      canonical: string;
+    };
+    raw.prepare("UPDATE receipts SET canonical = ? WHERE system_id = ? AND seq = 2").run(
+      row.canonical.replace('"outcome":"ok"', '"outcome":"error"'),
+      SYSTEM,
+    );
+    raw.close();
+
+    const freshMonitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS);
+    freshMonitor.check();
+    const freshApp = buildServer({
+      store,
+      keys,
+      now: () => new Date(NOW),
+      ui: {
+        password: PASSWORD,
+        signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
+        healthMonitor: freshMonitor,
+        checkpointer,
+      },
+    });
+    await freshApp.ready();
+    try {
+      const cookie = await signIn(freshApp);
+      const home = (await freshApp.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
+      expect(home).toContain(`<a href="/ui/systems/${SYSTEM}">`);
+      expect(home).toContain('class="status-word red">rosso<');
+      expect(home).toContain(UI.home.archivedRed);
+    } finally {
+      await freshApp.close();
+    }
+  });
+});
+
+describe("managing a system: deleting (M3)", () => {
+  const form = { "content-type": "application/x-www-form-urlencoded" };
+  const EMPTY = "sistema-di-prova";
+
+  beforeEach(async () => {
+    await store.createSystem(EMPTY, "2026-03-29T15:00:00.000Z");
+  });
+
+  it("offers no delete form for a system with recorded actions, and says why", async () => {
+    const cookie = await signIn();
+    const body = (await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}/manage`, headers: { cookie } })).body;
+    expect(body).not.toContain(`action="/ui/systems/${SYSTEM}/delete"`);
+    expect(body).toContain("5 azioni registrate oltre all&#39;apertura");
+  });
+
+  it("refuses on the server a system with recorded actions, even when asked directly with the right confirmation", async () => {
+    const cookie = await signIn();
+    const response = await app.inject({
+      method: "POST",
+      url: `/ui/systems/${SYSTEM}/delete`,
+      headers: { cookie, ...form },
+      payload: `confirm=${SYSTEM}`,
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toContain("non si può eliminare");
+    expect(store.readChain(SYSTEM)).toHaveLength(6);
+    expect(store.adminLog()).toEqual([]);
+  });
+
+  it("asks for the exact system_id, typed out, and does nothing on anything else", async () => {
+    const cookie = await signIn();
+    const manage = (await app.inject({ method: "GET", url: `/ui/systems/${EMPTY}/manage`, headers: { cookie } })).body;
+    expect(manage).toContain(`action="/ui/systems/${EMPTY}/delete"`);
+    expect(manage).toContain(`scrivi l&#39;identificativo esatto: ${EMPTY}`);
+
+    for (const payload of ["", "confirm=", "confirm=si", `confirm=${EMPTY.toUpperCase()}`, `confirm=${EMPTY}%20`]) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/ui/systems/${EMPTY}/delete`,
+        headers: { cookie, ...form },
+        payload,
+      });
+      expect(response.statusCode, payload).toBe(400);
+      expect(response.body).toContain(UI.manage.confirmMismatch.replace(/'/g, "&#39;"));
+    }
+    expect(store.hasSystem(EMPTY)).toBe(true);
+  });
+
+  it("deletes an empty system, logs it, and says so on the systems page", async () => {
+    const cookie = await signIn();
+    const response = await app.inject({
+      method: "POST",
+      url: `/ui/systems/${EMPTY}/delete`,
+      headers: { cookie, ...form },
+      payload: `confirm=${EMPTY}`,
+    });
+    expect(response.statusCode).toBe(303);
+    expect(response.headers["location"]).toBe(`/ui/sistemi?eliminato=${EMPTY}`);
+    expect(store.hasSystem(EMPTY)).toBe(false);
+    expect(store.readChain(EMPTY)).toEqual([]);
+
+    const [entry] = store.adminLog();
+    expect(entry).toMatchObject({ action: "system.delete", system_id: EMPTY, ts: NOW });
+    expect(entry?.actor).toMatch(/^web /);
+
+    const page = (await app.inject({ method: "GET", url: `/ui/sistemi?eliminato=${EMPTY}`, headers: { cookie } })).body;
+    expect(page).toContain(`Il sistema ${EMPTY} è stato eliminato`);
+    expect(page).toContain(`${EMPTY} eliminato`);
+    expect((await app.inject({ method: "GET", url: `/ui/systems/${EMPTY}`, headers: { cookie } })).statusCode).toBe(404);
+  });
+
+  it("does not claim a deletion the log does not hold", async () => {
+    const cookie = await signIn();
+    for (const name of [SYSTEM, "never-created"]) {
+      const page = (await app.inject({ method: "GET", url: `/ui/sistemi?eliminato=${name}`, headers: { cookie } })).body;
+      expect(page).not.toContain("è stato eliminato");
+    }
+  });
+
+  it("decides on what the database holds when the button is pressed, not on the page it was pressed on", async () => {
+    const cookie = await signIn();
+    const manage = (await app.inject({ method: "GET", url: `/ui/systems/${EMPTY}/manage`, headers: { cookie } })).body;
+    expect(manage).toContain(`action="/ui/systems/${EMPTY}/delete"`);
+    // An agent writes between the page being drawn and the button being pressed.
+    await store.append(event(1, { system_id: EMPTY }));
+    const response = await app.inject({
+      method: "POST",
+      url: `/ui/systems/${EMPTY}/delete`,
+      headers: { cookie, ...form },
+      payload: `confirm=${EMPTY}`,
+    });
+    expect(response.statusCode).toBe(409);
+    expect(store.readChain(EMPTY)).toHaveLength(2);
+    expect(response.body).not.toContain(`action="/ui/systems/${EMPTY}/delete"`);
+  });
+
+  it("refuses a delete posted from another site", async () => {
+    const cookie = await signIn();
+    const response = await app.inject({
+      method: "POST",
+      url: `/ui/systems/${EMPTY}/delete`,
+      headers: { cookie, ...form, "sec-fetch-site": "cross-site" },
+      payload: `confirm=${EMPTY}`,
+    });
+    expect(response.statusCode).toBe(403);
+    expect(store.hasSystem(EMPTY)).toBe(true);
+  });
+
+  it("refuses every management action without a session", async () => {
+    for (const action of ["rename", "archive", "unarchive", "delete"]) {
+      const response = await app.inject({ method: "POST", url: `/ui/systems/${EMPTY}/${action}` });
+      expect(response.statusCode, action).toBe(302);
+    }
+    expect((await app.inject({ method: "GET", url: `/ui/systems/${EMPTY}/manage` })).statusCode).toBe(302);
   });
 });

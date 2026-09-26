@@ -21,6 +21,7 @@
   "devDependencies": {
     "@types/node": "^22.10.2",
     "fast-check": "^3.23.2",
+    "playwright-core": "^1.63.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^4.1.11"

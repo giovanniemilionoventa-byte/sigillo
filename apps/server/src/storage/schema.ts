@@ -10,6 +10,11 @@ import type Database from "better-sqlite3";
  * case — a script, a support query, or a bug quietly rewriting history.
  */
 export const SCHEMA_SQL = `
+-- One row per chain. system_id is the chain's identity, written into every
+-- receipt, checkpoint and export, and never changes (a trigger below refuses
+-- it). display_name and archived_at are labels for the web view: not
+-- evidence, never signed, free to change (added after the first release, by
+-- ensureColumn in applySchema).
 CREATE TABLE IF NOT EXISTS systems (
   system_id  TEXT PRIMARY KEY,
   created_at TEXT NOT NULL
@@ -104,22 +109,69 @@ CREATE TABLE IF NOT EXISTS signing_keys (
   first_seen        TEXT NOT NULL
 ) STRICT;
 
+-- What an administrator did to a system outside its chain: renaming,
+-- archiving, and deleting an empty one. Append-only like the evidence, and
+-- deliberately outside any chain: a deleted system's chain no longer exists
+-- to record its own deletion. genesis_hash is set only for a deletion, and
+-- names the genesis receipt it removes (see deletable_chains).
+CREATE TABLE IF NOT EXISTS admin_log (
+  id           INTEGER PRIMARY KEY,
+  ts           TEXT NOT NULL,
+  action       TEXT NOT NULL,
+  system_id    TEXT NOT NULL,
+  actor        TEXT NOT NULL,
+  detail       TEXT NOT NULL,
+  genesis_hash TEXT
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS admin_log_by_system ON admin_log (system_id);
+
+-- The chains whose receipts, checkpoints and tokens may be deleted: those
+-- that hold only their genesis, and whose deletion, naming that genesis by
+-- its hash, is already logged. Every delete guard below asks this view.
+CREATE VIEW IF NOT EXISTS deletable_chains AS
+SELECT genesis.system_id
+FROM receipts genesis
+JOIN admin_log entry
+  ON entry.action = 'system.delete'
+ AND entry.system_id = genesis.system_id
+ AND entry.genesis_hash = genesis.hash
+WHERE genesis.seq = 0
+  AND NOT EXISTS (
+    SELECT 1 FROM receipts later WHERE later.system_id = genesis.system_id AND later.seq > 0
+  );
+
 CREATE TRIGGER IF NOT EXISTS receipts_no_update BEFORE UPDATE ON receipts
 BEGIN SELECT RAISE(ABORT, 'append-only: a receipt cannot be modified'); END;
 
-CREATE TRIGGER IF NOT EXISTS receipts_no_delete BEFORE DELETE ON receipts
+-- A receipt can be deleted in exactly one case: it is the genesis of a chain
+-- that holds nothing else, and the deletion of that very genesis (by its
+-- hash) is already in the administrative log. That is how an empty system
+-- created by mistake is removed (ReceiptStore.deleteEmptySystem); a chain
+-- with even one real action can never lose a receipt, whoever asks and
+-- through whichever connection (docs/SECURITY.md, "Deleting a system").
+CREATE TRIGGER IF NOT EXISTS receipts_delete_guard BEFORE DELETE ON receipts
+WHEN NOT (OLD.seq = 0 AND OLD.system_id IN (SELECT system_id FROM deletable_chains))
 BEGIN SELECT RAISE(ABORT, 'append-only: a receipt cannot be deleted'); END;
 
 CREATE TRIGGER IF NOT EXISTS checkpoints_no_update BEFORE UPDATE ON checkpoints
 BEGIN SELECT RAISE(ABORT, 'append-only: a checkpoint cannot be modified'); END;
 
-CREATE TRIGGER IF NOT EXISTS checkpoints_no_delete BEFORE DELETE ON checkpoints
+-- Same rule: only the one-receipt checkpoint of a logged, genesis-only chain.
+CREATE TRIGGER IF NOT EXISTS checkpoints_delete_guard BEFORE DELETE ON checkpoints
+WHEN NOT (OLD.tree_size = 1 AND OLD.system_id IN (SELECT system_id FROM deletable_chains))
 BEGIN SELECT RAISE(ABORT, 'append-only: a checkpoint cannot be deleted'); END;
 
 CREATE TRIGGER IF NOT EXISTS timestamps_no_update BEFORE UPDATE ON timestamps
 BEGIN SELECT RAISE(ABORT, 'append-only: a timestamp token cannot be modified'); END;
 
-CREATE TRIGGER IF NOT EXISTS timestamps_no_delete BEFORE DELETE ON timestamps
+-- Same rule: only a token over such a checkpoint.
+CREATE TRIGGER IF NOT EXISTS timestamps_delete_guard BEFORE DELETE ON timestamps
+WHEN NOT EXISTS (
+  SELECT 1 FROM checkpoints c
+  WHERE c.id = OLD.checkpoint_id AND c.tree_size = 1
+    AND c.system_id IN (SELECT system_id FROM deletable_chains)
+)
 BEGIN SELECT RAISE(ABORT, 'append-only: a timestamp token cannot be deleted'); END;
 
 CREATE TRIGGER IF NOT EXISTS artifacts_no_update BEFORE UPDATE ON artifacts
@@ -127,6 +179,23 @@ BEGIN SELECT RAISE(ABORT, 'append-only: an artifact entry cannot be modified'); 
 
 CREATE TRIGGER IF NOT EXISTS artifacts_no_delete BEFORE DELETE ON artifacts
 BEGIN SELECT RAISE(ABORT, 'append-only: an artifact entry cannot be deleted'); END;
+
+CREATE TRIGGER IF NOT EXISTS admin_log_no_update BEFORE UPDATE ON admin_log
+BEGIN SELECT RAISE(ABORT, 'append-only: an administrative log entry cannot be modified'); END;
+
+CREATE TRIGGER IF NOT EXISTS admin_log_no_delete BEFORE DELETE ON admin_log
+BEGIN SELECT RAISE(ABORT, 'append-only: an administrative log entry cannot be deleted'); END;
+
+-- The identity of a chain never changes.
+CREATE TRIGGER IF NOT EXISTS systems_id_immutable BEFORE UPDATE OF system_id, created_at ON systems
+BEGIN SELECT RAISE(ABORT, 'a system_id and its creation time cannot be changed'); END;
+
+-- A system can be removed only once its chain is gone, which the guards above
+-- allow only for a logged, genesis-only chain: without this, deleting the row
+-- alone would hide a whole chain from every listing.
+CREATE TRIGGER IF NOT EXISTS systems_delete_guard BEFORE DELETE ON systems
+WHEN EXISTS (SELECT 1 FROM receipts WHERE system_id = OLD.system_id)
+BEGIN SELECT RAISE(ABORT, 'append-only: a system with receipts cannot be deleted'); END;
 
 CREATE TRIGGER IF NOT EXISTS signing_keys_no_update BEFORE UPDATE ON signing_keys
 BEGIN SELECT RAISE(ABORT, 'append-only: a signing key cannot be modified'); END;
@@ -162,6 +231,16 @@ export function applySchema(db: Database.Database): void {
   db.exec(SCHEMA_SQL);
   ensureColumn(db, "receipts", "source_trace_id", "TEXT");
   ensureColumn(db, "receipts", "source_span_id", "TEXT");
+  ensureColumn(db, "systems", "display_name", "TEXT");
+  ensureColumn(db, "systems", "archived_at", "TEXT");
+  // Databases written before empty systems could be deleted carry the
+  // unconditional delete triggers. The guards that replace them were created
+  // just above, by SCHEMA_SQL, so there is no moment with neither.
+  db.exec(`
+    DROP TRIGGER IF EXISTS receipts_no_delete;
+    DROP TRIGGER IF EXISTS checkpoints_no_delete;
+    DROP TRIGGER IF EXISTS timestamps_no_delete;
+  `);
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS receipts_by_source
       ON receipts (system_id, source_trace_id, source_span_id)

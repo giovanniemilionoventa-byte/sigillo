@@ -95,6 +95,91 @@ export class StorageError extends Error {
   }
 }
 
+/**
+ * A deletion refused because the chain holds more than its genesis. Never a
+ * question of confirming harder: such a system can be archived, not deleted.
+ */
+export class SystemNotDeletableError extends StorageError {
+  constructor(
+    readonly systemId: string,
+    readonly receipts: number,
+  ) {
+    super(
+      `${systemId} cannot be deleted: its chain holds ${receipts} receipts, and only a system ` +
+        "whose chain holds nothing but its genesis can be. Archive it instead",
+    );
+    this.name = "SystemNotDeletableError";
+  }
+}
+
+/** A system as the operator's view and the CLI list it. */
+export interface SystemRecord {
+  system_id: string;
+  /** A label, not evidence: null when none was ever set, and then system_id is shown. */
+  display_name: string | null;
+  created_at: string;
+  archived_at: string | null;
+  /** How many receipts the chain holds, genesis included. */
+  receipts: number;
+  /** When the server received the chain's last receipt. */
+  last_received: string | null;
+}
+
+export type AdminAction = "system.rename" | "system.archive" | "system.unarchive" | "system.delete";
+
+/** One line of the administrative log: something done to a system outside its chain. */
+export interface AdminLogEntry {
+  id: number;
+  ts: string;
+  action: AdminAction;
+  system_id: string;
+  /** Who did it: "web <address>" from the web view, "cli <user>@<host>" from the command line. */
+  actor: string;
+  detail: Record<string, unknown>;
+}
+
+/** Who asks for an administrative change, and when. */
+export interface AdminRequest {
+  actor: string;
+  ts: string;
+}
+
+/** What a deletion removed, as the administrative log records it. */
+export interface DeletedSystem {
+  system_id: string;
+  display_name: string | null;
+  created_at: string;
+  genesis_hash: string;
+  checkpoints: number;
+  timestamps: number;
+  api_keys: string[];
+}
+
+const SYSTEM_RECORDS = `
+  SELECT s.system_id, s.display_name, s.created_at, s.archived_at,
+         (SELECT COUNT(*) FROM receipts r WHERE r.system_id = s.system_id) AS receipts,
+         (SELECT MAX(ts_received) FROM receipts r WHERE r.system_id = s.system_id) AS last_received
+  FROM systems s`;
+
+const DISPLAY_NAME_MAX = 128;
+
+/**
+ * A display name as it is stored: trimmed, and null when empty, which means
+ * "show the system_id". It is a label, so almost anything goes; control
+ * characters do not, because the CLI prints one system per line.
+ */
+export function normaliseDisplayName(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if ([...trimmed].length > DISPLAY_NAME_MAX) {
+    throw new StorageError(`a display name is at most ${DISPLAY_NAME_MAX} characters`);
+  }
+  if (/\p{Cc}/u.test(trimmed)) {
+    throw new StorageError("a display name cannot contain line breaks or other control characters");
+  }
+  return trimmed;
+}
+
 interface StoredRow {
   canonical: string;
   sig: string;
@@ -276,8 +361,17 @@ export class ReceiptStore {
 
   /** Registers a system and opens its chain by writing the genesis receipt. */
   async createSystem(systemId: string, ts: string): Promise<Receipt> {
-    return this.enqueue(() =>
-      this.writeReceipt(
+    return this.enqueue(async () => {
+      // An identifier whose chain was once deleted is not given out again: an
+      // export of the deleted chain, or a timestamp over its root, may exist
+      // somewhere, and a second genesis under the same name would contradict it.
+      const deletedOn = this.deletionOf(systemId, this.write);
+      if (deletedOn !== null) {
+        throw new StorageError(
+          `${systemId} belonged to a system deleted on ${deletedOn}, and is not reused: choose another identifier`,
+        );
+      }
+      return this.writeReceipt(
         {
           system_id: systemId,
           ts_event: ts,
@@ -290,8 +384,128 @@ export class ReceiptStore {
           source: { type: "api" },
         },
         "genesis",
-      ),
-    );
+      );
+    });
+  }
+
+  /** Every system with its labels and the size of its chain, by system_id. */
+  listSystemRecords(): SystemRecord[] {
+    return this.read
+      .prepare(
+        `${SYSTEM_RECORDS} ORDER BY s.system_id`,
+      )
+      .all() as SystemRecord[];
+  }
+
+  systemRecord(systemId: string): SystemRecord | null {
+    const row = this.read.prepare(`${SYSTEM_RECORDS} WHERE s.system_id = ?`).get(systemId) as
+      | SystemRecord
+      | undefined;
+    return row ?? null;
+  }
+
+  /**
+   * Sets the label shown for a system, or clears it with an empty string.
+   * Nothing about the chain changes: not the system_id, not a receipt, not an
+   * export already made. Returns the label it replaced.
+   */
+  async renameSystem(systemId: string, displayName: string, request: AdminRequest): Promise<string | null> {
+    const next = normaliseDisplayName(displayName);
+    return this.administer(systemId, (record) => {
+      this.write.prepare("UPDATE systems SET display_name = ? WHERE system_id = ?").run(next, systemId);
+      this.logAdmin("system.rename", systemId, request, { from: record.display_name, to: next });
+      return record.display_name;
+    });
+  }
+
+  /** Takes a system off the main listings. Its chain stays exactly as it was. */
+  async archiveSystem(systemId: string, request: AdminRequest): Promise<void> {
+    await this.administer(systemId, (record) => {
+      if (record.archived_at !== null) return;
+      this.write.prepare("UPDATE systems SET archived_at = ? WHERE system_id = ?").run(request.ts, systemId);
+      this.logAdmin("system.archive", systemId, request, {});
+    });
+  }
+
+  async unarchiveSystem(systemId: string, request: AdminRequest): Promise<void> {
+    await this.administer(systemId, (record) => {
+      if (record.archived_at === null) return;
+      this.write.prepare("UPDATE systems SET archived_at = NULL WHERE system_id = ?").run(systemId);
+      this.logAdmin("system.unarchive", systemId, request, { archived_at: record.archived_at });
+    });
+  }
+
+  /**
+   * Deletes a system whose chain holds nothing but its genesis, with its
+   * checkpoint, timestamp tokens and API keys, after writing the deletion to
+   * the administrative log. What is counted is what the database holds inside
+   * this transaction, never what a page showed earlier: a receipt that
+   * arrived since makes this refuse. A chain with any real action is refused
+   * here, and again by the database's own triggers (schema.ts).
+   */
+  async deleteEmptySystem(systemId: string, request: AdminRequest): Promise<DeletedSystem> {
+    return this.administer(systemId, (record) => {
+      const rows = this.write
+        .prepare("SELECT seq, hash FROM receipts WHERE system_id = ? ORDER BY seq LIMIT 2")
+        .all(systemId) as ChainTip[];
+      const genesis = rows[0];
+      if (rows.length !== 1 || genesis === undefined || genesis.seq !== 0) {
+        throw new SystemNotDeletableError(systemId, record.receipts);
+      }
+
+      const checkpointIds = (
+        this.write.prepare("SELECT id FROM checkpoints WHERE system_id = ?").all(systemId) as { id: number }[]
+      ).map((row) => row.id);
+      const timestamps = checkpointIds.reduce(
+        (total, id) =>
+          total +
+          (this.write.prepare("SELECT COUNT(*) AS n FROM timestamps WHERE checkpoint_id = ?").get(id) as { n: number }).n,
+        0,
+      );
+      const apiKeys = (
+        this.write.prepare("SELECT key_id FROM api_keys WHERE system_id = ? ORDER BY created_at").all(systemId) as {
+          key_id: string;
+        }[]
+      ).map((row) => row.key_id);
+
+      const deleted: DeletedSystem = {
+        system_id: systemId,
+        display_name: record.display_name,
+        created_at: record.created_at,
+        genesis_hash: genesis.hash,
+        checkpoints: checkpointIds.length,
+        timestamps,
+        api_keys: apiKeys,
+      };
+
+      // The log first: the triggers let the genesis go only once its deletion
+      // is on record, by its hash.
+      this.logAdmin("system.delete", systemId, request, { ...deleted }, genesis.hash);
+      for (const id of checkpointIds) {
+        this.write.prepare("DELETE FROM timestamps WHERE checkpoint_id = ?").run(id);
+      }
+      this.write.prepare("DELETE FROM checkpoints WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM receipts WHERE system_id = ? AND seq = 0").run(systemId);
+      this.write.prepare("DELETE FROM api_keys WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM systems WHERE system_id = ?").run(systemId);
+      return deleted;
+    });
+  }
+
+  /** When a system by this identifier was deleted, from the administrative log, or null if it never was. */
+  deletionOf(systemId: string, connection: Database.Database = this.read): string | null {
+    const row = connection
+      .prepare("SELECT ts FROM admin_log WHERE action = 'system.delete' AND system_id = ? ORDER BY id LIMIT 1")
+      .get(systemId) as { ts: string } | undefined;
+    return row?.ts ?? null;
+  }
+
+  /** The administrative log, newest first. */
+  adminLog(limit = 100): AdminLogEntry[] {
+    const rows = this.read
+      .prepare("SELECT id, ts, action, system_id, actor, detail FROM admin_log ORDER BY id DESC LIMIT ?")
+      .all(Math.min(Math.max(limit, 1), 10_000)) as (Omit<AdminLogEntry, "detail"> & { detail: string })[];
+    return rows.map((row) => ({ ...row, detail: JSON.parse(row.detail) as Record<string, unknown> }));
   }
 
   async append(event: ChainEvent): Promise<Receipt> {
@@ -530,6 +744,40 @@ export class ReceiptStore {
          ORDER BY r.ts_received`,
       )
       .all(sha256) as ArtifactMatch[];
+  }
+
+  /**
+   * One administrative change, on the write queue and inside one IMMEDIATE
+   * transaction: the change and its log entry are written together or not at
+   * all.
+   */
+  private async administer<T>(systemId: string, work: (record: SystemRecord) => T): Promise<T> {
+    return this.enqueue(() =>
+      this.inTransaction(async () => {
+        const record = this.write
+          .prepare(
+            `${SYSTEM_RECORDS} WHERE s.system_id = ?`,
+          )
+          .get(systemId) as SystemRecord | undefined;
+        if (record === undefined) throw new StorageError(`unknown system ${systemId}`);
+        return work(record);
+      }),
+    );
+  }
+
+  private logAdmin(
+    action: AdminAction,
+    systemId: string,
+    request: AdminRequest,
+    detail: Record<string, unknown>,
+    genesisHash: string | null = null,
+  ): void {
+    this.write
+      .prepare(
+        `INSERT INTO admin_log (ts, action, system_id, actor, detail, genesis_hash)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(request.ts, action, systemId, request.actor, JSON.stringify(detail), genesisHash);
   }
 
   listSystems(): string[] {

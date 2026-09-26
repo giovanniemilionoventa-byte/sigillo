@@ -41,7 +41,15 @@ export class Checkpointer {
     const written: StoredCheckpoint[] = [];
     for (const systemId of this.options.store.listSystems()) {
       const ts = this.options.now().toISOString();
-      const checkpoint = await this.options.store.createCheckpoint(systemId, ts);
+      let checkpoint: StoredCheckpoint | null;
+      try {
+        checkpoint = await this.options.store.createCheckpoint(systemId, ts);
+      } catch (error) {
+        // An empty system deleted between the listing and its turn has
+        // nothing left to check point; that is not a failed run.
+        if (!this.options.store.hasSystem(systemId)) continue;
+        throw error;
+      }
       if (checkpoint !== null) {
         written.push(checkpoint);
       }

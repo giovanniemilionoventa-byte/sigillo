@@ -2055,6 +2055,203 @@ e in 3 esecuzioni isolate. In quel file questa PR cambia solo un commento. Il so
 di 5 s sotto il carico di 36 file di test in parallelo, ma non l'ho dimostrato. Se ricapita in CI,
 va guardato lì.
 
+### Sessione 8 — 2026-09-26 — gestione dei sistemi e nuova interfaccia
+
+Richiesta del committente: (1) poter rinominare, archiviare ed eliminare un sistema
+dall'interfaccia, con l'eliminazione limitata ai sistemi vuoti; (2) una nuova identità visiva
+per la UI, senza framework né build step. Base: `main` @ `c8686a1`.
+
+| # | Nome | Stato | Note |
+|---|------|-------|------|
+| M1 | `display_name` e rinomina | fatto | Colonna, `system rename`, azione "gestisci", nome ovunque con il `system_id` accanto; il fascicolo tiene il nome del momento dell'export |
+| M2 | Archiviazione | fatto | `archived_at`, filtro attivi/archiviati/tutti, `system archive`/`unarchive`; nessun dato toccato |
+| M3 | Eliminazione ristretta | fatto | Solo catene con la sola genesi, conferma scrivendo il `system_id`, registro amministrativo; regola imposta anche dai trigger del database |
+| M4 | Nuova interfaccia | fatto | "Registro notarile": carta e inchiostro, serif, sigillo in SVG; 25 screenshot in `docs/screenshots/` |
+
+Verifiche: `pnpm check` verde, **774 test Node** (erano 731: +22 in `system-admin.test.ts`, +3
+in `cli-admin.test.ts`, +18 in `ui.test.ts`) e 1 saltato come prima; `smoke-dist` e cross-check
+Python ok. SDK Python e demo non toccati. `packages/core` e `packages/verifier` **non toccati**:
+formato delle ricevute, firma, catena, Merkle e marca temporale sono invariati, e la regola 5 non
+si applica. Lo script della pagina "verifica un documento" è invariato byte per byte, quindi l'hash
+nella CSP del `Caddyfile` non cambia e **non serve** riavviare Caddy per questo aggiornamento.
+
+#### M1 — `display_name`
+
+- `system_id` resta l'identità della catena, per sempre: un trigger nuovo
+  (`systems_id_immutable`) rifiuta qualunque `UPDATE` di `system_id` o `created_at`, da
+  qualunque connessione.
+- `display_name` è una colonna nuova di `systems` (aggiunta con `ensureColumn` ai database
+  esistenti), `NULL` finché non la si imposta. Nessun vincolo di unicità: è un'etichetta. Viene
+  rifilata; una stringa vuota la cancella e la UI torna a mostrare il `system_id`; massimo 128
+  caratteri, niente caratteri di controllo (la CLI stampa un sistema per riga).
+- Dove si vede: pagina principale (nome, e sotto il `system_id` in piccolo e monospace), elenco
+  sistemi, intestazione di cronologia, checkpoint e "gestisci" (il `system_id` sempre sotto il
+  titolo), la tendina di "Mi prepari le prove?" (`Nome (system_id)`), la frase della verifica di
+  un documento (`usato da «Nome» (sistema id)`), il registro amministrativo. Resta il
+  `system_id`, di proposito, nella frase della ricevuta di genesi ("Il sistema «id» ha aperto il
+  registro"): è quello che la ricevuta firmata dice davvero.
+- **Fascicolo: la mia scelta è che conservi il nome del momento dell'export.** Un fascicolo è un
+  documento probatorio: deve dire le cose come stavano quando è stato prodotto. Il nome va in
+  `report.pdf` (riga "Name at export", con la nota che è un'etichetta non firmata) e in
+  `VERIFY.md`. **Non** va in `manifest.json`: lo schema del manifest è `strict`, e un
+  verificatore già distribuito rifiuterebbe un campo che non conosce; e comunque non è un dato
+  da verificare. Test: export con un nome, rinomina, export con l'altro nome; il primo verifica
+  ancora e ha solo il nome di allora, il secondo solo quello nuovo, `receipts.jsonl` identico,
+  nessun nome nel manifest.
+- Controllato nel resto del repository dove `system_id` era mostrato come un nome:
+  `ISPEZIONE.md` (spiegato che si può vedere un nome, con l'identificativo sotto), `docs/API.md`
+  (nuovi comandi), `PROVA-LOCALE.md` (la pagina «gestisci»), `DEPLOY-PRODUZIONE.md` (nuovo
+  formato di `system list`), `docs/FORMAT.md` (il nome nel PDF e in VERIFY.md, non nel manifest).
+  Il nome del file dello zip resta `sigillo-<system_id>-<data>.zip`: va in un'intestazione HTTP e
+  deve restare stabile.
+
+#### M2 — Archiviazione
+
+- `archived_at` (colonna nuova). Archiviare toglie il sistema dalla pagina principale e dalla vista
+  predefinita della pagina «sistemi» (schede "attivi", "archiviati", "tutti", con i conteggi).
+  Non tocca nient'altro: il sistema continua a ricevere checkpoint e marche temporali, il
+  semaforo lo controlla, si esporta dalla cronologia e dalla tendina (gruppo "archiviati").
+- **Archiviare sospende le chiavi API del sistema** (decisione del committente, vedi sotto):
+  `ApiKeyStore.verify` rifiuta ogni chiave del sistema con lo stesso esito di una revoca, appena
+  `systems.archived_at` non è nullo — letto dal database a ogni richiesta, come già per
+  `revoked_at`, così vale anche da un'altra connessione e anche per un token già verificato e in
+  cache. Riattivare il sistema fa ripartire le stesse chiavi, senza rigenerarle; una chiave
+  revocata *prima* dell'archiviazione resta revocata dopo. `ReceiptStore.append` di per sé non sa
+  cos'è un sistema archiviato: il blocco è tutto nell'autenticazione, quindi una scrittura diretta
+  alla catena (non attraverso una chiave API — nessun percorso supportato lo fa) non è impedita da
+  qui.
+- **Archiviare non nasconde mai un problema**: un sistema archiviato torna sulla pagina principale,
+  con la dicitura "archiviato", se la verifica fallisce (rosso) o se riceve azioni dopo
+  l'archiviazione (possibile solo scrivendo alla catena senza passare da una chiave). Testati
+  tutti e due i casi.
+
+#### M3 — Eliminazione
+
+Principio scritto in `docs/SECURITY.md`, nuova sezione "Renaming, archiving and deleting a
+system": **un sistema con almeno una ricevuta oltre alla genesi non si può eliminare in nessun
+modo**; si elimina per davvero solo un sistema con la sola genesi.
+
+- **Lato server, dentro la transazione.** `ReceiptStore.deleteEmptySystem` conta le ricevute nella
+  stessa transazione `IMMEDIATE` in cui cancella, sulla coda di scrittura. Test: pagina "gestisci"
+  caricata quando il sistema era vuoto, poi un'azione arriva, poi il pulsante → **409**, niente
+  cancellato. Stesso test direttamente sullo store, con l'append e la cancellazione in coda
+  insieme.
+- **Conferma scrivendo il `system_id` esatto** (maiuscole, spazi e testo vuoto rifiutati con 400).
+  In CLI: `system delete <id> --confirm <id>`.
+- **Registro amministrativo** (`admin_log`, tabella nuova, append-only con trigger): chi, quando,
+  cosa. Per un'eliminazione: impronta della genesi, checkpoint, token e chiavi API rimossi. Ci
+  finiscono anche rinomine, archiviazioni e riattivazioni. "Chi": `web <indirizzo>` dalla UI
+  (c'è una sola password, quindi l'indirizzo è tutto quello che c'è), `cli <utente>@<host>` dalla
+  riga di comando. Si legge in fondo alla pagina «sistemi» e con `sigillo-server admin-log`.
+- **Il database impone la regola da sé, non solo il codice.** I trigger che vietavano ogni
+  `DELETE` su `receipts`, `checkpoints` e `timestamps` diventano guardie
+  (`*_delete_guard`): lasciano passare una riga solo se la sua catena ha la sola genesi **e** il
+  registro amministrativo nomina già quella genesi, per impronta, come eliminata (vista
+  `deletable_chains`). Test con una connessione SQL diretta: una catena con azioni non perde
+  nessuna ricevuta, checkpoint o token nemmeno con una voce di registro falsificata; una genesi
+  senza voce di registro non si cancella; la riga di `systems` si cancella solo a catena vuota.
+  I database esistenti vengono migrati all'apertura: le guardie si creano prima di togliere i
+  vecchi trigger, quindi non c'è un momento senza nessuno dei due (test con un database nel
+  formato vecchio).
+- **Chiavi API**: non sono un problema per il principio. Le chiavi del sistema vengono cancellate
+  con lui, nella stessa transazione: il test mostra che un token già accettato (e in cache) smette
+  di funzionare alla richiesta successiva. Un'azione che arrivasse durante la cancellazione
+  trova il sistema ancora pieno (e la cancellazione fallisce) oppure già sparito (e l'azione viene
+  rifiutata: "create its chain first"). Non ho trovato nessun motivo tecnico per indebolire il
+  principio.
+- **Un `system_id` eliminato non si riusa** (decisione mia, da confermare, punto 1 sotto).
+
+#### M4 — Nuova interfaccia
+
+Direzione: **un registro notarile, non un cruscotto**. Il prodotto produce atti che un ispettore
+leggerà; l'interfaccia deve sembrare un registro tenuto con cura, non un pannello tecnico.
+
+- **Palette "carta e inchiostro".** Tema chiaro: carta avorio calda (`#f4efe4`), fogli un tono
+  più chiari (`#fbf8f1`), inchiostro quasi nero caldo (`#1f1c18`). Tema scuro: inchiostro
+  blu-nero (`#14171c`) con testo color carta (`#ece5d8`). Due accenti con ruoli separati:
+  **blu inchiostro da registro** (`#1f3b63`) per ciò che si clicca, **ceralacca** (`#9c2a22`) solo
+  per il sigillo, i numeri romani, il margine del registro e le azioni irreversibili. I tre colori
+  del semaforo (verde bottiglia, ocra, rosso) restano distinti da entrambi e sono sempre dentro un
+  "timbro" con la parola scritta. Il tema segue il sistema operativo, come prima.
+- **Tipografia.** Tutta serif, perché è un documento da leggere: titoli in stile Palatino (Iowan
+  Old Style, Palatino Linotype, Book Antiqua, P052), testo in Charter (Sitka, Cambria, Noto Serif
+  come ripieghi), **maiuscoletto spaziato** per etichette, menu e pulsanti (il tono dei moduli
+  notarili), **monospace solo per identificativi e impronte**. Niente font scaricati: la CSP
+  (`default-src 'none'`) non ne ammette, e non serve. Su Linux e Android il ripiego è Noto/DejaVu
+  Serif: il carattere cambia un po', lo stile no.
+- **Motivi grafici.** Il sigillo di ceralacca in SVG inline (disegnato nel codice, perché la CSP
+  vieta le immagini); una doppia riga sotto l'intestazione e attorno ai moduli "formali" (genera
+  fascicolo, crea sistema, accesso); le tre domande numerate **I, II, III** in ceralacca; le
+  ricevute come **righe di un registro**: numero progressivo (`n. 12`), data e ora nel margine,
+  separati dal testo da una riga rossa verticale come nella carta da registro.
+- **Telefono.** Testo a 16,5 px, campi e pulsanti alti almeno 44 px, moduli a colonna singola,
+  menu che va a capo invece di scorrere (prima "esci" finiva fuori dallo schermo), margine del
+  registro su una riga sola sopra la frase, tabelle tecniche scorrevoli. Provato con
+  `iPhone 13` di Playwright, in chiaro e in scuro.
+- **Cosa cambia nell'organizzazione delle pagine** (piccolo, e solo dove aiutava):
+  - pagina nuova **"gestisci"** per ogni sistema: nome mostrato, archiviazione, eliminazione (il
+    riquadro di eliminazione, bordato in ceralacca, ha il modulo solo se il sistema è vuoto;
+    altrimenti spiega perché non si può e rimanda all'archiviazione);
+  - pagina «sistemi»: schede attivi/archiviati/tutti, per ogni sistema identificativo, ricevute,
+    ultima attività, link a cronologia e gestisci; modulo di creazione con nome mostrato
+    facoltativo; registro amministrativo in fondo;
+  - cronologia: i filtri stanno in un pannello "Cerca e filtra" chiuso (aperto se un filtro è
+    attivo): sul telefono occupavano mezzo schermo prima della prima ricevuta;
+  - pagina principale: nelle "Ultime azioni" il nome del sistema sopra ogni frase è il link alla
+    cronologia, al posto del "vedi tutta la cronologia" ripetuto a ogni riga;
+  - date leggibili ovunque (`26 set 2026, 10:25:37 UTC`, sempre UTC e al secondo); la forma ISO
+    esatta resta nei dettagli tecnici;
+  - in fondo a ogni pagina il `key_id` della chiave di firma.
+  Le tre domande, la loro sequenza e tutte le rotte esistenti restano come prima.
+- Il CSS è passato in un file suo, `apps/server/src/http/style.ts`. `ui.ts` passa da 799 a 1090
+  righe, quasi tutte per le pagine e le rotte di gestione.
+- **Screenshot**: `docs/screenshots/`, 25 file, che sostituiscono i 7 vecchi: 9 pagine
+  (registro, cronologia, cronologia con dettagli tecnici, sistemi, sistemi archiviati, gestisci
+  con azioni, gestisci vuoto, checkpoint, verifica di un documento con un risultato) da desktop e
+  da telefono, l'accesso da desktop, e registro, sistemi e gestisci vuoto in tema scuro (desktop e
+  telefono). Generati con la UI vera
+  (server Fastify reale, firmatario reale in processo, marche temporali da un'autorità RFC 3161
+  locale fatta con openssl) e `playwright-core` sul Chromium preinstallato. Lo script è rimasto
+  fuori dal repository: `playwright-core` è approvato solo per i test del browser (punto 5).
+
+#### Punti aperti per il committente, e le sue decisioni (stessa sessione)
+
+1. **Riuso di un `system_id` eliminato: l'ho vietato.** Motivo: del sistema vuoto possono esistere
+   un fascicolo esportato o una marca temporale sulla radice del suo primo checkpoint; una seconda
+   genesi con lo stesso nome li contraddirebbe, e chi ha il primo fascicolo vedrebbe una storia
+   riscritta. Il costo: un sistema di prova chiamato col nome "giusto" per errore obbliga a sceglierne
+   un altro (il nome mostrato risolve la parte estetica). **Confermato dal committente: va bene
+   così.**
+2. **"Chi" nel registro amministrativo è un indirizzo IP** per le azioni dalla UI, perché c'è una
+   sola password e nessun utente. Se più persone condividono la password, il registro non le
+   distingue. Utenti con nome sarebbero un cambiamento più grande (autenticazione), fuori da questa
+   sessione. **Confermato dal committente: va bene così.**
+3. **Archiviare doveva anche revocare le chiavi API? Il committente ha detto sì**, non solo
+   nascondere: "le chiavi API di un sistema archiviato devono smettere di accettare nuove
+   ricevute, riattivabile insieme al sistema — non lasciarle attive". Implementato in
+   `ApiKeyStore.verify`: vedi la nota nella sezione M2 sopra. 10 test nuovi in
+   `api-keys.test.ts`.
+4. **L'eliminazione di un sistema vuoto cancella anche le marche temporali** ottenute sulla sua
+   genesi. Non attestano nessuna azione, quindi rientrano nel principio; lo segnalo perché sono
+   dati ottenuti da un terzo. **Confermato dal committente: va bene così.**
+5. **Lo script degli screenshot: il committente ha chiesto di metterlo nel repository.** Ora è
+   `scripts/screenshots.ts`, eseguito con `pnpm tsx scripts/screenshots.ts [cartella]`. Genera dati
+   di prova con un firmatario vero e un'autorità RFC 3161 locale (gli stessi helper dei test),
+   apre il server vero e guida Chromium con `playwright-core`, come già in
+   `verify-document-browser.test.ts`. `playwright-core` è ora anche `devDependency` della radice
+   del workspace, non solo di `apps/server`: da `scripts/` la risoluzione dei moduli di TypeScript
+   non risale in `apps/server/node_modules`, quindi senza questo `tsc -p tsconfig.json` non trovava
+   i tipi. Nessuna dipendenza nuova, solo un secondo `package.json` che dichiara quella già
+   approvata; `CLAUDE.md` lo dice esplicitamente. Il PNG viene ricompresso con `pngquant`, se
+   presente sul PATH (non è una dipendenza: come `openssl` per le marche temporali, è uno
+   strumento di sistema — lo script funziona anche senza, semplicemente più pesante).
+6. **Font di sistema: confermato dal committente**, nessuna modifica.
+7. **Peso degli screenshot: il committente ha chiesto di stare sotto 1–1,5 MB totali.**
+   Ricompressi con `pngquant` (quantizzazione, senza perdita percepibile su testo e campiture
+   piatte: non sono fotografie) più `oxipng` per la ricompressione DEFLATE senza perdita
+   ulteriore: da 5,6 MB a circa <TOTALE_KB> per 25 file. Rigenerarli con lo script sopra li
+   produce già così: la compressione è nello script, non un passo a parte.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

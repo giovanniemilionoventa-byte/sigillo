@@ -12,6 +12,8 @@ export function verifyInstructions(
   checkpoints: readonly CheckpointEntry[],
   /** The time each token attests (genTime), by the token's file name, where it could be read. */
   genTimes: ReadonlyMap<string, string> = new Map(),
+  /** The system's label in the web view at export time, if it had one: see ArchiveInput. */
+  displayName?: string,
 ): string {
   const key = manifest.keys[0];
   const anchored = checkpoints.filter((entry) => entry.timestamps.length > 0);
@@ -24,7 +26,15 @@ export function verifyInstructions(
 This archive is a record of the actions of the AI system \`${manifest.system_id}\`,
 covering positions ${manifest.range.from_seq} to ${manifest.range.to_seq} of its chain
 (${manifest.counts.receipts} receipts), exported on ${manifest.exported_at}.
-
+${
+  displayName === undefined
+    ? ""
+    : `
+When this file was exported, the operator's web view showed this system as
+"${displayName}". That name is a label, not part of the signed record, and it
+may have changed since: the system is identified by \`${manifest.system_id}\`.
+`
+}
 Every claim in \`report.pdf\` can be rechecked from the files beside it. Two
 things cannot come from the archive itself, because whoever made the archive
 also made everything in it, and you need them from elsewhere (see "What this

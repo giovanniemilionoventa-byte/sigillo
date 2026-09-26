@@ -81,7 +81,9 @@ checks:
   checkpoint. See "What sigillo cannot detect" below.
 
 The append-only triggers on `receipts`, `checkpoints` and `timestamps` stop
-`UPDATE` and `DELETE` from any connection that speaks SQL to the database. They
+`UPDATE` and `DELETE` from any connection that speaks SQL to the database,
+with one narrow exception for a chain that never recorded an action (see
+"Renaming, archiving and deleting a system" below). They
 do **not** stop `DROP TABLE`, and they do not stop someone replacing the file.
 Against that, what holds is the signatures, the chain and the timestamps — which
 is why anchoring matters: an unanchored log can be rewritten wholesale and
@@ -91,6 +93,75 @@ backdated by whoever holds the key.
 moment of the theft. Timestamped checkpoints still bound what existed before
 that moment: an auditor holding an old export can show that the receipts in it
 are the ones that existed then.
+
+## Renaming, archiving and deleting a system
+
+**The principle, which is not negotiable: a system whose chain holds at least
+one receipt beyond its genesis (`seq 0`) can never be deleted** — not from the
+web view, not with the command line, not with any number of confirmations.
+sigillo exists so that nothing disappears in silence. Allowing real evidence
+to be deleted, however rare the occasion, would contradict the reason the
+product exists. Such a system can only be archived.
+
+- **The `system_id` never changes.** It is written into every receipt,
+  checkpoint, API key and export. A trigger refuses any `UPDATE` of it. What
+  can change at any time is the `display_name`, a label the web view shows in
+  place of the `system_id` (which stays visible beside it). The label is not
+  evidence: it is in no receipt, no checkpoint and no `manifest.json`. An
+  export carries the name the system had *when it was exported*, in
+  `report.pdf` and `VERIFY.md`, marked as an unsigned label, and keeps it
+  whatever the system is called later, like any other document.
+- **Archiving hides the system, it removes nothing already written.** An
+  archived system leaves the main page and the default list of systems. Its
+  chain stays exactly as it was: still check pointed, monitored, exportable
+  and verifiable. What does stop is new receipts: every API key of an
+  archived system is refused at authentication (`ApiKeyStore.verify`), the
+  same way a revoked one is, so an agent still sending gets turned away
+  rather than silently recorded into a chain nobody is watching. Reactivating
+  the system reactivates its keys, unchanged — nothing is reissued. A key
+  revoked before the archiving stays revoked after it is reactivated.
+  Archiving never hides a problem, though: an archived system whose chain
+  fails verification, or that somehow still gained a receipt (only possible
+  by writing to the chain directly, bypassing API key authentication
+  entirely — no supported path does that), is shown on the main page anyway.
+  Archiving can be undone at any time.
+- **Deleting is for an empty system only**: one whose chain holds its genesis
+  and nothing else, typically created by mistake or for a test. Then the
+  genesis, its checkpoint, the timestamp tokens over it and the system's API
+  keys are removed for good, so its keys stop working at once. Three things
+  guard this:
+  1. whether the chain is empty is decided by the server, inside the same
+     SQLite `IMMEDIATE` transaction that deletes, from what the database holds
+     at that moment. What a page showed earlier does not count: an action that
+     arrived since makes the deletion fail;
+  2. the web view asks for the exact `system_id` to be typed out, not an
+     "are you sure?". The command line asks for it again with `--confirm`;
+  3. before anything is deleted, the deletion is written to the
+     **administrative log**: who (`web <address>` from the web view, `cli
+     <user>@<host>` from the command line), when, and what (the genesis's
+     hash, the checkpoints, tokens and keys removed). That log is a table
+     outside every chain, since the chain being deleted will no longer exist to
+     record its own deletion. It is append-only, and it is in every backup.
+     Renames, archivals and reactivations are logged there too. It is shown
+     on the systems page and printed by `sigillo-server admin-log`.
+- **The database enforces the rule itself**, not only the code. The delete
+  triggers on `receipts`, `checkpoints` and `timestamps` let a row go only
+  when its chain holds its genesis alone **and** the administrative log
+  already names that very genesis, by its hash, as deleted. A receipt of a
+  chain with a real action cannot be deleted through any SQL connection, even
+  with a forged log entry. The row in `systems` can go only once the chain is
+  gone. Databases written before this change are migrated when the server
+  opens them. The new guards are created before the old unconditional
+  triggers are dropped, so there is no moment with neither.
+- **A deleted `system_id` is never given out again.** An export of the empty
+  chain, or a timestamp over its root, may exist somewhere. A second genesis
+  under the same name would contradict it, and anyone holding the first one
+  would see a rewritten history.
+
+What this does not change: someone who can replace the database file, or drop
+the triggers, can still do anything to it (see "If the server is compromised"
+above). The guards stop the ordinary case: an operator, a script or a support
+query deleting evidence by mistake or on request.
 
 ## What the operator of the service can and cannot see
 
@@ -396,8 +467,10 @@ file are out of scope and not supported.
 administers that database. There is no separation between them beyond the API
 keys that decide where a request writes.
 
-**Retention and erasure are not implemented.** Nothing here deletes anything,
-and the append-only triggers actively prevent it. A deployment with an erasure
+**Retention and erasure are not implemented.** Nothing here deletes a
+recorded action, and the append-only triggers actively prevent it. The one
+deletion there is removes a system that never recorded one (see "Renaming,
+archiving and deleting a system"). A deployment with an erasure
 obligation needs a design for it that this version does not have.
 
 **The default timestamp authority is not qualified under eIDAS.** `TSA_URL`

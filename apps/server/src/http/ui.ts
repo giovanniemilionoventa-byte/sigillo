@@ -6,19 +6,39 @@ import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { buildArchive } from "../export/archive.js";
 import type { ChainHealthMonitor, ChainStatus } from "../health/chain-health.js";
-import type { ArtifactMatch, ReceiptStore } from "../storage/store.js";
-import { actionKindLabel, describeArtifact, describeDocumentMatch, describeReceipt, UI } from "./strings.js";
+import {
+  normaliseDisplayName,
+  StorageError,
+  SystemNotDeletableError,
+  type AdminRequest,
+  type ArtifactMatch,
+  type ReceiptStore,
+  type SystemRecord,
+} from "../storage/store.js";
+import {
+  actionKindLabel,
+  describeAdminEntry,
+  describeArtifact,
+  describeDocumentMatch,
+  describeReceipt,
+  formatTs,
+  systemTitle,
+  UI,
+} from "./strings.js";
+import { SEAL_SVG, STYLE } from "./style.js";
 
 /**
  * The operator's view: server-rendered HTML, no framework and no build step,
  * except the one inline script on the "verifica un documento" page.
  *
  * It answers three questions, in order — è tutto a posto? cosa ha fatto
- * l'AI? mi prepari le prove? — plus two secondary pages: creating a system
- * (and its first key) and checking a document by fingerprint. It never
- * writes a receipt; its only writes are creating a system and, on request,
- * running the same checkpoint the server already does on a timer — sooner,
- * not instead.
+ * l'AI? mi prepari le prove? — plus the secondary pages: the systems, with
+ * creating one (and its first key) and managing one (its name, archiving it,
+ * deleting it while its chain is still empty), and checking a document by
+ * fingerprint. It never writes a receipt; besides creating a system and
+ * those labels, its only write is running, on request, the same checkpoint
+ * the server already does on a timer — sooner, not instead. The look is in
+ * style.ts.
  */
 
 const COOKIE = "sigillo_session";
@@ -60,92 +80,48 @@ function escape(value: unknown): string {
     .replaceAll("'", "&#39;");
 }
 
-const STYLE = `
-:root {
-  color-scheme: light dark;
-  --bg: #ffffff; --fg: #1a1a1a; --line: #d7d7d7; --muted: #5a5a5a; --tag-bg: #eef0f2;
-  --green: #1a7a3c; --yellow: #8a6d00; --red: #a3122e; --focus: #2563eb;
+interface PageOptions {
+  /** The document title, before " — sigillo". */
+  title: string;
+  /** Which entry of the navigation this page belongs to. */
+  current?: "registro" | "sistemi" | "verifica";
+  /** The page's own heading: a small line above, the title, and a system_id beneath when there is one. */
+  head?: { eyebrow?: string; h1: string; sid?: string; badges?: string[] };
+  body: string;
 }
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #15171a; --fg: #eaeaea; --line: #3a3d42; --muted: #a6a6a6; --tag-bg: #262a30;
-          --green: #5fd48a; --yellow: #e2c14c; --red: #ff8a8a; --focus: #7aa2ff; }
-}
-* { box-sizing: border-box; }
-html { background: var(--bg); }
-body { font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-       margin: 0; padding: 1.5rem; max-width: 62rem; background: var(--bg); color: var(--fg); }
-a { color: var(--focus); }
-:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .75rem 1rem; border-bottom: 1px solid var(--line);
-         padding-bottom: .75rem; margin-bottom: 1.5rem; }
-header h1 { font-size: 1.1rem; margin: 0; letter-spacing: .02em; }
-header nav { margin-left: auto; display: flex; gap: 1rem; font-size: .95rem; flex-wrap: wrap; }
-h2 { font-size: 1.15rem; margin: 2rem 0 .75rem; }
-h3 { font-size: 1rem; margin: 1.5rem 0 .5rem; }
-.table-scroll { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; font-size: .9rem; min-width: 30rem; }
-th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line);
-         vertical-align: top; }
-th { font-weight: 600; white-space: nowrap; }
-code, .hash { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; }
-.hash { color: var(--muted); word-break: break-all; }
-.muted { color: var(--muted); }
-.warn { color: var(--red); }
-form.filters { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; margin-bottom: 1rem; }
-label { display: flex; flex-direction: column; font-size: .85rem; gap: .25rem; }
-input, select, textarea, button { font: inherit; padding: .45rem .55rem; color: inherit;
-  background: var(--bg); border: 1px solid var(--line); border-radius: .3rem; }
-button { cursor: pointer; background: var(--tag-bg); }
-button:hover { filter: brightness(0.95); }
-button:disabled { cursor: not-allowed; opacity: .5; }
-.empty { color: var(--muted); padding: 1rem 0; }
-.dot { display: inline-block; width: .8em; height: .8em; border-radius: 50%; margin-right: .5em;
-       vertical-align: middle; }
-.dot.green { background: var(--green); }
-.dot.yellow { background: var(--yellow); }
-.dot.red { background: var(--red); }
-.status-word { font-weight: 600; }
-form.inline { display: inline; margin: 0; }
-button.link { background: none; border: none; padding: 0; color: var(--focus); text-decoration: underline; font-size: inherit; }
-.status-word.green { color: var(--green); }
-.status-word.yellow { color: var(--yellow); }
-.status-word.red { color: var(--red); }
-.tag { display: inline-block; background: var(--tag-bg); border-radius: .3rem; padding: .1rem .5rem;
-       font-size: .85em; margin: .1rem .3rem .1rem 0; }
-ul.actions { list-style: none; padding: 0; margin: 0; }
-ul.actions > li { padding: .6rem 0; border-bottom: 1px solid var(--line); }
-details { margin: .4rem 0 0; }
-summary { cursor: pointer; color: var(--muted); font-size: .85em; }
-details table { margin-top: .5rem; }
-.card { border: 1px solid var(--line); border-radius: .5rem; padding: 1rem 1.2rem; margin-bottom: 1rem; }
-.token-box { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--tag-bg);
-  padding: .75rem; border-radius: .4rem; word-break: break-all; margin: .5rem 0; }
-pre.code { background: var(--tag-bg); padding: 1rem; border-radius: .4rem; overflow-x: auto; font-size: .85em; }
-@media (max-width: 640px) {
-  body { padding: 1rem; }
-  header nav { gap: .6rem 1rem; }
-  .card { padding: .8rem; }
-}
-`;
 
-function page(title: string, body: string): string {
+function page(options: PageOptions, signingKeyId: string): string {
+  const here = (name: PageOptions["current"]): string => (options.current === name ? ' aria-current="page"' : "");
+  const head =
+    options.head === undefined
+      ? ""
+      : `<div class="page-head">
+${options.head.eyebrow === undefined ? "" : `<p class="eyebrow">${escape(options.head.eyebrow)}</p>`}
+<h1>${escape(options.head.h1)}${(options.head.badges ?? []).map((badge) => ` <span class="badge">${escape(badge)}</span>`).join("")}</h1>
+${options.head.sid === undefined ? "" : `<code class="sid">${escape(options.head.sid)}</code>`}
+</div>`;
   return `<!doctype html>
 <html lang="it"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escape(title)} — sigillo</title>
+<meta name="color-scheme" content="light dark">
+<title>${escape(options.title)} — sigillo</title>
 <style>${STYLE}</style>
 </head><body>
-<header>
-  <h1>sigillo</h1>
-  <span class="muted">${escape(title)}</span>
-  <nav>
-    <a href="/ui">${escape(UI.home.title)}</a>
-    <a href="/ui/sistemi">${escape(UI.nav.sistemi)}</a>
-    <a href="/ui/verify-document">${escape(UI.nav.verificaDocumento)}</a>
+<a class="skip" href="#main">${escape(UI.brand.skip)}</a>
+<header class="masthead"><div class="masthead-inner">
+  <a class="brand" href="/ui">${SEAL_SVG}<span><span class="wordmark">sigillo</span><span class="tagline">${escape(UI.brand.tagline)}</span></span></a>
+  <nav aria-label="sezioni">
+    <a href="/ui"${here("registro")}>${escape(UI.nav.registro)}</a>
+    <a href="/ui/sistemi"${here("sistemi")}>${escape(UI.nav.sistemi)}</a>
+    <a href="/ui/verify-document"${here("verifica")}>${escape(UI.nav.verificaDocumento)}</a>
     <form class="inline" method="post" action="/ui/logout"><button type="submit" class="link">${escape(UI.nav.esci)}</button></form>
   </nav>
-</header>
-${body}
+</div></header>
+<main id="main">
+${head}
+${options.body}
+</main>
+<footer class="colophon"><p>${escape(UI.brand.signingKey)} <code>${escape(signingKeyId)}</code></p></footer>
 </body></html>`;
 }
 
@@ -209,13 +185,15 @@ export const VERIFY_DOCUMENT_SCRIPT = `(function () {
 
 function verifyDocumentForm(): string {
   const t = UI.verifyDocument;
-  return `<p>${escape(t.privacyNote)}</p>
+  return `<p class="notice">${escape(t.privacyNote)}</p>
 <p class="warn" id="sigillo-doc-inactive">${escape(t.scriptInactive)}</p>
-<p><label>${escape(t.fileLabel)}<br><input type="file" id="sigillo-doc-file"></label></p>
-<p><label>${escape(t.textLabel)}<br><textarea id="sigillo-doc-text" rows="6" cols="60"></textarea></label><br>
-<span class="muted">${escape(t.textNote)}</span></p>
+<div class="sheet formal">
+<p><label>${escape(t.fileLabel)}<input type="file" id="sigillo-doc-file"></label></p>
+<p><label>${escape(t.textLabel)}<textarea id="sigillo-doc-text" rows="6" cols="60"></textarea></label></p>
+<p class="hint">${escape(t.textNote)}</p>
 <p><button type="button" id="sigillo-doc-button" disabled>${escape(t.submit)}</button></p>
-<p class="warn" id="sigillo-doc-failed" role="alert" hidden>${escape(t.computeFailed)} ${escape(t.browserError)}: <span id="sigillo-doc-error"></span>.</p>
+</div>
+<p class="notice bad" id="sigillo-doc-failed" role="alert" hidden>${escape(t.computeFailed)} ${escape(t.browserError)}: <span id="sigillo-doc-error"></span>.</p>
 <script>${VERIFY_DOCUMENT_SCRIPT}</script>`;
 }
 
@@ -227,7 +205,7 @@ function timestampStatus(store: ReceiptStore, systemId: string, seq: number): st
   if (token === undefined) return "checkpoint scritto, marca temporale in attesa";
   return token.genTime === undefined
     ? "con marca temporale (ora attestata non leggibile dal token)"
-    : `con marca temporale del ${token.genTime}`;
+    : `con marca temporale del ${formatTs(token.genTime)}`;
 }
 
 function verifyDocumentResult(
@@ -245,33 +223,39 @@ function verifyDocumentResult(
   const source = from === undefined ? "" : `<p class="muted">${escape(from === "file" ? t.fromFile : t.fromText)}</p>`;
   const searched = `<p>${escape(t.searchedFingerprint)}: <span class="hash">${escape(sha256)}</span></p>${source}`;
   if (matches.length === 0) {
-    return `<section id="sigillo-doc-result"><h2>${escape(t.resultTitle)}</h2>${searched}<p>${escape(t.noMatch)}</p>` +
-      `<p class="muted">${escape(t.lineEndingsHint)}</p></section>`;
+    return `<section id="sigillo-doc-result" class="sheet"><h2>${escape(t.resultTitle)}</h2>${searched}<p><strong>${escape(t.noMatch)}</strong></p>` +
+      `<p class="hint">${escape(t.lineEndingsHint)}</p></section>`;
   }
+  const names = new Map(store.listSystemRecords().map((record) => [record.system_id, record.display_name]));
   const items = matches
     .map((match) => {
-      const sentence = describeDocumentMatch(match);
+      const sentence = describeDocumentMatch({ ...match, display_name: names.get(match.system_id) ?? null });
       const link = escape(encodeURIComponent(match.system_id));
       return `<li>${escape(sentence)} <a href="/ui/systems/${link}">${escape(t.seeReceipt)}</a> — ` +
         `<span class="muted">${escape(timestampStatus(store, match.system_id, match.seq))}</span></li>`;
     })
     .join("\n");
-  return `<section id="sigillo-doc-result"><h2>${escape(t.resultTitle)}</h2>${searched}<ul>${items}</ul></section>`;
+  return `<section id="sigillo-doc-result" class="sheet"><h2>${escape(t.resultTitle)}</h2>${searched}<ul>${items}</ul></section>`;
 }
 
 function loginPage(message?: string): string {
   return `<!doctype html>
 <html lang="it"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>sigillo</title><style>${STYLE}</style></head><body>
-<header><h1>sigillo</h1></header>
-${message === undefined ? "" : `<p class="warn">${escape(message)}</p>`}
-<form method="post" action="/ui/login">
+<main class="login" id="main">
+${SEAL_SVG}
+<span class="wordmark">sigillo</span>
+<p class="tagline">${escape(UI.brand.tagline)}</p>
+${message === undefined ? "" : `<p class="notice bad" role="alert">${escape(message)}</p>`}
+<form method="post" action="/ui/login" class="sheet formal">
   <label>${escape(UI.login.label)}
-    <input type="password" name="password" autofocus required>
+    <input type="password" name="password" autocomplete="current-password" autofocus required>
   </label>
-  <p><button type="submit">${escape(UI.login.submit)}</button></p>
+  <p><button type="submit" class="primary">${escape(UI.login.submit)}</button></p>
 </form>
+</main>
 </body></html>`;
 }
 
@@ -426,13 +410,27 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       .redirect("/ui/login", 303);
   });
 
+  const keyId = options.signerKey.key_id;
+  const render = (pageOptions: PageOptions): string => page(pageOptions, keyId);
+
+  /** Who is acting, for the administrative log: this view has one password, so an address is what there is. */
+  const adminRequest = (request: FastifyRequest): AdminRequest => ({
+    actor: `web ${request.ip}`,
+    ts: options.now().toISOString(),
+  });
+
   app.get("/ui", async (request, reply) => {
     if (!requireSession(request, reply)) return reply;
     const query = request.query as { checkpoint?: string };
     const justCheckpointed = query.checkpoint === "1";
     return html(
       reply,
-      page(UI.home.title, homePage(store, options.healthMonitor, options.now(), justCheckpointed)),
+      render({
+        title: UI.home.heading,
+        current: "registro",
+        head: { eyebrow: UI.home.eyebrow, h1: UI.home.heading },
+        body: homePage(store, options.healthMonitor, options.now(), justCheckpointed),
+      }),
     );
   });
 
@@ -452,31 +450,58 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     return sendArchive(reply, systemId, dayBounds(body?.from, body?.to));
   });
 
+  const systemsView = (value: unknown): SystemsView =>
+    value === "archiviati" || value === "tutti" ? value : "attivi";
+
+  const renderSistemi = (view: SystemsView, extra: { notice?: string; error?: string } = {}): string =>
+    render({
+      title: UI.systemsPage.title,
+      current: "sistemi",
+      head: { eyebrow: UI.systemsPage.eyebrow, h1: UI.systemsPage.heading },
+      body: sistemiPage(store, view, extra),
+    });
+
   app.get("/ui/sistemi", async (request, reply) => {
     if (!requireSession(request, reply)) return reply;
-    return html(reply, page(UI.systemsPage.title, sistemiPage(store, options.signerKey.key_id)));
+    const query = request.query as { vista?: string; eliminato?: string };
+    // Said only for a deletion the administrative log actually holds: the
+    // query string alone cannot make the page claim one.
+    const deleted =
+      typeof query.eliminato === "string" && !store.hasSystem(query.eliminato) && store.deletionOf(query.eliminato) !== null
+        ? UI.systemsPage.deleted(query.eliminato)
+        : undefined;
+    return html(reply, renderSistemi(systemsView(query.vista), deleted === undefined ? {} : { notice: deleted }));
   });
 
   app.post("/ui/sistemi", async (request, reply) => {
     if (!requireSession(request, reply)) return reply;
-    const body = request.body as { system_id?: unknown } | undefined;
+    const body = request.body as { system_id?: unknown; display_name?: unknown } | undefined;
     const systemId = typeof body?.system_id === "string" ? body.system_id.trim() : "";
+    const displayName = typeof body?.display_name === "string" ? body.display_name : "";
 
     try {
+      // Checked before the chain is opened: a genesis cannot be taken back
+      // because its label turned out to be too long.
+      normaliseDisplayName(displayName);
       await store.createSystem(systemId, options.now().toISOString());
+      if (displayName.trim().length > 0) {
+        await store.renameSystem(systemId, displayName, adminRequest(request));
+      }
       // On the write queue: see ReceiptStore.exclusive.
       const issued = await store.exclusive(() => keys.issue(systemId, options.now().toISOString()));
-      return html(reply, page(UI.systemsPage.title, systemCreatedPage(systemId, issued.token)));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const record = store.systemRecord(systemId);
       return html(
         reply,
-        page(
-          UI.systemsPage.title,
-          `${sistemiPage(store, options.signerKey.key_id)}<p class="warn">${escape(message)}</p>`,
-        ),
-        400,
+        render({
+          title: UI.systemsPage.title,
+          current: "sistemi",
+          head: { eyebrow: UI.systemsPage.createdTitle, h1: record === null ? systemId : systemTitle(record), sid: systemId },
+          body: systemCreatedPage(systemId, issued.token),
+        }),
       );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return html(reply, renderSistemi("attivi", { error: message }), 400);
     }
   });
 
@@ -491,16 +516,38 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const body = `${verifyDocumentForm()}${
       searched ? verifyDocumentResult(store, sha256, from, store.findArtifactsBySha256(sha256)) : ""
     }`;
-    return html(reply, page(UI.verifyDocument.title, body));
+    return html(
+      reply,
+      render({
+        title: UI.verifyDocument.title,
+        current: "verifica",
+        head: { eyebrow: UI.verifyDocument.eyebrow, h1: UI.verifyDocument.heading },
+        body,
+      }),
+    );
+  });
+
+  const notFound = (reply: FastifyReply, systemId: string): FastifyReply =>
+    html(
+      reply,
+      render({ title: "non trovato", head: { h1: "Non trovato" }, body: `<p>Nessun sistema chiamato ${escape(systemId)}.</p>` }),
+      404,
+    );
+
+  /** The heading of every page about one system: its name, its system_id, and whether it is archived. */
+  const systemHead = (record: SystemRecord, eyebrow: string): NonNullable<PageOptions["head"]> => ({
+    eyebrow,
+    h1: systemTitle(record),
+    sid: record.system_id,
+    badges: record.archived_at === null ? [] : [UI.systemsPage.archivedBadge],
   });
 
   app.get("/ui/systems/:systemId", async (request, reply) => {
     if (!requireSession(request, reply)) return reply;
 
     const { systemId } = request.params as { systemId: string };
-    if (!store.hasSystem(systemId)) {
-      return html(reply, page("non trovato", `<p>Nessun sistema chiamato ${escape(systemId)}.</p>`), 404);
-    }
+    const record = store.systemRecord(systemId);
+    if (record === null) return notFound(reply, systemId);
 
     const query = request.query as Record<string, string | undefined>;
     const receipts = store.searchReceipts({
@@ -512,13 +559,22 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       limit: 200,
     });
 
-    return html(reply, page(systemId, historyPage(systemId, receipts, query)));
+    return html(
+      reply,
+      render({
+        title: systemTitle(record),
+        head: systemHead(record, UI.history.eyebrow),
+        body: historyPage(systemId, receipts, query),
+      }),
+    );
   });
 
   app.get("/ui/systems/:systemId/checkpoints", async (request, reply) => {
     if (!requireSession(request, reply)) return reply;
 
     const { systemId } = request.params as { systemId: string };
+    const record = store.systemRecord(systemId);
+    if (record === null) return notFound(reply, systemId);
     const checkpoints = store.readCheckpoints(systemId);
 
     const rows = checkpoints
@@ -526,7 +582,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
         const tokens = store.readTimestamps(stored.id);
         return `<tr>
   <td>${stored.checkpoint.tree_size}</td>
-  <td>${escape(stored.checkpoint.ts)}</td>
+  <td>${escape(formatTs(stored.checkpoint.ts))}</td>
   <td class="hash">${escape(stored.checkpoint.root_hash)}</td>
   <td>${
     tokens.length === 0
@@ -534,8 +590,8 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       : tokens
           .map(
             (token) =>
-              `${escape(token.genTime ?? UI.checkpoints.genTimeUnreadable)}<br>` +
-              `<span class="muted">${escape(token.tsaUrl)} · ${escape(UI.checkpoints.receivedAt)} ${escape(token.obtainedAt)}</span>`,
+              `${escape(token.genTime === undefined ? UI.checkpoints.genTimeUnreadable : formatTs(token.genTime))}<br>` +
+              `<span class="muted small">${escape(token.tsaUrl)} · ${escape(UI.checkpoints.receivedAt)} ${escape(formatTs(token.obtainedAt))}</span>`,
           )
           .join("<br>")
   }</td>
@@ -543,18 +599,113 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       })
       .join("\n");
 
+    const link = escape(encodeURIComponent(systemId));
     return html(
       reply,
-      page(
-        `${systemId} — ${UI.checkpoints.title}`,
-        checkpoints.length === 0
-          ? `<p class="empty">${escape(UI.checkpoints.none)}</p>`
-          : `<div class="table-scroll"><table>
+      render({
+        title: `${systemTitle(record)} — ${UI.checkpoints.title}`,
+        head: systemHead(record, UI.checkpoints.title),
+        body: `<p class="small"><a href="/ui/systems/${link}">← ${escape(UI.systemsPage.history)}</a></p>
+<p class="hint">${escape(UI.checkpoints.explain)}</p>
+${
+  checkpoints.length === 0
+    ? `<p class="empty">${escape(UI.checkpoints.none)}</p>`
+    : `<div class="table-scroll"><table class="wide">
 <tr><th>ricevute coperte</th><th>scritto</th><th>radice Merkle</th><th>marca temporale (ora attestata dall'autorità)</th></tr>
 ${rows}
-</table></div>`,
-      ),
+</table></div>`
+}`,
+      }),
     );
+  });
+
+  // Managing one system: its label, whether it is archived, and — for a
+  // chain that never recorded anything — deleting it.
+
+  const renderManage = (record: SystemRecord, extra: { notice?: string; error?: string } = {}): string =>
+    render({
+      title: `${systemTitle(record)} — ${UI.systemsPage.manage}`,
+      current: "sistemi",
+      head: systemHead(record, UI.manage.eyebrow),
+      body: managePage(record, extra),
+    });
+
+  const DONE: Record<string, string> = {
+    nome: UI.manage.renamed,
+    archiviato: UI.manage.archived,
+    riattivato: UI.manage.unarchived,
+  };
+
+  app.get("/ui/systems/:systemId/manage", async (request, reply) => {
+    if (!requireSession(request, reply)) return reply;
+    const { systemId } = request.params as { systemId: string };
+    const record = store.systemRecord(systemId);
+    if (record === null) return notFound(reply, systemId);
+    const done = (request.query as { fatto?: string }).fatto;
+    const notice = done === undefined ? undefined : DONE[done];
+    return html(reply, renderManage(record, notice === undefined ? {} : { notice }));
+  });
+
+  const manageUrl = (systemId: string, done: string): string =>
+    `/ui/systems/${encodeURIComponent(systemId)}/manage?fatto=${done}`;
+
+  app.post("/ui/systems/:systemId/rename", async (request, reply) => {
+    if (!requireSession(request, reply)) return reply;
+    const { systemId } = request.params as { systemId: string };
+    const record = store.systemRecord(systemId);
+    if (record === null) return notFound(reply, systemId);
+    const body = request.body as { display_name?: unknown } | undefined;
+    const displayName = typeof body?.display_name === "string" ? body.display_name : "";
+    try {
+      await store.renameSystem(systemId, displayName, adminRequest(request));
+    } catch (error) {
+      if (!(error instanceof StorageError)) throw error;
+      return html(reply, renderManage(record, { error: error.message }), 400);
+    }
+    return reply.redirect(manageUrl(systemId, "nome"), 303);
+  });
+
+  app.post("/ui/systems/:systemId/archive", async (request, reply) => {
+    if (!requireSession(request, reply)) return reply;
+    const { systemId } = request.params as { systemId: string };
+    if (!store.hasSystem(systemId)) return notFound(reply, systemId);
+    await store.archiveSystem(systemId, adminRequest(request));
+    return reply.redirect(manageUrl(systemId, "archiviato"), 303);
+  });
+
+  app.post("/ui/systems/:systemId/unarchive", async (request, reply) => {
+    if (!requireSession(request, reply)) return reply;
+    const { systemId } = request.params as { systemId: string };
+    if (!store.hasSystem(systemId)) return notFound(reply, systemId);
+    await store.unarchiveSystem(systemId, adminRequest(request));
+    return reply.redirect(manageUrl(systemId, "riattivato"), 303);
+  });
+
+  app.post("/ui/systems/:systemId/delete", async (request, reply) => {
+    if (!requireSession(request, reply)) return reply;
+    const { systemId } = request.params as { systemId: string };
+    const record = store.systemRecord(systemId);
+    if (record === null) return notFound(reply, systemId);
+
+    // The exact system_id, typed out: not a "sei sicuro?" a thumb can tap.
+    const body = request.body as { confirm?: unknown } | undefined;
+    if (body?.confirm !== systemId) {
+      return html(reply, renderManage(record, { error: UI.manage.confirmMismatch }), 400);
+    }
+
+    try {
+      // Whether the chain is empty is decided here, inside the store's own
+      // transaction, from what the database holds now — not from the page
+      // the button was on, which may be minutes old.
+      await store.deleteEmptySystem(systemId, adminRequest(request));
+    } catch (error) {
+      if (!(error instanceof SystemNotDeletableError)) throw error;
+      const now = store.systemRecord(systemId) ?? record;
+      return html(reply, renderManage(now, { error: UI.manage.deleteRefused(error.receipts) }), 409);
+    }
+    options.healthMonitor.forget(systemId);
+    request.log.info({ system: systemId, action: "system.delete" }, "an empty system was deleted");
+    return reply.redirect(`/ui/sistemi?eliminato=${encodeURIComponent(systemId)}`, 303);
   });
 
   async function sendArchive(
@@ -569,6 +720,8 @@ ${rows}
 
     const archive = await buildArchive({
       systemId,
+      // The name as it is now: the archive keeps it, whatever it becomes later.
+      displayName: store.systemRecord(systemId)?.display_name ?? null,
       receipts,
       checkpoints: store.readCheckpoints(systemId).map((stored) => ({
         stored,
@@ -610,7 +763,25 @@ function dayBounds(from: unknown, to: unknown): { from?: string; to?: string } {
 }
 
 function semaphore(status: ChainStatus): string {
-  return `<span class="dot ${status}" aria-hidden="true"></span><span class="status-word ${status}">${escape(UI.status[status])}</span>`;
+  return `<span class="stamp ${status}"><span class="dot ${status}" aria-hidden="true"></span><span class="status-word ${status}">${escape(UI.status[status])}</span></span>`;
+}
+
+/** A receipt's place in the ledger's margin: its number, the day, the time. */
+function ledgerMargin(receipt: Receipt): string {
+  const [day, time] = formatTs(receipt.ts_received).split(", ");
+  return `<div class="margin"><span class="no">n. ${receipt.seq}</span><span class="when">${escape(day ?? "")}</span> <span class="when">${escape(time ?? "")}</span></div>`;
+}
+
+/**
+ * Why an archived system is on the main page after all, or null if it is
+ * not. Archiving takes a system out of sight, never a problem with it: a
+ * chain that fails verification, or that keeps receiving actions, is shown.
+ */
+function archivedButShown(record: SystemRecord, status: ChainStatus): string | null {
+  if (record.archived_at === null) return null;
+  if (status === "red") return UI.home.archivedRed;
+  if (record.last_received !== null && record.last_received > record.archived_at) return UI.home.archivedActive;
+  return null;
 }
 
 function homePage(
@@ -620,34 +791,48 @@ function homePage(
   justCheckpointed: boolean,
 ): string {
   const t = UI.home;
-  const systems = store.listSystems();
+  const records = store.listSystemRecords();
+  const rows = records.map((record) => ({ record, health: healthMonitor.statusFor(record.system_id, now) }));
+  const shown = rows.filter(
+    ({ record, health }) => record.archived_at === null || archivedButShown(record, health.status) !== null,
+  );
+  const hidden = rows.length - shown.length;
+
+  const question = (numeral: string, id: string, title: string, content: string): string =>
+    `<section class="question" aria-labelledby="${id}">
+<div class="question-head"><span class="numeral" aria-hidden="true">${numeral}</span><h2 id="${id}">${escape(title)}</h2></div>
+${content}
+</section>`;
 
   const q1 =
-    systems.length === 0
+    records.length === 0
       ? `<p class="empty">${escape(t.noSystems)}</p>`
-      : `<div class="table-scroll"><table>
-<tr><th>sistema</th><th>stato</th><th></th></tr>
-${systems
-  .map((systemId) => {
-    const health = healthMonitor.statusFor(systemId, now);
-    const link = escape(encodeURIComponent(systemId));
-    return `<tr>
-  <td><a href="/ui/systems/${link}">${escape(systemId)}</a></td>
-  <td>${semaphore(health.status)}</td>
-  <td class="muted">${escape(health.message)}</td>
-</tr>`;
+      : `<ul class="systems">
+${shown
+  .map(({ record, health }) => {
+    const link = escape(encodeURIComponent(record.system_id));
+    const why = archivedButShown(record, health.status);
+    const sid = record.display_name === null ? "" : `<code class="sid">${escape(record.system_id)}</code> · `;
+    return `<li>
+  <div class="system-name"><a href="/ui/systems/${link}">${escape(systemTitle(record))}</a>${
+    why === null ? "" : ` <span class="badge">${escape(UI.systemsPage.archivedBadge)}</span>`
+  }</div>
+  ${semaphore(health.status)}
+  <p class="system-meta">${sid}${escape(health.message)}${why === null ? "" : ` <em>(${escape(t.archivedShownBecause)} ${escape(why)})</em>`}</p>
+</li>`;
   })
   .join("\n")}
-</table></div>
-${justCheckpointed ? `<p>${escape(t.checkpointDone)}</p>` : ""}
-<form method="post" action="/ui/checkpoint">
+</ul>
+${hidden === 0 ? "" : `<p class="hint">${escape(t.archivedHidden(hidden))} <a href="/ui/sistemi?vista=archiviati">${escape(UI.nav.sistemi)}</a></p>`}
+${justCheckpointed ? `<p class="notice" role="status">${escape(t.checkpointDone)}</p>` : ""}
+<form method="post" action="/ui/checkpoint" class="fields">
   <button type="submit">${escape(t.checkpointNow)}</button>
-  <span class="muted">${escape(t.checkpointHint)}</span>
-</form>`;
+</form>
+<p class="hint">${escape(t.checkpointHint)}</p>`;
 
-  const recent = systems
-    .flatMap((systemId) =>
-      store.searchReceipts({ systemId, limit: 5 }).map((receipt) => ({ systemId, receipt })),
+  const recent = shown
+    .flatMap(({ record }) =>
+      store.searchReceipts({ systemId: record.system_id, limit: 5 }).map((receipt) => ({ record, receipt })),
     )
     .sort((a, b) => (a.receipt.ts_received < b.receipt.ts_received ? 1 : -1))
     .slice(0, 8);
@@ -655,55 +840,157 @@ ${justCheckpointed ? `<p>${escape(t.checkpointDone)}</p>` : ""}
   const q2 =
     recent.length === 0
       ? `<p class="empty">${escape(t.noSystems)}</p>`
-      : `<ul class="actions">
+      : `<ol class="ledger">
 ${recent
   .map(
-    ({ systemId, receipt }) =>
-      `<li>${escape(describeReceipt(receipt))} <a href="/ui/systems/${escape(encodeURIComponent(systemId))}">${escape(t.seeHistory)}</a></li>`,
+    ({ record, receipt }) =>
+      `<li>${ledgerMargin(receipt)}<div class="entry"><a class="who" href="/ui/systems/${escape(encodeURIComponent(record.system_id))}" title="${escape(t.seeHistory)}">${escape(systemTitle(record))}</a>${escape(describeReceipt(receipt))}</div></li>`,
   )
   .join("\n")}
-</ul>`;
+</ol>`;
+
+  const option = (record: SystemRecord): string =>
+    `<option value="${escape(record.system_id)}">${escape(
+      record.display_name === null ? record.system_id : `${record.display_name} (${record.system_id})`,
+    )}</option>`;
+  const active = records.filter((record) => record.archived_at === null);
+  const archived = records.filter((record) => record.archived_at !== null);
 
   const q3 =
-    systems.length === 0
+    records.length === 0
       ? `<p class="empty">${escape(t.noSystems)}</p>`
-      : `<form method="post" action="/ui/export">
+      : `<div class="sheet formal">
+<form method="post" action="/ui/export" class="fields">
   <label>${escape(t.chooseSystem)}
-    <select name="system_id">${systems.map((s) => `<option value="${escape(s)}">${escape(s)}</option>`).join("")}</select>
+    <select name="system_id">${active.map(option).join("")}${
+      archived.length === 0 ? "" : `<optgroup label="${escape(t.archivedGroup)}">${archived.map(option).join("")}</optgroup>`
+    }</select>
   </label>
   <label>${escape(t.fromDate)}<input type="date" name="from"></label>
   <label>${escape(t.toDate)}<input type="date" name="to"></label>
-  <button type="submit">${escape(t.generate)}</button>
+  <button type="submit" class="primary">${escape(t.generate)}</button>
 </form>
-<p class="muted">${escape(t.wholeChain)} ${escape(t.generateHint)}</p>`;
+<p class="hint">${escape(t.wholeChain)} ${escape(t.generateHint)}</p>
+</div>`;
 
-  return `<h2>${escape(t.q1)}</h2>${q1}
-<h2>${escape(t.q2)}</h2>${q2}
-<h2>${escape(t.q3)}</h2>${q3}`;
+  return `${question("I", "q1", t.q1, q1)}
+${question("II", "q2", t.q2, q2)}
+${question("III", "q3", t.q3, q3)}`;
 }
 
-function sistemiPage(store: ReceiptStore, signingKeyId: string): string {
-  const t = UI.systemsPage;
-  const systems = store.listSystems();
-  const list =
-    systems.length === 0
-      ? `<p class="empty">—</p>`
-      : `<ul>${systems
-          .map(
-            (s) =>
-              `<li><a href="/ui/systems/${escape(encodeURIComponent(s))}">${escape(s)}</a></li>`,
-          )
-          .join("")}</ul>`;
+type SystemsView = "attivi" | "archiviati" | "tutti";
 
-  return `<h2>${escape(t.existing)}</h2>${list}
-<p class="muted">Firma con la chiave <span class="hash">${escape(signingKeyId)}</span></p>
+function sistemiPage(store: ReceiptStore, view: SystemsView, extra: { notice?: string; error?: string }): string {
+  const t = UI.systemsPage;
+  const records = store.listSystemRecords();
+  const inView = records.filter((record) =>
+    view === "tutti" ? true : view === "archiviati" ? record.archived_at !== null : record.archived_at === null,
+  );
+  const count = (candidate: SystemsView): number =>
+    candidate === "tutti"
+      ? records.length
+      : records.filter((record) => (candidate === "archiviati") === (record.archived_at !== null)).length;
+
+  const tabs = `<ul class="tabs" aria-label="${escape(t.existing)}">${(["attivi", "archiviati", "tutti"] as const)
+    .map(
+      (candidate) =>
+        `<li><a href="/ui/sistemi?vista=${candidate}"${candidate === view ? ' aria-current="page"' : ""}>${escape(t.views[candidate])} (${count(candidate)})</a></li>`,
+    )
+    .join("")}</ul>`;
+
+  const list =
+    inView.length === 0
+      ? `<p class="empty">${escape(t.noneInView[view])}</p>`
+      : `<ul class="systems">${inView
+          .map((record) => {
+            const link = escape(encodeURIComponent(record.system_id));
+            const meta = [
+              `<code class="sid">${escape(record.system_id)}</code>`,
+              escape(record.receipts <= 1 ? t.onlyGenesis : t.receipts(record.receipts)),
+              ...(record.last_received === null ? [] : [`${escape(t.lastActivity)} ${escape(formatTs(record.last_received))}`]),
+              ...(record.archived_at === null ? [] : [`${escape(UI.manage.archivedOn)} ${escape(formatTs(record.archived_at))}`]),
+            ].join(" · ");
+            return `<li>
+  <div class="system-name"><a href="/ui/systems/${link}">${escape(systemTitle(record))}</a>${
+    record.archived_at === null ? "" : ` <span class="badge">${escape(t.archivedBadge)}</span>`
+  }</div>
+  <p class="system-meta">${meta}</p>
+  <div class="system-links"><a href="/ui/systems/${link}">${escape(t.history)}</a><a href="/ui/systems/${link}/manage">${escape(t.manage)}</a></div>
+</li>`;
+          })
+          .join("\n")}</ul>`;
+
+  const log = store.adminLog(20);
+  const adminLog =
+    log.length === 0
+      ? `<p class="empty">${escape(t.adminLogEmpty)}</p>`
+      : `<ul class="log">${log.map((entry) => `<li>${escape(describeAdminEntry(entry))}</li>`).join("")}</ul>`;
+
+  return `${extra.notice === undefined ? "" : `<p class="notice" role="status">${escape(extra.notice)}</p>`}
+${extra.error === undefined ? "" : `<p class="notice bad warn" role="alert">${escape(extra.error)}</p>`}
+${tabs}
+${list}
 <h2>${escape(t.createTitle)}</h2>
-<form method="post" action="/ui/sistemi">
+<div class="sheet formal">
+<form method="post" action="/ui/sistemi" class="fields">
   <label>${escape(t.nameLabel)}
-    <input type="text" name="system_id" placeholder="${escape(t.namePlaceholder)}" required>
+    <input type="text" name="system_id" placeholder="${escape(t.namePlaceholder)}" autocapitalize="off" autocomplete="off" spellcheck="false" required>
   </label>
-  <button type="submit">${escape(t.submit)}</button>
-</form>`;
+  <label>${escape(t.displayNameLabel)}
+    <input type="text" name="display_name" maxlength="128">
+  </label>
+  <button type="submit" class="primary">${escape(t.submit)}</button>
+</form>
+<p class="hint">${escape(t.idHint)}</p>
+</div>
+<h2>${escape(t.adminLogTitle)}</h2>
+<p class="hint">${escape(t.adminLogHint)}</p>
+${adminLog}`;
+}
+
+function managePage(record: SystemRecord, extra: { notice?: string; error?: string }): string {
+  const t = UI.manage;
+  const link = escape(encodeURIComponent(record.system_id));
+  const deletable = record.receipts <= 1;
+
+  const archive =
+    record.archived_at === null
+      ? `<form method="post" action="/ui/systems/${link}/archive" class="fields"><button type="submit">${escape(t.archiveSubmit)}</button></form>`
+      : `<p><strong>${escape(t.archivedOn)} ${escape(formatTs(record.archived_at))}.</strong></p>
+<form method="post" action="/ui/systems/${link}/unarchive" class="fields"><button type="submit" class="primary">${escape(t.unarchiveSubmit)}</button></form>`;
+
+  const removal = deletable
+    ? `<p>${escape(t.deleteAllowed)}</p>
+<form method="post" action="/ui/systems/${link}/delete" class="fields">
+  <label>${escape(t.deleteConfirmLabel(record.system_id))}
+    <input type="text" name="confirm" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+  </label>
+  <button type="submit" class="danger">${escape(t.deleteSubmit)}</button>
+</form>`
+    : `<p>${escape(t.deleteRefused(record.receipts))}</p>`;
+
+  return `<p class="small"><a href="/ui/systems/${link}">← ${escape(UI.systemsPage.history)}</a> · <a href="/ui/sistemi">${escape(UI.nav.sistemi)}</a></p>
+${extra.notice === undefined ? "" : `<p class="notice" role="status">${escape(extra.notice)}</p>`}
+${extra.error === undefined ? "" : `<p class="notice bad warn" role="alert">${escape(extra.error)}</p>`}
+<section class="sheet">
+<h2>${escape(t.nameTitle)}</h2>
+<form method="post" action="/ui/systems/${link}/rename" class="fields">
+  <label>${escape(t.nameLabel)}
+    <input type="text" name="display_name" value="${escape(record.display_name ?? "")}" maxlength="128">
+  </label>
+  <button type="submit" class="primary">${escape(t.nameSubmit)}</button>
+</form>
+<p class="hint">${escape(t.nameHint(record.system_id))}</p>
+</section>
+<section class="sheet">
+<h2>${escape(t.archiveTitle)}</h2>
+<p>${escape(t.archiveHint)}</p>
+${archive}
+</section>
+<section class="sheet${deletable ? " danger" : ""}">
+<h2>${escape(t.deleteTitle)}</h2>
+${removal}
+</section>`;
 }
 
 function systemCreatedPage(systemId: string, token: string): string {
@@ -720,12 +1007,11 @@ function systemCreatedPage(systemId: string, token: string): string {
     ")\"",
   ].join("\n");
 
-  return `<h2>${escape(t.createdTitle)}</h2>
-<p><strong>${escape(systemId)}</strong></p>
-<p class="warn">${escape(t.tokenWarning)}</p>
+  return `<p class="notice bad"><strong>${escape(t.tokenWarning)}</strong></p>
 <div class="token-box">${escape(token)}</div>
-<h3>${escape(t.howToConnect)}</h3>
-<pre class="code">${escape(code)}</pre>`;
+<h2>${escape(t.howToConnect)}</h2>
+<pre class="code">${escape(code)}</pre>
+<p><a href="/ui/systems/${escape(encodeURIComponent(systemId))}/manage">${escape(t.manage)}</a> · <a href="/ui/sistemi">${escape(UI.nav.sistemi)}</a></p>`;
 }
 
 function receiptListItem(receipt: Receipt): string {
@@ -755,7 +1041,7 @@ function receiptListItem(receipt: Receipt): string {
 <div class="table-scroll"><table>${rows.join("\n")}</table></div>
 </details>`;
 
-  return `<li>${escape(describeReceipt(receipt))} ${artifacts}${details}</li>`;
+  return `<li>${ledgerMargin(receipt)}<div class="entry">${escape(describeReceipt(receipt))} ${artifacts}${details}</div></li>`;
 }
 
 function historyPage(
@@ -767,8 +1053,19 @@ function historyPage(
   const kinds = ["", "tool_call", "llm_call", "agent_step", "decision", "genesis"];
   const selected = query["kind"] ?? "";
   const link = escape(encodeURIComponent(systemId));
+  const filtered = ["from", "to", "kind", "name"].some((field) => (query[field] ?? "").length > 0);
 
-  return `<form class="filters" method="get">
+  return `<p class="system-links"><a href="/ui/systems/${link}/checkpoints">${escape(UI.checkpoints.title)}</a> <a href="/ui/systems/${link}/manage">${escape(UI.systemsPage.manage)}</a></p>
+
+<div class="sheet formal">
+<form method="post" action="/ui/systems/${link}/export" class="fields">
+  <button type="submit" class="primary">${escape(UI.home.generate)}</button>
+</form>
+<p class="hint">${escape(UI.home.generateHint)}</p>
+</div>
+
+<details class="search"${filtered ? " open" : ""}><summary>${escape(t.searchTitle)}</summary>
+<form class="fields" method="get">
   <label>${escape(t.fromLabel)}<input type="text" name="from" placeholder="2026-03-29T00:00:00.000Z" value="${escape(query["from"] ?? "")}"></label>
   <label>${escape(t.toLabel)}<input type="text" name="to" placeholder="2026-03-30T00:00:00.000Z" value="${escape(query["to"] ?? "")}"></label>
   <label>${escape(t.kindLabel)}<select name="kind">${kinds
@@ -780,19 +1077,13 @@ function historyPage(
   <label>${escape(t.nameLabel)}<input type="text" name="name" value="${escape(query["name"] ?? "")}"></label>
   <button type="submit">${escape(t.searchButton)}</button>
 </form>
-
-<p><a href="/ui/systems/${link}/checkpoints">${escape(UI.checkpoints.title)}</a></p>
-
-<form method="post" action="/ui/systems/${link}/export">
-  <button type="submit">${escape(UI.home.generate)}</button>
-  <span class="muted">${escape(UI.home.generateHint)}</span>
-</form>
+</details>
 
 <h2>${receipts.length} ricevut${receipts.length === 1 ? "a" : "e"}${receipts.length === 200 ? " (le 200 più recenti)" : ""}</h2>
 ${
   receipts.length === 0
     ? `<p class="empty">${escape(t.noMatches)}</p>`
-    : `<ul class="actions">${receipts.map(receiptListItem).join("\n")}</ul>`
+    : `<ol class="ledger" reversed>${receipts.map(receiptListItem).join("\n")}</ol>`
 }`;
 }
 

@@ -475,6 +475,25 @@ scelto un nome e cliccato **"Crea sistema e chiave"**, la pagina ti mostra
 Passo 9) insieme a un esempio di codice Python già pronto da incollare nel tuo
 agente.
 
+Accanto a ogni sistema c'è **"gestisci"**. Lì puoi:
+
+- dargli un **nome leggibile** (per esempio "Assistente clienti"), da cambiare
+  quando vuoi: è solo un'etichetta, l'identificativo `acme-support-bot` resta
+  quello, piccolo, sotto il nome, e un fascicolo già scaricato conserva il nome
+  che aveva;
+- **archiviarlo**: sparisce dalla pagina principale e dall'elenco dei sistemi
+  attivi (lo ritrovi sotto "archiviati"), ma il registro resta intero,
+  esportabile e verificabile. Le sue chiavi API smettono di funzionare, quindi
+  l'agente non può più scrivere nuove ricevute; riattivandolo tornano a
+  funzionare da sole, senza doverle rigenerare;
+- **eliminarlo**, ma solo se non ha mai registrato nessuna azione (un sistema
+  creato per sbaglio). Devi scrivere l'identificativo esatto per confermare.
+  Un sistema con anche una sola azione registrata non si può eliminare in
+  nessun modo: le prove non si cancellano.
+
+Ogni rinomina, archiviazione o eliminazione finisce nel **registro
+amministrativo**, in fondo alla pagina «sistemi».
+
 ### Verificare un documento
 
 Clicca **"verifica documento"** nel menu. Questa pagina risponde a una domanda
@@ -686,8 +705,12 @@ azioni — è una misura di sicurezza voluta, non un bug, ma vuol dire che una
 chiave sbagliata scrive comunque, senza errori, solo nel posto sbagliato.
 
 Non c'è modo di spostare le ricevute già scritte: in un registro append-only
-non si può, per la stessa ragione per cui non si può manomettere. Se ti serve
-un `acme-support-bot` pulito, riparti da zero:
+non si può, per la stessa ragione per cui non si può manomettere. Per lo stesso
+motivo un sistema con azioni registrate non si può eliminare, nemmeno dalla
+pagina «sistemi»: si può solo archiviare (sparisce dalla pagina principale,
+ma il registro resta intero). Si elimina solo un sistema che non ha mai
+registrato nessuna azione. Se ti serve un `acme-support-bot` pulito, riparti
+da zero:
 
 ```sh
 docker compose down -v

@@ -35,6 +35,15 @@ import { verifyInstructions } from "./verify-instructions.js";
 
 export interface ArchiveInput {
   systemId: string;
+  /**
+   * The label the web view shows for the system at the time of export, if it
+   * has one. It goes into the two files written for a person (report.pdf,
+   * VERIFY.md), marked as a label, and never into manifest.json: it is not
+   * signed, it can change at any time, and older verifiers refuse a manifest
+   * with a field they do not know. The archive keeps the name as it was when
+   * it was made, like any document; a later rename does not reach it.
+   */
+  displayName?: string | null;
   receipts: Receipt[];
   checkpoints: { stored: StoredCheckpoint; timestamps: StoredTimestamp[] }[];
   keys: ManifestKey[];
@@ -208,7 +217,15 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     if (attested !== undefined) genTimes.set(token.name, attested);
   }
 
-  const report = await buildReportPdf({ manifest, checkpoints: entries, verification, actionCounts, genTimes });
+  const displayName = input.displayName ?? undefined;
+  const report = await buildReportPdf({
+    manifest,
+    checkpoints: entries,
+    verification,
+    actionCounts,
+    genTimes,
+    ...(displayName === undefined ? {} : { displayName }),
+  });
 
   const archiveEntries: ZipEntry[] = [
     { name: "manifest.json", data: encode(manifestJson) },
@@ -217,7 +234,7 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     { name: "artifacts-index.jsonl", data: encode(artifactsIndexJsonl) },
     ...tokens,
     { name: "report.pdf", data: report },
-    { name: "VERIFY.md", data: encode(verifyInstructions(manifest, entries, genTimes)) },
+    { name: "VERIFY.md", data: encode(verifyInstructions(manifest, entries, genTimes, displayName)) },
   ];
 
   return { zip: createZip(archiveEntries), entries: archiveEntries, manifest, verification };

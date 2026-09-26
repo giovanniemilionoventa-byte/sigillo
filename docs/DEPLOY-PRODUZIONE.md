@@ -505,11 +505,12 @@ Un backup mai provato non è un backup. Sul portatile, nella cartella `sigillo`:
 
 ```sh
 portatile$ tar -xf sigillo-backup.tar
-portatile$ node apps/server/dist/cli.js system list --db sigillo-*.db
+portatile$ node apps/server/dist/cli.js system list --all --db sigillo-*.db
 ```
 
 Deve elencare `acme-support-bot` con lo stesso numero di ricevute che mostra la
-pagina web a quell'ora.
+pagina web a quell'ora (poi `active` o `archived …`, e il nome mostrato, se
+gliene hai dato uno). Senza `--all` i sistemi archiviati non compaiono.
 
 ### 6.3 Aggiornare
 
@@ -631,7 +632,7 @@ non dà il risultato atteso, fermati lì.
 | 30 | server | `docker compose exec -T server /app/backup.sh` | `wrote … bytes`, `backups in …: 1` |
 | 31 | server | `crontab -l` | la riga delle 03:00 |
 | 32 | portatile | copia dell'ultimo backup (6.1) e `tar -tvf sigillo-backup.tar` | un file `sigillo-….db` |
-| 33 | portatile | `node apps/server/dist/cli.js system list --db sigillo-*.db` | `acme-support-bot	N receipts` |
+| 33 | portatile | `node apps/server/dist/cli.js system list --all --db sigillo-*.db` | `acme-support-bot	N receipts	active	…` |
 
 Quando tutte le righe sono spuntate, sigillo è in produzione. Restano le scelte
 della checklist "Before going to production" di `SECURITY.md`: chi custodisce la

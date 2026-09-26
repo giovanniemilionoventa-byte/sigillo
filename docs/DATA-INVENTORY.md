@@ -33,6 +33,24 @@ instead. sigillo does **not** look at what the text says: it does not detect
 names, email addresses, identifiers or sentences, and it would record any of
 them as sent.
 
+## Outside the receipts: the system's name and the administrative log
+
+Two things the operator writes are not part of any receipt, and are not
+covered by the property above.
+
+- A system's **`display_name`**, the label the web view shows (1–128
+  characters, no control characters). It can be changed or cleared at any
+  time, and the old value is overwritten. An evidence file keeps the name the
+  system had when it was exported, in `report.pdf` and `VERIFY.md`.
+- The **administrative log** (`admin_log`), which records renames, archivals,
+  reactivations and deletions of systems. Each entry holds who acted, as
+  `web <client address>` or `cli <operating-system user>@<host>`, the
+  names before and after a rename, and for a deletion the removed genesis's
+  hash and the ids of the API keys removed with it. The log is append-only
+  like the evidence: an address or a name written there stays. A name that
+  should not be kept therefore should not be given to a system, not even for
+  a moment.
+
 `trace_id` and `span_id` are random, but they are designed to be looked up: in
 whatever observability system produced the trace, they lead back to the full
 span, payloads included if that system kept them.
