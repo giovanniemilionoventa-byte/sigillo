@@ -186,7 +186,8 @@ function verifyDocumentForm(): string {
   const t = UI.verifyDocument;
   return `<p>${escape(t.privacyNote)}</p>
 <p><label>${escape(t.fileLabel)}<br><input type="file" id="sigillo-doc-file"></label></p>
-<p><label>${escape(t.textLabel)}<br><textarea id="sigillo-doc-text" rows="6" cols="60"></textarea></label></p>
+<p><label>${escape(t.textLabel)}<br><textarea id="sigillo-doc-text" rows="6" cols="60"></textarea></label><br>
+<span class="muted">${escape(t.textNote)}</span></p>
 <p><button type="button" id="sigillo-doc-button">${escape(t.submit)}</button></p>
 <script>${VERIFY_DOCUMENT_SCRIPT}</script>`;
 }
@@ -202,10 +203,15 @@ function timestampStatus(store: ReceiptStore, systemId: string, seq: number): st
     : `con marca temporale del ${token.genTime}`;
 }
 
-function verifyDocumentResult(store: ReceiptStore, matches: ArtifactMatch[]): string {
+function verifyDocumentResult(store: ReceiptStore, sha256: string, matches: ArtifactMatch[]): string {
   const t = UI.verifyDocument;
+  // The fingerprint the browser computed, shown either way: set beside
+  // Get-FileHash or sha256sum, it tells at once whether the page was given
+  // the same bytes the agent read.
+  const searched = `<p>${escape(t.searchedFingerprint)}: <span class="hash">${escape(sha256)}</span></p>`;
   if (matches.length === 0) {
-    return `<h2>${escape(t.resultTitle)}</h2><p>${escape(t.noMatch)}</p>`;
+    return `<h2>${escape(t.resultTitle)}</h2>${searched}<p>${escape(t.noMatch)}</p>` +
+      `<p class="muted">${escape(t.lineEndingsHint)}</p>`;
   }
   const items = matches
     .map((match) => {
@@ -215,7 +221,7 @@ function verifyDocumentResult(store: ReceiptStore, matches: ArtifactMatch[]): st
         `<span class="muted">${escape(timestampStatus(store, match.system_id, match.seq))}</span></li>`;
     })
     .join("\n");
-  return `<h2>${escape(t.resultTitle)}</h2><ul>${items}</ul>`;
+  return `<h2>${escape(t.resultTitle)}</h2>${searched}<ul>${items}</ul>`;
 }
 
 function loginPage(message?: string): string {
@@ -447,7 +453,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const searched = typeof sha256 === "string" && SHA256_HEX.test(sha256);
 
     const body = `${verifyDocumentForm()}${
-      searched ? verifyDocumentResult(store, store.findArtifactsBySha256(sha256)) : ""
+      searched ? verifyDocumentResult(store, sha256, store.findArtifactsBySha256(sha256)) : ""
     }`;
     return html(reply, page(UI.verifyDocument.title, body));
   });

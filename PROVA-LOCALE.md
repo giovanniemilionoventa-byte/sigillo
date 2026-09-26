@@ -483,6 +483,14 @@ diversa da tutte le altre: non "cosa ha fatto l'AI", ma "è stato usato
 sigillo ti dice se un'azione registrata lo ha usato — senza che il documento
 lasci mai il tuo computer: l'impronta viene calcolata dal browser stesso.
 
+Per un file, **caricalo invece di incollarne il testo**. Il browser legge
+sempre il testo incollato con gli a capo di Mac e Linux (LF), mentre un file
+salvato su Windows va a capo in un altro modo (CRLF). Per sigillo sono due
+documenti diversi, e un testo incollato da un file di Windows risulta "nessuna
+azione registrata". La pagina mostra l'impronta che ha cercato, così puoi
+confrontarla con quella del file (`Get-FileHash <file> -Algorithm SHA256` in
+PowerShell).
+
 L'agente di esempio del Passo 10 non allega documenti a nessuna azione, quindi
 per `acme-support-bot` questa pagina risponderà sempre "nessuna azione
 registrata ha usato questo documento" — giusto, non è un errore. Per vederla
