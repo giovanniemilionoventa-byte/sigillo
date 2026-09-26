@@ -516,8 +516,25 @@ pagina web a quell'ora.
 ```sh
 $ cd /srv/sigillo && git pull
 $ cd deploy && docker compose build && docker compose up -d
+$ docker compose restart caddy
 $ docker compose ps
 ```
+
+`restart caddy` serve ogni volta che l'aggiornamento cambia il `Caddyfile`, e nel
+dubbio non fa danni: `up -d` non tocca Caddy, e il Caddy già avviato continua a
+leggere il `Caddyfile` di prima (il file è montato da solo, e `git pull` lo
+sostituisce con uno nuovo). Nel `Caddyfile` c'è l'impronta dello script della
+pagina "verifica un documento": se Caddy non viene riavviato dopo un
+aggiornamento che cambia quello script, la pagina mostra in rosso "Il calcolo
+dell'impronta non è attivo" e il pulsante Verifica resta disattivato. Per
+controllare che Caddy mandi l'impronta del `Caddyfile` attuale:
+
+```sh
+$ grep -o "script-src '[^']*'" Caddyfile
+$ curl -sI https://sigillo.tuaazienda.it/ui/login | grep -io "script-src '[^']*'"
+```
+
+Le due righe devono essere uguali.
 
 Il database e la chiave stanno nei volumi e non vengono toccati. **Non rigenerare
 mai la chiave** durante un aggiornamento. Non usare mai `docker compose down -v`:

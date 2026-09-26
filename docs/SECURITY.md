@@ -218,7 +218,13 @@ browser, so the document itself is never sent to the server. `deploy/Caddyfile`
 allows exactly that script and no other, by its SHA-256 (`script-src
 'sha256-...'`), rather than relaxing the content security policy in general. A
 test recomputes the hash from the actual script and fails if the two ever
-disagree.
+disagree. A running Caddy keeps the policy it started with, so an update that
+changes the script needs `docker compose restart caddy`
+(`docs/DEPLOY-PRODUZIONE.md`, 6.3); until then the page says the fingerprint
+cannot be computed and keeps its button disabled. Besides the fingerprint, the
+script tells the server only whether it was computed on a chosen file or on
+pasted text (`from=file|text`), never the file's name or anything else about
+the document.
 
 ## Secrets and logs
 

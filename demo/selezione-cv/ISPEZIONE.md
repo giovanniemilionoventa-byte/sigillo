@@ -64,8 +64,12 @@ capo LF. Su Windows, dove git di solito scrive i file di questa cartella con
 gli a capo CRLF, il testo incollato non corrisponde mai. Se la verifica non
 trova niente, la pagina mostra l'impronta che ha cercato: confrontala con
 quella del file (`Get-FileHash candidato-07.txt -Algorithm SHA256` su Windows,
-`sha256sum candidato-07.txt` su Linux). Se le due impronte sono diverse, alla
-pagina è arrivato un file diverso da quello usato dall'agente.
+`sha256sum candidato-07.txt` su Linux). Sotto l'impronta la pagina dice anche
+se l'ha calcolata **sul file scelto** o **sul testo incollato**. Se dice "sul
+file scelto" e le due impronte sono diverse, il browser ha letto un file
+diverso da quello di cui hai calcolato l'impronta: controlla quale file hai
+scelto. Se invece compare un messaggio rosso, la pagina non ha potuto
+calcolare l'impronta: il messaggio dice perché e cosa fare.
 
 Il risultato atteso è una conferma di questa forma:
 

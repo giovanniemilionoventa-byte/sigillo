@@ -31,7 +31,7 @@
 		# script is allowed by its own SHA-256, not by relaxing script-src in
 		# general. apps/server/test/ui.test.ts recomputes this hash from the
 		# actual script and fails the build if it and this line ever disagree.
-		Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-IM9LfY8BnuoKF07EHGpB2QSy/momLq9bV4NKGJqrE7I='; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-/7Wp8lsye3dYo8T7rNpucCUGfdNi7n/BZQltQmigkkE='; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 		-Server
 	}
 
