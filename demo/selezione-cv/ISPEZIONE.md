@@ -55,33 +55,47 @@ esattamente al candidato n. 7 è il passo successivo.
 ## Passo 3 — Verificare il curriculum del candidato n. 7
 
 Procurati la copia del curriculum che il candidato ha inviato (in questa
-demo: `demo/selezione-cv/curricula/candidato-07.txt`). Vai su **"verifica
-documento"** nel menu, carica **il file** — lo stesso file che ha letto
-l'agente — e premi **"Verifica"**.
+demo: `demo/selezione-cv/curricula/candidato-07.txt`).
 
-Carica il file, non incollarne il testo. Lo stesso testo può essere salvato
-con due modi diversi di andare a capo: quello di Windows (CRLF) e quello di
-Mac e Linux (LF). Per sigillo sono due documenti diversi, perché i byte sono
-diversi, e il browser legge il testo incollato nella casella sempre con gli a
-capo LF. Il testo incollato da un file con gli a capo CRLF, come li scrivono
-di solito i programmi di Windows, non corrisponde mai. Se la verifica non
-trova niente, la pagina mostra l'impronta che ha cercato: confrontala con
-quella del file (`Get-FileHash candidato-07.txt -Algorithm SHA256` su Windows,
-`sha256sum candidato-07.txt` su Linux). Sotto l'impronta la pagina dice anche
-se l'ha calcolata **sul file scelto** o **sul testo incollato**. Se dice "sul
-file scelto" e le due impronte sono diverse, il browser ha letto un file
-diverso da quello di cui hai calcolato l'impronta: controlla quale file hai
-scelto. Se invece compare un messaggio rosso, la pagina non ha potuto
-calcolare l'impronta: il messaggio dice perché e cosa fare.
+> **"Verifica documento" è temporaneamente disattivata nell'interfaccia**: non
+> ha mai dato una conferma affidabile su una macchina reale, nonostante più
+> correzioni, e si è preferito nasconderla piuttosto che continuare a
+> inseguire il problema adesso (vedi `PROGRESS.md`). La pagina, il suo codice
+> e i suoi test restano intatti nel repository — non è stato tolto nulla,
+> solo il collegamento dal menu. Il passo qui sotto usa al suo posto il
+> **verificatore offline**, che fa esattamente lo stesso controllo
+> sull'impronta, sul fascicolo esportato invece che sulla pagina web:
+>
+> 1. Genera già ora il fascicolo di `selezione-cv` per l'intervallo del passo
+>    2 (dalla pagina principale, sotto **"Mi prepari le prove?"** —
+>    è lo stesso file che userai di nuovo, senza rigenerarlo, al Passo 6).
+> 2. Da terminale, una volta sola: `corepack enable && pnpm install && pnpm build`.
+> 3. Poi, per ogni documento da controllare:
+>    `node packages/verifier/dist/cli.js doc /percorso/del/fascicolo.zip <percorso del file>`
+
+Carica sempre il file, non il testo incollato: lo stesso testo può essere
+salvato con due modi diversi di andare a capo, quello di Windows (CRLF) e
+quello di Mac e Linux (LF). Per sigillo sono due documenti diversi, perché i
+byte sono diversi.
+
+Esegui:
+
+```bash
+node packages/verifier/dist/cli.js doc /percorso/del/fascicolo.zip demo/selezione-cv/curricula/candidato-07.txt
+```
 
 Il risultato atteso è una conferma di questa forma:
 
-> ✓ Questo documento è esattamente quello usato da selezione-cv il
-> [data e ora], come «curriculum» (input), nell'azione leggi_curriculum
-> ([riferimento]). Non è stato modificato.
+> This document is exactly the one used by selezione-cv on [data e ora], as
+> "curriculum" (input), in action leggi_curriculum (seq [numero]). It has not
+> been modified.
 
-(Se il sistema ha un nome leggibile, la frase dice «usato da «[nome]» (sistema
-selezione-cv)».)
+Se invece stampa `No registered action used this document.`, confronta
+l'impronta del file con quella attesa
+(`Get-FileHash candidato-07.txt -Algorithm SHA256` su Windows, `sha256sum
+candidato-07.txt` su Linux): un file con gli a capo diversi da quello letto
+dall'agente ha byte diversi, e quindi un'impronta diversa, anche se il testo è
+identico.
 
 Questa è la prova che il file che il candidato dice di aver inviato è
 **esattamente** quello che l'agente ha letto — non una versione simile, non
@@ -173,11 +187,17 @@ rispondere a questa richiesta.
 ## Passo 5 — Verificare la mail di risposta ricevuta
 
 Chiedi al candidato la mail di risposta che ha ricevuto (in questa demo: il
-file scritto da `invia_email` sotto `demo/selezione-cv/outbox/`). Caricala
-anch'essa in **"verifica documento"**: la conferma atteso questa volta nomina
-l'azione `invia_email` con ruolo «email di risposta» (output). Questo prova
-che la mail che il candidato ha in mano è esattamente quella che l'agente ha
-prodotto, non una falsificazione né una versione alterata.
+file scritto da `invia_email` sotto `demo/selezione-cv/outbox/`). Controllala
+allo stesso modo del Passo 3, con lo stesso fascicolo già generato:
+
+```bash
+node packages/verifier/dist/cli.js doc /percorso/del/fascicolo.zip <percorso della mail>
+```
+
+La conferma attesa questa volta nomina l'azione `invia_email`, con l'etichetta
+`"email di risposta"` (output). Questo prova che la mail che il candidato ha
+in mano è esattamente quella che l'agente ha prodotto, non una falsificazione
+né una versione alterata.
 
 ## Passo 6 — Generare e verificare il fascicolo del giorno
 

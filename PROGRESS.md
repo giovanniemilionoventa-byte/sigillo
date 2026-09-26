@@ -2252,6 +2252,129 @@ leggerà; l'interfaccia deve sembrare un registro tenuto con cura, non un pannel
    ulteriore: da 5,6 MB a circa <TOTALE_KB> per 25 file. Rigenerarli con lo script sopra li
    produce già così: la compressione è nello script, non un passo a parte.
 
+### Sessione 9 — 2026-09-26 — chiarimenti sul collegamento, disattivazione di "verifica documento", istantanee HTML
+
+Richiesta del committente, tre punti indipendenti: (1) documentare onestamente tutte le vie reali
+per collegare un agente, non solo l'esempio Python già mostrato; (2) disattivare "verifica
+documento" dalla navigazione, senza cancellare nulla; (3) istantanee HTML statiche delle pagine
+principali, per modificare il design a mano senza server né TypeScript. Base: `main` @ `418712d`.
+
+| # | Nome | Stato | Note |
+|---|------|-------|------|
+| 1 | Le tre vie di collegamento, documentate | fatto | Verificato nel codice (non a memoria della SPEC): tutte e tre reali |
+| 2 | "Verifica documento" fuori dalla navigazione | fatto | Solo il collegamento tolto; pagina, codice e test intatti |
+| 3 | Istantanee HTML statiche | fatto | `scripts/frontend-snapshots.ts`, 5 file in `docs/frontend-preview/`, verificati aperti da `file://` |
+
+#### Punto 1 — cosa è davvero implementato, verificato nel codice
+
+Prima di scrivere qualunque documentazione, ho controllato il codice, non la SPEC originale né la
+mia memoria di sessioni precedenti:
+
+- **`sdk-python/src/sigillo/__init__.py`**: `_SUPPORTED = ("langchain", "crewai", "openai")`. Le
+  tre non sono solo previste dalla SPEC: `_instrument()` prova a importare e attivare tutte e tre
+  (`openinference-instrumentation-{langchain,crewai,openai}`), e `sdk-python/pyproject.toml`
+  dichiara i tre extra corrispondenti (`sdk-python[langchain]`, `[crewai]`, `[openai]`), già
+  approvati in `CLAUDE.md`. Una non installata viene saltata con un avviso registrato
+  (`_LOG.warning`), non un errore: `init()` prosegue con le altre. `sdk-python/README.md` lo
+  documentava già correttamente; solo la pagina web e `docs/API.md` mostravano un unico esempio
+  (`instrument=['langchain']`), dando l'impressione (falsa) che fosse l'unica via.
+- **`POST /v1/traces`** (`apps/server/src/ingest/otlp.ts`, `apps/server/src/http/server.ts`): nessuna
+  assunzione di linguaggio nel codice. Accetta OTLP/HTTP in JSON o protobuf, con identificativi in
+  hex o base64 in JSON (l'unica menzione di "Python" nel file è un commento che spiega perché
+  l'esportatore Python ufficiale manda solo protobuf, non un vincolo del server). L'endpoint è
+  uno standard OTLP: qualunque esportatore OpenTelemetry, in qualunque linguaggio, che sappia
+  puntare a un endpoint personalizzato con un'intestazione Bearer può usarlo.
+- **`POST /api/v1/receipts`**: già documentato in `docs/API.md` con lo schema completo del corpo,
+  ma senza un esempio eseguibile con l'intestazione di autenticazione.
+
+**Documentazione aggiornata, con la stessa evidenza per tutte e tre le vie:**
+- `docs/API.md`: nuova sezione "Three ways to connect an agent" in cima al file; esempio `curl`
+  minimo per `POST /v1/traces` con un payload OTLP/JSON scritto a mano (nessuna libreria
+  OpenTelemetry), che decodifica in una ricevuta `tool_call` vera (`gen_ai.operation.name:
+  execute_tool`); esempio `curl` per `POST /api/v1/receipts` con l'intestazione `Authorization`
+  e la risposta attesa.
+- Pagina web "sistema creato" (`apps/server/src/http/ui.ts`, funzione `systemCreatedPage`;
+  testi in `apps/server/src/http/strings.ts`): mostrava solo l'esempio Python con
+  `instrument=['langchain']`. Ora mostra, con lo stesso rilievo, tutte e tre le vie verificate
+  sopra: SDK Python (con la nota che `crewai` e `openai` sono altrettanto reali, non solo
+  previsti), l'endpoint OTLP diretto con lo stesso `curl` di `docs/API.md` adattato al sistema
+  appena creato, e l'endpoint nativo con il proprio `curl`. Un rimando a `docs/API.md` per altri
+  esempi chiude la sezione.
+
+**Esplicitamente fuori perimetro, come richiesto**: nessun connettore per piattaforme chiuse
+(ChatGPT Agents, Claude Cowork o altre) è stato progettato o abbozzato. Resta un'architettura a
+parte, per una sessione dedicata quando sarà chiaro quale piattaforma serve per prima.
+
+#### Punto 2 — "verifica documento" fuori dalla navigazione
+
+La funzione non ha mai dato una conferma positiva in produzione al committente, nonostante le
+correzioni delle sessioni 5 e 6 (CORS, poi CRLF/LF). Non ho investigato oltre, come richiesto: si
+preferisce disattivarla piuttosto che continuare a inseguirla ora.
+
+- **Tolto solo il collegamento dalla barra di navigazione**
+  (`apps/server/src/http/ui.ts`, funzione `page()`): la voce `<a href="/ui/verify-document">` è
+  rimossa. Nessun altro punto dell'interfaccia normale vi rimandava (verificato: l'unico altro
+  collegamento nel repository è nella pagina stessa, verso se stessa).
+- **Pagina, rotta, script e test restano intatti**, byte per byte: `apps/server/src/http/ui.ts`
+  non cambia altrove, `strings.ts` non cambia i suoi testi, e
+  `apps/server/test/verify-document-browser.test.ts`,
+  `apps/server/test/verify-document-e2e.test.ts` e i test in `ui.test.ts`/`ui-security.test.ts`
+  che usano `/ui/verify-document` continuano a passare, perché navigano all'indirizzo
+  direttamente, non passano dal menu. La pagina resta raggiungibile a chi ne conosce l'indirizzo
+  esatto — `/ui/verify-document` — proprio come richiesto.
+- **`demo/selezione-cv/ISPEZIONE.md`**: i passi 3 e 5, che usavano "verifica documento", ora
+  segnalano che è temporaneamente disattivata e offrono un'alternativa già possibile con i
+  comandi esistenti: `sigillo-verify doc <fascicolo> <file>` (comando già esistente da N3, mai
+  cambiato), sul fascicolo generato allo stesso modo del Passo 6. Stessa conferma testuale della
+  pagina web, in inglese perché è l'output della CLI.
+- **`PROVA-LOCALE.md`**: la sezione "Verificare un documento" (non citata esplicitamente dal
+  committente, ma resa scorretta dallo stesso cambiamento: diceva "Clicca «verifica documento» nel
+  menu") ora dice che la pagina è fuori dal menu e come raggiungerla comunque per indirizzo
+  diretto, con un rimando all'alternativa da terminale di `ISPEZIONE.md` per lo scenario guidato.
+- **Non è una rimozione definitiva.** Nessun file cancellato: solo un collegamento tolto, in vista
+  di una futura ripresa del lavoro su questa pagina.
+
+#### Punto 3 — istantanee HTML statiche
+
+Le pagine sono generate dinamicamente con dati reali, quindi non esiste un file statico da
+estrarre — ma il CSS di ogni pagina è già tutto inline
+(`apps/server/src/http/style.ts`, iniettato da `page()` in `ui.ts`; centralizzato dalla sessione
+8) e l'unica immagine è un SVG inline: niente per cui un file salvato a parte perda qualcosa.
+
+- **`scripts/frontend-snapshots.ts`** (nuovo, dev-only, non eseguito da nessun test — nello
+  spirito di `scripts/screenshots.ts`, che genera dati simili per gli screenshot). Avvia il
+  server vero in locale, con un firmatario Ed25519 vero e un'autorità RFC 3161 locale fatta con
+  `openssl` (stessi helper dei test), popolato con un seed che riusa la forma della demo
+  `selezione-cv` (stesso sistema, stesse azioni `leggi_curriculum`/`decision`, gli stessi
+  artifact) accanto a un secondo sistema (`acme-support-bot`) e uno archiviato, per dare
+  contenuto realistico anche alla pagina «sistemi». **Non usa un browser**: a differenza di
+  `scripts/screenshots.ts`, scarica via `fetch` l'HTML esatto che il server restituisce (login
+  con la password, poi il cookie di sessione sulle richieste successive) e lo scrive su disco
+  così com'è — sufficiente perché non c'è nulla che solo un browser potrebbe calcolare (niente
+  script lato server da eseguire per produrre l'HTML).
+- **`docs/frontend-preview/`**, 5 file, uno per pagina:
+  `00-login.html`, `01-registro.html` (le tre domande), `02-sistemi.html`,
+  `03-gestisci-selezione-cv.html`, `04-cronologia-selezione-cv.html` (con ricevute vere).
+- **Verificato per davvero, non dato per scontato**: ogni file aperto con Chromium reale
+  (`playwright-core`, già approvato) sotto `file://`, senza server acceso. Zero errori di
+  pagina o di console su tutti e cinque; testo e navigazione presenti; screenshot presi e
+  confrontati a occhio con le pagine vere (poi scartati, non fanno parte del repository). La
+  voce "verifica documento" non compare più nel menu di nessuno dei cinque, confermando il punto
+  2 anche da qui.
+- **`docs/frontend-preview/README.md`** (nuovo): spiega che sono istantanee per sperimentare
+  visivamente, che modificarle non cambia l'app vera, e indica il percorso esatto
+  (`apps/server/src/http/style.ts`) dove riportare a mano una modifica per renderla permanente,
+  più `strings.ts` per i testi. **Questi file non sono serviti dall'applicazione e non
+  sostituiscono il rendering reale**: solo per modifica manuale offline.
+
+Verifiche: `pnpm check` verde — lint, typecheck, build, **779 test Node** (invariato: nessun test
+nuovo, nessuno modificato), `smoke-dist` e cross-check Python ok. Un fallimento isolato di
+`verify-document-browser.test.ts` durante una prima esecuzione di `pnpm test` non si è ripetuto
+alla riesecuzione dello stesso file né dell'intera suite: un flake già noto di quel test guidato
+da browser, non legato a questa sessione (che non tocca lo script né il comportamento di quella
+pagina). `packages/core` e `packages/verifier` **non toccati**: nessuna modifica al formato delle
+ricevute, firma, catena, Merkle o marca temporale.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

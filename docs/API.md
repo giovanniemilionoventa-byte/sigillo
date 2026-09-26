@@ -7,6 +7,23 @@ export. The receipt format itself is in [FORMAT.md](FORMAT.md).
 This document covers what is implemented. The export endpoint, the checkpoint
 endpoints and the web interface are added as those milestones land.
 
+## Three ways to connect an agent
+
+There are two HTTP endpoints, below, and three real ways to reach them —
+whichever fits what the agent already does:
+
+1. **The Python SDK** (`sdk-python/`, `sigillo.init(...)`) — the least code, for
+   an agent already built on LangChain, CrewAI, or a direct OpenAI-compatible
+   client. It is a client of the OTLP endpoint below, not a protocol of its
+   own: it turns on the matching OpenInference instrumentation and points its
+   OTLP exporter here. See `sdk-python/README.md`.
+2. **`POST /v1/traces` directly** — for anything already emitting OpenTelemetry
+   traces, in any language: point its OTLP/HTTP exporter at this URL with the
+   API key as a bearer header. No sigillo-specific library needed.
+3. **`POST /api/v1/receipts`** — for code with no OpenTelemetry in it at all:
+   one plain JSON request per receipt, in whatever language can make an HTTP
+   call.
+
 ## Authentication
 
 Every ingest request carries an API key:
@@ -50,6 +67,43 @@ Accepts an OTLP/HTTP trace export in either encoding:
 |---|---|
 | `application/x-protobuf` | `ExportTraceServiceRequest`, as the official Python exporter sends it |
 | `application/json` | the same message in OTLP/JSON, with identifiers as hex or as base64 |
+
+Nothing about this endpoint is Python-specific: it is a standard OTLP/HTTP trace
+receiver, so any OpenTelemetry exporter, in any language, that can be pointed at
+a custom endpoint and given a bearer header can send to it. The Python SDK
+(below) is one client of it, not the only possible one. A minimal, self-contained
+example with `curl` and OTLP/JSON — no OpenTelemetry library involved, to show
+the wire format plainly:
+
+```sh
+curl -X POST https://sigillo.example/v1/traces \
+  -H "Authorization: Bearer sigillo_<key id>_<secret>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resourceSpans": [{
+      "resource": { "attributes": [
+        { "key": "service.name", "value": { "stringValue": "acme-support-bot" } }
+      ] },
+      "scopeSpans": [{ "spans": [{
+        "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+        "spanId": "00f067aa0ba902b7",
+        "name": "cerca_ordine",
+        "startTimeUnixNano": "1712000000000000000",
+        "endTimeUnixNano": "1712000000500000000",
+        "status": { "code": "STATUS_CODE_OK" },
+        "attributes": [
+          { "key": "gen_ai.operation.name", "value": { "stringValue": "execute_tool" } },
+          { "key": "gen_ai.tool.name", "value": { "stringValue": "cerca_ordine" } },
+          { "key": "gen_ai.agent.name", "value": { "stringValue": "support-agent" } }
+        ]
+      }] }]
+    }]
+  }'
+# 200 { "partialSuccess": {}, "sigillo": { "accepted": 1, "duplicates": 0, "ignored": 0, "unknown": [], "rawContentHashed": 0 } }
+```
+
+`gen_ai.operation.name: "execute_tool"` makes this a `tool_call` receipt, named
+from `gen_ai.tool.name`, by `support-agent` (`gen_ai.agent.name`).
 
 The payload carries no notion of a sigillo system, so the API key decides which
 chain the spans join.
@@ -135,17 +189,22 @@ Response `400` with `{"error": "..."}` if the body is not an OTLP export.
 
 ## `POST /api/v1/receipts` — native ingest
 
-For code that is not instrumented with OpenTelemetry. One receipt per request.
+For code that is not instrumented with OpenTelemetry, in any language: one
+plain JSON receipt per request, over HTTP.
 
-```json
-{
-  "actor": { "agent": "planner", "on_behalf_of": "urn:operator:night-shift" },
-  "action": { "kind": "decision", "name": "refund.approve" },
-  "outcome": "blocked",
-  "ts_event": "2026-03-29T14:30:01.000Z",
-  "input": { "amount": 120 },
-  "source": { "type": "sdk", "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736" }
-}
+```sh
+curl -X POST https://sigillo.example/api/v1/receipts \
+  -H "Authorization: Bearer sigillo_<key id>_<secret>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actor": { "agent": "planner", "on_behalf_of": "urn:operator:night-shift" },
+    "action": { "kind": "decision", "name": "refund.approve" },
+    "outcome": "blocked",
+    "ts_event": "2026-03-29T14:30:01.000Z",
+    "input": { "amount": 120 },
+    "source": { "type": "sdk", "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736" }
+  }'
+# 201 { "seq": 11, "system_id": "acme-support-bot", "ts_received": "2026-03-29T15:00:00.000Z", "key_id": "a4d324060dbd98e0" }
 ```
 
 | field | required | notes |
@@ -167,13 +226,8 @@ it is the SHA-256 of the RFC 8785 canonical JSON of the value, as FORMAT.md
 section 3 defines it.
 
 `ts_received` is always stamped by the server. A caller cannot choose where in
-the chain its receipt lands, nor when the server says it arrived.
-
-Response `201`:
-
-```json
-{ "seq": 11, "system_id": "acme-support-bot", "ts_received": "2026-03-29T15:00:00.000Z", "key_id": "a4d324060dbd98e0" }
-```
+the chain its receipt lands, nor when the server says it arrived. Response
+`201` is shown inline in the example above.
 
 Response `400` names the offending field. Response `403` if the body claims a
 different system than the key writes to.

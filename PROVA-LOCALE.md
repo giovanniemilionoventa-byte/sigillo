@@ -496,11 +496,19 @@ amministrativo**, in fondo alla pagina «sistemi».
 
 ### Verificare un documento
 
-Clicca **"verifica documento"** nel menu. Questa pagina risponde a una domanda
-diversa da tutte le altre: non "cosa ha fatto l'AI", ma "è stato usato
-**esattamente questo file**?". Carichi un documento (o incolli del testo), e
-sigillo ti dice se un'azione registrata lo ha usato — senza che il documento
-lasci mai il tuo computer: l'impronta viene calcolata dal browser stesso.
+> Questa pagina è **temporaneamente tolta dal menu** (non ha mai dato una
+> conferma affidabile su una macchina reale, vedi `PROGRESS.md`): resta
+> raggiungibile andando direttamente all'indirizzo
+> `http://127.0.0.1:8080/ui/verify-document` nel browser. Il resto di questa
+> sezione descrive cosa fa, per chi vuole provarla comunque; per lo scenario
+> guidato del candidato n. 7, `demo/selezione-cv/ISPEZIONE.md` usa
+> un'alternativa da terminale che non dipende da questa pagina.
+
+Questa pagina risponde a una domanda diversa da tutte le altre: non "cosa ha
+fatto l'AI", ma "è stato usato **esattamente questo file**?". Carichi un
+documento (o incolli del testo), e sigillo ti dice se un'azione registrata lo
+ha usato — senza che il documento lasci mai il tuo computer: l'impronta viene
+calcolata dal browser stesso.
 
 Per un file, **caricalo invece di incollarne il testo**. Il browser legge
 sempre il testo incollato con gli a capo di Mac e Linux (LF), mentre un file
