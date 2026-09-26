@@ -89,6 +89,24 @@ export const UI = {
     tokenWarning:
       "Questo è l'unico momento in cui la chiave viene mostrata. Copiala ora: non potrà essere recuperata di nuovo.",
     howToConnect: "Come collegare un chatbot o un agente",
+    howToConnectIntro:
+      "Tre modi reali per mandare qui le azioni di un agente. Usa quello più comodo per il tuo codice: non serve usarli tutti e tre.",
+    connectPython: {
+      title: "1. SDK Python",
+      hint:
+        "La via più rapida per un agente già scritto con LangChain, CrewAI, o un client OpenAI diretto (anche verso un server compatibile locale, come Ollama o vLLM). instrument accetta 'langchain', 'crewai' e 'openai': ciascuno richiede il proprio pacchetto opzionale (pip install -e 'sdk-python[langchain,crewai,openai]'); quello mancante viene saltato con un avviso, non un errore. Dettagli in sdk-python/README.md.",
+    },
+    connectOtlp: {
+      title: "2. Endpoint OTLP diretto",
+      hint:
+        "Per chi emette già tracce OpenTelemetry, in qualsiasi linguaggio: punta il suo esportatore OTLP/HTTP a questo indirizzo, con la chiave come intestazione Bearer. Non serve nessuna libreria di sigillo. Esempio minimo con curl, senza nessuna libreria OpenTelemetry, solo per mostrare il formato:",
+    },
+    connectNative: {
+      title: "3. Endpoint nativo per ricevute",
+      hint:
+        "Per codice senza OpenTelemetry: una richiesta JSON per ogni ricevuta, in qualsiasi linguaggio che sappia fare una chiamata HTTP.",
+    },
+    connectMore: "Tutti e tre i modi sono documentati con altri esempi in docs/API.md.",
     deleted: (systemId: string): string =>
       `Il sistema ${systemId} è stato eliminato. L'operazione è scritta nel registro amministrativo.`,
     adminLogTitle: "Registro amministrativo",

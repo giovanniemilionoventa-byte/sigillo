@@ -113,7 +113,6 @@ ${options.head.sid === undefined ? "" : `<code class="sid">${escape(options.head
   <nav aria-label="sezioni">
     <a href="/ui"${here("registro")}>${escape(UI.nav.registro)}</a>
     <a href="/ui/sistemi"${here("sistemi")}>${escape(UI.nav.sistemi)}</a>
-    <a href="/ui/verify-document"${here("verifica")}>${escape(UI.nav.verificaDocumento)}</a>
     <form class="inline" method="post" action="/ui/logout"><button type="submit" class="link">${escape(UI.nav.esci)}</button></form>
   </nav>
 </div></header>
@@ -995,22 +994,64 @@ ${removal}
 
 function systemCreatedPage(systemId: string, token: string): string {
   const t = UI.systemsPage;
-  const code = [
-    "pip install -e sdk-python",
+  const pythonCode = [
+    "pip install -e 'sdk-python[langchain]'   # o [crewai], [openai], o più insieme",
     "python3 -c \"",
     "import sigillo",
     "sigillo.init(",
     "    endpoint='https://<il-tuo-dominio>',",
     `    api_key='${token}',`,
     `    system_id='${systemId}',`,
-    "    instrument=['langchain'],",
+    "    instrument=['langchain'],   # 'crewai' e 'openai' sono altrettanto reali",
     ")\"",
+  ].join("\n");
+
+  const otlpCode = [
+    `curl -X POST https://<il-tuo-dominio>/v1/traces \\`,
+    `  -H "Authorization: Bearer ${token}" \\`,
+    `  -H "Content-Type: application/json" \\`,
+    "  -d '{",
+    '    "resourceSpans": [{ "scopeSpans": [{ "spans": [{',
+    `      "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",`,
+    `      "spanId": "00f067aa0ba902b7",`,
+    `      "name": "azione",`,
+    `      "startTimeUnixNano": "1712000000000000000",`,
+    `      "endTimeUnixNano": "1712000000500000000",`,
+    `      "status": { "code": "STATUS_CODE_OK" },`,
+    '      "attributes": [',
+    '        { "key": "gen_ai.operation.name", "value": { "stringValue": "execute_tool" } },',
+    `        { "key": "gen_ai.tool.name", "value": { "stringValue": "azione" } },`,
+    `        { "key": "gen_ai.agent.name", "value": { "stringValue": "${systemId}" } }`,
+    "      ]",
+    "    }] }] }]",
+    "  }'",
+  ].join("\n");
+
+  const nativeCode = [
+    `curl -X POST https://<il-tuo-dominio>/api/v1/receipts \\`,
+    `  -H "Authorization: Bearer ${token}" \\`,
+    `  -H "Content-Type: application/json" \\`,
+    "  -d '{",
+    '    "actor": { "agent": "agente" },',
+    '    "action": { "kind": "decision", "name": "azione" },',
+    '    "outcome": "ok"',
+    "  }'",
   ].join("\n");
 
   return `<p class="notice bad"><strong>${escape(t.tokenWarning)}</strong></p>
 <div class="token-box">${escape(token)}</div>
 <h2>${escape(t.howToConnect)}</h2>
-<pre class="code">${escape(code)}</pre>
+<p class="hint">${escape(t.howToConnectIntro)}</p>
+<h3>${escape(t.connectPython.title)}</h3>
+<p class="hint">${escape(t.connectPython.hint)}</p>
+<pre class="code">${escape(pythonCode)}</pre>
+<h3>${escape(t.connectOtlp.title)}</h3>
+<p class="hint">${escape(t.connectOtlp.hint)}</p>
+<pre class="code">${escape(otlpCode)}</pre>
+<h3>${escape(t.connectNative.title)}</h3>
+<p class="hint">${escape(t.connectNative.hint)}</p>
+<pre class="code">${escape(nativeCode)}</pre>
+<p class="hint">${escape(t.connectMore)}</p>
 <p><a href="/ui/systems/${escape(encodeURIComponent(systemId))}/manage">${escape(t.manage)}</a> · <a href="/ui/sistemi">${escape(UI.nav.sistemi)}</a></p>`;
 }
 
