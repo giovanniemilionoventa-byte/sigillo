@@ -127,6 +127,7 @@ export const UI = {
     technicalDetails: "Dettagli tecnici",
     noMatches: "Nessuna ricevuta corrisponde ai filtri scelti.",
     searchButton: "Cerca",
+    searchTitle: "Cerca e filtra",
     fromLabel: "dal (ricevuto)",
     toLabel: "al",
     kindLabel: "tipo",

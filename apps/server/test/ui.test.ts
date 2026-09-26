@@ -517,7 +517,7 @@ describe("the receipts page: Cosa ha fatto l'AI? for one system", () => {
     let match: RegExpExecArray | null;
     while ((match = hexHash.exec(body)) !== null) {
       const before = body.slice(0, match.index);
-      const opens = (before.match(/<details>/g) ?? []).length;
+      const opens = (before.match(/<details\b[^>]*>/g) ?? []).length;
       const closes = (before.match(/<\/details>/g) ?? []).length;
       expect(opens).toBeGreaterThan(closes);
     }
@@ -883,6 +883,46 @@ describe("managing a system: archiving (M2)", () => {
     const home = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
     expect(home).toContain(`<a href="/ui/systems/${SYSTEM}">`);
     expect(home).toContain(UI.home.archivedActive.replace(/'/g, "&#39;"));
+  });
+});
+
+describe("managing a system: archiving never hides a broken chain", () => {
+  it("shows an archived system on the main page when its chain fails verification", async () => {
+    await store.archiveSystem(SYSTEM, { actor: "test", ts: NOW });
+    const raw = new Database(join(directory, "sigillo.db"));
+    raw.exec("DROP TRIGGER receipts_no_update");
+    const row = raw.prepare("SELECT canonical FROM receipts WHERE system_id = ? AND seq = 2").get(SYSTEM) as {
+      canonical: string;
+    };
+    raw.prepare("UPDATE receipts SET canonical = ? WHERE system_id = ? AND seq = 2").run(
+      row.canonical.replace('"outcome":"ok"', '"outcome":"error"'),
+      SYSTEM,
+    );
+    raw.close();
+
+    const freshMonitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS);
+    freshMonitor.check();
+    const freshApp = buildServer({
+      store,
+      keys,
+      now: () => new Date(NOW),
+      ui: {
+        password: PASSWORD,
+        signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
+        healthMonitor: freshMonitor,
+        checkpointer,
+      },
+    });
+    await freshApp.ready();
+    try {
+      const cookie = await signIn(freshApp);
+      const home = (await freshApp.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
+      expect(home).toContain(`<a href="/ui/systems/${SYSTEM}">`);
+      expect(home).toContain('class="status-word red">rosso<');
+      expect(home).toContain(UI.home.archivedRed);
+    } finally {
+      await freshApp.close();
+    }
   });
 });
 

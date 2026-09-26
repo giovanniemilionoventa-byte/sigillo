@@ -198,7 +198,17 @@ sigillo-server key create acme-support-bot --db /var/lib/sigillo/sigillo.db
 
 sigillo-server key list   --db /var/lib/sigillo/sigillo.db
 sigillo-server key revoke <key id> --db /var/lib/sigillo/sigillo.db
-sigillo-server system list --db /var/lib/sigillo/sigillo.db
+sigillo-server system list --db /var/lib/sigillo/sigillo.db          # --all to include archived ones
+
+# the name the web view shows (an empty string clears it); the system_id never changes
+sigillo-server system rename acme-support-bot "Assistente clienti" --db /var/lib/sigillo/sigillo.db
+# take a system off the main listings, and put it back; its chain is untouched
+sigillo-server system archive   acme-support-bot --db /var/lib/sigillo/sigillo.db
+sigillo-server system unarchive acme-support-bot --db /var/lib/sigillo/sigillo.db
+# delete a system whose chain holds only its genesis; refused for any other
+sigillo-server system delete test-bot --confirm test-bot --db /var/lib/sigillo/sigillo.db
+# who renamed, archived or deleted what, and when
+sigillo-server admin-log --db /var/lib/sigillo/sigillo.db
 
 sigillo-server serve --db /var/lib/sigillo/sigillo.db \
   --signer-socket /run/sigillo/signer.sock --port 8080
@@ -208,6 +218,17 @@ sigillo-server export acme-support-bot --db /var/lib/sigillo/sigillo.db \
   --signer-socket /run/sigillo/signer.sock --out ./fascicolo
 sigillo-verify ./fascicolo
 ```
+
+`system list` prints one line per system: the `system_id`, the number of
+receipts, `active` or `archived <when>`, and the display name, tab-separated.
+None of `rename`, `archive`, `unarchive`, `delete` and `admin-log` needs the
+signer: they sign nothing. `system delete` exits with 1, and changes nothing,
+for a system with any receipt beyond its genesis, whatever `--confirm` says
+(`docs/SECURITY.md`, "Renaming, archiving and deleting a system"). A deleted
+`system_id` cannot be created again. Every change made by these commands is
+written to the administrative log, with the operating system's user and host.
+The same operations are in the web view, under "sistemi" → "gestisci". There
+is no HTTP API for them: ingest keys cannot manage systems.
 
 `sigillo-server` also reads `SIGILLO_DB`, `SIGILLO_SIGNER_SOCKET`,
 `SIGILLO_HOST` and `SIGILLO_PORT`, so the flags can be left out in a container.

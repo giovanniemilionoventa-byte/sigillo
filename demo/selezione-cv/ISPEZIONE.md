@@ -31,7 +31,10 @@ nel browser e accedi con quella password.
 ## Passo 1 — Il quadro generale
 
 Nella pagina principale, sotto **"È tutto a posto?"**, controlla il semaforo
-del sistema `selezione-cv`: deve essere **verde**. Se fosse rosso o giallo,
+del sistema `selezione-cv` (se chi gestisce sigillo gli ha dato un nome
+leggibile, vedi quel nome, con `selezione-cv` scritto piccolo sotto: è
+l'identificativo, ed è quello che conta in ricevute e fascicoli): deve essere
+**verde**. Se fosse rosso o giallo,
 sarebbe il primo problema da segnalare prima di proseguire — un registro
 manomesso o senza controlli recenti non è una base su cui rispondere a
 un ispettore.
@@ -76,6 +79,9 @@ Il risultato atteso è una conferma di questa forma:
 > ✓ Questo documento è esattamente quello usato da selezione-cv il
 > [data e ora], come «curriculum» (input), nell'azione leggi_curriculum
 > ([riferimento]). Non è stato modificato.
+
+(Se il sistema ha un nome leggibile, la frase dice «usato da «[nome]» (sistema
+selezione-cv)».)
 
 Questa è la prova che il file che il candidato dice di aver inviato è
 **esattamente** quello che l'agente ha letto — non una versione simile, non

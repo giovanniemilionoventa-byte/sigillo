@@ -490,6 +490,12 @@ report.pdf             the same facts for a reader
 VERIFY.md              how to check all of it without this software
 ```
 
+`report.pdf` and `VERIFY.md` may also give the name the operator's web view
+showed for the system when the archive was exported (its `display_name`). It is
+a label, not part of the signed record. It is deliberately **not** in
+`manifest.json`, whose members a verifier checks strictly, and a verifier
+ignores it. The system is identified by `system_id` alone.
+
 The archive uses only stored and deflated entries, no ZIP64 and no encryption,
 so any unzip program opens it. Entries are written in a fixed order with no
 timestamps, so exporting the same chain twice produces the same bytes.

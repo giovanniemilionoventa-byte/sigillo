@@ -121,7 +121,7 @@ ${options.head.sid === undefined ? "" : `<code class="sid">${escape(options.head
 ${head}
 ${options.body}
 </main>
-<footer class="colophon">${escape(UI.brand.signingKey)} <code>${escape(signingKeyId)}</code></footer>
+<footer class="colophon"><p>${escape(UI.brand.signingKey)} <code>${escape(signingKeyId)}</code></p></footer>
 </body></html>`;
 }
 
@@ -769,7 +769,7 @@ function semaphore(status: ChainStatus): string {
 /** A receipt's place in the ledger's margin: its number, the day, the time. */
 function ledgerMargin(receipt: Receipt): string {
   const [day, time] = formatTs(receipt.ts_received).split(", ");
-  return `<div class="margin"><span class="no">n. ${receipt.seq}</span>${escape(day ?? "")}<br>${escape(time ?? "")}</div>`;
+  return `<div class="margin"><span class="no">n. ${receipt.seq}</span><span class="when">${escape(day ?? "")}</span> <span class="when">${escape(time ?? "")}</span></div>`;
 }
 
 /**
@@ -844,7 +844,7 @@ ${justCheckpointed ? `<p class="notice" role="status">${escape(t.checkpointDone)
 ${recent
   .map(
     ({ record, receipt }) =>
-      `<li>${ledgerMargin(receipt)}<div class="entry"><span class="who">${escape(systemTitle(record))}</span>${escape(describeReceipt(receipt))} <a href="/ui/systems/${escape(encodeURIComponent(record.system_id))}">${escape(t.seeHistory)}</a></div></li>`,
+      `<li>${ledgerMargin(receipt)}<div class="entry"><a class="who" href="/ui/systems/${escape(encodeURIComponent(record.system_id))}" title="${escape(t.seeHistory)}">${escape(systemTitle(record))}</a>${escape(describeReceipt(receipt))}</div></li>`,
   )
   .join("\n")}
 </ol>`;
@@ -984,7 +984,7 @@ ${extra.error === undefined ? "" : `<p class="notice bad warn" role="alert">${es
 </section>
 <section class="sheet">
 <h2>${escape(t.archiveTitle)}</h2>
-<p class="hint">${escape(t.archiveHint)}</p>
+<p>${escape(t.archiveHint)}</p>
 ${archive}
 </section>
 <section class="sheet${deletable ? " danger" : ""}">
@@ -1053,6 +1053,7 @@ function historyPage(
   const kinds = ["", "tool_call", "llm_call", "agent_step", "decision", "genesis"];
   const selected = query["kind"] ?? "";
   const link = escape(encodeURIComponent(systemId));
+  const filtered = ["from", "to", "kind", "name"].some((field) => (query[field] ?? "").length > 0);
 
   return `<p class="system-links"><a href="/ui/systems/${link}/checkpoints">${escape(UI.checkpoints.title)}</a> <a href="/ui/systems/${link}/manage">${escape(UI.systemsPage.manage)}</a></p>
 
@@ -1063,6 +1064,7 @@ function historyPage(
 <p class="hint">${escape(UI.home.generateHint)}</p>
 </div>
 
+<details class="search"${filtered ? " open" : ""}><summary>${escape(t.searchTitle)}</summary>
 <form class="fields" method="get">
   <label>${escape(t.fromLabel)}<input type="text" name="from" placeholder="2026-03-29T00:00:00.000Z" value="${escape(query["from"] ?? "")}"></label>
   <label>${escape(t.toLabel)}<input type="text" name="to" placeholder="2026-03-30T00:00:00.000Z" value="${escape(query["to"] ?? "")}"></label>
@@ -1075,6 +1077,7 @@ function historyPage(
   <label>${escape(t.nameLabel)}<input type="text" name="name" value="${escape(query["name"] ?? "")}"></label>
   <button type="submit">${escape(t.searchButton)}</button>
 </form>
+</details>
 
 <h2>${receipts.length} ricevut${receipts.length === 1 ? "a" : "e"}${receipts.length === 200 ? " (le 200 più recenti)" : ""}</h2>
 ${

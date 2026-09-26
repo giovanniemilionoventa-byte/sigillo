@@ -61,8 +61,8 @@ a:hover { text-decoration-thickness: 2px; }
 .masthead nav a[aria-current="page"] { box-shadow: inset 0 -2px 0 var(--wax); }
 
 main { max-width: 64rem; margin: 0 auto; padding: 1.75rem 1.5rem 3rem; }
-.colophon { max-width: 64rem; margin: 0 auto; padding: 1rem 1.5rem 2.5rem; color: var(--ink-soft);
-  font-size: .85rem; border-top: 1px solid var(--rule); }
+.colophon { max-width: 64rem; margin: 0 auto; padding: 0 1.5rem 2.5rem; color: var(--ink-soft); font-size: .85rem; }
+.colophon p { margin: 0; padding-top: 1rem; border-top: 1px solid var(--rule); overflow-wrap: anywhere; }
 
 /* headings */
 .page-head { margin: 0 0 1.75rem; }
@@ -125,8 +125,11 @@ h3 { font: 600 1.1rem/1.3 var(--display); margin: 1.5rem 0 .5rem; }
 .ledger .margin { font-family: var(--mono); font-size: .76rem; color: var(--ink-soft); line-height: 1.5;
   padding-right: .6rem; border-right: 2px solid var(--margin); }
 .ledger .margin .no { display: block; color: var(--ink); font-size: .82rem; }
+.ledger .margin .when { display: block; }
 .ledger .entry { min-width: 0; }
-.ledger .entry .who { font-variant-caps: all-small-caps; letter-spacing: .06em; color: var(--ink-soft); display: block; font-size: .92rem; }
+.ledger .entry .who { font-variant-caps: all-small-caps; letter-spacing: .06em; color: var(--ink-soft); display: block;
+  font-size: .92rem; text-decoration: none; width: fit-content; }
+.ledger .entry a.who:hover { color: var(--accent); text-decoration: underline; }
 .tag { display: inline-block; background: var(--well); border-radius: .2rem; padding: .05rem .5rem;
   font-size: .85em; margin: .3rem .3rem 0 0; }
 
@@ -155,6 +158,9 @@ label { display: flex; flex-direction: column; gap: .3rem; font-size: .92rem; co
 label > input, label > select, label > textarea { font-variant-caps: normal; letter-spacing: normal; color: var(--ink); }
 input, select, textarea, button { font: inherit; font-size: 1rem; padding: .55rem .7rem; color: var(--ink);
   background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: .25rem; min-height: 2.75rem; }
+::placeholder { color: var(--ink-soft); opacity: .55; }
+details.search { background: var(--sheet); border: 1px solid var(--rule); border-radius: .35rem; padding: .6rem 1rem; margin: 0 0 1rem; }
+details.search[open] > summary { margin-bottom: .8rem; }
 textarea { width: 100%; max-width: 40rem; min-height: 8rem; }
 input[type="text"], input[type="password"] { min-width: min(20rem, 100%); }
 input[type="file"] { padding: .45rem; max-width: 100%; }
@@ -193,8 +199,8 @@ pre.code { background: var(--well); padding: 1rem; border-radius: .3rem; overflo
 @media (max-width: 640px) {
   body { font-size: 16.5px; }
   .masthead-inner { padding: .7rem 1rem .4rem; }
-  .masthead nav { margin-left: -.7rem; width: calc(100% + .7rem); flex-wrap: nowrap; overflow-x: auto; }
-  .masthead nav a, .masthead nav button.link { white-space: nowrap; }
+  .masthead nav { margin-left: -.7rem; width: calc(100% + .7rem); }
+  .masthead nav a, .masthead nav button.link { white-space: nowrap; padding: .45rem .6rem; }
   main { padding: 1.25rem 1rem 2.5rem; }
   .colophon { padding: 1rem; }
   h1 { font-size: 1.65rem; }
@@ -203,7 +209,8 @@ pre.code { background: var(--well); padding: 1rem; border-radius: .3rem; overflo
   .sheet { padding: .9rem 1rem; }
   .ledger > li { grid-template-columns: minmax(0, 1fr); row-gap: .25rem; }
   .ledger .margin { border-right: none; border-left: 2px solid var(--margin); padding: 0 0 0 .5rem; }
-  .ledger .margin .no { display: inline; margin-right: .5rem; }
+  .ledger .margin .no, .ledger .margin .when { display: inline; }
+  .ledger .margin .no { margin-right: .4rem; }
   form.fields > label, form.fields > button { width: 100%; }
   input[type="text"], input[type="password"], input[type="date"], select { width: 100%; }
 }
