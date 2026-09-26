@@ -224,7 +224,11 @@ describe("M2: archiving", () => {
     expect(monitor.statusFor(SYSTEM, new Date("2026-09-26T12:00:00.000Z")).status).not.toBe("red");
   });
 
-  it("keeps recording what an archived system's agent still sends: archiving hides, it never refuses evidence", async () => {
+  it("does not by itself stop the store from writing to an archived chain: what refuses new receipts is the API key check, below", async () => {
+    // ReceiptStore.append has no notion of archived: a receipt already
+    // authenticated (or written by another path entirely, such as the CLI)
+    // is still an append-only chain, and archiving is not a second gate on
+    // it. The gate is at authentication, in ApiKeyStore.verify.
     await store.archiveSystem(SYSTEM, ADMIN);
     const receipt = await store.append(event(4));
     expect(receipt.seq).toBe(4);

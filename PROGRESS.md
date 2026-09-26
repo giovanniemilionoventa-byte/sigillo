@@ -2111,11 +2111,19 @@ nella CSP del `Caddyfile` non cambia e **non serve** riavviare Caddy per questo 
   predefinita della pagina «sistemi» (schede "attivi", "archiviati", "tutti", con i conteggi).
   Non tocca nient'altro: il sistema continua a ricevere checkpoint e marche temporali, il
   semaforo lo controlla, si esporta dalla cronologia e dalla tendina (gruppo "archiviati").
-- **Archiviare non revoca le chiavi API e non rifiuta le azioni.** Se l'agente scrive ancora, le
-  azioni vengono registrate: rifiutarle vorrebbe dire perdere prove in silenzio.
+- **Archiviare sospende le chiavi API del sistema** (decisione del committente, vedi sotto):
+  `ApiKeyStore.verify` rifiuta ogni chiave del sistema con lo stesso esito di una revoca, appena
+  `systems.archived_at` non è nullo — letto dal database a ogni richiesta, come già per
+  `revoked_at`, così vale anche da un'altra connessione e anche per un token già verificato e in
+  cache. Riattivare il sistema fa ripartire le stesse chiavi, senza rigenerarle; una chiave
+  revocata *prima* dell'archiviazione resta revocata dopo. `ReceiptStore.append` di per sé non sa
+  cos'è un sistema archiviato: il blocco è tutto nell'autenticazione, quindi una scrittura diretta
+  alla catena (non attraverso una chiave API — nessun percorso supportato lo fa) non è impedita da
+  qui.
 - **Archiviare non nasconde mai un problema**: un sistema archiviato torna sulla pagina principale,
   con la dicitura "archiviato", se la verifica fallisce (rosso) o se riceve azioni dopo
-  l'archiviazione. Testati tutti e due i casi.
+  l'archiviazione (possibile solo scrivendo alla catena senza passare da una chiave). Testati
+  tutti e due i casi.
 
 #### M3 — Eliminazione
 
@@ -2206,31 +2214,43 @@ leggerà; l'interfaccia deve sembrare un registro tenuto con cura, non un pannel
   locale fatta con openssl) e `playwright-core` sul Chromium preinstallato. Lo script è rimasto
   fuori dal repository: `playwright-core` è approvato solo per i test del browser (punto 5).
 
-#### Punti aperti per il committente
+#### Punti aperti per il committente, e le sue decisioni (stessa sessione)
 
 1. **Riuso di un `system_id` eliminato: l'ho vietato.** Motivo: del sistema vuoto possono esistere
    un fascicolo esportato o una marca temporale sulla radice del suo primo checkpoint; una seconda
    genesi con lo stesso nome li contraddirebbe, e chi ha il primo fascicolo vedrebbe una storia
    riscritta. Il costo: un sistema di prova chiamato col nome "giusto" per errore obbliga a sceglierne
-   un altro (il nome mostrato risolve la parte estetica). Se preferisci permetterlo, è una riga in
-   `createSystem`.
+   un altro (il nome mostrato risolve la parte estetica). **Confermato dal committente: va bene
+   così.**
 2. **"Chi" nel registro amministrativo è un indirizzo IP** per le azioni dalla UI, perché c'è una
    sola password e nessun utente. Se più persone condividono la password, il registro non le
    distingue. Utenti con nome sarebbero un cambiamento più grande (autenticazione), fuori da questa
-   sessione.
-3. **Archiviare non revoca le chiavi API.** Le azioni di un sistema archiviato vengono ancora
-   registrate (e il sistema ricompare sulla pagina principale). Se vuoi che l'archiviazione
-   revochi anche le chiavi, si aggiunge; ma rifiutare le azioni non lo farei.
+   sessione. **Confermato dal committente: va bene così.**
+3. **Archiviare doveva anche revocare le chiavi API? Il committente ha detto sì**, non solo
+   nascondere: "le chiavi API di un sistema archiviato devono smettere di accettare nuove
+   ricevute, riattivabile insieme al sistema — non lasciarle attive". Implementato in
+   `ApiKeyStore.verify`: vedi la nota nella sezione M2 sopra. 10 test nuovi in
+   `api-keys.test.ts`.
 4. **L'eliminazione di un sistema vuoto cancella anche le marche temporali** ottenute sulla sua
    genesi. Non attestano nessuna azione, quindi rientrano nel principio; lo segnalo perché sono
-   dati ottenuti da un terzo.
-5. **Lo script degli screenshot**: se vuoi che sia nel repository (per rigenerarli dopo ogni
-   modifica grafica), serve estendere l'approvazione di `playwright-core` a uno script in
-   `scripts/`. Oggi è solo nello spazio di lavoro della sessione.
-6. **Font**: ho usato solo font di sistema. Un carattere ospitato da noi (un file `.woff2` nel
-   repository, servito dal server) darebbe lo stesso aspetto su ogni dispositivo, ma richiede di
-   aggiungere `font-src 'self'` alla CSP e di scegliere un font con licenza libera. Non l'ho fatto.
-7. **Peso degli screenshot**: 25 PNG, 5,6 MB nel repository (prima 0,75 MB).
+   dati ottenuti da un terzo. **Confermato dal committente: va bene così.**
+5. **Lo script degli screenshot: il committente ha chiesto di metterlo nel repository.** Ora è
+   `scripts/screenshots.ts`, eseguito con `pnpm tsx scripts/screenshots.ts [cartella]`. Genera dati
+   di prova con un firmatario vero e un'autorità RFC 3161 locale (gli stessi helper dei test),
+   apre il server vero e guida Chromium con `playwright-core`, come già in
+   `verify-document-browser.test.ts`. `playwright-core` è ora anche `devDependency` della radice
+   del workspace, non solo di `apps/server`: da `scripts/` la risoluzione dei moduli di TypeScript
+   non risale in `apps/server/node_modules`, quindi senza questo `tsc -p tsconfig.json` non trovava
+   i tipi. Nessuna dipendenza nuova, solo un secondo `package.json` che dichiara quella già
+   approvata; `CLAUDE.md` lo dice esplicitamente. Il PNG viene ricompresso con `pngquant`, se
+   presente sul PATH (non è una dipendenza: come `openssl` per le marche temporali, è uno
+   strumento di sistema — lo script funziona anche senza, semplicemente più pesante).
+6. **Font di sistema: confermato dal committente**, nessuna modifica.
+7. **Peso degli screenshot: il committente ha chiesto di stare sotto 1–1,5 MB totali.**
+   Ricompressi con `pngquant` (quantizzazione, senza perdita percepibile su testo e campiture
+   piatte: non sono fotografie) più `oxipng` per la ricompressione DEFLATE senza perdita
+   ulteriore: da 5,6 MB a circa <TOTALE_KB> per 25 file. Rigenerarli con lo script sopra li
+   produce già così: la compressione è nello script, non un passo a parte.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

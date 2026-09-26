@@ -106,7 +106,7 @@ export const UI = {
     renamed: "Nome salvato.",
     archiveTitle: "Archiviazione",
     archiveHint:
-      "Un sistema archiviato esce dalla pagina principale e dall'elenco dei sistemi attivi. Il suo registro resta intero: consultabile, esportabile e verificabile. Se l'agente continua a scrivere, le azioni vengono registrate lo stesso. Si può riattivare in ogni momento.",
+      "Un sistema archiviato esce dalla pagina principale e dall'elenco dei sistemi attivi. Il suo registro resta intero: consultabile, esportabile e verificabile. Le sue chiavi API smettono di funzionare, quindi l'agente non può scrivere nuove ricevute; si può riattivare in ogni momento, senza rigenerare le chiavi.",
     archiveSubmit: "Archivia",
     archived: "Sistema archiviato.",
     archivedOn: "Archiviato il",

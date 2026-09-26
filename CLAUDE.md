@@ -18,10 +18,14 @@ This file collects the permanent rules for anyone (human or AI) working on this 
 ## Approved dependencies
 
 - **Node runtime**: `fastify`, `better-sqlite3`, `canonicalize` (RFC 8785), `zod`, `protobufjs`, `pdfkit`, `commander`. Cryptography uses only `node:crypto` (SHA-256, Ed25519, scrypt) — no external crypto libraries.
-- **Node dev**: `typescript`, `tsx`, `vitest`, `fast-check`, `@types/*`; `playwright-core`, only for
-  the browser tests of the "verifica un documento" page (`apps/server/test/verify-document-browser.test.ts`),
-  added on the project owner's instruction of 2026-09-26 (PROGRESS.md, session 6). It downloads no
-  browser: it drives an installed Chromium or Chrome, or the one named by `SIGILLO_TEST_BROWSER`.
+- **Node dev**: `typescript`, `tsx`, `vitest`, `fast-check`, `@types/*`; `playwright-core`, for
+  the browser tests of the "verifica un documento" page (`apps/server/test/verify-document-browser.test.ts`,
+  added on the project owner's instruction of 2026-09-26, PROGRESS.md session 6, as a devDependency
+  of `apps/server`) and for `scripts/screenshots.ts`, which generates `docs/screenshots/` against
+  the real web view (added on the project owner's instruction of 2026-09-26, PROGRESS.md session
+  8, as a devDependency of the workspace root, so the script's own imports type-check). Neither
+  downloads a browser: both drive an installed Chromium or Chrome, or the one named by
+  `SIGILLO_TEST_BROWSER`.
 - **CI-only tooling** (never a dependency of any package): `pip-audit`, pinned in
   `.github/workflows/dependency-audit.yml`. Added in pilot phase 3 for the
   dependency check; pending the project owner's confirmation.
@@ -57,6 +61,7 @@ Run from the repository root. Node 22 and pnpm 10 are required.
 | `node scripts/smoke-dist.mjs` | verify the built package under plain Node (run after `pnpm build`) |
 | `python3 scripts/crosscheck_vectors.py` | re-derive the receipt test vectors with an independent Python implementation |
 | `pnpm tsx scripts/gen-vectors.ts` | regenerate `packages/core/test/vectors.json` |
+| `pnpm tsx scripts/screenshots.ts [dir]` | regenerate `docs/screenshots/` against the real web view (default `docs/screenshots`) |
 | `pnpm audit:deps` | known-vulnerability check of Node and Python dependencies (`audit:node`, `audit:python`); see `docs/DEPENDENCY-AUDIT.md` |
 
 Tests import `@sigillo/core` and resolve to `packages/core/src` through a vitest

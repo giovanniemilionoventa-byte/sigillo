@@ -226,6 +226,65 @@ describe("revoking a key", () => {
   });
 });
 
+describe("a system's archiving", () => {
+  const admin = { actor: "test", ts: "2026-03-29T15:00:00.000Z" };
+
+  it("stops a key from authenticating while its system is archived, and needs nothing reissued once it is not", async () => {
+    const issued = keys.issue(SYSTEM, AT);
+    expect(await keys.verify(issued.token)).toBe(SYSTEM);
+
+    await store.archiveSystem(SYSTEM, admin);
+    expect(await keys.verify(issued.token)).toBeNull();
+
+    await store.unarchiveSystem(SYSTEM, { ...admin, ts: "2026-03-29T15:05:00.000Z" });
+    expect(await keys.verify(issued.token)).toBe(SYSTEM);
+  });
+
+  it("stops even a token this store already verified and cached", async () => {
+    const issued = keys.issue(SYSTEM, AT);
+    expect(await keys.verify(issued.token)).toBe(SYSTEM);
+    expect(await keys.verify(issued.token)).toBe(SYSTEM); // now served from the cache
+
+    await store.archiveSystem(SYSTEM, admin);
+    expect(await keys.verify(issued.token)).toBeNull();
+  });
+
+  it("takes effect from another connection, like a revocation", async () => {
+    const issued = keys.issue(SYSTEM, AT);
+    expect(await keys.verify(issued.token)).toBe(SYSTEM);
+
+    const administrator = ApiKeyStore.open(databasePath);
+    try {
+      const otherStore = ReceiptStore.open(databasePath);
+      try {
+        await otherStore.archiveSystem(SYSTEM, admin);
+      } finally {
+        otherStore.close();
+      }
+    } finally {
+      administrator.close();
+    }
+
+    expect(await keys.verify(issued.token)).toBeNull();
+  });
+
+  it("leaves another system's keys alone", async () => {
+    const archived = keys.issue(SYSTEM, AT);
+    const untouched = keys.issue(OTHER, AT);
+    await store.archiveSystem(SYSTEM, admin);
+    expect(await keys.verify(archived.token)).toBeNull();
+    expect(await keys.verify(untouched.token)).toBe(OTHER);
+  });
+
+  it("does not revive a key that was separately revoked", async () => {
+    const issued = keys.issue(SYSTEM, AT);
+    keys.revoke(issued.keyId, "2026-03-29T15:00:00.000Z");
+    await store.archiveSystem(SYSTEM, admin);
+    await store.unarchiveSystem(SYSTEM, { ...admin, ts: "2026-03-29T15:05:00.000Z" });
+    expect(await keys.verify(issued.token)).toBeNull();
+  });
+});
+
 describe("listing keys", () => {
   it("shows which keys are live and which were revoked", () => {
     const live = keys.issue(SYSTEM, AT);

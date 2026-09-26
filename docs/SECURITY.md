@@ -111,13 +111,20 @@ product exists. Such a system can only be archived.
   export carries the name the system had *when it was exported*, in
   `report.pdf` and `VERIFY.md`, marked as an unsigned label, and keeps it
   whatever the system is called later, like any other document.
-- **Archiving hides, it removes nothing.** An archived system leaves the main
-  page and the default list of systems. Its chain stays whole, is still
-  check pointed, monitored, exportable and verifiable, and its API keys keep
-  working: an agent that is still sending is still recorded. Archiving never
-  hides a problem either. An archived system whose chain fails verification,
-  or which keeps receiving actions, is shown on the main page anyway. It can
-  be reactivated at any time.
+- **Archiving hides the system, it removes nothing already written.** An
+  archived system leaves the main page and the default list of systems. Its
+  chain stays exactly as it was: still check pointed, monitored, exportable
+  and verifiable. What does stop is new receipts: every API key of an
+  archived system is refused at authentication (`ApiKeyStore.verify`), the
+  same way a revoked one is, so an agent still sending gets turned away
+  rather than silently recorded into a chain nobody is watching. Reactivating
+  the system reactivates its keys, unchanged — nothing is reissued. A key
+  revoked before the archiving stays revoked after it is reactivated.
+  Archiving never hides a problem, though: an archived system whose chain
+  fails verification, or that somehow still gained a receipt (only possible
+  by writing to the chain directly, bypassing API key authentication
+  entirely — no supported path does that), is shown on the main page anyway.
+  Archiving can be undone at any time.
 - **Deleting is for an empty system only**: one whose chain holds its genesis
   and nothing else, typically created by mistake or for a test. Then the
   genesis, its checkpoint, the timestamp tokens over it and the system's API

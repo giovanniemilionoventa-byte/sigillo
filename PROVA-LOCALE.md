@@ -483,7 +483,9 @@ Accanto a ogni sistema c'è **"gestisci"**. Lì puoi:
   che aveva;
 - **archiviarlo**: sparisce dalla pagina principale e dall'elenco dei sistemi
   attivi (lo ritrovi sotto "archiviati"), ma il registro resta intero,
-  esportabile e verificabile, e lo puoi riattivare;
+  esportabile e verificabile. Le sue chiavi API smettono di funzionare, quindi
+  l'agente non può più scrivere nuove ricevute; riattivandolo tornano a
+  funzionare da sole, senza doverle rigenerare;
 - **eliminarlo**, ma solo se non ha mai registrato nessuna azione (un sistema
   creato per sbaglio). Devi scrivere l'identificativo esatto per confermare.
   Un sistema con anche una sola azione registrata non si può eliminare in

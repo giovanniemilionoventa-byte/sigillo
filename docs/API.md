@@ -24,7 +24,12 @@ rather than one per key.
 A request without a valid key gets `401`. A key that has been revoked stops
 working on the next request, including on a server that is already running:
 `sigillo-server key revoke` runs in a process of its own, and the server reads
-whether a key is still live from the database on every request.
+whether a key is still live from the database on every request. The same is
+true of a key whose system is **archived** (`sigillo-server system archive`,
+or the "gestisci" page): every one of its keys is refused with `401`, exactly
+as if revoked, until the system is unarchived — nothing is reissued, the same
+keys work again at once. See `docs/SECURITY.md`, "Renaming, archiving and
+deleting a system".
 
 An address that sends too many wrong keys (`SIGILLO_INGEST_MAX_FAILURES` in a
 minute, 20 by default) is locked out for a minute, doubling on each further

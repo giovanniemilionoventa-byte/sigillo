@@ -149,17 +149,32 @@ export class ApiKeyStore {
     }));
   }
 
-  /** Resolves to the system the token speaks for, or null if it does not. */
+  /**
+   * Resolves to the system the token speaks for, or null if it does not —
+   * including a key whose system is archived. Archiving a system is meant to
+   * stop new receipts from arriving through it (the display it is hidden
+   * from would otherwise be the only sign anything changed); an agent that
+   * is still sending is refused, exactly as with a revoked key, and the same
+   * key starts working again the moment the system is unarchived, with
+   * nothing reissued. Read from the database on every call, like
+   * `revoked_at`: archiving is a write from another connection (the web
+   * view, `sigillo-server system archive`) that this store's own cache of
+   * verified tokens cannot see.
+   */
   async verify(token: string, options: VerifyOptions = {}): Promise<string | null> {
     const parsed = TOKEN.exec(token);
     if (parsed === null) return null;
     const [, keyId, secret] = parsed;
     if (keyId === undefined || secret === undefined) return null;
 
-    const row = this.db.prepare("SELECT * FROM api_keys WHERE key_id = ?").get(keyId) as
-      | KeyRow
-      | undefined;
-    if (row === undefined || row.revoked_at !== null) return null;
+    const row = this.db
+      .prepare(
+        `SELECT k.*, s.archived_at FROM api_keys k
+         JOIN systems s ON s.system_id = k.system_id
+         WHERE k.key_id = ?`,
+      )
+      .get(keyId) as (KeyRow & { archived_at: string | null }) | undefined;
+    if (row === undefined || row.revoked_at !== null || row.archived_at !== null) return null;
 
     const fingerprint = createHash("sha256").update(token).digest("hex");
     if (this.verified.get(fingerprint) === row.key_id) return row.system_id;
