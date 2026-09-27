@@ -496,27 +496,26 @@ amministrativo**, in fondo alla pagina «sistemi».
 
 ### Verificare un documento
 
-> Questa pagina è **temporaneamente tolta dal menu** (non ha mai dato una
-> conferma affidabile su una macchina reale, vedi `PROGRESS.md`): resta
-> raggiungibile andando direttamente all'indirizzo
-> `http://127.0.0.1:8080/ui/verify-document` nel browser. Il resto di questa
-> sezione descrive cosa fa, per chi vuole provarla comunque; per lo scenario
-> guidato del candidato n. 7, `demo/selezione-cv/ISPEZIONE.md` usa
-> un'alternativa da terminale che non dipende da questa pagina.
+Questa pagina, **"verifica documento"** nel menu, risponde a una domanda
+diversa da tutte le altre: non "cosa ha fatto l'AI", ma "è stato usato
+**questo documento**?". Carichi un file (o incolli del testo), e sigillo ti
+dice se un'azione registrata lo ha usato — senza che il documento lasci mai il
+tuo computer: le impronte vengono calcolate dal browser stesso.
 
-Questa pagina risponde a una domanda diversa da tutte le altre: non "cosa ha
-fatto l'AI", ma "è stato usato **esattamente questo file**?". Carichi un
-documento (o incolli del testo), e sigillo ti dice se un'azione registrata lo
-ha usato — senza che il documento lasci mai il tuo computer: l'impronta viene
-calcolata dal browser stesso.
+La risposta dice sempre **quanto** coincide:
 
-Per un file, **caricalo invece di incollarne il testo**. Il browser legge
-sempre il testo incollato con gli a capo di Mac e Linux (LF), mentre un file
-salvato su Windows va a capo in un altro modo (CRLF). Per sigillo sono due
-documenti diversi, e un testo incollato da un file di Windows risulta "nessuna
-azione registrata". La pagina mostra l'impronta che ha cercato, così puoi
-confrontarla con quella del file (`Get-FileHash <file> -Algorithm SHA256` in
-PowerShell).
+- **esattamente**: gli stessi byte, uno per uno;
+- **lo stesso testo**: per un documento di testo, le stesse parole, anche se
+  la copia che hai ha spazi o a capo diversi (per esempio perché l'hai
+  incollata). Una lettera o una cifra diversa, invece, non corrisponde mai;
+- **a meno del modo di andare a capo**: per i documenti registrati prima di
+  questa versione di sigillo, che non hanno l'impronta del testo, la pagina
+  riconosce comunque la differenza tra gli a capo di Windows e quelli di Mac e
+  Linux.
+
+Per un PDF o un'immagine conta ogni byte: carica il file originale. La pagina
+mostra l'impronta esatta che ha cercato, così puoi confrontarla con quella del
+file (`Get-FileHash <file> -Algorithm SHA256` in PowerShell).
 
 L'agente di esempio del Passo 10 non allega documenti a nessuna azione, quindi
 per `acme-support-bot` questa pagina risponderà sempre "nessuna azione

@@ -1,8 +1,9 @@
 import {
   hashCanonicalJson,
+  TEXT_CANON_1,
   type Action,
   type Actor,
-  type ArtifactEntry,
+  type ArtifactEntryV3,
   type ModelInfo,
   type Outcome,
   type Source,
@@ -32,7 +33,7 @@ export interface AdaptedAction {
   source: Source;
   ts_event: string;
   /** Present only when the span carried at least one `sigillo.artifact` event. */
-  artifacts?: ArtifactEntry[];
+  artifacts?: ArtifactEntryV3[];
   /** Present only for a recognised llm_call that named a model. */
   model?: ModelInfo;
 }
@@ -151,8 +152,8 @@ function preferPreHashed(
  * skipped rather than thrown on: the SDK guarantees its own shape, but a
  * span from anywhere else on the wire does not get to crash ingest.
  */
-function artifactsOf(span: OtlpSpan): ArtifactEntry[] | undefined {
-  const artifacts: ArtifactEntry[] = [];
+function artifactsOf(span: OtlpSpan): ArtifactEntryV3[] | undefined {
+  const artifacts: ArtifactEntryV3[] = [];
   for (const event of span.events) {
     if (event.name !== ARTIFACT_EVENT_NAME) continue;
     const role = text(event.attributes, "sigillo.artifact.role");
@@ -162,11 +163,19 @@ function artifactsOf(span: OtlpSpan): ArtifactEntry[] | undefined {
     if (role === null || !ARTIFACT_ROLES.has(role)) continue;
     if (label === null || mediaType === null || sha256 === null) continue;
     if (!SHA256_HEX.test(sha256)) continue;
+    // The text fingerprint (receipt v3), when an SDK that knows the rule
+    // attached one. It is taken as given, exactly like `sha256`: the server
+    // never sees the document. A rule this build does not know, or a
+    // malformed digest, drops only `text`, never the artifact.
+    const textCanon = text(event.attributes, "sigillo.artifact.text_canon");
+    const textDigest = text(event.attributes, "sigillo.artifact.text_sha256");
+    const hasText = textCanon === TEXT_CANON_1 && textDigest !== null && SHA256_HEX.test(textDigest);
     artifacts.push({
       role: role as "input" | "output",
       label: cap(label),
       media_type: cap(mediaType, 128),
       sha256,
+      ...(hasText ? { text: { canon: TEXT_CANON_1, sha256: textDigest } } : {}),
     });
   }
   return artifacts.length > 0 ? artifacts : undefined;

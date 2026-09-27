@@ -84,7 +84,9 @@ CREATE TABLE IF NOT EXISTS timestamps (
 
 -- One row per artifact occurrence: a receipt with two artifacts is two rows.
 -- This is what makes "has anyone ever used this document" an index lookup
--- instead of a scan of every receipt's canonical JSON.
+-- instead of a scan of every receipt's canonical JSON. text_canon and
+-- text_sha256 (a version 3 artifact's text fingerprint, null otherwise) were
+-- added later, by ensureColumn in applySchema.
 CREATE TABLE IF NOT EXISTS artifacts (
   id         INTEGER PRIMARY KEY,
   system_id  TEXT    NOT NULL,
@@ -233,6 +235,8 @@ export function applySchema(db: Database.Database): void {
   ensureColumn(db, "receipts", "source_span_id", "TEXT");
   ensureColumn(db, "systems", "display_name", "TEXT");
   ensureColumn(db, "systems", "archived_at", "TEXT");
+  ensureColumn(db, "artifacts", "text_canon", "TEXT");
+  ensureColumn(db, "artifacts", "text_sha256", "TEXT");
   // Databases written before empty systems could be deleted carry the
   // unconditional delete triggers. The guards that replace them were created
   // just above, by SCHEMA_SQL, so there is no moment with neither.
@@ -245,5 +249,17 @@ export function applySchema(db: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS receipts_by_source
       ON receipts (system_id, source_trace_id, source_span_id)
       WHERE source_trace_id IS NOT NULL AND source_span_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS artifacts_by_text_sha256
+      ON artifacts (text_sha256) WHERE text_sha256 IS NOT NULL;
+  `);
+  // "Is this text exactly an action's whole input or output" (the document
+  // lookup): indexes on the digests as the receipt itself holds them, so no
+  // column has to be added and no existing row rewritten — the receipts
+  // table is append-only, and a trigger refuses any UPDATE.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS receipts_by_input_hash
+      ON receipts (json_extract(canonical, '$.input_hash'));
+    CREATE INDEX IF NOT EXISTS receipts_by_output_hash
+      ON receipts (json_extract(canonical, '$.output_hash'));
   `);
 }

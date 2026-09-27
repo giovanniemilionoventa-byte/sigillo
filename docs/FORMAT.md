@@ -4,13 +4,17 @@ This document defines the receipt: the unit of evidence sigillo produces. It is
 written so that a second implementation can verify a sigillo log without reading
 the sigillo source. Everything a verifier must check is stated here.
 
-Status: two schema versions are current, `1` and `2`. Version 1 was **confirmed
-as final by the project owner on 2026-09-21**: no receipt it accepts is ever
-rejected by a later version of this document. Version 2 was added on
-2026-09-22 (phase 2) to carry document fingerprints and model identity; it is
-purely additive, described in section 2.5 and 2.6. A verifier applies the
-rules of the version each receipt actually declares, so one chain, and one
-export, may freely mix `v: 1` and `v: 2` receipts.
+Status: three schema versions are current, `1`, `2` and `3`. Version 1 was
+**confirmed as final by the project owner on 2026-09-21**: no receipt it
+accepts is ever rejected by a later version of this document. Version 2 was
+added on 2026-09-22 (phase 2) to carry document fingerprints and model
+identity; it is purely additive, described in section 2.5 and 2.6. Version 3
+was added on 2026-09-27, by decision of the project owner, to let a text
+document carry a second fingerprint that survives spacing and line breaks
+(section 2.5.1); it is version 2 plus one optional member inside an artifact,
+and the meaning of every existing member, `sha256` included, is unchanged. A
+verifier applies the rules of the version each receipt actually declares, so
+one chain, and one export, may freely mix `v: 1`, `v: 2` and `v: 3` receipts.
 
 The canonical-base64 rule of section 5 was added after version 1 was already in
 use, and the version was deliberately not incremented: the rule only rejects
@@ -18,7 +22,10 @@ spellings sigillo never produced, so every receipt ever written by sigillo
 remains valid under it. A future change that a previously valid receipt could
 fail must increment `v`. Version 2 was measured against the same test:
 `artifacts` and `model` are both new and both optional, so nothing that was
-valid under version 1 is affected by version 2 existing.
+valid under version 1 is affected by version 2 existing. Version 3 is a new
+version, not a widening of version 2, precisely because of that test: a
+version 2 verifier rejects an artifact with an unknown member, so a receipt
+carrying `text` must say `v: 3`, and a `v: 2` receipt carrying it is invalid.
 
 ## 1. What a receipt is
 
@@ -36,11 +43,12 @@ to be shown to an auditor.
 A receipt is a JSON object with exactly these members for the version it
 declares. There are no other members: a receipt carrying an unknown member is
 invalid and MUST be rejected — including a version 1 receipt that carries
-`artifacts` or `model`, which are version 2 members only.
+`artifacts` or `model`, which are version 2 and 3 members only, and a version 2
+receipt whose artifact carries `text`, which is a version 3 member only.
 
 | member | type | constraint |
 |---|---|---|
-| `v` | integer | `1` or `2` |
+| `v` | integer | `1`, `2` or `3` |
 | `system_id` | string | 1 to 128 characters; identifies the AI system, and therefore the chain |
 | `seq` | integer | `>= 0`; position in the chain, no gaps, no repeats |
 | `ts_event` | string | time declared by the source; see 2.1. Not trusted |
@@ -54,8 +62,8 @@ invalid and MUST be rejected — including a version 1 receipt that carries
 | `prev_hash` | string | 64 lowercase hex characters; digest of the previous receipt, or 64 `0` characters for the first |
 | `key_id` | string | 16 lowercase hex characters; identifies the signing key, see 5 |
 | `sig` | string | 88 characters of standard base64; the signature, see 5 |
-| `artifacts` | array, optional | version 2 only; see 2.5 |
-| `model` | object, optional | version 2 only; see 2.6 |
+| `artifacts` | array, optional | versions 2 and 3; see 2.5 |
+| `model` | object, optional | versions 2 and 3; see 2.6 |
 
 ### 2.1 Timestamps
 
@@ -114,12 +122,13 @@ from smuggling a prompt into the chain in the clear.
 
 Both identifiers are omitted when absent, never null.
 
-### 2.5 `artifacts` (version 2 only)
+### 2.5 `artifacts` (versions 2 and 3)
 
 ```json
 [
-  { "role": "input", "label": "curriculum", "media_type": "text/plain", "sha256": "…" },
-  { "role": "output", "label": "email di risposta", "media_type": "text/plain", "sha256": "…" }
+  { "role": "input", "label": "curriculum", "media_type": "application/pdf", "sha256": "…" },
+  { "role": "output", "label": "email di risposta", "media_type": "text/plain", "sha256": "…",
+    "text": { "canon": "sigillo-text/1", "sha256": "…" } }
 ]
 ```
 
@@ -137,14 +146,85 @@ never an empty array — the same discipline as `actor.on_behalf_of`.
   changes the digest. That includes the line-ending convention: the same
   text saved with CRLF (Windows) and with LF (macOS, Linux, and any text a
   browser reads back from a `<textarea>`) is two different documents with
-  two different digests. Nothing normalises line endings, deliberately.
-  Computing it is exactly `openssl dgst -sha256 <file>`, nothing more.
+  two different digests. Nothing normalises this digest, deliberately, in
+  any version. Computing it is exactly `openssl dgst -sha256 <file>`,
+  nothing more.
+- `text`: object, optional, **version 3 only**. A second fingerprint, of the
+  document's text rather than its bytes, for a document whose `media_type`
+  is `text/plain` (parameters such as `; charset=utf-8` aside) and whose
+  bytes are UTF-8. Two members, both required, no others:
+  - `canon`: the rule applied. The only value defined is `"sigillo-text/1"`
+    (section 2.5.1); any other value is invalid. A different rule would be a
+    different name and a new receipt version, never a change to this one.
+  - `sha256`: 64 lowercase hex characters, the rule's result.
+
+  Absent for every other document (a PDF, an image, a CSV, Markdown, HTML,
+  source code: formats where spacing and line breaks are content), for bytes
+  that are not UTF-8, and for a text that is nothing but whitespace. A
+  receipt where no artifact has `text` is written as version 2.
 
 Order is preserved: an array is never reordered by canonicalisation (section
 3 sorts object *members*, not array elements), so two artifacts of the same
 receipt keep whatever order the caller gave them.
 
-### 2.6 `model` (version 2 only)
+### 2.5.1 The text rule `sigillo-text/1`
+
+A function from bytes to either a string or nothing. Implementations must
+follow it step by step, with these exact character lists: a library's own
+notion of "whitespace" is not the same everywhere (Python's `str.isspace()`
+includes U+001C..U+001F, which JavaScript's `\s` does not; JavaScript's `\s`
+includes U+FEFF, which Python's does not).
+
+1. **Decode** the bytes as UTF-8, strictly: any byte sequence that is not
+   well-formed UTF-8 (including overlong forms and encoded surrogates) means
+   the document has **no** text fingerprint. No other encoding is tried. A
+   leading byte order mark is decoded as the character U+FEFF, not stripped
+   by the decoder.
+2. **Remove** every U+00AD (soft hyphen), U+200B (zero-width space), U+2060
+   (word joiner) and U+FEFF (byte order mark, zero-width no-break space).
+3. **Normalise** to Unicode Normalization Form C (NFC). Not NFKC: `m²`,
+   `½`, `ﬁ` and full-width digits stay as they are.
+4. **Collapse** every maximal run of the following code points into one
+   U+0020 SPACE: U+0009..U+000D, U+0020, U+0085, U+00A0, U+1680,
+   U+2000..U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 (the Unicode
+   `White_Space` property, listed in full).
+5. **Trim**: remove a U+0020 at the start and one at the end (after step 4
+   there is at most one of each).
+6. If the result is empty, the document has **no** text fingerprint.
+7. The fingerprint is SHA-256 of the result's **UTF-8 bytes**, as 64
+   lowercase hex characters. It is not JSON: no quotes, no escapes.
+
+Step 2 comes before step 3 because a removed character between a letter and
+its combining mark would otherwise block their composition. After step 3,
+steps 4 and 5 cannot create a new composition, so the rule is idempotent.
+
+What the rule keeps, and a match therefore still requires to be identical:
+letter case, digits, punctuation, quotation marks and dashes of every kind,
+the presence of a space (`1 000` and `1000` differ), U+200C and U+200D (they
+change meaning in some scripts and compose emoji), variation selectors, and
+every bidirectional control character (U+202A..U+202E, U+2066..U+2069):
+removing those would let two texts that display differently share a
+fingerprint. What it gives up is layout: `A 1⏎B 2` and `A⏎1 B⏎2` have the same
+fingerprint. `docs/SECURITY.md`, "What a document match means", says what an
+auditor can and cannot conclude from each kind of match.
+
+Example: the 15 bytes `Ciao,\r\nmondo.\r\n` have the exact fingerprint
+`fef8e3961a0d8b0aab3979406edacec21b767ac0e0c47fed7a0a6ad01f8ec615` and the
+canonical text `Ciao, mondo.`, whose fingerprint is
+`54a58d6fbf86b8113c5183a32142c3069884460d0ec47b4ee7e435dfd5b23319`; the same
+text with LF line endings, or on one line with two spaces after the comma,
+has another exact fingerprint and the same text fingerprint.
+
+NFC depends on the Unicode version an implementation ships. It is stable for
+every character assigned in both versions compared; a text holding
+characters assigned only in the newer one, with a canonical decomposition,
+may normalise differently, which can make a copy not found but never makes a
+different text found.
+
+`packages/core/test/text-vectors.json` holds 46 inputs, as hex bytes, with
+the canonical text and fingerprint written by hand from this section.
+
+### 2.6 `model` (versions 2 and 3)
 
 ```json
 { "name": "qwen2.5:3b", "provider": "ollama", "digest": "sha256:…" }
@@ -341,6 +421,52 @@ and its hash, reproducible the same way as the version 1 example above, is
 
 ```
 b50f22f0f6d1c7332d28f8cece6a5517f04baa85ffcbedb4a62817cb818ecdd6
+```
+
+### 7.2 Worked example, version 3
+
+The reply an agent sent, recorded with both fingerprints of the 15 bytes of
+the example in section 2.5.1:
+
+```json
+{
+  "v": 3,
+  "system_id": "acme-support-bot",
+  "seq": 25,
+  "ts_event": "2026-03-29T14:31:18.000Z",
+  "ts_received": "2026-03-29T14:31:18.001Z",
+  "actor": { "agent": "selezione-cv" },
+  "action": { "kind": "tool_call", "name": "invia_email" },
+  "input_hash": null,
+  "output_hash": null,
+  "outcome": "ok",
+  "source": { "type": "otlp", "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "span_id": "00f067aa0ba902b7" },
+  "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+  "key_id": "3f2a1c9d8e7b6a5f",
+  "sig": "...",
+  "artifacts": [
+    {
+      "role": "output",
+      "label": "email di risposta",
+      "media_type": "text/plain",
+      "sha256": "fef8e3961a0d8b0aab3979406edacec21b767ac0e0c47fed7a0a6ad01f8ec615",
+      "text": { "canon": "sigillo-text/1", "sha256": "54a58d6fbf86b8113c5183a32142c3069884460d0ec47b4ee7e435dfd5b23319" }
+    }
+  ]
+}
+```
+
+Its canonical form, 741 bytes on one line — `text` is an object like any
+other, its members sorted:
+
+```
+{"action":{"kind":"tool_call","name":"invia_email"},"actor":{"agent":"selezione-cv"},"artifacts":[{"label":"email di risposta","media_type":"text/plain","role":"output","sha256":"fef8e3961a0d8b0aab3979406edacec21b767ac0e0c47fed7a0a6ad01f8ec615","text":{"canon":"sigillo-text/1","sha256":"54a58d6fbf86b8113c5183a32142c3069884460d0ec47b4ee7e435dfd5b23319"}}],"input_hash":null,"key_id":"3f2a1c9d8e7b6a5f","outcome":"ok","output_hash":null,"prev_hash":"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543","seq":25,"source":{"span_id":"00f067aa0ba902b7","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","type":"otlp"},"system_id":"acme-support-bot","ts_event":"2026-03-29T14:31:18.000Z","ts_received":"2026-03-29T14:31:18.001Z","v":3}
+```
+
+and its hash is
+
+```
+4eefc8e96a7603760d82a8eb9c07db16dd8a7ee9c9e5949a5a8e9275cf21e408
 ```
 
 ## 8. Checkpoints and the Merkle tree
@@ -556,6 +682,7 @@ two lines:
 | `seq` | integer | `>= 0`; the receipt that names this artifact |
 | `role` | string | `input` or `output`, copied from the artifact |
 | `label` | string | copied from the artifact |
+| `text` | object, optional | copied from a version 3 artifact that has one (`canon` and `sha256`); absent otherwise |
 
 `system_id` is not repeated here: the archive covers exactly one, named in the
 manifest. This file is what makes "has this document been used" a lookup
@@ -592,10 +719,10 @@ server's clock stepped back) is included, not skipped: a gap in `seq` would be
 indistinguishable from a removal.
 
 `receipt_version` is **not** "the version of this export": a chain may upgrade
-from `v: 1` to `v: 2` partway through, and one export can hold both. It is the
-**highest** version among the receipts the export actually contains — `1` for
-an export that is entirely version 1, `2` as soon as any version 2 receipt is
-present. Like `counts`, it is a claim a verifier checks against the receipts
+from `v: 1` to `v: 2` or `v: 3` partway through, and one export can hold all
+three. It is the **highest** version among the receipts the export actually
+contains — `1` for an export that is entirely version 1, `3` as soon as any
+version 3 receipt is present. Like `counts`, it is a claim a verifier checks against the receipts
 themselves, not a value it trusts (section 10.5, check 12).
 
 The manifest is not trusted. It is a claim about what the export contains, and
@@ -613,9 +740,9 @@ published under an identifier that is not its own `key_id` is rejected, because
 5. If the export starts at `seq` 0, that receipt is a genesis receipt.
 6. Every `prev_hash` equals the recomputed hash of the preceding receipt.
 7. Every receipt names a key the manifest publishes, and its signature verifies.
-8. Every artifact a version 2 receipt declares has exactly one matching line in
-   `artifacts-index.jsonl`, and the index claims nothing the receipts do not
-   (section 10.3). Tampering with an artifact needs no separate detection here:
+8. Every artifact a version 2 or 3 receipt declares has exactly one matching
+   line in `artifacts-index.jsonl`, `text` included, and the index claims
+   nothing the receipts do not (section 10.3). Tampering with an artifact needs no separate detection here:
    it is a member of the receipt like any other, so changing it already fails
    check 6 or check 7 — this check is what makes the *index* trustworthy for a
    document lookup, on top of that.
@@ -646,8 +773,18 @@ check. Any failure means the export is not evidence of anything.
 
 `sigillo-verify doc <archive> <file>` runs all of the above first, exactly as
 the default command does — a document lookup against a tampered archive is
-refused, not merely unreliable — then hashes `<file>` with SHA-256 and reports
-every receipt whose `artifacts` names that digest, or that none does.
+refused, not merely unreliable — then computes `<file>`'s fingerprints and
+reports every use it finds, each under the strongest kind of match it has, or
+that there is none. The kinds, strongest first: its exact SHA-256 is an
+artifact's `sha256` ("exactly the one used"); its `sigillo-text/1`
+fingerprint is an artifact's `text.sha256` ("the same text", which says it is
+not the same bytes); one of its line-ending variants — LF or CRLF, with or
+without one final newline, with or without a leading byte order mark — has an
+artifact's `sha256`, which is how a record made before version 3 is still
+found ("except for its line endings"); its text as a JSON string, as is or in
+one of those variants, is a receipt's `input_hash` or `output_hash` ("the whole
+input" or "output"). The web view's "verifica un documento" page applies the
+same rules, with the same code (`packages/core/src/text.ts`).
 
 Four of these deserve a note, because they catch what the others miss:
 
@@ -679,20 +816,27 @@ Four of these deserve a note, because they catch what the others miss:
 
 `packages/core/test/vectors.json` carries a set of receipts with their canonical
 form and digest recorded alongside. Its `receipt_versions` member lists every
-schema version the file covers — `[1, 2]` — derived from the vectors
+schema version the file covers — `[1, 2, 3]` — derived from the vectors
 themselves rather than asserted separately. They cover the genesis receipt,
 every action kind and outcome, present and absent optional members, JSON
 escaping, non-ASCII and astral-plane text, control characters, calendar edge
 cases, the field length caps, the largest exactly representable integer as a
 `seq`, and, for version 2, a receipt with neither new member, one artifact,
 two artifacts in a fixed order, a model with a provider and digest, a model
-with both null, and an artifact and a model together.
+with both null, and an artifact and a model together; for version 3, a text
+artifact, a text artifact next to a binary one without `text`, and a text
+artifact with a model.
+
+`packages/core/test/text-vectors.json` carries the `sigillo-text/1` vectors of
+section 2.5.1: 46 inputs as hex bytes, from plain text and every whitespace
+and invisible character the rule names to the ones it keeps, NFC cases, and
+bytes that are not UTF-8.
 
 The `sig` values in that file are a fixed placeholder, chosen so it decodes to
 readable text: the vectors pin the wire format, not signatures.
 
 `scripts/crosscheck_vectors.py` re-derives every canonical form and digest in
-the file using only the Python standard library, with no sigillo code involved.
+both files using only the Python standard library, with no sigillo code involved.
 It runs in CI. If it ever disagrees with the Node implementation, this document
 is what decides which one is wrong.
 

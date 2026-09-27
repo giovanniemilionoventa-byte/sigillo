@@ -7,8 +7,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   canonicalJson,
   createZip,
+  hashCanonicalJson,
   readZip,
   signCheckpoint,
+  TEXT_CANON_1,
+  textSha256,
   type Receipt,
   type ZipEntry,
 } from "@sigillo/core";
@@ -715,6 +718,65 @@ describe("the sigillo-verify doc command", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("FAILED");
     expect(result.stderr).toContain("artifacts-index");
+  }, 30_000);
+
+  it("finds a v3 text document whose copy differs only in spacing and line breaks, and says so", async () => {
+    const recorded = new TextEncoder().encode("Gentile candidata,\r\nla ringraziamo per la candidatura.\r\n");
+    await store.append({
+      ...event(12),
+      action: { kind: "tool_call", name: "invia_email" },
+      artifacts: [{
+        role: "output",
+        label: "email di risposta",
+        media_type: "text/plain",
+        sha256: createHash("sha256").update(recorded).digest("hex"),
+        text: { canon: TEXT_CANON_1, sha256: textSha256(recorded) ?? "" },
+      }],
+    });
+    const archivePath = join(directory, "fascicolo.zip");
+    writeFileSync(archivePath, (await build()).zip);
+
+    const copy = join(directory, "copia.txt");
+    writeFileSync(copy, "Gentile candidata, la ringraziamo\nper la  candidatura.");
+    const same = run(["doc", archivePath, copy]);
+    expect(same.status).toBe(0);
+    expect(same.stdout).toContain("same text");
+    expect(same.stdout).toContain("sigillo-text/1");
+    expect(same.stdout).toContain("invia_email");
+    expect(same.stdout).not.toContain("not been modified");
+
+    writeFileSync(copy, "Gentile candidato, la ringraziamo per la candidatura.");
+    expect(run(["doc", archivePath, copy]).status).toBe(1);
+  }, 30_000);
+
+  it("finds a record made before text fingerprints existed despite a different line-ending convention", async () => {
+    const recorded = "Curriculum\r\nMario Bianchi\r\n";
+    await store.append({
+      ...event(12),
+      artifacts: [{ role: "input", label: "curriculum", media_type: "text/plain", sha256: createHash("sha256").update(recorded).digest("hex") }],
+    });
+    const archivePath = join(directory, "fascicolo.zip");
+    writeFileSync(archivePath, (await build()).zip);
+    const copy = join(directory, "curriculum.txt");
+    writeFileSync(copy, "Curriculum\nMario Bianchi\n");
+
+    const result = run(["doc", archivePath, copy]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("line endings");
+  }, 30_000);
+
+  it("finds a text that is exactly the whole output of an action", async () => {
+    const cv = "Mario Bianchi\nSviluppatore\n";
+    await store.append({ ...event(12), action: { kind: "tool_call", name: "leggi_curriculum" }, output_hash: hashCanonicalJson(cv) });
+    const archivePath = join(directory, "fascicolo.zip");
+    writeFileSync(archivePath, (await build()).zip);
+    const copy = join(directory, "cv.txt");
+    writeFileSync(copy, cv);
+
+    const result = run(["doc", archivePath, copy]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("whole output");
+    expect(result.stdout).toContain("leggi_curriculum");
   }, 30_000);
 
   it("exits 2 when the file to look up cannot be read", async () => {

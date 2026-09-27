@@ -9,6 +9,7 @@ import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { buildServer } from "../src/http/server.js";
+import { hashCanonicalJson, textSha256 } from "@sigillo/core";
 import { VERIFY_DOCUMENT_SCRIPT } from "../src/http/ui.js";
 import { ReceiptStore } from "../src/storage/store.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
@@ -66,8 +67,12 @@ function sha256Hex(bytes: Uint8Array | string): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-/** A tool span the way the demo agent's `leggi_curriculum` produces one. */
-function cvSpan(fileSha256: string): Record<string, unknown> {
+/**
+ * A tool span the way the demo agent's `leggi_curriculum` produces one: with
+ * only the exact fingerprint, as every SDK before sigillo-text/1 sent it, or
+ * with the text fingerprint too, as the current SDK does for a text file.
+ */
+function cvSpan(fileSha256: string, textSha256?: string): Record<string, unknown> {
   spanCounter += 1;
   const start = BigInt(clock) * 1_000_000n;
   return {
@@ -89,6 +94,12 @@ function cvSpan(fileSha256: string): Record<string, unknown> {
           { key: "sigillo.artifact.label", value: { stringValue: "curriculum" } },
           { key: "sigillo.artifact.media_type", value: { stringValue: "text/plain" } },
           { key: "sigillo.artifact.sha256", value: { stringValue: fileSha256 } },
+          ...(textSha256 === undefined
+            ? []
+            : [
+                { key: "sigillo.artifact.text_canon", value: { stringValue: "sigillo-text/1" } },
+                { key: "sigillo.artifact.text_sha256", value: { stringValue: textSha256 } },
+              ]),
         ],
       },
     ],
@@ -114,18 +125,22 @@ async function sendSpans(token: string, serviceName: string, spans: Record<strin
 }
 
 /**
- * Runs the page's own inline script against `fileBytes`, with just enough of
- * a DOM for it to find its inputs, and returns where it sends the browser.
- * The hashing is Node's real Web Crypto, which is what a browser offers.
+ * Runs the page's own inline script against `fileBytes` (or `text`, typed in
+ * the box), with just enough of a DOM for it to find its inputs, and returns
+ * where it sends the browser. The hashing is Node's real Web Crypto, and the
+ * text decoding Node's real TextDecoder, which is what a browser offers.
  */
-async function urlTheBrowserWouldOpen(fileBytes: Uint8Array): Promise<string> {
+async function urlTheBrowserWouldOpen(fileBytes: Uint8Array | null, text = ""): Promise<string> {
   let onClick: (() => Promise<void>) | undefined;
   const location = { href: "" };
   const elements: Record<string, unknown> = {
     "sigillo-doc-file": {
-      files: [{ arrayBuffer: async () => fileBytes.buffer.slice(fileBytes.byteOffset, fileBytes.byteOffset + fileBytes.byteLength) }],
+      files:
+        fileBytes === null
+          ? []
+          : [{ arrayBuffer: async () => fileBytes.buffer.slice(fileBytes.byteOffset, fileBytes.byteOffset + fileBytes.byteLength) }],
     },
-    "sigillo-doc-text": { value: "" },
+    "sigillo-doc-text": { value: text },
     "sigillo-doc-button": {
       disabled: true,
       addEventListener: (_type: string, handler: () => Promise<void>) => {
@@ -142,6 +157,7 @@ async function urlTheBrowserWouldOpen(fileBytes: Uint8Array): Promise<string> {
     history: { replaceState: () => undefined },
     crypto: globalThis.crypto,
     TextEncoder,
+    TextDecoder,
     Uint8Array,
     Array,
   });
@@ -192,7 +208,11 @@ describe("verifica un documento, for a system whose name has a space in it", () 
     await sendSpans(token, "sistema cv", [cvSpan(sha256Hex(cv))]);
 
     const url = await urlTheBrowserWouldOpen(cv);
-    expect(url).toBe(`/ui/verify-document?sha256=${sha256Hex(cv)}&from=file`);
+    const query = new URL(url, "http://sigillo").searchParams;
+    expect(url.startsWith(`/ui/verify-document?sha256=${sha256Hex(cv)}&`)).toBe(true);
+    expect(query.get("text")).toBe(textSha256(cv));
+    expect(query.get("json")).toBe(hashCanonicalJson(new TextDecoder().decode(cv)));
+    expect(query.get("from")).toBe("file");
     const body = await verifyDocumentPage(cookie, url);
     expect(body).toContain("Risultato");
     expect(body).toContain("Questo documento è esattamente quello usato da sistema cv");
@@ -243,48 +263,84 @@ describe("verifica un documento, for a system whose name has a space in it", () 
  * candidato-07.txt as a Windows checkout wrote it, with CRLF line endings;
  * the same text with LF line endings — a copy from any other checkout, or the
  * text pasted into the page's box, which a browser always reads back with LF
- * (HTML's textarea value normalisation) — is, correctly, not the same
- * document. The page must still give its user a way to see that: the
- * fingerprint it searched for, to set beside Get-FileHash or sha256sum, and a
- * word about line endings.
+ * (HTML's textarea value normalisation) — has other bytes. Since the redesign
+ * the page finds it anyway, and says exactly how it differs.
  */
-describe("verifica un documento, when the same text has different line endings", () => {
+describe("verifica un documento, when the same text has different line endings (a record made before sigillo-text/1)", () => {
   const textWithLf = "Curriculum di Andrea Bianchi\nEsperienza: python, sql.\n";
   const windowsBytes = new TextEncoder().encode(textWithLf.replace(/\n/g, "\r\n"));
   const unixBytes = new TextEncoder().encode(textWithLf);
 
-  it("does not claim a match for the LF copy of a CRLF document", async () => {
+  it("finds the LF copy of a CRLF document, and says that only the line endings differ", async () => {
     const cookie = await signIn();
     const token = await createSystem(cookie, "sistema cv");
     await sendSpans(token, "sistema cv", [cvSpan(sha256Hex(windowsBytes))]);
 
     const body = await verifyDocumentPage(cookie, await urlTheBrowserWouldOpen(unixBytes));
-    expect(body).toContain("Nessuna azione registrata ha usato questo documento.");
+    expect(body).toContain('data-match="lines"');
+    expect(body).toContain("a meno del modo di andare a capo");
     expect(body).not.toContain("esattamente quello usato");
   });
 
-  it("shows the fingerprint it searched for, found or not, so it can be compared by hand", async () => {
+  it("finds it from the text pasted in the box too", async () => {
+    const cookie = await signIn();
+    const token = await createSystem(cookie, "sistema cv");
+    await sendSpans(token, "sistema cv", [cvSpan(sha256Hex(windowsBytes))]);
+
+    const body = await verifyDocumentPage(cookie, await urlTheBrowserWouldOpen(null, textWithLf.trimEnd()));
+    expect(body).toContain('data-match="lines"');
+  });
+
+  it("does not stretch an old record to other spacing: it has no text fingerprint", async () => {
+    const cookie = await signIn();
+    const token = await createSystem(cookie, "sistema cv");
+    await sendSpans(token, "sistema cv", [cvSpan(sha256Hex(windowsBytes))]);
+
+    const body = await verifyDocumentPage(cookie, await urlTheBrowserWouldOpen(null, "Curriculum di Andrea Bianchi  Esperienza: python, sql."));
+    expect(body).toContain("Nessuna azione registrata ha usato questo documento");
+  });
+
+  it("shows the exact fingerprint it searched for, found or not, so it can be compared by hand", async () => {
     const cookie = await signIn();
     const token = await createSystem(cookie, "sistema cv");
     await sendSpans(token, "sistema cv", [cvSpan(sha256Hex(windowsBytes))]);
 
     const found = await verifyDocumentPage(cookie, await urlTheBrowserWouldOpen(windowsBytes));
-    expect(found).toContain(`Impronta cercata (SHA-256): <span class="hash">${sha256Hex(windowsBytes)}</span>`);
+    expect(found).toContain(`Impronta esatta (SHA-256): <span class="hash">${sha256Hex(windowsBytes)}</span>`);
+    const missed = await verifyDocumentPage(cookie, `/ui/verify-document?sha256=${"ab".repeat(32)}`);
+    expect(missed).toContain(`Impronta esatta (SHA-256): <span class="hash">${"ab".repeat(32)}</span>`);
+    expect(missed).toContain("Get-FileHash");
+  });
+});
 
-    const missed = await verifyDocumentPage(cookie, await urlTheBrowserWouldOpen(unixBytes));
-    expect(missed).toContain(`Impronta cercata (SHA-256): <span class="hash">${sha256Hex(unixBytes)}</span>`);
+describe("verifica un documento, for a text recorded with its sigillo-text/1 fingerprint", () => {
+  const recorded = new TextEncoder().encode("Curriculum di Maria Bianchi\r\n\r\nEsperienza:   python,\tsql.\r\n");
+
+  it("finds a copy that differs only in spacing and line breaks, and one with a changed letter not at all", async () => {
+    const cookie = await signIn();
+    const token = await createSystem(cookie, "sistema cv");
+    await sendSpans(token, "sistema cv", [cvSpan(sha256Hex(recorded), textSha256(recorded) ?? undefined)]);
+
+    const same = await verifyDocumentPage(cookie, await urlTheBrowserWouldOpen(null, "Curriculum di Maria Bianchi Esperienza: python, sql."));
+    expect(same).toContain('data-match="text"');
+    expect(same).toContain("ha lo stesso testo di quello usato da sistema cv");
+
+    const exact = await verifyDocumentPage(cookie, await urlTheBrowserWouldOpen(recorded));
+    expect(exact).toContain('data-match="bytes"');
+    expect(exact.match(/data-match=/g)).toHaveLength(1);
+
+    const other = await verifyDocumentPage(cookie, await urlTheBrowserWouldOpen(null, "Curriculum di Mario Bianchi Esperienza: python, sql."));
+    expect(other).toContain("Nessuna azione registrata ha usato questo documento");
   });
 
-  it("says, when nothing matches, that line endings and pasting change the fingerprint", async () => {
+  it("still finds a binary file by its exact bytes only", async () => {
     const cookie = await signIn();
-    const missed = await verifyDocumentPage(cookie, `/ui/verify-document?sha256=${sha256Hex(unixBytes)}`);
-    expect(missed).toContain("a capo");
-    expect(missed).toContain("carica il file originale");
-  });
+    const token = await createSystem(cookie, "sistema cv");
+    const pdf = new Uint8Array([...new TextEncoder().encode("%PDF-1.7\n%"), 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]);
+    await sendSpans(token, "sistema cv", [cvSpan(sha256Hex(pdf))]);
 
-  it("warns beside the text box that pasted text is read with Unix line endings", async () => {
-    const cookie = await signIn();
-    const form = await verifyDocumentPage(cookie, "/ui/verify-document");
-    expect(form).toContain("il browser legge il testo incollato con gli a capo di Mac e Linux");
+    const url = await urlTheBrowserWouldOpen(pdf);
+    expect(url).toBe(`/ui/verify-document?sha256=${sha256Hex(pdf)}&from=file`);
+    expect(await verifyDocumentPage(cookie, url)).toContain('data-match="bytes"');
   });
 });

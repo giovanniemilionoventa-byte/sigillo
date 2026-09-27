@@ -6,7 +6,11 @@ import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   canonicalReceiptBytes,
+  documentFingerprints,
   fromHex,
+  hashCanonicalJson,
+  TEXT_CANON_1,
+  textSha256,
   GENESIS_PREV_HASH,
   parseReceipt,
   receiptHash,
@@ -213,15 +217,33 @@ describe("version 2 fields", () => {
     expect(parseReceipt({ ...JSON.parse(row.canonical), sig: receipt.sig })).toEqual(receipt);
   });
 
-  it("finds a document by its fingerprint, across systems, oldest use first", async () => {
-    const sha256 = "c".repeat(64);
+  it("writes a v3 receipt only when an artifact carries a text fingerprint", async () => {
+    const text = { canon: TEXT_CANON_1, sha256: "e".repeat(64) };
+    const plain = { role: "input" as const, label: "curriculum", media_type: "text/plain", sha256: "c".repeat(64) };
+    const v2 = await store.append(event({ artifacts: [plain] }));
+    const v3 = await store.append(event({ artifacts: [{ ...plain, text }] }));
+    expect(v2.v).toBe(2);
+    expect(v3.v).toBe(3);
+    expect(v3.v === 3 ? v3.artifacts?.[0]?.text : undefined).toEqual(text);
+  });
+});
+
+describe("finding a document", () => {
+  const bytesOf = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+  beforeEach(async () => {
+    await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
+  });
+
+  it("finds exact bytes across systems, oldest use first", async () => {
+    const document = bytesOf("documento condiviso");
+    const sha256 = documentFingerprints(document).bytes;
     await store.append(
       event({
         ts_received: "2026-03-29T14:30:02.000Z",
         artifacts: [{ role: "input", label: "curriculum", media_type: "text/plain", sha256 }],
       }),
     );
-
     await store.createSystem(OTHER_SYSTEM, "2026-03-29T14:29:00.000Z");
     await store.append(
       event({
@@ -232,16 +254,88 @@ describe("version 2 fields", () => {
       }),
     );
 
-    const matches = store.findArtifactsBySha256(sha256);
+    const matches = store.findDocument(documentFingerprints(document));
     expect(matches).toHaveLength(2);
-    // Ordered by when the action was received, not by system or insertion order.
-    expect(matches[0]).toMatchObject({ system_id: OTHER_SYSTEM, seq: 1, role: "output" });
-    expect(matches[1]).toMatchObject({ system_id: SYSTEM, seq: 1, role: "input" });
+    expect(matches[0]).toMatchObject({ kind: "bytes", system_id: OTHER_SYSTEM, seq: 1, role: "output" });
+    expect(matches[1]).toMatchObject({ kind: "bytes", system_id: SYSTEM, seq: 1, role: "input", label: "curriculum" });
   });
 
-  it("finds nothing for a fingerprint no receipt ever declared", async () => {
+  it("finds a v3 text by its text fingerprint, whatever its spacing and line endings", async () => {
+    const recorded = bytesOf("Gentile candidata,\r\n\r\nla ringraziamo.\r\n");
+    await store.append(
+      event({
+        artifacts: [{
+          role: "output",
+          label: "email di risposta",
+          media_type: "text/plain",
+          sha256: documentFingerprints(recorded).bytes,
+          text: { canon: TEXT_CANON_1, sha256: textSha256(recorded) ?? "" },
+        }],
+      }),
+    );
+    const pasted = bytesOf("Gentile candidata, la   ringraziamo.");
+    expect(store.findDocument(documentFingerprints(pasted))).toMatchObject([
+      { kind: "text", seq: 1, role: "output", label: "email di risposta", text_canon: TEXT_CANON_1 },
+    ]);
+    expect(store.findDocument(documentFingerprints(recorded))).toMatchObject([{ kind: "bytes", seq: 1 }]);
+    expect(store.findDocument(documentFingerprints(bytesOf("Gentile candidato, la ringraziamo.")))).toEqual([]);
+  });
+
+  it("finds a text that is exactly an action's whole input or output (decision D6)", async () => {
+    const cv = "Mario Bianchi\nSviluppatore, 7 anni di esperienza\n";
+    await store.append(event({ input_hash: hashCanonicalJson("curriculum/001.txt"), output_hash: hashCanonicalJson(cv) }));
+    expect(store.findDocument(documentFingerprints(bytesOf(cv)))).toMatchObject([
+      { kind: "json", seq: 1, role: "output", label: null },
+    ]);
+    // The same file saved with CRLF: the text a tool read back had LF.
+    expect(store.findDocument(documentFingerprints(bytesOf(cv.replace(/\n/g, "\r\n"))))).toMatchObject([
+      { kind: "json-lines", seq: 1, role: "output" },
+    ]);
+  });
+
+  it("finds nothing for a document no receipt ever named", async () => {
     await store.append(event());
-    expect(store.findArtifactsBySha256("d".repeat(64))).toEqual([]);
+    expect(store.findDocument(documentFingerprints(bytesOf("mai visto")))).toEqual([]);
+  });
+
+  it("reports each use once, under the strongest kind of match", async () => {
+    const recorded = bytesOf("uno due tre\n");
+    await store.append(
+      event({
+        artifacts: [{
+          role: "input",
+          label: "allegato",
+          media_type: "text/plain",
+          sha256: documentFingerprints(recorded).bytes,
+          text: { canon: TEXT_CANON_1, sha256: textSha256(recorded) ?? "" },
+        }],
+      }),
+    );
+    // Exact bytes, and also the same text: one match, "bytes".
+    expect(store.findDocument(documentFingerprints(recorded))).toMatchObject([{ kind: "bytes" }]);
+  });
+
+  it("still finds a record written before text fingerprints existed, in a database migrated on open", async () => {
+    const legacy = bytesOf("Curriculum\r\nMario Bianchi\r\n");
+    await store.append(
+      event({ artifacts: [{ role: "input", label: "curriculum", media_type: "text/plain", sha256: documentFingerprints(legacy).bytes }] }),
+    );
+    store.close();
+
+    // Take the artifacts table back to the shape production databases have
+    // today: no text columns, no index on them.
+    const raw = openRawConnection();
+    raw.exec("DROP INDEX artifacts_by_text_sha256; ALTER TABLE artifacts DROP COLUMN text_sha256; ALTER TABLE artifacts DROP COLUMN text_canon;");
+    raw.exec("DROP INDEX IF EXISTS receipts_by_input_hash; DROP INDEX IF EXISTS receipts_by_output_hash;");
+    raw.close();
+
+    store = ReceiptStore.open(databasePath, signer);
+    expect(store.findDocument(documentFingerprints(legacy))).toMatchObject([{ kind: "bytes", role: "input" }]);
+    // The same CV pasted into the page, where every line ending is LF.
+    const pasted = bytesOf("Curriculum\nMario Bianchi");
+    expect(store.findDocument(documentFingerprints(pasted))).toMatchObject([{ kind: "lines", role: "input" }]);
+    // No text fingerprint was ever recorded for it: other spacing is not found.
+    expect(store.findDocument(documentFingerprints(bytesOf("Curriculum Mario  Bianchi")))).toEqual([]);
   });
 });
 

@@ -57,45 +57,48 @@ esattamente al candidato n. 7 è il passo successivo.
 Procurati la copia del curriculum che il candidato ha inviato (in questa
 demo: `demo/selezione-cv/curricula/candidato-07.txt`).
 
-> **"Verifica documento" è temporaneamente disattivata nell'interfaccia**: non
-> ha mai dato una conferma affidabile su una macchina reale, nonostante più
-> correzioni, e si è preferito nasconderla piuttosto che continuare a
-> inseguire il problema adesso (vedi `PROGRESS.md`). La pagina, il suo codice
-> e i suoi test restano intatti nel repository — non è stato tolto nulla,
-> solo il collegamento dal menu. Il passo qui sotto usa al suo posto il
-> **verificatore offline**, che fa esattamente lo stesso controllo
-> sull'impronta, sul fascicolo esportato invece che sulla pagina web:
->
-> 1. Genera già ora il fascicolo di `selezione-cv` per l'intervallo del passo
->    2 (dalla pagina principale, sotto **"Mi prepari le prove?"** —
->    è lo stesso file che userai di nuovo, senza rigenerarlo, al Passo 6).
-> 2. Da terminale, una volta sola: `corepack enable && pnpm install && pnpm build`.
-> 3. Poi, per ogni documento da controllare:
->    `node packages/verifier/dist/cli.js doc /percorso/del/fascicolo.zip <percorso del file>`
+Apri **"verifica documento"** nel menu in alto e carica il file (oppure
+incollane il testo nella casella). Il documento non lascia il tuo computer:
+il browser ne calcola le impronte e manda a sigillo solo quelle.
 
-Carica sempre il file, non il testo incollato: lo stesso testo può essere
-salvato con due modi diversi di andare a capo, quello di Windows (CRLF) e
-quello di Mac e Linux (LF). Per sigillo sono due documenti diversi, perché i
-byte sono diversi.
+Il risultato atteso è una conferma di questa forma:
 
-Esegui:
+> ✓ Questo documento è esattamente quello usato da selezione-cv il [data e
+> ora], come «curriculum», nell'azione leggi_curriculum (input). Non è stato
+> modificato.
+
+Le conferme possibili sono di tre tipi, e la pagina dice sempre quale:
+
+- **"esattamente quello usato"**: i byte coincidono uno per uno;
+- **"ha lo stesso testo di quello usato"**: il testo coincide parola per
+  parola, ma la copia differisce per spazi, a capo o caratteri invisibili
+  (per esempio un testo incollato, o riformattato da un programma di posta).
+  Vale per i documenti di testo registrati da questa versione di sigillo in
+  poi; una lettera, una cifra o una virgola diversa non corrisponde mai;
+- **"è quello usato ..., a meno del modo di andare a capo"**: vale per i
+  documenti registrati prima di questa versione, e copre soltanto la
+  differenza tra gli a capo di Windows (CRLF) e quelli di Mac e Linux (LF),
+  l'a capo finale e il segno BOM iniziale.
+
+Se la pagina risponde "Nessuna azione registrata ha usato questo documento",
+confronta l'impronta esatta mostrata con quella del file
+(`Get-FileHash candidato-07.txt -Algorithm SHA256` su Windows, `sha256sum
+candidato-07.txt` su Linux).
+
+**Lo stesso controllo, senza server** — con il verificatore offline, sul
+fascicolo esportato (lo stesso che userai al Passo 6):
+
+1. Genera il fascicolo di `selezione-cv` per l'intervallo del passo 2 (dalla
+   pagina principale, sotto **"Mi prepari le prove?"**).
+2. Da terminale, una volta sola: `corepack enable && pnpm install && pnpm build`.
+3. Poi, per ogni documento da controllare:
 
 ```bash
 node packages/verifier/dist/cli.js doc /percorso/del/fascicolo.zip demo/selezione-cv/curricula/candidato-07.txt
 ```
 
-Il risultato atteso è una conferma di questa forma:
-
-> This document is exactly the one used by selezione-cv on [data e ora], as
-> "curriculum" (input), in action leggi_curriculum (seq [numero]). It has not
-> been modified.
-
-Se invece stampa `No registered action used this document.`, confronta
-l'impronta del file con quella attesa
-(`Get-FileHash candidato-07.txt -Algorithm SHA256` su Windows, `sha256sum
-candidato-07.txt` su Linux): un file con gli a capo diversi da quello letto
-dall'agente ha byte diversi, e quindi un'impronta diversa, anche se il testo è
-identico.
+che stampa la stessa conferma, in inglese ("This document is exactly the one
+used by selezione-cv ...", oppure "has the same text as the one used ...").
 
 Questa è la prova che il file che il candidato dice di aver inviato è
 **esattamente** quello che l'agente ha letto — non una versione simile, non
@@ -124,10 +127,11 @@ altrove: è proprio la garanzia che sigillo offre. Nessuno deve correggerle,
 e non vanno toccate.
 
 La conseguenza pratica: se verifichi un file scritto **dopo** la regola
-contro una ricevuta scritta **prima**, la pagina risponde "Nessuna azione
-registrata ha usato questo documento", mostra l'impronta `d819ede8…` e dice
-"Calcolata dal browser sul file scelto". **Non si è rotto niente**: il file
-è davvero diverso da quello che l'agente aveva letto.
+contro una ricevuta scritta **prima**, i byte non coincidono (l'impronta
+esatta mostrata è `d819ede8…`), ma la pagina lo trova lo stesso e lo dice:
+"è quello usato ..., a meno del modo di andare a capo". **Non si è rotto
+niente**: il testo è lo stesso, i byte no, e la pagina dice esattamente in che
+cosa differiscono.
 
 Cosa succede alla tua copia su Windows:
 
@@ -188,7 +192,11 @@ rispondere a questa richiesta.
 
 Chiedi al candidato la mail di risposta che ha ricevuto (in questa demo: il
 file scritto da `invia_email` sotto `demo/selezione-cv/outbox/`). Controllala
-allo stesso modo del Passo 3, con lo stesso fascicolo già generato:
+allo stesso modo del Passo 3: caricala in **"verifica documento"**, oppure
+incollane il testo — una mail inoltrata o copiata da un programma di posta
+cambia spesso gli a capo, e per un testo registrato da questa versione di
+sigillo la pagina lo trova comunque ("ha lo stesso testo"). Offline, con lo
+stesso fascicolo già generato:
 
 ```bash
 node packages/verifier/dist/cli.js doc /percorso/del/fascicolo.zip <percorso della mail>

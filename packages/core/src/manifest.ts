@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CANONICAL_BASE64_MESSAGE, isCanonicalBase64 } from "./base64.js";
-import { isoUtcTimestampSchema, RECEIPT_VERSION_1, RECEIPT_VERSION_2 } from "./receipt.js";
+import { isoUtcTimestampSchema, RECEIPT_VERSION_1, RECEIPT_VERSION_2, RECEIPT_VERSION_3 } from "./receipt.js";
 
 /**
  * The manifest of an export: what the archive claims to contain, and the public
@@ -31,7 +31,11 @@ export const manifestSchema = z
      * this export" but a declared fact a verifier checks like any other:
      * against the receipts actually present.
      */
-    receipt_version: z.union([z.literal(RECEIPT_VERSION_1), z.literal(RECEIPT_VERSION_2)]),
+    receipt_version: z.union([
+      z.literal(RECEIPT_VERSION_1),
+      z.literal(RECEIPT_VERSION_2),
+      z.literal(RECEIPT_VERSION_3),
+    ]),
     system_id: z.string().min(1).max(128),
     exported_at: isoUtcTimestampSchema,
     range: z

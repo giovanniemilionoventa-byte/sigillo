@@ -1,9 +1,15 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Command } from "commander";
-import { readZip, safeParseCheckpointEntry, type CheckpointEntry } from "@sigillo/core";
+import {
+  documentFingerprints,
+  readZip,
+  safeParseCheckpointEntry,
+  type ArtifactEntryV3,
+  type CheckpointEntry,
+  type Receipt,
+} from "@sigillo/core";
 import { verifyTimestamps } from "./timestamps.js";
 import { compareWithPrevious, verifyBundle, type Bundle, type VerifyOptions } from "./verify.js";
 
@@ -299,31 +305,58 @@ program
       );
       process.exit(2);
     }
-    const digest = createHash("sha256").update(fileBytes).digest("hex");
+    // Every fingerprint the document has, computed by the same code the web
+    // page runs (packages/core/src/text.ts): its exact bytes, its text under
+    // sigillo-text/1, its line-ending variants, and its text as a JSON string.
+    const fingerprints = documentFingerprints(new Uint8Array(fileBytes));
     const manifest = JSON.parse(archive.bundle.manifestJson) as { system_id: string };
+    const used = (receipt: Receipt, what: string): string =>
+      `by ${manifest.system_id} on ${receipt.ts_received}, ${what}, in action ${receipt.action.name} (seq ${receipt.seq})`;
 
-    const matches = result.receipts.flatMap((receipt) => {
-      if (receipt.v !== 2 || receipt.artifacts === undefined) return [];
-      return receipt.artifacts
-        .filter((artifact) => artifact.sha256 === digest)
-        .map((artifact) => ({ receipt, artifact }));
-    });
+    // One line per use, under the strongest kind of match it has.
+    const found: string[] = [];
+    for (const receipt of result.receipts) {
+      const artifacts: ArtifactEntryV3[] = receipt.v === 1 ? [] : (receipt.artifacts ?? []);
+      for (const artifact of artifacts) {
+        const where = used(receipt, `as "${artifact.label}" (${artifact.role})`);
+        const text = artifact.text;
+        if (artifact.sha256 === fingerprints.bytes) {
+          found.push(`This document is exactly the one used ${where}. It has not been modified.`);
+        } else if (text !== undefined && text.sha256 === fingerprints.text) {
+          found.push(
+            `This document has the same text as the one used ${where}: under ${text.canon} the two differ ` +
+              "at most in spacing, line breaks and invisible formatting characters. Their bytes are not identical.",
+          );
+        } else if (fingerprints.lines.includes(artifact.sha256)) {
+          found.push(
+            `This document is the one used ${where}, except for its line endings, a final newline or a ` +
+              "byte order mark. Everything else is identical.",
+          );
+        }
+      }
+      for (const [role, digest] of [["input", receipt.input_hash], ["output", receipt.output_hash]] as const) {
+        if (digest === null) continue;
+        if (digest === fingerprints.json) {
+          found.push(`The text of this document is exactly the whole ${role} recorded ${used(receipt, "as its hash")}.`);
+        } else if (fingerprints.jsonLines.includes(digest)) {
+          found.push(
+            `The text of this document is the whole ${role} recorded ${used(receipt, "as its hash")}, ` +
+              "except for its line endings, a final newline or a byte order mark.",
+          );
+        }
+      }
+    }
 
-    if (matches.length === 0) {
+    if (found.length === 0) {
       process.stdout.write("No registered action used this document.\n");
       process.stdout.write(
-        "If you have a different version of it, changing even one character changes the result.\n",
+        "If you have a different version of it, changing even one character changes the result. " +
+          "A copy that differs only in spacing or line breaks is found only if the document was " +
+          "recorded with a text fingerprint (receipt version 3).\n",
       );
       process.exit(1);
     }
-
-    for (const { receipt, artifact } of matches) {
-      process.stdout.write(
-        `This document is exactly the one used by ${manifest.system_id} on ${receipt.ts_received}, ` +
-          `as "${artifact.label}" (${artifact.role}), in action ${receipt.action.name} (seq ${receipt.seq}). ` +
-          "It has not been modified.\n",
-      );
-    }
+    for (const line of found) process.stdout.write(`${line}\n`);
   });
 
 await program.parseAsync(process.argv);

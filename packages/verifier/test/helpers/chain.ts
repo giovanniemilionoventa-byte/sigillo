@@ -7,7 +7,7 @@ import {
   receiptHashHex,
   RECEIPT_VERSION_1,
   signReceipt,
-  type ArtifactEntry,
+  type ArtifactEntryV3,
   type Manifest,
   type ModelInfo,
   type Receipt,
@@ -39,8 +39,8 @@ function timestamp(index: number): string {
 
 /** Per-seq departures from an all-v1 chain, for tests that need a v2 or mixed chain. */
 export interface ReceiptOverride {
-  v?: 1 | 2;
-  artifacts?: ArtifactEntry[];
+  v?: 1 | 2 | 3;
+  artifacts?: ArtifactEntryV3[];
   model?: ModelInfo;
 }
 
@@ -96,7 +96,8 @@ export function buildManifest(receipts: Receipt[], identity: SigningIdentity): M
   }
   const receiptVersion = receipts.reduce<number>((max, receipt) => Math.max(max, receipt.v), 0) as
     | 1
-    | 2;
+    | 2
+    | 3;
   return {
     sigillo_version: "0.1.0",
     receipt_version: receiptVersion,
@@ -117,7 +118,7 @@ export function buildManifest(receipts: Receipt[], identity: SigningIdentity): M
 function artifactsIndexJsonl(receipts: Receipt[]): string {
   return receipts
     .flatMap((receipt) =>
-      receipt.v === 2 && receipt.artifacts !== undefined
+      receipt.v !== 1 && receipt.artifacts !== undefined
         ? receipt.artifacts.map(
             (artifact) =>
               `${JSON.stringify({
@@ -125,6 +126,7 @@ function artifactsIndexJsonl(receipts: Receipt[]): string {
                 seq: receipt.seq,
                 role: artifact.role,
                 label: artifact.label,
+                ...("text" in artifact && artifact.text !== undefined ? { text: artifact.text } : {}),
               })}\n`,
           )
         : [],

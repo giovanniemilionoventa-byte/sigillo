@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { Receipt } from "@sigillo/core";
+import { DOCUMENT_TEXT_SOURCE, type DocumentFingerprints, type Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
 import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
@@ -11,7 +11,7 @@ import {
   StorageError,
   SystemNotDeletableError,
   type AdminRequest,
-  type ArtifactMatch,
+  type DocumentMatch,
   type ReceiptStore,
   type SystemRecord,
 } from "../storage/store.js";
@@ -113,6 +113,7 @@ ${options.head.sid === undefined ? "" : `<code class="sid">${escape(options.head
   <nav aria-label="sezioni">
     <a href="/ui"${here("registro")}>${escape(UI.nav.registro)}</a>
     <a href="/ui/sistemi"${here("sistemi")}>${escape(UI.nav.sistemi)}</a>
+    <a href="/ui/verify-document"${here("verifica")}>${escape(UI.nav.verificaDocumento)}</a>
     <form class="inline" method="post" action="/ui/logout"><button type="submit" class="link">${escape(UI.nav.esci)}</button></form>
   </nav>
 </div></header>
@@ -128,15 +129,23 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 /**
  * The one script this UI carries. Hashing happens in the browser, with Web
- * Crypto: the document is never sent anywhere, only its fingerprint, as a
- * query parameter of an ordinary navigation. No library, no build step.
+ * Crypto: the document is never sent anywhere, only its fingerprints, as
+ * query parameters of an ordinary navigation. No library, no build step.
+ *
+ * Which fingerprints, and of what, is not decided here: the script embeds
+ * DOCUMENT_TEXT_SOURCE from packages/core, the same characters Node runs for
+ * `sigillo-verify doc` and the tests, so the browser applies sigillo-text/1
+ * with the reference implementation itself, never a copy of it. This page
+ * only hashes what `sigilloFingerprintInputs` hands it and puts the digests
+ * in the address.
  *
  * Its exact bytes are what deploy/Caddyfile's CSP allows by `script-src
- * 'sha256-...'`: changing so much as a character here means recomputing that
- * hash (packages/verifier, sorry — apps/server/test/ui.test.ts checks the two
- * stay in step, so a mismatch fails in CI rather than in production). A
- * running Caddy keeps the policy it started with: after an update that
- * changes this script, Caddy has to be restarted too.
+ * 'sha256-...'`: changing so much as a character here, or in
+ * DOCUMENT_TEXT_SOURCE, means recomputing that hash.
+ * apps/server/test/ui.test.ts checks the two stay in step, and
+ * scripts/smoke-dist.mjs checks the built server's script against the same
+ * line. A running Caddy keeps the policy it started with: deploy/update.sh
+ * restarts it on every update, and checks the policy it then sends.
  *
  * It never fails in silence (session 6). Whatever is on the page when
  * Verifica is pressed is the result of an earlier attempt, for other bytes,
@@ -145,6 +154,8 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
  * enable: a browser that does not run it shows both.
  */
 export const VERIFY_DOCUMENT_SCRIPT = `(function () {
+${DOCUMENT_TEXT_SOURCE}
+
   function toHex(buffer) {
     return Array.from(new Uint8Array(buffer))
       .map(function (byte) { return byte.toString(16).padStart(2, "0"); })
@@ -162,7 +173,7 @@ export const VERIFY_DOCUMENT_SCRIPT = `(function () {
       var bytes;
       var from;
       if (fileInput.files.length > 0) {
-        bytes = await fileInput.files[0].arrayBuffer();
+        bytes = new Uint8Array(await fileInput.files[0].arrayBuffer());
         from = "file";
       } else if (textInput.value.length > 0) {
         bytes = new TextEncoder().encode(textInput.value);
@@ -170,8 +181,17 @@ export const VERIFY_DOCUMENT_SCRIPT = `(function () {
       } else {
         return;
       }
-      var digest = await crypto.subtle.digest("SHA-256", bytes);
-      window.location.href = "/ui/verify-document?sha256=" + toHex(digest) + "&from=" + from;
+      var found = { bytes: [], text: [], lines: [], json: [], "json-lines": [] };
+      var inputs = sigilloFingerprintInputs(bytes);
+      for (var i = 0; i < inputs.length; i += 1) {
+        found[inputs[i].kind].push(toHex(await crypto.subtle.digest("SHA-256", inputs[i].data)));
+      }
+      var query = "sha256=" + found.bytes[0];
+      if (found.text.length > 0) query += "&text=" + found.text[0];
+      if (found.lines.length > 0) query += "&lines=" + found.lines.join(",");
+      if (found.json.length > 0) query += "&json=" + found.json[0];
+      if (found["json-lines"].length > 0) query += "&json_lines=" + found["json-lines"].join(",");
+      window.location.href = "/ui/verify-document?" + query + "&from=" + from;
     } catch (error) {
       var previous = document.getElementById("sigillo-doc-result");
       if (previous !== null) previous.remove();
@@ -196,6 +216,30 @@ function verifyDocumentForm(): string {
 <script>${VERIFY_DOCUMENT_SCRIPT}</script>`;
 }
 
+/**
+ * The fingerprints the page's script put in the address, as the store
+ * searches them. `sha256` is required; everything else is optional, and a
+ * value that is not what the script writes is dropped, never searched. The
+ * script sends at most MAX_VARIANTS of each list (text.ts: two tails, two
+ * line-ending conventions, BOM or not).
+ */
+const MAX_VARIANTS = 8;
+
+function fingerprintsFromQuery(query: Record<string, unknown>): DocumentFingerprints | null {
+  const one = (value: unknown): string | null => (typeof value === "string" && SHA256_HEX.test(value) ? value : null);
+  const list = (value: unknown): string[] =>
+    typeof value === "string" ? value.split(",").filter((item) => SHA256_HEX.test(item)).slice(0, MAX_VARIANTS) : [];
+  const bytes = one(query["sha256"]);
+  if (bytes === null) return null;
+  return {
+    bytes,
+    text: one(query["text"]),
+    lines: list(query["lines"]),
+    json: one(query["json"]),
+    jsonLines: list(query["json_lines"]),
+  };
+}
+
 function timestampStatus(store: ReceiptStore, systemId: string, seq: number): string {
   const covering = store.readCheckpoints(systemId).find((entry) => entry.checkpoint.tree_size > seq);
   if (covering === undefined) return "non ancora coperto da un checkpoint";
@@ -209,28 +253,31 @@ function timestampStatus(store: ReceiptStore, systemId: string, seq: number): st
 
 function verifyDocumentResult(
   store: ReceiptStore,
-  sha256: string,
+  fingerprints: DocumentFingerprints,
   from: "file" | "text" | undefined,
-  matches: ArtifactMatch[],
+  matches: DocumentMatch[],
 ): string {
   const t = UI.verifyDocument;
-  // The fingerprint the browser computed, shown either way: set beside
-  // Get-FileHash or sha256sum, it tells at once whether the page was given
-  // the same bytes the agent read. Which input it was computed on, file or
-  // text, the page's script says in `from`: when the two could disagree,
-  // that is the next question.
+  // The fingerprints the browser computed, shown either way: the exact one,
+  // set beside Get-FileHash or sha256sum, tells at once whether the page was
+  // given the same bytes the agent read. Which input they were computed on,
+  // file or text, the page's script says in `from`.
   const source = from === undefined ? "" : `<p class="muted">${escape(from === "file" ? t.fromFile : t.fromText)}</p>`;
-  const searched = `<p>${escape(t.searchedFingerprint)}: <span class="hash">${escape(sha256)}</span></p>${source}`;
+  const textLine =
+    fingerprints.text === null
+      ? `<p>${escape(t.textFingerprint)}: <span class="muted">${escape(t.noTextFingerprint)}</span></p>`
+      : `<p>${escape(t.textFingerprint)}: <span class="hash text-hash">${escape(fingerprints.text)}</span></p>`;
+  const searched = `<p>${escape(t.searchedFingerprint)}: <span class="hash">${escape(fingerprints.bytes)}</span></p>${textLine}${source}`;
   if (matches.length === 0) {
     return `<section id="sigillo-doc-result" class="sheet"><h2>${escape(t.resultTitle)}</h2>${searched}<p><strong>${escape(t.noMatch)}</strong></p>` +
-      `<p class="hint">${escape(t.lineEndingsHint)}</p></section>`;
+      `<p class="hint">${escape(t.noMatchHint)}</p></section>`;
   }
   const names = new Map(store.listSystemRecords().map((record) => [record.system_id, record.display_name]));
   const items = matches
     .map((match) => {
       const sentence = describeDocumentMatch({ ...match, display_name: names.get(match.system_id) ?? null });
       const link = escape(encodeURIComponent(match.system_id));
-      return `<li>${escape(sentence)} <a href="/ui/systems/${link}">${escape(t.seeReceipt)}</a> — ` +
+      return `<li data-match="${escape(match.kind)}">${escape(sentence)} <a href="/ui/systems/${link}">${escape(t.seeReceipt)}</a> — ` +
         `<span class="muted">${escape(timestampStatus(store, match.system_id, match.seq))}</span></li>`;
     })
     .join("\n");
@@ -507,13 +554,12 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   app.get("/ui/verify-document", async (request, reply) => {
     if (!requireSession(request, reply)) return reply;
 
-    const query = request.query as { sha256?: string; from?: string };
-    const sha256 = query.sha256;
-    const searched = typeof sha256 === "string" && SHA256_HEX.test(sha256);
-    const from = query.from === "file" || query.from === "text" ? query.from : undefined;
+    const query = request.query as Record<string, unknown>;
+    const fingerprints = fingerprintsFromQuery(query);
+    const from = query["from"] === "file" || query["from"] === "text" ? query["from"] : undefined;
 
     const body = `${verifyDocumentForm()}${
-      searched ? verifyDocumentResult(store, sha256, from, store.findArtifactsBySha256(sha256)) : ""
+      fingerprints === null ? "" : verifyDocumentResult(store, fingerprints, from, store.findDocument(fingerprints))
     }`;
     return html(
       reply,

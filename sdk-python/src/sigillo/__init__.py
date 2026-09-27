@@ -59,6 +59,7 @@ from opentelemetry.sdk.trace import SpanProcessor as _SpanProcessor
 from opentelemetry.sdk.trace import TracerProvider as _TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor as _BatchSpanProcessor
 from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
+from . import _text
 
 __all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"]
 __version__ = "0.1.0"
@@ -396,8 +397,16 @@ def artifact(
     (hashed as its UTF-8 bytes), or a path to read it from — never a filename
     to describe it with: `label` is that, a category such as `"curriculum"`,
     chosen so it cannot carry a person's name. Hashing happens here, in this
-    process; only the digest is attached to the span, as an event named
+    process; only the digests are attached to the span, as an event named
     `sigillo.artifact`. The document's content is never sent anywhere.
+
+    Two digests, for a text. `sha256` is always over the exact bytes. When
+    the media type is `text/plain` (the default for a `str`, and for a
+    `.txt` path) and the bytes are UTF-8, the event also carries the
+    sigillo-text/1 fingerprint (docs/FORMAT.md, section 2.5.1), which a copy
+    of the same text with other spacing, line breaks or invisible formatting
+    characters shares, and one with any other difference does not. A PDF, an
+    image, a CSV or any other type gets the exact digest only.
 
     By default this attaches to the current span (whatever the instrumentation
     already opened for this action); if there is none, it logs a warning and
@@ -417,15 +426,21 @@ def artifact(
         return
 
     raw, default_media_type = _artifact_bytes(data)
-    target.add_event(
-        "sigillo.artifact",
-        attributes={
-            "sigillo.artifact.role": role,
-            "sigillo.artifact.label": label,
-            "sigillo.artifact.media_type": media_type or default_media_type,
-            "sigillo.artifact.sha256": _hashlib.sha256(raw).hexdigest(),
-        },
-    )
+    effective_media_type = media_type or default_media_type
+    attributes = {
+        "sigillo.artifact.role": role,
+        "sigillo.artifact.label": label,
+        "sigillo.artifact.media_type": effective_media_type,
+        "sigillo.artifact.sha256": _hashlib.sha256(raw).hexdigest(),
+    }
+    # A plain text also gets its sigillo-text/1 fingerprint, which a copy of
+    # it with other spacing or line breaks shares; the exact one above keeps
+    # its meaning. None for bytes that are not UTF-8 or hold only whitespace.
+    text_digest = _text.text_sha256(raw) if _text.is_plain_text(effective_media_type) else None
+    if text_digest is not None:
+        attributes["sigillo.artifact.text_canon"] = _text.TEXT_CANON_1
+        attributes["sigillo.artifact.text_sha256"] = text_digest
+    target.add_event("sigillo.artifact", attributes=attributes)
 
 
 def current_span_from_callbacks(callbacks: object) -> _Span | None:

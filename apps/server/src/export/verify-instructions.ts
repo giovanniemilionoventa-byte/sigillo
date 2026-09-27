@@ -110,10 +110,26 @@ you whether a file you have is the exact one, without a server:
 sigillo-verify doc <this archive> <the file>
 \`\`\`
 
-It verifies the whole archive first, then hashes the file with SHA-256 and
-looks for that digest in \`artifacts-index.jsonl\`. Changing even one character
-of the file changes its digest, so no near match is possible: it is either
-exactly the file that was used, or the tool reports no match at all.
+It verifies the whole archive first, then computes the file's fingerprints
+and looks for them in \`artifacts-index.jsonl\` and in the receipts, and says
+which kind of match it found:
+
+- **exactly the one used**: the file's SHA-256 is the artifact's \`sha256\`,
+  byte for byte;
+- **the same text**: for a text recorded with a \`text\` member (receipt
+  version 3), the file's text under \`sigillo-text/1\` matches it — the same
+  characters, with at most different spacing, line breaks and invisible
+  formatting characters. It is not the same bytes, and it says nothing about
+  layout;
+- **except for its line endings**: for a text recorded before version 3, the
+  file matches once its line endings (LF or CRLF), a final newline or a
+  leading byte order mark are changed;
+- **the whole input or output** of an action: the file's text is exactly what
+  an \`input_hash\` or \`output_hash\` was computed over.
+
+Any other difference — one letter, one digit, one comma — is no match at all.
+The rule is written out in FORMAT.md, section 2.5.1, of the sigillo
+repository.
 
 ## Checking a receipt by hand
 

@@ -16,6 +16,10 @@ import {
   receiptHashHex,
   RECEIPT_VERSION_1,
   RECEIPT_VERSION_2,
+  RECEIPT_VERSION_3,
+  sha256Hex,
+  TEXT_CANON_1,
+  textSha256,
   type Receipt,
 } from "../packages/core/src/index.js";
 
@@ -26,6 +30,13 @@ const PLACEHOLDER_SIG =
 const KEY_ID = "3f2a1c9d8e7b6a5f";
 const SHA_EMPTY = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const SHA_SIGILLO = "7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e";
+
+// A text document as a Windows editor saves it, and its two fingerprints: the
+// exact bytes, and sigillo-text/1 ("Ciao, mondo."), which docs/FORMAT.md 2.5.1
+// and packages/core/test/text-vectors.json both derive by hand.
+const LETTER = new TextEncoder().encode("Ciao,\r\nmondo.\r\n");
+const SHA_LETTER = sha256Hex(LETTER);
+const TEXT_LETTER = textSha256(LETTER) ?? "";
 
 interface VectorInput {
   name: string;
@@ -368,6 +379,81 @@ const inputs: VectorInput[] = [
       model: { name: "gpt-4o", provider: "openai", digest: null },
     },
   },
+  {
+    name: "v3-text-artifact",
+    comment:
+      "Version 3: a text artifact carries its sigillo-text/1 fingerprint beside the exact one; sha256 keeps its raw-bytes meaning.",
+    receipt: {
+      ...genesis,
+      v: RECEIPT_VERSION_3,
+      seq: 25,
+      ts_event: "2026-03-29T14:31:18.000Z",
+      ts_received: "2026-03-29T14:31:18.001Z",
+      actor: { agent: "selezione-cv" },
+      action: { kind: "tool_call", name: "invia_email" },
+      source: { type: "otlp", trace_id: "4bf92f3577b34da6a3ce929d0e0e4736", span_id: "00f067aa0ba902b7" },
+      prev_hash: genesisHash,
+      artifacts: [
+        {
+          role: "output",
+          label: "email di risposta",
+          media_type: "text/plain",
+          sha256: SHA_LETTER,
+          text: { canon: TEXT_CANON_1, sha256: TEXT_LETTER },
+        },
+      ],
+    },
+  },
+  {
+    name: "v3-text-and-binary-artifacts",
+    comment: "A text artifact and a binary one on the same receipt: only the text one has a text member.",
+    receipt: {
+      ...genesis,
+      v: RECEIPT_VERSION_3,
+      seq: 26,
+      ts_event: "2026-03-29T14:31:19.000Z",
+      ts_received: "2026-03-29T14:31:19.001Z",
+      actor: { agent: "selezione-cv" },
+      action: { kind: "tool_call", name: "leggi_candidatura" },
+      source: { type: "sdk" },
+      prev_hash: genesisHash,
+      artifacts: [
+        {
+          role: "input",
+          label: "lettera",
+          media_type: "text/plain",
+          sha256: SHA_LETTER,
+          text: { canon: TEXT_CANON_1, sha256: TEXT_LETTER },
+        },
+        { role: "input", label: "curriculum", media_type: "application/pdf", sha256: SHA_SIGILLO },
+      ],
+    },
+  },
+  {
+    name: "v3-text-artifact-and-model",
+    comment: "A text artifact with its text member and a model, together on an llm_call.",
+    receipt: {
+      ...genesis,
+      v: RECEIPT_VERSION_3,
+      seq: 27,
+      ts_event: "2026-03-29T14:31:20.000Z",
+      ts_received: "2026-03-29T14:31:20.001Z",
+      actor: { agent: "planner", on_behalf_of: "urn:user:42" },
+      action: { kind: "llm_call", name: "chat.completions" },
+      source: { type: "sdk" },
+      prev_hash: genesisHash,
+      artifacts: [
+        {
+          role: "output",
+          label: "riassunto",
+          media_type: "text/plain",
+          sha256: SHA_EMPTY,
+          text: { canon: TEXT_CANON_1, sha256: SHA_SIGILLO },
+        },
+      ],
+      model: { name: "qwen2.5:3b", provider: "ollama", digest: null },
+    },
+  },
 ];
 
 const vectors = inputs.map((input) => {
@@ -396,8 +482,9 @@ const output = {
     "canonical is the RFC 8785 form of the receipt with the sig field removed;",
     "hash is the SHA-256 of those UTF-8 bytes, lowercase hex.",
     "The sig values are a fixed placeholder: these vectors pin the wire format,",
-    "not signatures. Signature vectors arrive with the signer. Versions 1 and 2",
-    "are both covered; a v1 vector has no artifacts or model member at all.",
+    "not signatures. Signature vectors arrive with the signer. Versions 1, 2 and 3",
+    "are all covered; a v1 vector has no artifacts or model member at all, and only",
+    "a v3 artifact may carry text.",
   ].join(" "),
   vectors,
 };

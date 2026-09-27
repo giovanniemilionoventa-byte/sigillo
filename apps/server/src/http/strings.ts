@@ -165,53 +165,71 @@ export const UI = {
     title: "verifica un documento",
     heading: "Verifica un documento",
     eyebrow: "è quello che ha usato l'AI?",
-    privacyNote: "Il documento non lascia il tuo computer: calcoliamo solo la sua impronta.",
+    privacyNote: "Il documento non lascia il tuo computer: calcoliamo solo le sue impronte.",
     fileLabel: "File",
     textLabel: "oppure incolla il testo",
-    // A browser reads a textarea back with LF line endings whatever was
-    // pasted (HTML's newline normalisation), so text from a file saved with
-    // Windows line endings can never match from here (session 5).
     textNote:
-      "Attenzione: il browser legge il testo incollato con gli a capo di Mac e Linux. Se il documento è un file salvato su Windows, caricalo invece di incollarlo.",
+      "Per un testo contano le parole, non l'impaginazione: spazi, a capo e caratteri invisibili in più o in meno non cambiano il risultato. Per un PDF o un'immagine carica il file: lì conta ogni byte.",
     submit: "Verifica",
     // Shown until the page's script runs, and so left on screen when the
     // browser does not run it (a CSP that no longer matches, say): the button
     // stays disabled then, instead of doing nothing without a word (session 6).
     scriptInactive:
-      "Il calcolo dell'impronta non è attivo in questa pagina: il browser non ha eseguito lo script che lo fa, quindi il pulsante Verifica è disattivato. Ricarica la pagina; se il messaggio resta, chi gestisce sigillo deve riavviare Caddy dopo l'ultimo aggiornamento (docs/DEPLOY-PRODUZIONE.md, 6.3).",
+      "Il calcolo dell'impronta non è attivo in questa pagina: il browser non ha eseguito lo script che lo fa, quindi il pulsante Verifica è disattivato. Ricarica la pagina; se il messaggio resta, chi gestisce sigillo deve aggiornare con deploy/update.sh, che riavvia anche Caddy (docs/DEPLOY-PRODUZIONE.md, 6.3).",
     computeFailed:
       "Non è stato possibile calcolare l'impronta del documento scelto. Il risultato che era sulla pagina è stato tolto, perché riguardava un tentativo precedente e non questo documento. Se il file è stato modificato, spostato o salvato di nuovo dopo averlo scelto, sceglilo di nuovo e premi Verifica.",
     browserError: "Errore del browser",
     resultTitle: "Risultato",
-    searchedFingerprint: "Impronta cercata (SHA-256)",
-    fromFile: "Calcolata dal browser sul file scelto.",
-    fromText: "Calcolata dal browser sul testo incollato nella casella.",
+    searchedFingerprint: "Impronta esatta (SHA-256)",
+    textFingerprint: "Impronta del testo (sigillo-text/1)",
+    noTextFingerprint: "nessuna: non è un testo in UTF-8",
+    fromFile: "Calcolate dal browser sul file scelto.",
+    fromText: "Calcolate dal browser sul testo incollato nella casella.",
     noMatch:
-      "Nessuna azione registrata ha usato questo documento. Se ne hai una versione diversa, anche un solo carattere cambia il risultato.",
-    lineEndingsHint:
-      "Conta anche il modo di andare a capo: lo stesso testo salvato su Windows (a capo CRLF) e su Mac o Linux (a capo LF) ha due impronte diverse, e il testo incollato nella casella viene sempre letto con gli a capo LF. Se il documento è un file, carica il file originale invece di incollarne il testo, e confronta l'impronta qui sopra con quella del file (Get-FileHash su Windows, sha256sum su Linux, shasum -a 256 su Mac).",
+      "Nessuna azione registrata ha usato questo documento, né una sua copia che differisca solo per spazi o a capo.",
+    noMatchHint:
+      "Un testo registrato prima di questa versione di sigillo si trova solo se coincide byte per byte, a meno del modo di andare a capo. Per un PDF o un'immagine conta ogni byte. Puoi confrontare l'impronta esatta qui sopra con quella del file: Get-FileHash su Windows, sha256sum su Linux, shasum -a 256 su Mac.",
     seeReceipt: "vedi la ricevuta",
     notModified: "Non è stato modificato",
   },
 } as const;
 
-/** The one sentence the "verifica un documento" page shows for a match. */
+/** The kinds of match the store reports, strongest first (store.ts, DocumentMatchKind). */
+type MatchKind = "bytes" | "text" | "lines" | "json" | "json-lines";
+
+/** The one sentence the "verifica un documento" page shows for a match, by its kind. */
 export function describeDocumentMatch(match: {
+  kind: MatchKind;
   system_id: string;
   display_name?: string | null;
   ts_received: string;
-  label: string;
+  label: string | null;
   action_name: string;
   role: string;
+  text_canon?: string | null;
 }): string {
   const who =
     match.display_name === undefined || match.display_name === null
       ? match.system_id
       : `«${match.display_name}» (sistema ${match.system_id})`;
-  return (
-    `✓ Questo documento è esattamente quello usato da ${who} il ${formatTs(match.ts_received)}, ` +
-    `come «${match.label}», nell'azione ${match.action_name} (${match.role}). ${UI.verifyDocument.notModified}.`
-  );
+  const when = formatTs(match.ts_received);
+  const used = `da ${who} il ${when}, come «${match.label ?? ""}», nell'azione ${match.action_name} (${match.role})`;
+  const lineEndings = "a meno del modo di andare a capo (Windows o Mac e Linux), dell'a capo finale o del segno BOM iniziale";
+  switch (match.kind) {
+    case "bytes":
+      return `✓ Questo documento è esattamente quello usato ${used}. ${UI.verifyDocument.notModified}.`;
+    case "text":
+      return (
+        `✓ Questo documento ha lo stesso testo di quello usato ${used}: i due differiscono al più per spazi, ` +
+        `a capo e caratteri di formattazione invisibili (regola ${match.text_canon ?? "sigillo-text/1"}). I byte non sono identici.`
+      );
+    case "lines":
+      return `✓ Questo documento è quello usato ${used}, ${lineEndings}. Tutto il resto è identico.`;
+    case "json":
+      return `✓ Il testo di questo documento è esattamente l'intero ${match.role} dell'azione ${match.action_name}, registrata da ${who} il ${when}.`;
+    case "json-lines":
+      return `✓ Il testo di questo documento è l'intero ${match.role} dell'azione ${match.action_name}, registrata da ${who} il ${when}, ${lineEndings}.`;
+  }
 }
 
 const MONTHS = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];

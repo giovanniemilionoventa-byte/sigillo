@@ -257,14 +257,20 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
     }
   }
 
-  // 9. Every artifact a v2 receipt declares is indexed exactly once, and the
-  //    index claims nothing the receipts do not. This is what makes a document
-  //    lookup trustworthy: it is checked against the receipts, not taken as given.
+  // 9. Every artifact a v2 or v3 receipt declares is indexed exactly once,
+  //    text fingerprint included, and the index claims nothing the receipts do
+  //    not. This is what makes a document lookup trustworthy: it is checked
+  //    against the receipts, not taken as given.
+  const artifactKey = (
+    seq: number,
+    artifact: { role: string; label: string; sha256: string; text?: { canon: string; sha256: string } | undefined },
+  ): string =>
+    [seq, artifact.role, artifact.label, artifact.sha256, artifact.text?.canon ?? "", artifact.text?.sha256 ?? ""].join("\u0000");
   const declaredArtifacts: string[] = [];
   for (const receipt of receipts) {
-    if (receipt.v !== 2 || receipt.artifacts === undefined) continue;
+    if (receipt.v === 1 || receipt.artifacts === undefined) continue;
     for (const artifact of receipt.artifacts) {
-      declaredArtifacts.push(`${receipt.seq}\u0000${artifact.role}\u0000${artifact.label}\u0000${artifact.sha256}`);
+      declaredArtifacts.push(artifactKey(receipt.seq, artifact));
     }
   }
 
@@ -286,9 +292,7 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
       return fail("artifacts-index", `artifacts-index.jsonl:${index + 1}`, parsed.error);
     }
     artifactsIndex.push(parsed.entry);
-    indexedArtifacts.push(
-      `${parsed.entry.seq}\u0000${parsed.entry.role}\u0000${parsed.entry.label}\u0000${parsed.entry.sha256}`,
-    );
+    indexedArtifacts.push(artifactKey(parsed.entry.seq, parsed.entry));
   }
 
   if ([...declaredArtifacts].sort().join("\n") !== [...indexedArtifacts].sort().join("\n")) {
@@ -464,7 +468,7 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
     );
   }
 
-  // A chain may upgrade from v1 to v2 mid-flight, so this is not "the export's
+  // A chain may upgrade from v1 to v2 or v3 mid-flight, so this is not "the export's
   // version": it is a claim, like the counts above, checked against what the
   // receipts actually declare rather than trusted.
   const highestReceiptVersion = receipts.reduce<number>(

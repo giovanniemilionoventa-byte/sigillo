@@ -1,0 +1,282 @@
+{
+  "canon": "sigillo-text/1",
+  "note": "Each `canonical` was written by hand from docs/FORMAT.md section 2.5.1; `sha256` is SHA-256 of its UTF-8 bytes, computed with Python hashlib. `null` means the document has no text fingerprint.",
+  "vectors": [
+    {
+      "name": "plain text, already canonical",
+      "input_hex": "4369616f206d6f6e646f",
+      "canonical": "Ciao mondo",
+      "sha256": "231e0ff1f71c698c378b089ff6a33ec52b0d49a425684aff229e79f487dbe58e"
+    },
+    {
+      "name": "CRLF, tab, leading and trailing whitespace",
+      "input_hex": "20204369616f0d0a096d6f6e646f200a",
+      "canonical": "Ciao mondo",
+      "sha256": "231e0ff1f71c698c378b089ff6a33ec52b0d49a425684aff229e79f487dbe58e"
+    },
+    {
+      "name": "LF line endings",
+      "input_hex": "4369616f2c0a6d6f6e646f2e0a",
+      "canonical": "Ciao, mondo.",
+      "sha256": "54a58d6fbf86b8113c5183a32142c3069884460d0ec47b4ee7e435dfd5b23319"
+    },
+    {
+      "name": "CRLF line endings",
+      "input_hex": "4369616f2c0d0a6d6f6e646f2e0d0a",
+      "canonical": "Ciao, mondo.",
+      "sha256": "54a58d6fbf86b8113c5183a32142c3069884460d0ec47b4ee7e435dfd5b23319"
+    },
+    {
+      "name": "lone CR",
+      "input_hex": "4369616f2c0d6d6f6e646f2e",
+      "canonical": "Ciao, mondo.",
+      "sha256": "54a58d6fbf86b8113c5183a32142c3069884460d0ec47b4ee7e435dfd5b23319"
+    },
+    {
+      "name": "paragraph break",
+      "input_hex": "5072696d6f2070617261677261666f2e0a0a0a5365636f6e646f2070617261677261666f2e",
+      "canonical": "Primo paragrafo. Secondo paragrafo.",
+      "sha256": "d34dcc627d3d1b4b5b7441219647e8d0057124b5a5b858520cdb6eba057a906e"
+    },
+    {
+      "name": "no-break space",
+      "input_hex": "4369616fc2a06d6f6e646f",
+      "canonical": "Ciao mondo",
+      "sha256": "231e0ff1f71c698c378b089ff6a33ec52b0d49a425684aff229e79f487dbe58e"
+    },
+    {
+      "name": "narrow no-break space and ideographic space",
+      "input_hex": "4369616fe280af6d6f6e646fe38080",
+      "canonical": "Ciao mondo",
+      "sha256": "231e0ff1f71c698c378b089ff6a33ec52b0d49a425684aff229e79f487dbe58e"
+    },
+    {
+      "name": "vertical tab and form feed",
+      "input_hex": "610b620c63",
+      "canonical": "a b c",
+      "sha256": "0e9f64031fcb2bc708b531c2a20441580425d151a38503f38592a7dd36019d3b"
+    },
+    {
+      "name": "NEL, line and paragraph separators",
+      "input_hex": "61c28562e280a863e280a964",
+      "canonical": "a b c d",
+      "sha256": "f82ce1b653e30b1ceb5711bbf75965dd24513011d7daa48bbd8610550154a1fd"
+    },
+    {
+      "name": "typographic spaces U+2000..U+200A, U+1680, U+205F",
+      "input_hex": "61e28080e28081e28082e28083e28084e28085e28086e28087e28088e28089e2808a62e19a8063e2819f64",
+      "canonical": "a b c d",
+      "sha256": "f82ce1b653e30b1ceb5711bbf75965dd24513011d7daa48bbd8610550154a1fd"
+    },
+    {
+      "name": "UTF-8 byte order mark",
+      "input_hex": "efbbbf4369616f206d6f6e646f",
+      "canonical": "Ciao mondo",
+      "sha256": "231e0ff1f71c698c378b089ff6a33ec52b0d49a425684aff229e79f487dbe58e"
+    },
+    {
+      "name": "U+FEFF in the middle",
+      "input_hex": "61efbbbf62",
+      "canonical": "ab",
+      "sha256": "fb8e20fc2e4c3f248c60c39bd652f3c1347298bb977b8b4d5903b85055620603"
+    },
+    {
+      "name": "zero-width space inside a word",
+      "input_hex": "7061e2808b726f6c61",
+      "canonical": "parola",
+      "sha256": "a80b568a237f50391d2f1f97beaf99564e33d2e1c8a2e5cac21ceda701570312"
+    },
+    {
+      "name": "zero-width space between spaces",
+      "input_hex": "6120e2808b2062",
+      "canonical": "a b",
+      "sha256": "c8687a08aa5d6ed2044328fa6a697ab8e96dc34291e8c2034ae8c38e6fcc6d65"
+    },
+    {
+      "name": "soft hyphen",
+      "input_hex": "73696cc2ad6c61c2ad6261",
+      "canonical": "sillaba",
+      "sha256": "f30b35beec984d92280757dcf6504662ac9ec8a7daa83a284c7032a8d7a2887f"
+    },
+    {
+      "name": "word joiner",
+      "input_hex": "776f7264e281a06a6f696e6572",
+      "canonical": "wordjoiner",
+      "sha256": "77d12f72304e7c76a1968b2c5e3400c6361752cd0c9da6ed4cfbb4fac608fa77"
+    },
+    {
+      "name": "decomposed e + combining acute becomes precomposed",
+      "input_hex": "6361666665cc81",
+      "canonical": "caff\u00e9",
+      "sha256": "83ae6c371cb301de2368ba0a04508fae85c58f2fba12be5ae3759a54c93fa013"
+    },
+    {
+      "name": "precomposed stays precomposed",
+      "input_hex": "63616666c3a9",
+      "canonical": "caff\u00e9",
+      "sha256": "83ae6c371cb301de2368ba0a04508fae85c58f2fba12be5ae3759a54c93fa013"
+    },
+    {
+      "name": "invisible between letter and accent is removed before NFC",
+      "input_hex": "65e2808bcc81",
+      "canonical": "\u00e9",
+      "sha256": "4a99557e4033c3539de2eb65472017cad5f9557f7a0625a09f1c3f6e2ba69c4c"
+    },
+    {
+      "name": "decomposed Hangul jamo compose",
+      "input_hex": "e18492e185a1e186ab",
+      "canonical": "\ud55c",
+      "sha256": "89233692031a62c60e6ef602b4cd9f3cb52a6dd8013fe9873c36101a7e3920e0"
+    },
+    {
+      "name": "ohm sign is canonically the Greek capital omega",
+      "input_hex": "313020e284a6",
+      "canonical": "10 \u03a9",
+      "sha256": "ab872c9e8bdcad5274ca6d0de796aba59ceb207c861b16f9cde0631c2e89b1e0"
+    },
+    {
+      "name": "superscript two is kept (NFC, not NFKC)",
+      "input_hex": "3130c2b2",
+      "canonical": "10\u00b2",
+      "sha256": "d3550cd5168665e16d875784486dc37802224213b52fd6f94054c757f9cda095"
+    },
+    {
+      "name": "ligature fi is kept (NFC, not NFKC)",
+      "input_hex": "efac816c65",
+      "canonical": "\ufb01le",
+      "sha256": "e187bbaaef3ad3a1449313c5dcccb0ea101217cf662f5219e672564a7851b459"
+    },
+    {
+      "name": "full-width digit is kept (NFC, not NFKC)",
+      "input_hex": "efbc91",
+      "canonical": "\uff11",
+      "sha256": "58110af8933d6ffe9f1609a07a5bed4240cc2b53881d88dd728ab17756023f93"
+    },
+    {
+      "name": "zero-width joiner in an emoji sequence is kept",
+      "input_hex": "f09f91a8e2808df09f91a9",
+      "canonical": "\ud83d\udc68\u200d\ud83d\udc69",
+      "sha256": "187ebb9e1d0a35e4bfc16af16819a8d711eec129b7bb2ce9da0dd5fa5bd64ed2"
+    },
+    {
+      "name": "zero-width non-joiner is kept",
+      "input_hex": "61e2808c62",
+      "canonical": "a\u200cb",
+      "sha256": "b350b9e65eefe1d5c2c189f6e497f0ac54ba0f085b588a74e4cf7bb7c812b0fb"
+    },
+    {
+      "name": "bidi override is kept",
+      "input_hex": "616263e280ae646566",
+      "canonical": "abc\u202edef",
+      "sha256": "043e204b8319668697923d603c3b04ecfb0d069ac372e58d2aabcbd732200a3d"
+    },
+    {
+      "name": "bidi isolate is kept",
+      "input_hex": "61e281a662e281a963",
+      "canonical": "a\u2066b\u2069c",
+      "sha256": "d0ffe1624068e9c93e04ac5b693c833b3b466b14985d46906da7b6f271c5a699"
+    },
+    {
+      "name": "variation selector is kept",
+      "input_hex": "e29da4efb88f",
+      "canonical": "\u2764\ufe0f",
+      "sha256": "16e81418a36c58995e00aeb9c261c9ef7fb739b37c72351f511dc3b3a89e5962"
+    },
+    {
+      "name": "U+001C..U+001F are not whitespace here",
+      "input_hex": "611c621d631e641f65",
+      "canonical": "a\u001cb\u001dc\u001ed\u001fe",
+      "sha256": "f7ea6a0063ce9cef80a48e12a285373912b1d7d8fd85a31b225b285053ede6e3"
+    },
+    {
+      "name": "other control characters are kept",
+      "input_hex": "6100627f63",
+      "canonical": "a\u0000b\u007fc",
+      "sha256": "36c305c0af2397f6955a21e4460e972ed0ca72c037048241371bfe0fa3833e09"
+    },
+    {
+      "name": "presence of a space still matters: 1 000",
+      "input_hex": "3120303030",
+      "canonical": "1 000",
+      "sha256": "a793d510adeab207a1b873b8fb6aacc19bd980a0c90f09cf6a3d6ce4f90423a4"
+    },
+    {
+      "name": "presence of a space still matters: 1000",
+      "input_hex": "31303030",
+      "canonical": "1000",
+      "sha256": "40510175845988f13f6162ed8526f0b09f73384467fa855e1e79b44a56562a58"
+    },
+    {
+      "name": "hyphenated line break is content",
+      "input_hex": "636f6e747261742d0a746f",
+      "canonical": "contrat- to",
+      "sha256": "4740331c9200cdc807210533189f5b4f253bee93256ab4ec681eaf2a2b5cac2c"
+    },
+    {
+      "name": "case is kept",
+      "input_hex": "4369616f204d6f6e646f",
+      "canonical": "Ciao Mondo",
+      "sha256": "27133ec67cd7ef6f8ccf329c39bf2be8f96db695a77570d6507e42290253238b"
+    },
+    {
+      "name": "typographic quotes and dashes are kept",
+      "input_hex": "e2809c73c3ace2809d20e28093206e6f",
+      "canonical": "\u201cs\u00ec\u201d \u2013 no",
+      "sha256": "373867db8e02fec00fda005c9630f62f86de8f701eeac8260eb0c47f726732f5"
+    },
+    {
+      "name": "empty document",
+      "input_hex": "",
+      "canonical": null,
+      "sha256": null
+    },
+    {
+      "name": "whitespace only",
+      "input_hex": "20200d0a09c2a0e3808020",
+      "canonical": null,
+      "sha256": null
+    },
+    {
+      "name": "invisible characters only",
+      "input_hex": "efbbbfe2808bc2ad",
+      "canonical": null,
+      "sha256": null
+    },
+    {
+      "name": "not UTF-8: bytes 0xFF 0xFE",
+      "input_hex": "fffe0061",
+      "canonical": null,
+      "sha256": null
+    },
+    {
+      "name": "not UTF-8: PDF header with binary marker",
+      "input_hex": "255044462d312e370a25e2e3cfd30a",
+      "canonical": null,
+      "sha256": null
+    },
+    {
+      "name": "not UTF-8: encoded surrogate",
+      "input_hex": "61eda08062",
+      "canonical": null,
+      "sha256": null
+    },
+    {
+      "name": "not UTF-8: overlong encoding",
+      "input_hex": "c0af",
+      "canonical": null,
+      "sha256": null
+    },
+    {
+      "name": "not UTF-8: truncated sequence",
+      "input_hex": "63616666c3",
+      "canonical": null,
+      "sha256": null
+    },
+    {
+      "name": "PNG signature",
+      "input_hex": "89504e470d0a1a0a0000000d49484452",
+      "canonical": null,
+      "sha256": null
+    }
+  ]
+}

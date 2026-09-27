@@ -14,12 +14,14 @@ import {
   publicKeyFromRaw,
   RECEIPT_VERSION_1,
   RECEIPT_VERSION_2,
+  RECEIPT_VERSION_3,
   sha256,
   toHex,
   verifyDigestSignature,
   type Action,
   type Actor,
-  type ArtifactEntry,
+  type ArtifactEntryV3,
+  type DocumentFingerprints,
   type Checkpoint,
   type ModelInfo,
   type Outcome,
@@ -51,8 +53,11 @@ export interface ChainEvent {
   output_hash: string | null;
   outcome: Outcome;
   source: Source;
-  /** Either one, present, makes the stored receipt v2 rather than v1. */
-  artifacts?: ArtifactEntry[];
+  /**
+   * Either one, present, makes the stored receipt v2 rather than v1; an
+   * artifact with a text fingerprint makes it v3.
+   */
+  artifacts?: ArtifactEntryV3[];
   model?: ModelInfo;
 }
 
@@ -61,17 +66,32 @@ export interface ChainTip {
   hash: string;
 }
 
+/**
+ * How a document matched a record, strongest first. `bytes`: the exact bytes
+ * an artifact names. `text`: the same text under the artifact's `text.canon`
+ * rule. `lines`: the exact bytes of a record, give or take line endings, a
+ * final newline and a byte order mark (for records made before text
+ * fingerprints existed). `json`/`json-lines`: the text, as is or give or take
+ * the same, is the whole input or output of the action.
+ */
+export type DocumentMatchKind = "bytes" | "text" | "lines" | "json" | "json-lines";
+
 /** One recorded use of a document, joined with enough of its receipt to describe it. */
-export interface ArtifactMatch {
+export interface DocumentMatch {
+  kind: DocumentMatchKind;
   system_id: string;
   seq: number;
   role: string;
-  label: string;
-  media_type: string;
+  /** An artifact's label and media type; null for an input or output digest. */
+  label: string | null;
+  media_type: string | null;
+  text_canon: string | null;
   ts_received: string;
   action_kind: string;
   action_name: string;
 }
+
+const MATCH_STRENGTH: Record<DocumentMatchKind, number> = { bytes: 0, text: 1, lines: 2, json: 3, "json-lines": 4 };
 
 /** A checkpoint as stored, with the row id that timestamp tokens hang from. */
 export interface StoredCheckpoint {
@@ -296,8 +316,8 @@ export class ReceiptStore {
                @source_trace_id, @source_span_id)`,
     );
     this.insertArtifactStatement = this.write.prepare(
-      `INSERT INTO artifacts (system_id, seq, role, label, media_type, sha256)
-       VALUES (@system_id, @seq, @role, @label, @media_type, @sha256)`,
+      `INSERT INTO artifacts (system_id, seq, role, label, media_type, sha256, text_canon, text_sha256)
+       VALUES (@system_id, @seq, @role, @label, @media_type, @sha256, @text_canon, @text_sha256)`,
     );
     // A span an OTLP batch already wrote, found by the identifiers that name
     // it (fase 9 / review point 6): an exporter whose response was lost
@@ -732,18 +752,52 @@ export class ReceiptStore {
     return rows.map(rowToReceipt);
   }
 
-  /** Every recorded use of a document, oldest first, across every system. */
-  findArtifactsBySha256(sha256: string): ArtifactMatch[] {
-    return this.read
-      .prepare(
-        `SELECT a.system_id, a.seq, a.role, a.label, a.media_type,
-                r.ts_received, r.action_kind, r.action_name
-         FROM artifacts a
-         JOIN receipts r ON r.system_id = a.system_id AND r.seq = a.seq
-         WHERE a.sha256 = ?
-         ORDER BY r.ts_received`,
-      )
-      .all(sha256) as ArtifactMatch[];
+  /**
+   * Every recorded use of a document, oldest first, across every system,
+   * searched by the fingerprints `documentFingerprints` computed (here or, from
+   * the same code, in the browser). Each use is reported once, under the
+   * strongest kind of match it has.
+   */
+  findDocument(fingerprints: DocumentFingerprints): DocumentMatch[] {
+    const found = new Map<string, DocumentMatch>();
+    const keep = (key: string, match: DocumentMatch): void => {
+      const previous = found.get(key);
+      if (previous === undefined || MATCH_STRENGTH[match.kind] < MATCH_STRENGTH[previous.kind]) found.set(key, match);
+    };
+    const artifactRows = this.read.prepare(
+      `SELECT a.id, a.system_id, a.seq, a.role, a.label, a.media_type, a.text_canon,
+              r.ts_received, r.action_kind, r.action_name
+       FROM artifacts a
+       JOIN receipts r ON r.system_id = a.system_id AND r.seq = a.seq
+       WHERE a.sha256 = @digest OR (@text = 1 AND a.text_sha256 = @digest)`,
+    );
+    const byArtifact = (kind: DocumentMatchKind, digest: string, text: 0 | 1): void => {
+      for (const row of artifactRows.all({ digest, text }) as (Omit<DocumentMatch, "kind"> & { id: number })[]) {
+        const { id, ...match } = row;
+        keep(`artifact:${id}`, { kind, ...match });
+      }
+    };
+    byArtifact("bytes", fingerprints.bytes, 0);
+    if (fingerprints.text !== null) byArtifact("text", fingerprints.text, 1);
+    for (const digest of fingerprints.lines) byArtifact("lines", digest, 0);
+
+    for (const role of ["input", "output"] as const) {
+      const payloadRows = this.read.prepare(
+        `SELECT system_id, seq, ts_received, action_kind, action_name FROM receipts
+         WHERE json_extract(canonical, '$.${role}_hash') = ?`,
+      );
+      const byPayload = (kind: DocumentMatchKind, digest: string): void => {
+        for (const row of payloadRows.all(digest) as Pick<DocumentMatch, "system_id" | "seq" | "ts_received" | "action_kind" | "action_name">[]) {
+          keep(`${role}:${row.system_id}:${row.seq}`, { kind, role, label: null, media_type: null, text_canon: null, ...row });
+        }
+      };
+      if (fingerprints.json !== null) byPayload("json", fingerprints.json);
+      for (const digest of fingerprints.jsonLines) byPayload("json-lines", digest);
+    }
+
+    return [...found.values()].sort(
+      (a, b) => a.ts_received.localeCompare(b.ts_received) || a.system_id.localeCompare(b.system_id) || a.seq - b.seq,
+    );
   }
 
   /**
@@ -943,11 +997,13 @@ export class ReceiptStore {
       throw new StorageError(`unknown system ${event.system_id}: create its chain first`);
     }
 
-    // A receipt is v2 only when it actually carries something v1 cannot: a
-    // chain otherwise stays v1, which is what every reader still expects.
+    // A receipt takes the lowest version that can hold what it carries: v1
+    // for neither artifacts nor model, v3 only for a text fingerprint. A
+    // chain otherwise keeps writing what every existing reader expects.
+    const isV3 = event.artifacts?.some((artifact) => artifact.text !== undefined) === true;
     const isV2 = event.artifacts !== undefined || event.model !== undefined;
     const unsigned = parseUnsignedReceipt({
-      v: isV2 ? RECEIPT_VERSION_2 : RECEIPT_VERSION_1,
+      v: isV3 ? RECEIPT_VERSION_3 : isV2 ? RECEIPT_VERSION_2 : RECEIPT_VERSION_1,
       system_id: event.system_id,
       seq: tip === undefined ? 0 : tip.seq + 1,
       ts_event: event.ts_event,
@@ -1010,8 +1066,9 @@ export class ReceiptStore {
       source_span_id: event.source.span_id ?? null,
     });
 
-    if (receipt.v === 2 && receipt.artifacts !== undefined) {
+    if (receipt.v !== 1 && receipt.artifacts !== undefined) {
       for (const artifact of receipt.artifacts) {
+        const text = "text" in artifact ? artifact.text : undefined;
         this.insertArtifactStatement.run({
           system_id: receipt.system_id,
           seq: receipt.seq,
@@ -1019,6 +1076,8 @@ export class ReceiptStore {
           label: artifact.label,
           media_type: artifact.media_type,
           sha256: artifact.sha256,
+          text_canon: text?.canon ?? null,
+          text_sha256: text?.sha256 ?? null,
         });
       }
     }

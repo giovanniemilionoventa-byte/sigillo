@@ -1,15 +1,17 @@
 import { z } from "zod";
 import { CANONICAL_BASE64_MESSAGE, isCanonicalBase64 } from "./base64.js";
 import { canonicalBytes, sha256, sha256Hex } from "./canonical.js";
+import { TEXT_CANON_1 } from "./text.js";
 
 /**
- * The two schema versions a receipt's `v` field may carry. `as const` keeps
- * their type the literal `1`/`2`, not `number`: `z.discriminatedUnion` needs a
+ * The schema versions a receipt's `v` field may carry. `as const` keeps
+ * their type the literal `1`/`2`/`3`, not `number`: `z.discriminatedUnion` needs a
  * genuine literal on the tag to route to the right branch and to give
  * `Receipt` a type that actually narrows on `v`.
  */
 export const RECEIPT_VERSION_1 = 1 as const;
 export const RECEIPT_VERSION_2 = 2 as const;
+export const RECEIPT_VERSION_3 = 3 as const;
 
 /** `prev_hash` of the first receipt in a chain. */
 export const GENESIS_PREV_HASH = "0".repeat(64);
@@ -102,6 +104,30 @@ export const artifactSchema = z
   .strict();
 
 /**
+ * Version 3 addition: a text document's fingerprint under a named
+ * canonicalization rule, next to the exact one. `sha256` above keeps its
+ * meaning — the exact raw bytes — in every version; `text.sha256` is SHA-256
+ * of the document's text under `canon` (FORMAT.md section 2.5.1), which two
+ * copies of the same text that differ only in spacing and line breaks share.
+ */
+export const artifactTextSchema = z
+  .object({
+    canon: z.literal(TEXT_CANON_1),
+    sha256: hexString(64),
+  })
+  .strict();
+
+export const artifactV3Schema = z
+  .object({
+    role: artifactRoleSchema,
+    label: z.string().min(1).max(MAX_NAME),
+    media_type: z.string().min(1).max(MAX_MEDIA_TYPE),
+    sha256: hexString(64),
+    text: artifactTextSchema.optional(),
+  })
+  .strict();
+
+/**
  * Model identity for an `llm_call`. `provider` and `digest` are nullable
  * rather than optional because, unlike `actor.on_behalf_of`, the field is
  * still meaningful when the caller has a model name but nothing more: `model`
@@ -152,15 +178,28 @@ export const unsignedReceiptV2Schema = z
   })
   .strict();
 
+/** Version 2 plus `text` on an artifact; nothing else differs. */
+export const unsignedReceiptV3Schema = z
+  .object({
+    v: z.literal(RECEIPT_VERSION_3),
+    ...receiptCoreShape,
+    artifacts: z.array(artifactV3Schema).min(1).optional(),
+    model: modelSchema.optional(),
+  })
+  .strict();
+
 export const unsignedReceiptSchema = z.discriminatedUnion("v", [
   unsignedReceiptV1Schema,
   unsignedReceiptV2Schema,
+  unsignedReceiptV3Schema,
 ]);
 
 export const receiptV1Schema = unsignedReceiptV1Schema.extend({ sig: signature }).strict();
 export const receiptV2Schema = unsignedReceiptV2Schema.extend({ sig: signature }).strict();
 
-export const receiptSchema = z.discriminatedUnion("v", [receiptV1Schema, receiptV2Schema]);
+export const receiptV3Schema = unsignedReceiptV3Schema.extend({ sig: signature }).strict();
+
+export const receiptSchema = z.discriminatedUnion("v", [receiptV1Schema, receiptV2Schema, receiptV3Schema]);
 
 export type ActionKind = z.infer<typeof actionKindSchema>;
 export type Outcome = z.infer<typeof outcomeSchema>;
@@ -170,12 +209,16 @@ export type Action = z.infer<typeof actionSchema>;
 export type Source = z.infer<typeof sourceSchema>;
 export type ArtifactRole = z.infer<typeof artifactRoleSchema>;
 export type ArtifactEntry = z.infer<typeof artifactSchema>;
+export type ArtifactText = z.infer<typeof artifactTextSchema>;
+export type ArtifactEntryV3 = z.infer<typeof artifactV3Schema>;
 export type ModelInfo = z.infer<typeof modelSchema>;
 export type UnsignedReceiptV1 = z.infer<typeof unsignedReceiptV1Schema>;
 export type UnsignedReceiptV2 = z.infer<typeof unsignedReceiptV2Schema>;
+export type UnsignedReceiptV3 = z.infer<typeof unsignedReceiptV3Schema>;
 export type UnsignedReceipt = z.infer<typeof unsignedReceiptSchema>;
 export type ReceiptV1 = z.infer<typeof receiptV1Schema>;
 export type ReceiptV2 = z.infer<typeof receiptV2Schema>;
+export type ReceiptV3 = z.infer<typeof receiptV3Schema>;
 export type Receipt = z.infer<typeof receiptSchema>;
 
 export class ReceiptFormatError extends Error {
