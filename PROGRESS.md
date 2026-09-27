@@ -2375,6 +2375,123 @@ da browser, non legato a questa sessione (che non tocca lo script né il comport
 pagina). `packages/core` e `packages/verifier` **non toccati**: nessuna modifica al formato delle
 ricevute, firma, catena, Merkle o marca temporale.
 
+### Sessione 10 — 2026-09-27 — "verifica un documento" riprogettata (`sigillo-text/1`, ricevuta `v: 3`)
+
+Richiesta del committente: riprogettare da zero la verifica di un documento, disattivata nella
+sessione 9. Prima di scrivere codice: causa verificata nel codice e proposta in
+`docs/PROPOSTA-VERIFICA-DOCUMENTO.md`. Il committente ha **confermato D1–D6 e D8**; per **D7** ha
+scelto l'alternativa: CSP invariata (hash dello script nel `Caddyfile`) e riavvio automatico di
+Caddy nel deploy, invece di `script-src 'self'`. Decisioni trascritte in fondo a `SPEC.md`.
+
+| # | Cosa | Stato | Note |
+|---|------|-------|------|
+| 1 | Regola `sigillo-text/1`, test-first | fatto | `packages/core/src/text.ts`; 46 vettori scritti a mano (`text-vectors.json`), 62 test compresi 5 property test (fast-check) |
+| 2 | Ricevuta `v: 3` | fatto | `artifacts[].text = { canon, sha256 }`; `sha256` resta sempre sui byte grezzi; 3 vettori `v: 3` nuovi, i 20 esistenti invariati |
+| 3 | Server: ingest, database, export, ricerca | fatto | Migrazione in avanti senza riscrivere righe; `findDocument` sostituisce `findArtifactsBySha256` |
+| 4 | Pagina web ricostruita e di nuovo nel menu | fatto | Browser vero (Chromium) sotto la CSP del `Caddyfile` |
+| 5 | Verificatore: controllo 8 e `sigillo-verify doc` | fatto | Stessi quattro tipi di corrispondenza della pagina |
+| 6 | SDK Python | fatto | Port in `sdk-python/src/sigillo/_text.py`, legato a core da vettori condivisi e 3000 stringhe casuali confrontate con core in Node |
+| 7 | D7: `deploy/update.sh` | fatto | Riavvia Caddy a ogni aggiornamento e controlla l'hash caricato |
+| 8 | Documentazione | fatto | `FORMAT.md` (2.5, 2.5.1 nuovo, 7.2 nuovo, 10.3–10.5, 11), `SECURITY.md` (sezione nuova "What a document match means"), `SPEC.md`, `API.md`, `DEPLOY-PRODUZIONE.md` 6.3, `PROVA-LOCALE.md`, `ISPEZIONE.md`, README dell'SDK, VERIFY.md e PDF del fascicolo |
+
+**Test**: Node da 779 (su `main`, misurati) a **886**, più 1 saltato (quello che richiede `caddy`
+installato, come prima). SDK Python da 39 a **49**; demo 22, invariati e verdi. `smoke-dist` e
+cross-check Python indipendente: verdi, entrambi estesi (sotto).
+
+#### La causa, verificata nel codice
+
+Le quattro affermazioni del committente sono tutte confermate (tabella in
+`docs/PROPOSTA-VERIFICA-DOCUMENTO.md`, sezione 1): l'SDK hashava i byte grezzi, `input_hash` e
+`output_hash` passano per RFC 8785, il browser cercava solo tra gli artifact e solo l'hash esatto.
+
+#### La regola (`docs/FORMAT.md`, 2.5.1)
+
+Decodifica UTF-8 stretta → rimozione di U+00AD, U+200B, U+2060, U+FEFF → NFC → ogni sequenza di
+spazi bianchi (lista esplicita: la proprietà Unicode `White_Space`) ridotta a uno spazio → taglio
+agli estremi → SHA-256 dei byte UTF-8, senza JSON. Solo per `text/plain`. Testo vuoto o non UTF-8:
+nessuna impronta testuale.
+
+Restano **differenze** (quindi nessuna corrispondenza): maiuscole, cifre, punteggiatura,
+virgolette e trattini tipografici, legature e apici (NFC e non NFKC), la presenza di uno spazio
+(`1 000` ≠ `1000`), ZWJ/ZWNJ, i controlli bidirezionali (toglierli farebbe coincidere testi che a
+schermo si leggono diversamente).
+
+Misurato qui, a conferma che la lista esplicita serve: `str.isspace()` di Python considera spazio
+U+001C–U+001F, `\s` di JavaScript no; `\s` considera spazio U+FEFF, Python no. Python 3.11 ha i
+dati Unicode 14.0, Node 22 la 17.0: limite dichiarato in `FORMAT.md` e `SECURITY.md` (può solo
+far *non trovare* una copia, mai trovare un testo diverso).
+
+#### Una sola implementazione, condivisa (vincolo 3 del committente)
+
+- **Riferimento**: `DOCUMENT_TEXT_SOURCE` in `packages/core/src/text.ts`, sorgente JavaScript
+  (ES5, ASCII puro, nessuna dipendenza oltre `TextDecoder`/`TextEncoder`) che Node valuta una volta
+  all'import.
+- **Browser**: lo script della pagina **incorpora quegli stessi caratteri**, non una copia
+  riscritta; un test verifica che lo script li contenga alla lettera, e un altro esegue il sorgente
+  in un contesto vuoto contro tutti i vettori.
+- Perché sorgente come testo, e non `funzione.toString()`: `tsc` (il server in produzione) e il
+  runner dei test stampano una funzione in modo diverso, e la CSP permette lo script per il suo
+  SHA-256. Con `toString()` l'hash nei test e quello in produzione sarebbero stati diversi, e la
+  pagina si sarebbe spenta di nuovo solo in produzione. `scripts/smoke-dist.mjs` ora controlla
+  proprio questo: l'hash dello script del server **compilato** deve essere quello del
+  `Caddyfile`.
+- **Python**: non può eseguire JavaScript, quindi c'è un port. Lo legano a core i 46 vettori
+  condivisi e un test che confronta, una per una, 3000 stringhe casuali costruite dai caratteri
+  critici (tutti gli spazi della lista e quelli fuori lista, invisibili tolti e tenuti, accenti
+  combinanti, jamo coreani, compatibilità, emoji), più 4 sequenze non UTF-8, con `textSha256` del
+  core compilato eseguito in Node. Terza implementazione, indipendente: `crosscheck_vectors.py`
+  rideriva i vettori da `FORMAT.md` con la sola libreria standard.
+
+#### La ricerca: quattro tipi di corrispondenza
+
+Il browser calcola, e il server cerca (`ReceiptStore.findDocument`), in ordine di forza:
+`bytes` (impronta esatta, ogni versione), `text` (`sigillo-text/1`, solo `v: 3`), `lines` (per i
+record precedenti: LF/CRLF, a capo finale, BOM; al massimo 8 varianti, D5), `json`/`json-lines`
+(il testo come stringa JSON in `input_hash`/`output_hash`, solo esatto, D6). Ogni uso è riportato
+una volta sola, con il tipo più forte; la pagina e `sigillo-verify doc` dicono sempre quale.
+
+- **Record già sul VPS**: trovati senza re-ingestione. Colonne nuove (`text_canon`,
+  `text_sha256`) aggiunte con `ensureColumn`, nulle sui record vecchi; per `input_hash`/
+  `output_hash` indici su espressione (`json_extract(canonical, ...)`), perché la tabella delle
+  ricevute è append-only e un trigger rifiuta ogni `UPDATE`. Verificato con `EXPLAIN QUERY PLAN`
+  che tutte le ricerche usano un indice. Un test porta il database alla forma di produzione di oggi
+  (colonne e indici tolti), lo riapre e trova il record vecchio, anche nella variante LF.
+- **Il caso del pilot** (CRLF registrato, LF incollato o scaricato): prima "nessuna
+  corrispondenza", ora "è quello usato ..., a meno del modo di andare a capo".
+- **Limite dichiarato**: per un record vecchio la tolleranza è solo quella di fine riga; da
+  un'impronta dei byte non si risale al testo, quindi altri spazi non si possono recuperare.
+
+#### D7: CSP invariata, Caddy riavviato dal deploy
+
+`deploy/update.sh`: `git pull --ff-only`, `docker compose build`, `up -d`, **`restart caddy`
+sempre**, poi legge la configurazione caricata da Caddy dalla sua interfaccia di amministrazione
+(`localhost:2019`, dentro il container) e fallisce se l'hash non è quello del `Caddyfile`. Testato
+con `/bin/sh` vero e `git`/`docker` sostituiti da script che registrano le chiamate (ordine dei
+passi, errore sull'hash sbagliato, nessun container toccato se `git pull` fallisce). Il formato
+della risposta di `/config/` è verificato con **Caddy 2.11.4 vero**, avviato qui con il `Caddyfile`
+del repository. **Non verificato**: che `wget` sia presente nell'immagine `caddy:2.11.4-alpine`
+(dovrebbe, è in busybox), perché Docker qui non gira. È il primo comando da controllare sul VPS.
+
+#### Regola 5 di CLAUDE.md: dimensione del verificatore
+
+Verificatore più le parti di core che usa: da 2350 a **2617 righe (+267)**, da 1829 a **2019 di
+solo codice (+190)**. Sopra la soglia di ~100, quindi lo annoto. Cosa comprano: `text.ts` (162
+righe, di cui metà è la regola stessa con i suoi commenti, e deve esistere perché il verificatore
+offline dia lo stesso esito della pagina); lo schema `v: 3` (~45); `sigillo-verify doc` con i
+quattro tipi di corrispondenza (~35). Nessuna astrazione nuova.
+
+#### Cosa ho trovato strada facendo
+
+- `VERIFY.md` e il PDF del fascicolo dicevano "no partial match is possible": falso per i testi
+  `v: 3`, corretti entrambi.
+- Il mio strumento di scrittura ha trasformato più volte le sequenze `\uXXXX` nei caratteri veri
+  (invisibili). Innocuo nei test, ma nel sorgente condiviso avrebbe cambiato i byte e quindi l'hash
+  CSP: corretto, e ora un test richiede che `DOCUMENT_TEXT_SOURCE` sia ASCII puro. Nei file che ho
+  toccato, ogni carattere invisibile, di spaziatura o combinante è scritto come escape.
+- Screenshot (`docs/screenshots/`) e istantanee HTML (`docs/frontend-preview/`) rigenerati: il menu
+  ha di nuovo "verifica documento", e lo screenshot 09 mostra una corrispondenza vera (`text`)
+  sul curriculum n. 2 incollato su una riga sola.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

@@ -9,6 +9,7 @@ import {
   signReceipt,
   type Receipt,
   type ReceiptV2,
+  type ReceiptV3,
 } from "@sigillo/core";
 import { verifyBundle, type Bundle, type VerificationCheck } from "../src/verify.js";
 import {
@@ -450,6 +451,55 @@ describe("receipt format version 2", () => {
     const bundle = toBundle(receipts, buildManifest(receipts, identity));
     const message = expectFailure({ ...bundle, artifactsIndexJsonl: "not json\n" }, "artifacts-index");
     expect(message).toMatch(/artifacts-index\.jsonl:1/);
+  });
+
+  describe("version 3: text fingerprints", () => {
+    const text = { canon: "sigillo-text/1" as const, sha256: "e".repeat(64) };
+    const cv = { role: "input" as const, label: "curriculum", media_type: "text/plain", sha256: "a".repeat(64) };
+    const v3 = (): Receipt[] =>
+      buildReceipts(4, identity, undefined, [undefined, { v: 2, artifacts: [cv] }, { v: 3, artifacts: [{ ...cv, text }] }, undefined]);
+
+    it("verifies a chain that mixes v1, v2 and v3 receipts, and indexes the text fingerprint", () => {
+      const receipts = v3();
+      const manifest = buildManifest(receipts, identity);
+      expect(manifest.receipt_version).toBe(3);
+      const bundle = toBundle(receipts, manifest);
+      expect(bundle.artifactsIndexJsonl).toContain(`"text":{"canon":"sigillo-text/1","sha256":"${"e".repeat(64)}"}`);
+      const result = verifyBundle(bundle);
+      expect(result.ok ? "" : `${result.check}: ${result.detail}`).toBe("");
+    });
+
+    it("rejects an index whose text fingerprint differs from the receipt's", () => {
+      const receipts = v3();
+      const bundle = toBundle(receipts, buildManifest(receipts, identity));
+      const forged = (bundle.artifactsIndexJsonl ?? "").replace("e".repeat(64), "f".repeat(64));
+      expectFailure({ ...bundle, artifactsIndexJsonl: forged }, "artifacts-index");
+    });
+
+    it("rejects an index that drops the text fingerprint a receipt declares", () => {
+      const receipts = v3();
+      const bundle = toBundle(receipts, buildManifest(receipts, identity));
+      const dropped = (bundle.artifactsIndexJsonl ?? "").replace(/,"text":\{[^}]*\}/, "");
+      expectFailure({ ...bundle, artifactsIndexJsonl: dropped }, "artifacts-index");
+    });
+
+    it("rejects an index that adds a text fingerprint to a v2 artifact", () => {
+      const receipts = v3();
+      const bundle = toBundle(receipts, buildManifest(receipts, identity));
+      const lines = (bundle.artifactsIndexJsonl ?? "").split("\n");
+      const first = JSON.parse(lines[0] ?? "{}") as Record<string, unknown>;
+      lines[0] = JSON.stringify({ ...first, text });
+      expectFailure({ ...bundle, artifactsIndexJsonl: lines.join("\n") }, "artifacts-index");
+    });
+
+    it("detects a tampered text fingerprint inside a receipt", () => {
+      const receipts = v3();
+      const bundle = toBundle(receipts, buildManifest(receipts, identity));
+      const changed = lines(bundle);
+      const receipt = JSON.parse(changed[2] ?? "{}") as ReceiptV3;
+      changed[2] = canonicalJson({ ...receipt, artifacts: [{ ...cv, text: { ...text, sha256: "f".repeat(64) } }] });
+      expectFailure(fromLines(bundle, changed), "chain-link");
+    });
   });
 
   it("rejects an index entry pointing at the right document but the wrong receipt", () => {

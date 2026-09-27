@@ -195,10 +195,11 @@ export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
     document.text("  sigillo-verify doc <this archive> <the file>");
     document.font("Helvetica").fontSize(10).moveDown(0.3);
     document.text(
-      "It verifies the archive first, then hashes the file with SHA-256 and looks for that " +
-        "digest in the index. Changing even one character of the file changes its digest, so " +
-        "there is no partial match: either it is exactly the file that was used, or the tool " +
-        "reports that no registered action used it.",
+      "It verifies the archive first, then computes the file's fingerprints and says which kind " +
+        "of match it found: exactly the same bytes; for a text, the same text with at most " +
+        "different spacing and line breaks (sigillo-text/1, receipt version 3), or, for a text " +
+        "recorded earlier, the same bytes except for line endings; or the whole input or output " +
+        "of an action. Any other difference, one letter or one digit, is no match at all.",
     );
   } else {
     document.text(

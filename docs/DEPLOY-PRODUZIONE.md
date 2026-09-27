@@ -515,23 +515,39 @@ gliene hai dato uno). Senza `--all` i sistemi archiviati non compaiono.
 ### 6.3 Aggiornare
 
 ```sh
-$ cd /srv/sigillo && git pull
-$ cd deploy && docker compose build && docker compose up -d
-$ docker compose restart caddy
-$ docker compose ps
+$ /srv/sigillo/deploy/update.sh
 ```
 
-`restart caddy` serve ogni volta che l'aggiornamento cambia il `Caddyfile`, e nel
-dubbio non fa danni: `up -d` non tocca Caddy, e il Caddy già avviato continua a
-leggere il `Caddyfile` di prima (il file è montato da solo, e `git pull` lo
-sostituisce con uno nuovo). Nel `Caddyfile` c'è l'impronta dello script della
-pagina "verifica un documento": se Caddy non viene riavviato dopo un
-aggiornamento che cambia quello script, la pagina mostra in rosso "Il calcolo
-dell'impronta non è attivo" e il pulsante Verifica resta disattivato. Per
-controllare che Caddy mandi l'impronta del `Caddyfile` attuale:
+Lo script fa, nell'ordine: `git pull --ff-only`, `docker compose build`,
+`docker compose up -d`, **`docker compose restart caddy`**, e poi controlla che
+Caddy stia davvero usando il `Caddyfile` appena scaricato. Si ferma al primo
+passo che fallisce (un `git pull` che non riesce non tocca nessun container).
+
+Perché riavvia Caddy **ogni volta**: Caddy legge il `Caddyfile` solo quando
+parte, e il file è montato da solo, quindi dopo `git pull` il Caddy già avviato
+continua a usare quello vecchio. Nel `Caddyfile` c'è l'impronta dello script
+della pagina "verifica un documento" (è ciò che la CSP permette al browser di
+eseguire): se Caddy restasse con quella vecchia dopo un aggiornamento che
+cambia lo script, la pagina mostrerebbe in rosso "Il calcolo dell'impronta non
+è attivo" e il pulsante Verifica resterebbe disattivato. Il riavvio costa uno
+o due secondi di interruzione; quando il `Caddyfile` non è cambiato non fa
+nessun danno.
+
+Il controllo finale legge la configurazione che Caddy ha caricato
+dall'interfaccia di amministrazione di Caddy stesso (`localhost:2019`, dentro
+il container, non raggiungibile da fuori) e la confronta con l'impronta scritta
+nel `Caddyfile`. Se non coincidono, lo script esce con un errore che lo dice,
+e `docker compose logs caddy` ne mostra il motivo. L'esito atteso:
+
+```
+update.sh: done; Caddy restarted and serves the Caddyfile's script hash 'sha256-…'
+```
+
+seguito dall'elenco dei container (`signer` e `server` `(healthy)`, `caddy`
+`Up`). Per controllarlo anche dall'esterno, come lo vede un browser:
 
 ```sh
-$ grep -o "script-src '[^']*'" Caddyfile
+$ grep -o "script-src '[^']*'" /srv/sigillo/deploy/Caddyfile
 $ curl -sI https://sigillo.tuaazienda.it/ui/login | grep -io "script-src '[^']*'"
 ```
 

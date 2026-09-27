@@ -8,6 +8,16 @@ export {
   toHex,
 } from "./canonical.js";
 
+export {
+  canonicalText,
+  DOCUMENT_TEXT_SOURCE,
+  documentFingerprints,
+  lineEndingVariants,
+  TEXT_CANON_1,
+  textSha256,
+} from "./text.js";
+export type { DocumentFingerprints, FingerprintKind } from "./text.js";
+
 export { SIGILLO_VERSION } from "./version.js";
 
 export { CANONICAL_BASE64_MESSAGE, isCanonicalBase64 } from "./base64.js";
@@ -72,6 +82,8 @@ export {
   actorSchema,
   artifactRoleSchema,
   artifactSchema,
+  artifactTextSchema,
+  artifactV3Schema,
   canonicalReceiptBytes,
   GENESIS_PREV_HASH,
   modelSchema,
@@ -82,10 +94,12 @@ export {
   receiptHashHex,
   RECEIPT_VERSION_1,
   RECEIPT_VERSION_2,
+  RECEIPT_VERSION_3,
   ReceiptFormatError,
   receiptSchema,
   receiptV1Schema,
   receiptV2Schema,
+  receiptV3Schema,
   safeParseReceipt,
   safeParseUnsignedReceipt,
   sourceSchema,
@@ -93,13 +107,16 @@ export {
   unsignedReceiptSchema,
   unsignedReceiptV1Schema,
   unsignedReceiptV2Schema,
+  unsignedReceiptV3Schema,
 } from "./receipt.js";
 
 export type {
   Action,
   ActionKind,
   ArtifactEntry,
+  ArtifactEntryV3,
   ArtifactRole,
+  ArtifactText,
   Actor,
   ModelInfo,
   Outcome,
@@ -107,10 +124,12 @@ export type {
   ReceiptParseResult,
   ReceiptV1,
   ReceiptV2,
+  ReceiptV3,
   Source,
   SourceType,
   UnsignedReceipt,
   UnsignedReceiptParseResult,
   UnsignedReceiptV1,
   UnsignedReceiptV2,
+  UnsignedReceiptV3,
 } from "./receipt.js";

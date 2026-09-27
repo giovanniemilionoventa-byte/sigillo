@@ -103,7 +103,7 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
   // never requires opening every receipt to find out.
   const artifactsIndexJsonl = receipts
     .flatMap((receipt) =>
-      receipt.v === 2 && receipt.artifacts !== undefined
+      receipt.v !== 1 && receipt.artifacts !== undefined
         ? receipt.artifacts.map(
             (artifact) =>
               `${JSON.stringify({
@@ -111,6 +111,7 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
                 seq: receipt.seq,
                 role: artifact.role,
                 label: artifact.label,
+                ...("text" in artifact && artifact.text !== undefined ? { text: artifact.text } : {}),
               })}\n`,
           )
         : [],
@@ -171,11 +172,12 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
   const checkpointsJsonl = entries.map((entry) => `${JSON.stringify(entry)}\n`).join("");
 
   // The manifest declares the highest receipt version actually present, so an
-  // export that mixes v1 and v2 receipts (a chain upgraded mid-flight) still
+  // export that mixes receipt versions (a chain upgraded mid-flight) still
   // makes a claim the verifier can check against the receipts themselves.
   const receiptVersion = receipts.reduce<number>((max, receipt) => Math.max(max, receipt.v), 0) as
     | 1
-    | 2;
+    | 2
+    | 3;
 
   const manifest: Manifest = {
     sigillo_version: SIGILLO_VERSION,

@@ -19,11 +19,12 @@
  * Run with: pnpm tsx scripts/screenshots.ts [output directory]
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium, devices } from "playwright-core";
+import { documentFingerprints, TEXT_CANON_1 } from "../packages/core/src/index.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SERVER = join(ROOT, "apps", "server");
@@ -143,17 +144,33 @@ await store.append(event("acme-support-bot", 24, { action: { kind: "decision", n
 
 await store.createSystem("selezione-cv", at(30));
 await store.renameSystem("selezione-cv", "Selezione CV — backend junior", admin);
+// The demo's real CVs, with both fingerprints, as the current SDK records a
+// text file: page 09 then looks one of them up for real.
+const cv = (index: number): Uint8Array =>
+  new Uint8Array(readFileSync(join(ROOT, "demo", "selezione-cv", "curricula", `candidato-0${index}.txt`)));
 for (let index = 1; index <= 3; index += 1) {
+  const fingerprints = documentFingerprints(cv(index));
   await store.append(
     event("selezione-cv", 30 + index * 3, {
       actor: { agent: "screener" },
       action: { kind: "tool_call", name: "leggi_curriculum" },
       artifacts: [
-        { role: "input", label: `candidato-0${index}.txt`, media_type: "text/plain", sha256: String(index).repeat(64) },
+        {
+          role: "input",
+          label: `candidato-0${index}.txt`,
+          media_type: "text/plain",
+          sha256: fingerprints.bytes,
+          ...(fingerprints.text === null ? {} : { text: { canon: TEXT_CANON_1, sha256: fingerprints.text } }),
+        },
       ],
     }),
   );
 }
+// Candidate 2's CV as someone would paste it from an email: every line break
+// and run of spaces turned into one space. The page finds it as the same text.
+const pasted = documentFingerprints(
+  new TextEncoder().encode(new TextDecoder().decode(cv(2)).replace(/\s+/g, " ").trim()),
+);
 await store.append(
   event("selezione-cv", 45, { actor: { agent: "screener" }, action: { kind: "decision", name: "shortlist" } }),
 );
@@ -219,7 +236,7 @@ const pages: [name: string, url: string, action?: Action][] = [
   ["06-gestisci-sistema-con-azioni", "/ui/systems/acme-support-bot/manage"],
   ["07-gestisci-sistema-vuoto", "/ui/systems/prova-per-errore/manage"],
   ["08-checkpoint", "/ui/systems/selezione-cv/checkpoints"],
-  ["09-verifica-documento", `/ui/verify-document?sha256=${"2".repeat(64)}&from=file`],
+  ["09-verifica-documento", `/ui/verify-document?sha256=${pasted.bytes}&text=${pasted.text ?? ""}&from=text`],
 ];
 
 // Full-page screenshots at 2x would quadruple the pixels of every phone

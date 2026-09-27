@@ -154,3 +154,71 @@ describe("deploy/Dockerfile", () => {
     expect(new Set(froms).size).toBe(1);
   });
 });
+
+/**
+ * deploy/update.sh, run for real by /bin/sh, with `git` and `docker` replaced
+ * by stand-ins that record what they were asked and answer as Caddy's admin
+ * endpoint would. What is checked is the script's own logic: the order of
+ * the steps, that Caddy is always restarted, and that a Caddy serving another
+ * script hash than the Caddyfile's fails the update.
+ */
+describe.skipIf(process.platform === "win32")("deploy/update.sh", () => {
+  const caddyfileHash = /'sha256-[A-Za-z0-9+/]+=*'/.exec(readFileSync(join(DEPLOY, "Caddyfile"), "utf8"))?.[0] ?? "";
+
+  function runUpdate(loadedHash: string, gitFails = false): { status: number | null; calls: string[]; stderr: string } {
+    const root = mkdtempSync(join(tmpdir(), "sigillo-update-"));
+    try {
+      mkdirSync(join(root, "deploy"));
+      cpSync(join(DEPLOY, "update.sh"), join(root, "deploy", "update.sh"));
+      cpSync(join(DEPLOY, "Caddyfile"), join(root, "deploy", "Caddyfile"));
+      const bin = join(root, "bin");
+      mkdirSync(bin);
+      const log = join(root, "calls.log");
+      writeFileSync(join(bin, "git"), `#!/bin/sh\necho "git $*" >> "${log}"\n${gitFails ? "exit 1\n" : ""}`, { mode: 0o755 });
+      writeFileSync(
+        join(bin, "docker"),
+        `#!/bin/sh\necho "docker $*" >> "${log}"\n` +
+          `case "$*" in *"exec -T caddy wget"*) printf '%s' '{"apps":{"http":{"servers":{"srv0":{"routes":[{"handle":[{"headers":{"set":{"Content-Security-Policy":["script-src ${loadedHash.replace(/'/g, "'\\''")}"]}}}]}]}}}}}' ;; esac\n`,
+        { mode: 0o755 },
+      );
+      const result = spawnSync("/bin/sh", [join(root, "deploy", "update.sh")], {
+        encoding: "utf8",
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` },
+      });
+      let calls: string[] = [];
+      try {
+        calls = readFileSync(log, "utf8").trim().split("\n");
+      } catch {
+        // nothing was called
+      }
+      return { status: result.status, calls, stderr: result.stderr };
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("pulls, rebuilds, restarts Caddy every time, and checks the hash Caddy loaded", () => {
+    expect(caddyfileHash).not.toBe("");
+    const { status, calls } = runUpdate(caddyfileHash);
+    expect(status).toBe(0);
+    expect(calls.slice(0, 5)).toEqual([
+      "git -C .. pull --ff-only",
+      "docker compose build",
+      "docker compose up -d",
+      "docker compose restart caddy",
+      "docker compose exec -T caddy wget -qO- http://localhost:2019/config/",
+    ]);
+  });
+
+  it("fails when Caddy serves another script hash than the Caddyfile's", () => {
+    const { status, stderr } = runUpdate(`'sha256-${"A".repeat(43)}='`);
+    expect(status).toBe(1);
+    expect(stderr).toContain("deploy/Caddyfile says");
+  });
+
+  it("stops before touching any container when the pull fails", () => {
+    const { status, calls } = runUpdate(caddyfileHash, true);
+    expect(status).not.toBe(0);
+    expect(calls).toEqual(["git -C .. pull --ff-only"]);
+  });
+});

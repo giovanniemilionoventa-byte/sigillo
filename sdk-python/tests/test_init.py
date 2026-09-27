@@ -328,6 +328,61 @@ class SigilloInitTest(unittest.TestCase):
         self.assertEqual(attributes["sigillo.artifact.sha256"], hashlib.sha256(content).hexdigest())
         self.assertEqual(attributes["sigillo.artifact.media_type"], "application/octet-stream")
 
+    def _artifact_attributes(self, data, **kwargs) -> dict[str, str]:
+        _Capture.bodies.clear()
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+        self.addCleanup(tracing.shutdown)
+        tracer = tracing.provider.get_tracer("sigillo.tests")
+        with tracer.start_as_current_span("leggi_curriculum") as span:
+            span.set_attribute("gen_ai.operation.name", "execute_tool")
+            sigillo.artifact(data, role="input", label="curriculum", **kwargs)
+        tracing.flush()
+        return _string_attributes(_first_span(_Capture.bodies[0]).events[0].attributes)
+
+    def test_artifact_adds_a_sigillo_text_1_fingerprint_to_a_text(self) -> None:
+        recorded = "Curriculum\r\n\r\nMario   Bianchi\r\n"
+        attributes = self._artifact_attributes(recorded)
+        # The exact fingerprint keeps its meaning: the raw UTF-8 bytes.
+        self.assertEqual(attributes["sigillo.artifact.sha256"], hashlib.sha256(recorded.encode("utf-8")).hexdigest())
+        self.assertEqual(attributes["sigillo.artifact.text_canon"], "sigillo-text/1")
+        self.assertEqual(
+            attributes["sigillo.artifact.text_sha256"],
+            hashlib.sha256("Curriculum Mario Bianchi".encode("utf-8")).hexdigest(),
+        )
+
+    def test_artifact_gives_the_same_text_fingerprint_to_a_file_saved_with_other_line_endings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            windows = Path(directory) / "windows.txt"
+            unix = Path(directory) / "unix.txt"
+            windows.write_bytes("Gentile candidata,\r\nla ringraziamo.\r\n".encode("utf-8"))
+            unix.write_bytes("Gentile candidata,\nla ringraziamo.".encode("utf-8"))
+            from_windows = self._artifact_attributes(windows)
+            from_unix = self._artifact_attributes(unix)
+        self.assertNotEqual(from_windows["sigillo.artifact.sha256"], from_unix["sigillo.artifact.sha256"])
+        self.assertEqual(from_windows["sigillo.artifact.text_sha256"], from_unix["sigillo.artifact.text_sha256"])
+
+    def test_artifact_gives_no_text_fingerprint_to_a_binary_or_a_non_plain_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdf = Path(directory) / "cv.pdf"
+            pdf.write_bytes(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
+            latin1 = Path(directory) / "vecchio.txt"
+            latin1.write_bytes("caff\u00e8".encode("latin-1"))
+            cases = [
+                (pdf, {}),
+                (latin1, {}),
+                (b"testo in bytes", {}),
+                ("a,b\n1,2\n", {"media_type": "text/csv"}),
+            ]
+            for data, kwargs in cases:
+                with self.subTest(data=str(data)):
+                    attributes = self._artifact_attributes(data, **kwargs)
+                    self.assertNotIn("sigillo.artifact.text_canon", attributes)
+                    self.assertNotIn("sigillo.artifact.text_sha256", attributes)
+
+    def test_artifact_gives_a_text_fingerprint_to_bytes_declared_text_plain(self) -> None:
+        attributes = self._artifact_attributes(b"uno\ndue", media_type="text/plain; charset=utf-8")
+        self.assertEqual(attributes["sigillo.artifact.text_sha256"], hashlib.sha256(b"uno due").hexdigest())
+
     def test_artifact_rejects_a_role_that_is_not_input_or_output(self) -> None:
         tracing = sigillo.init(
             endpoint=self.base, api_key="k", system_id="s", instrument=[]

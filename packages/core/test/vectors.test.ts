@@ -26,12 +26,12 @@ describe("receipt test vectors", () => {
     expect(vectorFile.vectors.length).toBeGreaterThanOrEqual(10);
   });
 
-  it("declares exactly the versions the vectors actually contain, including both v1 and v2", () => {
+  it("declares exactly the versions the vectors actually contain, including v1, v2 and v3", () => {
     const actual = [
       ...new Set(vectorFile.vectors.map((vector) => (vector.receipt as { v: number }).v)),
     ].sort();
     expect(vectorFile.receipt_versions).toEqual(actual);
-    expect(actual).toEqual([1, 2]);
+    expect(actual).toEqual([1, 2, 3]);
   });
 
   it("gives every vector a unique name and a unique hash", () => {

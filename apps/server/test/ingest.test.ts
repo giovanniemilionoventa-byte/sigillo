@@ -329,6 +329,35 @@ describe("extracting artifacts and model (phase 2)", () => {
     ]);
   });
 
+  it("carries a sigillo-text/1 fingerprint, when the SDK attached one, into the artifact's text member", () => {
+    const withText = (canon: string, sha256: string) =>
+      jsonSpan({
+        attributes: { "gen_ai.operation.name": "execute_tool" },
+        events: [
+          {
+            name: "sigillo.artifact",
+            attributes: {
+              "sigillo.artifact.role": "input",
+              "sigillo.artifact.label": "curriculum",
+              "sigillo.artifact.media_type": "text/plain",
+              "sigillo.artifact.sha256": SHA_A,
+              "sigillo.artifact.text_canon": canon,
+              "sigillo.artifact.text_sha256": sha256,
+            },
+          },
+        ],
+      });
+    expect(adaptSpans([withText("sigillo-text/1", SHA_B)]).actions[0]?.artifacts).toEqual([
+      { role: "input", label: "curriculum", media_type: "text/plain", sha256: SHA_A, text: { canon: "sigillo-text/1", sha256: SHA_B } },
+    ]);
+    // An unknown rule or a malformed digest drops the text fingerprint, never the artifact.
+    for (const [canon, sha256] of [["sigillo-text/2", SHA_B], ["sigillo-text/1", "not-hex"]] as const) {
+      expect(adaptSpans([withText(canon, sha256)]).actions[0]?.artifacts).toEqual([
+        { role: "input", label: "curriculum", media_type: "text/plain", sha256: SHA_A },
+      ]);
+    }
+  });
+
   it("keeps two artifacts in event order", () => {
     const span = jsonSpan({
       attributes: { "gen_ai.operation.name": "execute_tool" },

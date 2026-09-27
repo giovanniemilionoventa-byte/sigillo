@@ -5,9 +5,12 @@ import {
   parseReceipt,
   receiptHashHex,
   RECEIPT_VERSION_2,
+  RECEIPT_VERSION_3,
   safeParseReceipt,
+  TEXT_CANON_1,
   type Receipt,
   type ReceiptV2,
+  type ReceiptV3,
 } from "@sigillo/core";
 
 const SIG =
@@ -196,9 +199,9 @@ describe("receipt schema", () => {
   });
 
   it("refuses to parse a schema version it does not implement", () => {
-    expectRejected(withField("v", RECEIPT_VERSION_2 + 1), "v");
+    expectRejected(withField("v", RECEIPT_VERSION_3 + 1), "v");
     expectRejected(withField("v", 0), "v");
-    expect(() => parseReceipt(withField("v", RECEIPT_VERSION_2 + 1))).toThrow();
+    expect(() => parseReceipt(withField("v", RECEIPT_VERSION_3 + 1))).toThrow();
   });
 
   it("reports the failing field so a verifier can name it", () => {
@@ -324,6 +327,66 @@ describe("receipt schema version 2", () => {
     const canonical = new TextDecoder().decode(canonicalReceiptBytes(validReceiptV2()));
     expect(canonical).not.toContain("artifacts");
     expect(canonical).not.toContain("model");
+  });
+});
+
+describe("receipt schema version 3", () => {
+  const TEXT_HASH = "7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e";
+  const artifact = { role: "input" as const, label: "curriculum", media_type: "text/plain", sha256: HASH };
+  const text = { canon: TEXT_CANON_1, sha256: TEXT_HASH };
+
+  function validReceiptV3(overrides: Partial<ReceiptV3> = {}): ReceiptV3 {
+    return {
+      v: RECEIPT_VERSION_3,
+      system_id: "acme-support-bot",
+      seq: 3,
+      ts_event: "2026-03-29T14:30:00.123Z",
+      ts_received: "2026-03-29T14:30:00.456Z",
+      actor: { agent: "planner" },
+      action: { kind: "tool_call", name: "leggi_curriculum" },
+      input_hash: null,
+      output_hash: null,
+      outcome: "ok",
+      source: { type: "otlp" },
+      prev_hash: HASH,
+      key_id: "3f2a1c9d8e7b6a5f",
+      sig: SIG,
+      artifacts: [{ ...artifact, text }],
+      ...overrides,
+    };
+  }
+
+  it("accepts an artifact with a text fingerprint beside its exact one", () => {
+    expect(safeParseReceipt(validReceiptV3()).ok).toBe(true);
+  });
+
+  it("accepts, next to it, an artifact without one: a PDF in the same action", () => {
+    const pdf = { role: "input" as const, label: "allegato", media_type: "application/pdf", sha256: TEXT_HASH };
+    expect(safeParseReceipt(validReceiptV3({ artifacts: [{ ...artifact, text }, pdf] })).ok).toBe(true);
+  });
+
+  it("rejects a canonicalization rule it does not know", () => {
+    expectRejected(validReceiptV3({ artifacts: [{ ...artifact, text: { ...text, canon: "sigillo-text/2" as never } }] }), "canon");
+    expectRejected(validReceiptV3({ artifacts: [{ ...artifact, text: { sha256: TEXT_HASH } as never }] }), "canon");
+  });
+
+  it("rejects a text fingerprint that is not 64 lowercase hex characters", () => {
+    expectRejected(validReceiptV3({ artifacts: [{ ...artifact, text: { ...text, sha256: TEXT_HASH.toUpperCase() } }] }), "sha256");
+  });
+
+  it("rejects an unknown member inside text", () => {
+    expectRejected(validReceiptV3({ artifacts: [{ ...artifact, text: { ...text, lang: "it" } as never }] }), "artifacts");
+  });
+
+  it("keeps v1 and v2 closed to text: an older version never changes meaning", () => {
+    const withText = { ...artifact, text };
+    expectRejected({ ...validReceiptV3(), v: RECEIPT_VERSION_2 }, "artifacts");
+    expectRejected({ ...validReceipt(), artifacts: [withText] }, "artifacts");
+  });
+
+  it("covers the text fingerprint with the receipt hash", () => {
+    const tampered = validReceiptV3({ artifacts: [{ ...artifact, text: { ...text, sha256: HASH } }] });
+    expect(receiptHashHex(validReceiptV3())).not.toBe(receiptHashHex(tampered));
   });
 });
 

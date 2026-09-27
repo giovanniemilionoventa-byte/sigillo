@@ -215,6 +215,68 @@ it is set out field by field in [DATA-INVENTORY.md](DATA-INVENTORY.md).
 What an operator **cannot** see: anything the instrumented system did not put in
 a span, and anything that was only ever a digest.
 
+## What a document match means
+
+Since receipt version 3, a text document can be found by two fingerprints, and
+the two claim different things. An auditor should know which one a result
+rests on; the web page and `sigillo-verify doc` always say it.
+
+- **Exact** (`sha256`, every receipt version). SHA-256 of the document's raw
+  bytes. A match means the bytes are identical, one by one. This is the only
+  fingerprint a PDF, an image, a CSV or any document that is not `text/plain`
+  ever has, and its meaning has not changed.
+- **Same text** (`text.sha256` under `sigillo-text/1`, version 3 only; rule in
+  `docs/FORMAT.md`, 2.5.1). SHA-256 of the document's text after removing four
+  invisible characters, Unicode NFC, collapsing every run of whitespace into
+  one space and trimming. A match means the same characters in the same order,
+  words separated the same way; it does **not** mean the same layout. Line
+  breaks, blank lines, tabs, indentation and column alignment are all gone:
+  `A 1⏎B 2` and `A⏎1 B⏎2` match. That is why only `text/plain` gets this
+  fingerprint: in a CSV, Markdown, HTML or source file, spacing and line
+  breaks are content.
+
+What the text rule deliberately does **not** fold, so that a match never hides
+a difference a reader would see as content: letter case, digits, punctuation,
+typographic against straight quotes, dashes, ligatures and superscripts (NFC,
+not NFKC: `m²` is not `m2`), the presence of a space (`1 000` is not `1000`),
+a word hyphenated across a line break. It also keeps zero-width joiners and
+non-joiners (they change meaning in some scripts and in emoji) and every
+bidirectional control character: removing those would make a text match one
+that **displays differently** (the "Trojan Source" technique), the one case
+where an invisible character is not harmless to an auditor.
+
+Two further kinds of match exist, both narrower:
+
+- **Line endings only**, for records made before version 3, which have no
+  text fingerprint. The page and `sigillo-verify doc` also hash the document
+  with LF and with CRLF line endings, with and without one final newline, with
+  and without a leading byte order mark (at most 8 variants), and look for
+  those among exact fingerprints. A match says exactly that: the same bytes
+  except for those. Other spacing differences cannot be recovered for an old
+  record: from a digest there is no way back to the text.
+- **Whole input or output.** The document's text as a JSON string, the way
+  `input_hash` and `output_hash` are computed (RFC 8785), exactly or give or
+  take the same line-ending variants. A match means the entire recorded input
+  or output of that action was this text — a tool that returned a file's
+  content, for instance. There is no spacing tolerance here: those fields are
+  version 1 members, final by decision of 2026-09-21.
+
+Every match is a lookup of a digest the browser or the verifier computed from
+the document in hand; the server never sees the document, and it never
+computes a text fingerprint itself. Like `sha256`, `text.sha256` is what the
+SDK computed in the agent's process and is taken as given: a receipt proves
+that the agent's side declared it, signed into the chain from then on, not
+that the server checked it against the document.
+
+A known limit of the text rule: NFC depends on the Unicode version of the
+implementation. Python 3.11 ships Unicode 14.0, Node 22 ships 17.0, and each
+browser its own. For every character assigned in both versions NFC is stable
+(a guarantee of Unicode itself), so European text is unaffected; a text using
+characters assigned after the older version and carrying a canonical
+decomposition (a few recently encoded scripts) may normalise differently. The
+result is a document **not found**, never one found wrongly: its exact
+fingerprint still matches as before.
+
 ## Authentication
 
 Ingest is authenticated by an API key, one per system, sent as a bearer token.
@@ -284,18 +346,24 @@ it) or `SIGILLO_ADMIN_PASSWORD`. Without either the view is not served at all.
   through again, at the cost of a `Referer` on same-site navigation.
 
 The view is server-rendered with one deliberate exception: "verifica un
-documento" carries a small inline script that computes a file's SHA-256 in the
-browser, so the document itself is never sent to the server. `deploy/Caddyfile`
-allows exactly that script and no other, by its SHA-256 (`script-src
-'sha256-...'`), rather than relaxing the content security policy in general. A
-test recomputes the hash from the actual script and fails if the two ever
-disagree. A running Caddy keeps the policy it started with, so an update that
-changes the script needs `docker compose restart caddy`
-(`docs/DEPLOY-PRODUZIONE.md`, 6.3); until then the page says the fingerprint
-cannot be computed and keeps its button disabled. Besides the fingerprint, the
-script tells the server only whether it was computed on a chosen file or on
-pasted text (`from=file|text`), never the file's name or anything else about
-the document.
+documento" carries a small inline script that computes a document's
+fingerprints in the browser, so the document itself is never sent to the
+server. The rule it applies is not a copy: the script embeds
+`DOCUMENT_TEXT_SOURCE` from `packages/core`, the same source Node runs for the
+tests and for `sigillo-verify doc`. `deploy/Caddyfile` allows exactly that
+script and no other, by its SHA-256 (`script-src 'sha256-...'`), rather than
+relaxing the content security policy in general. A test recomputes the hash
+from the script, and `scripts/smoke-dist.mjs` from the script the built server
+actually serves, and either fails if it and the Caddyfile disagree. A running
+Caddy keeps the policy it started with, so `deploy/update.sh` restarts Caddy on
+every update and then checks, through Caddy's admin endpoint inside its
+container, that the policy it loaded carries the Caddyfile's hash
+(`docs/DEPLOY-PRODUZIONE.md`, 6.3); a Caddy still on an old policy leaves the
+page saying the fingerprint cannot be computed, its button disabled. Besides
+the fingerprints (at most 1 + 1 + 8 + 1 + 8 digests, section "What a document
+match means"), the script tells the server only whether they were computed on
+a chosen file or on pasted text (`from=file|text`), never the file's name or
+anything else about the document.
 
 ## Secrets and logs
 

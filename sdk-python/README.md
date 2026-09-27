@@ -103,7 +103,15 @@ still the active span. `data` is `bytes`, a `str` of exact text (hashed as its
 UTF-8 bytes), or a path to read from; `role` is `"input"` or `"output"`;
 `label` is a category you choose, such as `"curriculum"` — **never a
 filename**, which can carry a person's name. Hashing happens in this process;
-only the SHA-256 digest leaves it.
+only the digests leave it.
+
+A plain text (a `str`, a `.txt` path, or any `media_type="text/plain"`) gets
+two digests: the SHA-256 of its exact bytes, and its `sigillo-text/1`
+fingerprint, which a copy of the same text with different spacing, line breaks
+or invisible formatting characters shares, and a copy with any other
+difference does not (`docs/FORMAT.md`, 2.5.1). That is what lets
+"verifica un documento" recognise a pasted or reformatted copy. A PDF, an
+image, a CSV or any other type gets the exact digest only.
 
 ```python
 sigillo.artifact(open("cv.pdf", "rb").read(), role="input", label="curriculum")

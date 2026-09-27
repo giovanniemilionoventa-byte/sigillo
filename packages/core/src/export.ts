@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { checkpointSchema } from "./checkpoint.js";
-import { artifactRoleSchema, isoUtcTimestampSchema } from "./receipt.js";
+import { artifactRoleSchema, artifactTextSchema, isoUtcTimestampSchema } from "./receipt.js";
 
 /**
  * A line of `checkpoints.jsonl`: one signed checkpoint, the inclusion proofs
@@ -70,6 +70,8 @@ export const artifactsIndexEntrySchema = z
     seq: z.number().int().nonnegative(),
     role: artifactRoleSchema,
     label: z.string().min(1).max(256),
+    /** Copied from a version 3 artifact that carries one; absent otherwise. */
+    text: artifactTextSchema.optional(),
   })
   .strict();
 

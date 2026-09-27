@@ -216,9 +216,14 @@ class EndToEndTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("FAILED", result.stderr)
 
-    def test_sigillo_artifact_produces_a_v2_receipt_with_a_matching_fingerprint(self) -> None:
-        content = "il contenuto esatto del curriculum di un candidato di prova, per un test"
+    def test_sigillo_artifact_produces_a_v3_receipt_with_both_fingerprints(self) -> None:
+        content = "il contenuto esatto del curriculum\r\ndi un candidato di prova,  per un test\r\n"
         expected_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        # sigillo-text/1, written out by hand: one space for every run of
+        # whitespace, none at the ends.
+        expected_text = hashlib.sha256(
+            "il contenuto esatto del curriculum di un candidato di prova, per un test".encode("utf-8")
+        ).hexdigest()
 
         code = f"""
 import sigillo
@@ -248,11 +253,12 @@ tracing.flush()
         receipts = [json.loads(line) for line in receipts_text.splitlines() if line]
 
         tool_call = next(r for r in receipts if r["action"]["name"] == "leggi_curriculum")
-        self.assertEqual(tool_call["v"], 2)
+        self.assertEqual(tool_call["v"], 3)
         self.assertEqual(
             tool_call["artifacts"],
             [{"role": "input", "label": "curriculum", "media_type": "text/plain",
-              "sha256": expected_digest}],
+              "sha256": expected_digest,
+              "text": {"canon": "sigillo-text/1", "sha256": expected_text}}],
         )
 
         # The document itself must never reach the export, only its fingerprint.
@@ -260,6 +266,12 @@ tracing.flush()
 
         verdict = self._run(["node", str(VERIFY_CLI), str(export), "--quiet"])
         self.assertIn("OK", verdict)
+
+        # And the offline lookup finds the same text with other spacing.
+        copy = self.work / "copia.txt"
+        copy.write_text("il contenuto esatto del curriculum di un candidato di prova, per un test", encoding="utf-8")
+        found = self._run(["node", str(VERIFY_CLI), "doc", str(export), str(copy)])
+        self.assertIn("same text", found)
 
     def test_the_server_refuses_a_key_it_did_not_issue(self) -> None:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)

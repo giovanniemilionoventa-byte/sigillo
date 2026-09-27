@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readZip } from "@sigillo/core";
+import { DOCUMENT_TEXT_SOURCE, documentFingerprints, readZip, TEXT_CANON_1 } from "@sigillo/core";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
@@ -737,6 +737,67 @@ describe("the verify-document page", () => {
     const body = (await app.inject({ method: "GET", url: "/ui/verify-document", headers: { cookie } })).body;
     expect(body).toContain('<button type="button" id="sigillo-doc-button" disabled>');
     expect(body).toContain(`<p class="warn" id="sigillo-doc-inactive">${UI.verifyDocument.scriptInactive.replace(/'/g, "&#39;")}</p>`);
+  });
+
+  it("embeds core's DOCUMENT_TEXT_SOURCE verbatim: the browser runs the reference rule, not a copy", () => {
+    expect(VERIFY_DOCUMENT_SCRIPT).toContain(DOCUMENT_TEXT_SOURCE);
+    expect(VERIFY_DOCUMENT_SCRIPT).toContain("sigilloFingerprintInputs(bytes)");
+  });
+
+  it("is in the navigation again, marked as the current page when open", async () => {
+    const cookie = await signIn();
+    for (const url of ["/ui", "/ui/sistemi", `/ui/systems/${SYSTEM}`]) {
+      const body = (await app.inject({ method: "GET", url, headers: { cookie } })).body;
+      expect(body).toContain('<a href="/ui/verify-document">verifica documento</a>');
+    }
+    const own = (await app.inject({ method: "GET", url: "/ui/verify-document", headers: { cookie } })).body;
+    expect(own).toContain('<a href="/ui/verify-document" aria-current="page">verifica documento</a>');
+  });
+
+  it("finds a v3 text by its text fingerprint and says it is the same text, not the same bytes", async () => {
+    const recorded = new TextEncoder().encode("Gentile candidata,\r\nla ringraziamo.\r\n");
+    const fingerprints = documentFingerprints(recorded);
+    await store.append(
+      event(9, {
+        action: { kind: "tool_call", name: "invia_email" },
+        artifacts: [{
+          role: "output",
+          label: "email di risposta",
+          media_type: "text/plain",
+          sha256: fingerprints.bytes,
+          text: { canon: TEXT_CANON_1, sha256: fingerprints.text ?? "" },
+        }],
+      }),
+    );
+    const cookie = await signIn();
+    const pasted = documentFingerprints(new TextEncoder().encode("Gentile candidata, la ringraziamo."));
+    const body = (
+      await app.inject({ method: "GET", url: `/ui/verify-document?sha256=${pasted.bytes}&text=${pasted.text ?? ""}`, headers: { cookie } })
+    ).body;
+    expect(body).toContain('data-match="text"');
+    expect(body).toContain("ha lo stesso testo di quello usato");
+    expect(body).toContain("I byte non sono identici");
+    expect(body).toContain(`<span class="hash text-hash">${pasted.text ?? ""}</span>`);
+    expect(body).not.toContain("Non è stato modificato");
+  });
+
+  it("says a file has no text fingerprint when it has none", async () => {
+    const cookie = await signIn();
+    const body = (await app.inject({ method: "GET", url: `/ui/verify-document?sha256=${"b".repeat(64)}`, headers: { cookie } })).body;
+    expect(body).toContain(UI.verifyDocument.noTextFingerprint);
+  });
+
+  it("searches only well-formed digests, and at most eight of each list", async () => {
+    const legacy = "d".repeat(64);
+    await store.append(
+      event(9, { artifacts: [{ role: "input", label: "curriculum", media_type: "text/plain", sha256: legacy }] }),
+    );
+    const cookie = await signIn();
+    const page = async (query: string): Promise<string> =>
+      (await app.inject({ method: "GET", url: `/ui/verify-document?sha256=${"e".repeat(64)}${query}`, headers: { cookie } })).body;
+    expect(await page(`&lines=zz,${legacy}`)).toContain('data-match="lines"');
+    expect(await page(`&lines=${Array.from({ length: 8 }, () => "0".repeat(64)).join(",")},${legacy}`)).not.toContain("data-match");
+    expect(await page(`&text=${legacy.toUpperCase()}`)).not.toContain("data-match");
   });
 
   it("keeps deploy/Caddyfile's CSP hash in step with the script it actually allows", () => {

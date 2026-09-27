@@ -149,7 +149,11 @@ same span, when present, and the resulting receipt is `v: 2` rather than `v: 1`:
   SDK's `sigillo.artifact(...)` attaches), read from that event's
   `sigillo.artifact.role`/`.label`/`.media_type`/`.sha256` attributes. A
   malformed event is skipped, not thrown on. Any span may carry these, not
-  only an `llm_call`.
+  only an `llm_call`. An event that also carries
+  `sigillo.artifact.text_canon` = `sigillo-text/1` and a well-formed
+  `sigillo.artifact.text_sha256` gives its artifact a `text` member, and the
+  receipt is then `v: 3` (`docs/FORMAT.md`, 2.5 and 2.5.1); any other
+  `text_canon`, or a malformed digest, drops only `text`, never the artifact.
 - **`model`**: for a recognised `llm_call` only, from `gen_ai.request.model` /
   `gen_ai.response.model` / `llm.model_name` for the name,
   `gen_ai.provider.name` / `gen_ai.system` / `llm.provider` / `llm.system` for

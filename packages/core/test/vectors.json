@@ -2,9 +2,10 @@
   "format": "sigillo receipt test vectors",
   "receipt_versions": [
     1,
-    2
+    2,
+    3
   ],
-  "note": "canonical is the RFC 8785 form of the receipt with the sig field removed; hash is the SHA-256 of those UTF-8 bytes, lowercase hex. The sig values are a fixed placeholder: these vectors pin the wire format, not signatures. Signature vectors arrive with the signer. Versions 1 and 2 are both covered; a v1 vector has no artifacts or model member at all.",
+  "note": "canonical is the RFC 8785 form of the receipt with the sig field removed; hash is the SHA-256 of those UTF-8 bytes, lowercase hex. The sig values are a fixed placeholder: these vectors pin the wire format, not signatures. Signature vectors arrive with the signer. Versions 1, 2 and 3 are all covered; a v1 vector has no artifacts or model member at all, and only a v3 artifact may carry text.",
   "vectors": [
     {
       "name": "genesis",
@@ -639,6 +640,143 @@
       },
       "canonical": "{\"action\":{\"kind\":\"llm_call\",\"name\":\"chat.completions\"},\"actor\":{\"agent\":\"planner\"},\"artifacts\":[{\"label\":\"email di risposta\",\"media_type\":\"text/plain\",\"role\":\"output\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"}],\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"model\":{\"digest\":null,\"name\":\"gpt-4o\",\"provider\":\"openai\"},\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":24,\"source\":{\"type\":\"sdk\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:17.000Z\",\"ts_received\":\"2026-03-29T14:31:17.001Z\",\"v\":2}",
       "hash": "b0a371066482a75aee8c647bc4d66c9bfc4fb61a985c6b031a34137e40f2db2a"
+    },
+    {
+      "name": "v3-text-artifact",
+      "comment": "Version 3: a text artifact carries its sigillo-text/1 fingerprint beside the exact one; sha256 keeps its raw-bytes meaning.",
+      "receipt": {
+        "v": 3,
+        "system_id": "acme-support-bot",
+        "seq": 25,
+        "ts_event": "2026-03-29T14:31:18.000Z",
+        "ts_received": "2026-03-29T14:31:18.001Z",
+        "actor": {
+          "agent": "selezione-cv"
+        },
+        "action": {
+          "kind": "tool_call",
+          "name": "invia_email"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "otlp",
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+          "span_id": "00f067aa0ba902b7"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ==",
+        "artifacts": [
+          {
+            "role": "output",
+            "label": "email di risposta",
+            "media_type": "text/plain",
+            "sha256": "fef8e3961a0d8b0aab3979406edacec21b767ac0e0c47fed7a0a6ad01f8ec615",
+            "text": {
+              "canon": "sigillo-text/1",
+              "sha256": "54a58d6fbf86b8113c5183a32142c3069884460d0ec47b4ee7e435dfd5b23319"
+            }
+          }
+        ]
+      },
+      "canonical": "{\"action\":{\"kind\":\"tool_call\",\"name\":\"invia_email\"},\"actor\":{\"agent\":\"selezione-cv\"},\"artifacts\":[{\"label\":\"email di risposta\",\"media_type\":\"text/plain\",\"role\":\"output\",\"sha256\":\"fef8e3961a0d8b0aab3979406edacec21b767ac0e0c47fed7a0a6ad01f8ec615\",\"text\":{\"canon\":\"sigillo-text/1\",\"sha256\":\"54a58d6fbf86b8113c5183a32142c3069884460d0ec47b4ee7e435dfd5b23319\"}}],\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":25,\"source\":{\"span_id\":\"00f067aa0ba902b7\",\"trace_id\":\"4bf92f3577b34da6a3ce929d0e0e4736\",\"type\":\"otlp\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:18.000Z\",\"ts_received\":\"2026-03-29T14:31:18.001Z\",\"v\":3}",
+      "hash": "4eefc8e96a7603760d82a8eb9c07db16dd8a7ee9c9e5949a5a8e9275cf21e408"
+    },
+    {
+      "name": "v3-text-and-binary-artifacts",
+      "comment": "A text artifact and a binary one on the same receipt: only the text one has a text member.",
+      "receipt": {
+        "v": 3,
+        "system_id": "acme-support-bot",
+        "seq": 26,
+        "ts_event": "2026-03-29T14:31:19.000Z",
+        "ts_received": "2026-03-29T14:31:19.001Z",
+        "actor": {
+          "agent": "selezione-cv"
+        },
+        "action": {
+          "kind": "tool_call",
+          "name": "leggi_candidatura"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "sdk"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ==",
+        "artifacts": [
+          {
+            "role": "input",
+            "label": "lettera",
+            "media_type": "text/plain",
+            "sha256": "fef8e3961a0d8b0aab3979406edacec21b767ac0e0c47fed7a0a6ad01f8ec615",
+            "text": {
+              "canon": "sigillo-text/1",
+              "sha256": "54a58d6fbf86b8113c5183a32142c3069884460d0ec47b4ee7e435dfd5b23319"
+            }
+          },
+          {
+            "role": "input",
+            "label": "curriculum",
+            "media_type": "application/pdf",
+            "sha256": "7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e"
+          }
+        ]
+      },
+      "canonical": "{\"action\":{\"kind\":\"tool_call\",\"name\":\"leggi_candidatura\"},\"actor\":{\"agent\":\"selezione-cv\"},\"artifacts\":[{\"label\":\"lettera\",\"media_type\":\"text/plain\",\"role\":\"input\",\"sha256\":\"fef8e3961a0d8b0aab3979406edacec21b767ac0e0c47fed7a0a6ad01f8ec615\",\"text\":{\"canon\":\"sigillo-text/1\",\"sha256\":\"54a58d6fbf86b8113c5183a32142c3069884460d0ec47b4ee7e435dfd5b23319\"}},{\"label\":\"curriculum\",\"media_type\":\"application/pdf\",\"role\":\"input\",\"sha256\":\"7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e\"}],\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":26,\"source\":{\"type\":\"sdk\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:19.000Z\",\"ts_received\":\"2026-03-29T14:31:19.001Z\",\"v\":3}",
+      "hash": "cd9d884eaec1852eac625558e678c153c8c8c1f591309e0a252f2825534c7441"
+    },
+    {
+      "name": "v3-text-artifact-and-model",
+      "comment": "A text artifact with its text member and a model, together on an llm_call.",
+      "receipt": {
+        "v": 3,
+        "system_id": "acme-support-bot",
+        "seq": 27,
+        "ts_event": "2026-03-29T14:31:20.000Z",
+        "ts_received": "2026-03-29T14:31:20.001Z",
+        "actor": {
+          "agent": "planner",
+          "on_behalf_of": "urn:user:42"
+        },
+        "action": {
+          "kind": "llm_call",
+          "name": "chat.completions"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "sdk"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ==",
+        "artifacts": [
+          {
+            "role": "output",
+            "label": "riassunto",
+            "media_type": "text/plain",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "text": {
+              "canon": "sigillo-text/1",
+              "sha256": "7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e"
+            }
+          }
+        ],
+        "model": {
+          "name": "qwen2.5:3b",
+          "provider": "ollama",
+          "digest": null
+        }
+      },
+      "canonical": "{\"action\":{\"kind\":\"llm_call\",\"name\":\"chat.completions\"},\"actor\":{\"agent\":\"planner\",\"on_behalf_of\":\"urn:user:42\"},\"artifacts\":[{\"label\":\"riassunto\",\"media_type\":\"text/plain\",\"role\":\"output\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"text\":{\"canon\":\"sigillo-text/1\",\"sha256\":\"7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e\"}}],\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"model\":{\"digest\":null,\"name\":\"qwen2.5:3b\",\"provider\":\"ollama\"},\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":27,\"source\":{\"type\":\"sdk\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:20.000Z\",\"ts_received\":\"2026-03-29T14:31:20.001Z\",\"v\":3}",
+      "hash": "ba9b92c28384e002e7a193ccebefc1147de22c3a083bef850ad726ee7823b26b"
     }
   ]
 }

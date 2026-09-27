@@ -1,7 +1,11 @@
 # "Verifica un documento", riprogettata — proposta
 
-Data: 2026-09-27. Documento per il committente. **Nessuna modifica al codice**: il lavoro
-parte solo dopo la tua conferma esplicita delle decisioni D1–D8 in fondo.
+Data: 2026-09-27. Documento per il committente.
+
+**Esito (stesso giorno)**: confermate D1–D6 e D8; per D7 il committente ha scelto l'alternativa
+(CSP invariata con l'hash nel `Caddyfile`, riavvio automatico di Caddy nel deploy:
+`deploy/update.sh`). Implementato nella sessione 10 di `PROGRESS.md`; decisioni trascritte in
+`SPEC.md`. Il resto di questo documento è la proposta così come è stata presentata.
 
 ## 1. La causa, verificata nel codice
 

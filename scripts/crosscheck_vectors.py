@@ -18,9 +18,11 @@ import json
 import pathlib
 import re
 import sys
+import unicodedata
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 VECTORS = ROOT / "packages" / "core" / "test" / "vectors.json"
+TEXT_VECTORS = ROOT / "packages" / "core" / "test" / "text-vectors.json"
 
 GENESIS_PREV_HASH = "0" * 64
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -37,8 +39,15 @@ MANDATORY = {
     "v", "system_id", "seq", "ts_event", "ts_received", "actor", "action",
     "input_hash", "output_hash", "outcome", "source", "prev_hash", "key_id", "sig",
 }
-# Version 2 adds these two, both optional, and nothing else.
+# Version 2 adds these two, both optional, and nothing else. Version 3 adds
+# nothing at the receipt level: only `text` inside an artifact.
 V2_OPTIONAL = {"artifacts", "model"}
+TEXT_CANON_1 = "sigillo-text/1"
+
+# sigillo-text/1 as docs/FORMAT.md section 2.5.1 writes it, with the character
+# lists copied from there rather than from any sigillo code.
+TEXT_REMOVED = re.compile("[\u00ad\u200b\u2060\ufeff]")
+TEXT_WHITESPACE = re.compile("[\t\n\u000b\u000c\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+")
 
 failures = []
 
@@ -52,8 +61,36 @@ def canonical_json(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def check_artifact(where, artifact):
-    check(set(artifact) == {"role", "label", "media_type", "sha256"}, where + "artifact fields")
+def canonical_text(data):
+    """sigillo-text/1 over bytes, or None when the document has no text."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    text = unicodedata.normalize("NFC", TEXT_REMOVED.sub("", text))
+    return TEXT_WHITESPACE.sub(" ", text).strip(" ") or None
+
+
+def check_text_vectors():
+    document = json.loads(TEXT_VECTORS.read_text(encoding="utf-8"))
+    check(document.get("canon") == TEXT_CANON_1, "text vector file must be for sigillo-text/1")
+    for vector in document["vectors"]:
+        text = canonical_text(bytes.fromhex(vector["input_hex"]))
+        check(text == vector["canonical"], f"text vector {vector['name']!r}: canonical text differs")
+        digest = None if text is None else hashlib.sha256(text.encode("utf-8")).hexdigest()
+        check(digest == vector["sha256"], f"text vector {vector['name']!r}: digest differs")
+    return len(document["vectors"])
+
+
+def check_artifact(where, artifact, version):
+    allowed = {"role", "label", "media_type", "sha256"} | ({"text"} if version == 3 else set())
+    check({"role", "label", "media_type", "sha256"} <= set(artifact) <= allowed, where + "artifact fields")
+    if "text" in artifact:
+        text = artifact["text"]
+        check(isinstance(text, dict) and set(text) == {"canon", "sha256"}, where + "artifact.text fields")
+        if isinstance(text, dict):
+            check(text.get("canon") == TEXT_CANON_1, where + "artifact.text.canon must be sigillo-text/1")
+            check(HEX64.match(text.get("sha256", "")) is not None, where + "artifact.text.sha256 format")
     check(artifact.get("role") in ARTIFACT_ROLES, where + "artifact.role value")
     check(1 <= len(artifact.get("label", "")) <= 256, where + "artifact.label length")
     check(1 <= len(artifact.get("media_type", "")) <= 128, where + "artifact.media_type length")
@@ -74,7 +111,7 @@ def check_model(where, model):
 def check_shape(name, receipt):
     where = f"{name}: "
     version = receipt.get("v")
-    check(version in (1, 2), where + "v must be 1 or 2")
+    check(version in (1, 2, 3), where + "v must be 1, 2 or 3")
 
     extra = set(receipt) - MANDATORY
     if version == 1:
@@ -86,7 +123,7 @@ def check_shape(name, receipt):
             check(isinstance(artifacts, list) and len(artifacts) >= 1, where + "artifacts must be a non-empty array")
             if isinstance(artifacts, list):
                 for index, artifact in enumerate(artifacts):
-                    check_artifact(f"{where}artifacts[{index}]: ", artifact)
+                    check_artifact(f"{where}artifacts[{index}]: ", artifact, version)
         if "model" in receipt:
             check_model(where + "model: ", receipt["model"])
 
@@ -139,8 +176,8 @@ def main():
     vectors = document["vectors"]
     check(len(vectors) >= 10, f"expected at least 10 vectors, found {len(vectors)}")
     check(
-        document.get("receipt_versions") == [1, 2],
-        "vector file must declare receipt_versions [1, 2]",
+        document.get("receipt_versions") == [1, 2, 3],
+        "vector file must declare receipt_versions [1, 2, 3]",
     )
 
     seen_hashes = {}
@@ -160,12 +197,17 @@ def main():
         check(digest not in seen_hashes, f"{name}: shares a digest with {seen_hashes.get(digest)}")
         seen_hashes[digest] = name
 
+    text_vectors = check_text_vectors()
+
     if failures:
         print(f"crosscheck: {len(failures)} problem(s)", file=sys.stderr)
         for failure in failures:
             print(f"  {failure}", file=sys.stderr)
         return 1
-    print(f"crosscheck: ok, {len(vectors)} vectors re-derived independently in Python")
+    print(
+        f"crosscheck: ok, {len(vectors)} receipt vectors and {text_vectors} sigillo-text/1 vectors "
+        "re-derived independently in Python"
+    )
     return 0
 
 

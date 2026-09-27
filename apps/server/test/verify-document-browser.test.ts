@@ -11,6 +11,7 @@ import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { buildServer } from "../src/http/server.js";
+import { textSha256 } from "@sigillo/core";
 import { UI } from "../src/http/strings.js";
 import { ReceiptStore } from "../src/storage/store.js";
 import { createTestSigner } from "./helpers/signer.js";
@@ -118,6 +119,27 @@ describe.skipIf(BROWSER_PATH === undefined)("verifica un documento, in a real br
       source: { type: "otlp" },
       artifacts: [{ role: "input", label: "curriculum", media_type: "text/plain", sha256: CRLF_SHA256 }],
     });
+    // A second CV, recorded the way the current SDK records a text file:
+    // with its sigillo-text/1 fingerprint beside the exact one.
+    const v3Bytes = readFileSync(join(REPOSITORY_ROOT, "demo", "selezione-cv", "curricula", "candidato-12.txt"));
+    await store.append({
+      system_id: SYSTEM,
+      ts_event: "2026-09-25T20:06:00.000Z",
+      ts_received: "2026-09-25T20:06:00.100Z",
+      actor: { agent: "selezione-cv", on_behalf_of: "elena.rizzo" },
+      action: { kind: "tool_call", name: "leggi_curriculum" },
+      input_hash: null,
+      output_hash: null,
+      outcome: "ok",
+      source: { type: "otlp" },
+      artifacts: [{
+        role: "input",
+        label: "curriculum",
+        media_type: "text/plain",
+        sha256: sha256Hex(v3Bytes),
+        text: { canon: "sigillo-text/1", sha256: textSha256(new Uint8Array(v3Bytes)) ?? "" },
+      }],
+    });
     const now = (): Date => new Date("2026-09-26T08:00:00.000Z");
     app = buildServer({
       store,
@@ -177,7 +199,7 @@ describe.skipIf(BROWSER_PATH === undefined)("verifica un documento, in a real br
     await page.keyboard.press("ControlOrMeta+V");
   }
 
-  const shownFingerprint = (page: Page): Promise<string | null> => page.locator("span.hash").textContent();
+  const shownFingerprint = (page: Page): Promise<string | null> => page.locator("span.hash:not(.text-hash)").textContent();
 
   it("serves the page under the Caddyfile's policy", async () => {
     const response = await fetch(`${base}/ui/verify-document`, { redirect: "manual" });
@@ -210,14 +232,49 @@ describe.skipIf(BROWSER_PATH === undefined)("verifica un documento, in a real br
     await page.context().close();
   });
 
-  it("reads pasted text with LF line endings, so it cannot match the CRLF file", async () => {
+  it("reads pasted text with LF line endings, and still finds the CRLF file, saying how they differ", async () => {
     const { page, problems } = await signedInPage();
     await page.goto(`${base}/ui/verify-document`);
     await paste(page, readFileSync(crlfPath, "utf8"));
     await verify(page, LF_SHA256);
 
     expect(await shownFingerprint(page)).toBe(LF_SHA256);
-    expect(await page.locator("body").textContent()).toContain("Nessuna azione registrata ha usato questo documento.");
+    expect(await page.locator("li[data-match]").getAttribute("data-match")).toBe("lines");
+    expect(await page.locator("body").textContent()).toContain("a meno del modo di andare a capo");
+    expect(problems).toEqual([]);
+    await page.context().close();
+  });
+
+  it("finds the LF file on disk too, for a record of its CRLF bytes", async () => {
+    const { page, problems } = await signedInPage();
+    await page.goto(`${base}/ui/verify-document`);
+    await page.setInputFiles("#sigillo-doc-file", lfPath);
+    await verify(page, LF_SHA256);
+    expect(await page.locator("li[data-match]").getAttribute("data-match")).toBe("lines");
+    expect(problems).toEqual([]);
+    await page.context().close();
+  });
+
+  it("finds a v3 text pasted with other spacing and line breaks, computing sigillo-text/1 in the browser", async () => {
+    const { page, problems } = await signedInPage();
+    await page.goto(`${base}/ui/verify-document`);
+    const original = readFileSync(join(REPOSITORY_ROOT, "demo", "selezione-cv", "curricula", "candidato-12.txt"), "utf8");
+    // Reflowed: every line break a space, every space doubled, a tab and a no-break space in front.
+    const reflowed = `\t\u00a0${original.replace(/\s+/g, "  ")}`;
+    await page.fill("#sigillo-doc-text", reflowed);
+    await verify(page, sha256Hex(new TextEncoder().encode(reflowed)));
+
+    expect(await page.locator("span.text-hash").textContent()).toBe(textSha256(new TextEncoder().encode(original)));
+    expect(await page.locator("li[data-match]").getAttribute("data-match")).toBe("text");
+    expect(await page.locator("body").textContent()).toContain("ha lo stesso testo di quello usato");
+
+    // One letter changed is another document.
+    const changed = reflowed.replace("a", "o");
+    expect(changed).not.toBe(reflowed);
+    await page.fill("#sigillo-doc-text", changed);
+    await verify(page, sha256Hex(new TextEncoder().encode(changed)));
+    expect(await page.locator("li[data-match]").count()).toBe(0);
+    expect(await page.locator("body").textContent()).toContain("Nessuna azione registrata ha usato questo documento");
     expect(problems).toEqual([]);
     await page.context().close();
   });

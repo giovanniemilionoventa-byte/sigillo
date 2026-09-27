@@ -372,3 +372,41 @@ Riepilogo finale in italiano in PROGRESS.md e nella pull request: cosa è pronto
 8. Definizione di "finito" per questa sessione
 
 Fasi 5, 6, 7, 8, 10, 11 in stato fatto; fase 9 in stato sospesa, in attesa; CI verde; pull request aggiornata con il riepilogo completo. Se arrivi in fondo a tutte queste fasi senza aver dovuto fermarti per uno dei motivi della sezione 0, scrivi comunque un riepilogo finale e fermati lì: non tornare indietro a rifare cose già fatte né ad aggiungere ambiti fuori da questo prompt.
+
+## Verifica di un documento, riprogettata (2026-09-27)
+
+Decisione del committente del 2026-09-27 sulla proposta
+`docs/PROPOSTA-VERIFICA-DOCUMENTO.md`: confermate D1–D6 e D8; per D7 scelta
+l'alternativa (CSP invariata, riavvio automatico di Caddy nel deploy) invece di
+`script-src 'self'`. Sostituisce, per i documenti testuali, la regola "anche un
+solo carattere cambia il risultato" della sezione 4 della fase 2; per tutti gli
+altri documenti quella regola resta.
+
+- **D1 — Regola `sigillo-text/1`** (definizione normativa: `docs/FORMAT.md`,
+  2.5.1): decodifica UTF-8 stretta; rimozione di U+00AD, U+200B, U+2060,
+  U+FEFF; NFC (mai NFKC); ogni sequenza di spazi bianchi (lista esplicita, la
+  proprietà Unicode `White_Space`) ridotta a uno spazio; taglio agli estremi;
+  SHA-256 dei byte UTF-8 del risultato, senza JSON. Testo vuoto o non UTF-8:
+  nessuna impronta testuale. Due testi che differiscono solo per spazi, a capo
+  o caratteri di formattazione invisibili corrispondono; qualsiasi differenza
+  di contenuto (lettere, cifre, punteggiatura, maiuscole) no.
+- **D2 — Ambito**: solo `text/plain`. CSV, Markdown, HTML, codice, PDF,
+  immagini: solo l'impronta esatta dei byte.
+- **D3 — Due impronte**: `sha256` resta, in ogni versione, l'impronta dei byte
+  grezzi; accanto, per un testo, `text: { canon: "sigillo-text/1", sha256 }`.
+- **D4 — Versione `v: 3`** = versione 2 più `text` in un artifact; scritta
+  solo quando almeno un artifact porta `text`. Le ricevute `v: 1` e `v: 2`
+  restano verificabili senza modifiche.
+- **D5 — Record precedenti**: la ricerca prova anche le varianti di fine riga
+  (LF/CRLF, a capo finale, BOM iniziale; al massimo 8) contro le impronte
+  esatte, e lo dichiara nel risultato. Nessuna re-ingestione.
+- **D6 — Ingresso e uscita**: la ricerca cerca anche l'impronta JSON del testo
+  in `input_hash`/`output_hash`, solo esatta (o a meno delle stesse varianti di
+  fine riga).
+- **D7 — CSP**: lo script della pagina resta inline e permesso dal suo SHA-256
+  nel `Caddyfile`. `deploy/update.sh` aggiorna e riavvia Caddy ogni volta, poi
+  controlla che l'hash caricato da Caddy coincida con quello del `Caddyfile`.
+- **Una sola implementazione di riferimento**: `packages/core/src/text.ts`,
+  eseguita da Node e incorporata così com'è nello script del browser. L'SDK
+  Python ne porta una copia, legata a quella di riferimento dai vettori
+  condivisi e da un confronto con core su migliaia di stringhe casuali.
