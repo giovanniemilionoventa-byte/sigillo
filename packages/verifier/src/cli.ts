@@ -11,7 +11,13 @@ import {
   type Receipt,
 } from "@sigillo/core";
 import { verifyTimestamps } from "./timestamps.js";
-import { compareWithPrevious, verifyBundle, type Bundle, type VerifyOptions } from "./verify.js";
+import {
+  compareAnchorsWithPrevious,
+  compareWithPrevious,
+  verifyBundle,
+  type Bundle,
+  type VerifyOptions,
+} from "./verify.js";
 
 /** What this build checks, in the order it checks it. Printed so the reader knows. */
 const CHECKS = [
@@ -133,7 +139,7 @@ program
   )
   .option(
     "--previous <path>",
-    "an export of the same chain received earlier: this one must contain it unchanged and reach at least as far",
+    "an export of the same chain received earlier: this one must contain it unchanged, reach at least as far, and still hold all its checkpoints and timestamp tokens",
   )
   .option("--quiet", "print only the verdict")
   .action(
@@ -176,7 +182,13 @@ program
         process.stderr.write(`        ${before.detail}\n`);
         process.exit(1);
       }
-      const compared = compareWithPrevious(result.receipts, before.receipts);
+      const compared =
+        compareWithPrevious(result.receipts, before.receipts) ??
+        compareAnchorsWithPrevious(
+          { checkpoints: parseCheckpoints(archive.bundle), tokens: archive.tokens },
+          { checkpoints: parseCheckpoints(previous.bundle), tokens: previous.tokens },
+          result.summary.first_seq,
+        );
       if (compared !== null && !compared.ok) {
         process.stderr.write(`FAILED  ${compared.check} at ${compared.location}\n`);
         process.stderr.write(`        ${compared.detail}\n`);
@@ -199,8 +211,12 @@ program
     }
 
     const { summary } = result;
+    // Receipts after the newest checkpoint have no anchor yet. Against an earlier
+    // export that is just new material; on its own it may also be an archive
+    // whose newest checkpoint was taken out, so it is never a plain OK.
+    const unanchored = options.previous === undefined ? summary.unanchored_receipts : 0;
     process.stdout.write(
-      `OK  ${summary.system_id}: ${summary.receipts} receipts, seq ${summary.first_seq}..${summary.last_seq}, ` +
+      `${unanchored > 0 ? "OK, with a warning" : "OK"}  ${summary.system_id}: ${summary.receipts} receipts, seq ${summary.first_seq}..${summary.last_seq}, ` +
         `signed by ${summary.key_ids.join(", ")}\n`,
     );
     if (summary.checkpoints > 0) {
@@ -212,6 +228,13 @@ program
     if (summary.unlinked_checkpoints > 0) {
       process.stdout.write(
         `    note: ${summary.unlinked_checkpoints} checkpoint(s) are not linked to these receipts by any proof\n`,
+      );
+    }
+    if (unanchored > 0) {
+      process.stdout.write(
+        `    warning: ${unanchored} ${unanchored === 1 ? "receipt" : "receipts"} not yet anchored, ` +
+          `after the newest checkpoint (${summary.last_seq - unanchored + 1}..${summary.last_seq}): ` +
+          "nothing in this archive dates them, or shows they were not cut off\n",
       );
     }
     if (summary.artifacts_indexed > 0) {
@@ -252,6 +275,11 @@ program
       else if (summary.roots_recomputed < summary.checkpoints) {
         notDone.push(
           `${summary.checkpoints - summary.roots_recomputed} checkpoint root(s) could not be rebuilt, because the export does not start at seq 0`,
+        );
+      }
+      if (unanchored > 0) {
+        notDone.push(
+          `${unanchored} ${unanchored === 1 ? "receipt" : "receipts"} after the newest checkpoint are not anchored by any checkpoint or timestamp`,
         );
       }
       const tokensChecked = timestamps.checks.filter((check) => check.status === "verified" || check.status === "imprint-only").length;

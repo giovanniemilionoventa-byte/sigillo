@@ -766,7 +766,12 @@ Two optional inputs extend the checks with what an archive cannot supply
 itself: `--key-id <id>` (a signature by any key but these fails, at check 7
 or 9) and `--previous <archive>` (an earlier export of the same chain: every
 receipt the two share must be identical, the new export must reach at least
-as far, and one that starts right after the old one ends must link to it).
+as far, one that starts right after the old one ends must link to it, and
+every checkpoint and timestamp token the old one held must still be there,
+unchanged, except a checkpoint wholly before the receipts a later window
+starts at). Without `--previous`, receipts after the newest checkpoint that
+is tied to them are reported as "N receipts not yet anchored", and the
+verdict reads `OK, with a warning` instead of `OK`; the exit status stays 0.
 
 A verifier stops at the first failure and names the file, the line and the
 check. Any failure means the export is not evidence of anything.

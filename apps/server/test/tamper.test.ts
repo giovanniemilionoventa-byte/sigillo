@@ -413,3 +413,112 @@ describe("beyond the ten", () => {
     expectCaught(verify(doctor({ "receipts.jsonl": jsonl(receipts) })), "signature", `receipts.jsonl:${RECEIPTS}`);
   }, 30_000);
 });
+
+describe("the newest checkpoint and its token taken out (review point 3d)", () => {
+  /**
+   * One chain of 13 receipts, checkpointed and anchored after the 9th and again
+   * after the 13th, exported twice from the same database: once before the
+   * second checkpoint (`stale`) and once after it (`staged`).
+   */
+  async function produceStaged(database: string): Promise<{ stale: Map<string, Uint8Array>; staged: Map<string, Uint8Array> }> {
+    const store = ReceiptStore.open(database, signer);
+    const checkpointAndAnchor = async (at: string): Promise<void> => {
+      const written = await store.createCheckpoint(SYSTEM, at);
+      if (written === null) throw new Error("no checkpoint");
+      const token = tsa.stamp(written.checkpoint.root_hash);
+      await store.recordTimestamp(written.id, "http://tsa.test/", token.toString("base64"), "2026-03-29T16:00:00.000Z");
+    };
+    const exported = async (): Promise<Map<string, Uint8Array>> => {
+      const archive = await buildArchive({
+        systemId: SYSTEM,
+        receipts: store.readChain(SYSTEM),
+        checkpoints: store.readCheckpoints(SYSTEM).map((stored) => ({ stored, timestamps: store.readTimestamps(stored.id) })),
+        keys: [{ key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 }],
+        exportedAt: EXPORTED_AT,
+      });
+      return new Map(readZip(archive.zip).map((entry) => [entry.name, entry.data]));
+    };
+    try {
+      await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
+      for (let index = 1; index < 13; index += 1) {
+        await store.append(event(index));
+        if (index === 8) await checkpointAndAnchor("2026-03-29T15:00:00.000Z");
+      }
+      const stale = await exported();
+      await checkpointAndAnchor("2026-03-29T15:30:00.000Z");
+      return { stale, staged: await exported() };
+    } finally {
+      store.close();
+    }
+  }
+
+  let staged: Map<string, Uint8Array>;
+  let stale: Map<string, Uint8Array>;
+
+  beforeAll(async () => {
+    ({ staged, stale } = await produceStaged(join(directory, "staged.db")));
+  }, 60_000);
+
+  /** The staged archive without its newest checkpoint and token, the manifest made to agree. */
+  function withoutNewest(): Map<string, Uint8Array> {
+    const entries = linesOf<Entry>(staged, "checkpoints.jsonl");
+    const dropped = entries[entries.length - 1] as Entry;
+    const manifest = jsonOf<Manifest>(staged, "manifest.json");
+    manifest.counts = { ...manifest.counts, checkpoints: entries.length - 1, timestamps: manifest.counts.timestamps - 1 };
+    return doctor({
+      "checkpoints.jsonl": jsonl(entries.slice(0, -1)),
+      "manifest.json": bytesOf(JSON.stringify(manifest)),
+      [(dropped.timestamps[0] as { file: string }).file]: null,
+    }, staged);
+  }
+
+  it("a chain whose newest checkpoint covers every receipt verifies in full", () => {
+    const run = verify(staged);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain(`OK  ${SYSTEM}: 13 receipts`);
+    expect(run.stdout).not.toContain("not yet anchored");
+  }, 30_000);
+
+  it("on its own, the archive is still valid but says which receipts nothing anchors", () => {
+    const run = verify(withoutNewest());
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain("4 receipts not yet anchored");
+    expect(run.stdout).not.toContain(`OK  ${SYSTEM}`);
+    expect(run.stdout).toMatch(/^OK, with a warning {2}acme-support-bot: 13 receipts/);
+    // ...and the same warning is in the list of what was not verified.
+    expect(run.stdout).toContain("not verified:");
+  }, 30_000);
+
+  it("is caught against an earlier export that held the checkpoint", () => {
+    const run = verify(withoutNewest(), "--previous", writeArchive(staged));
+    expectCaught(run, "previous-export", "checkpoints.jsonl");
+    expect(run.stderr).toContain("13");
+  }, 30_000);
+
+  it("is caught against an earlier export whose token has been taken out", () => {
+    const entries = linesOf<Entry>(staged, "checkpoints.jsonl");
+    const newest = entries[entries.length - 1] as Entry;
+    const manifest = jsonOf<Manifest>(staged, "manifest.json");
+    manifest.counts = { ...manifest.counts, timestamps: manifest.counts.timestamps - 1 };
+    const tokenless = doctor({
+      "checkpoints.jsonl": jsonl([...entries.slice(0, -1), { ...newest, timestamps: [] }]),
+      "manifest.json": bytesOf(JSON.stringify(manifest)),
+      [(newest.timestamps[0] as { file: string }).file]: null,
+    }, staged);
+    expect(verify(tokenless).code).toBe(0);
+    expectCaught(verify(tokenless, "--previous", writeArchive(staged)), "previous-export", "checkpoints.jsonl");
+  }, 30_000);
+
+  it("a later export of the same chain, which keeps everything the earlier one had, passes --previous", () => {
+    const run = verify(staged, "--previous", writeArchive(stale));
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain("contains");
+    expect(run.stdout).not.toContain("not yet anchored");
+  }, 30_000);
+
+  it("receipts that simply came after the last checkpoint are reported, not refused", () => {
+    const run = verify(stale);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain("4 receipts not yet anchored");
+  }, 30_000);
+});

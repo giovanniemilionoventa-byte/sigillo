@@ -2519,6 +2519,32 @@ ultime ricevute restano senza ancora e nessun messaggio lo dice, e `--previous` 
 checkpoint dell'export precedente siano ancora presenti. Il troncamento delle ultime ricevute con
 checkpoint tolto è invece un limite già documentato (`SECURITY.md`) e `--previous` lo rileva.
 
+### Sessione 12 — 2026-09-29 — il verificatore non tace più se l'ultimo checkpoint e la sua marca sono stati tolti
+
+Chiude il buco "c3" trovato nella sessione 11: un fascicolo da cui erano stati tolti l'ultimo
+checkpoint e la sua marca, con i conteggi del manifest corretti, risultava `OK` pieno, anche con
+`--previous`. Test scritti prima e falliti per il motivo giusto (13 unitari, 4 con la CLI vera).
+
+1. **`--previous` controlla le ancore.** Ogni checkpoint dell'export precedente deve essere ancora
+   nel nuovo, uguale (radice e firma), e ogni marca deve esserci ancora con gli stessi byte e la stessa
+   autorità; altrimenti `FAILED previous-export at checkpoints.jsonl`. Un checkpoint tutto prima
+   della finestra da cui parte il nuovo export (`tree_size <= first seq`) non viene preteso: è quello
+   che l'esportatore stesso lascia fuori. `compareAnchorsWithPrevious` in `verify.ts`.
+2. **Senza `--previous`, le ricevute dopo l'ultimo checkpoint sono un avviso.** Riga
+   `OK, with a warning …`, riga `warning: N receipts not yet anchored …` e voce in "not verified".
+   Conta solo i checkpoint legati alle ricevute (radice ricostruita o prove di inclusione). Con
+   zero checkpoint resta la nota "no checkpoint" di prima. L'uscita resta 0: l'archivio è valido, e un
+   export fatto tra un checkpoint e l'altro è il caso normale. Con `--previous` l'avviso non compare.
+
+**Test**: Node 908 (prima 889 su `main` dopo la sessione 11, più 19 nuovi), 1 saltato. Un'asserzione
+esistente è cambiata: `export-e2e.test.ts` si aspettava `OK` pieno per una catena con 3 ricevute dopo
+l'ultimo checkpoint; ora si aspetta `OK, with a warning` e "3 receipts not yet anchored".
+
+**Dimensione del verificatore** (regola 5): `packages/verifier/src` da 1190 a **1299 righe** (+109).
+Cosa ha comprato: la chiusura di un buco per cui un archivio privato dell'ultima ancora passava come
+valido. Documentazione allineata: `FORMAT.md` (verificatore), `SECURITY.md` ("what a single archive
+cannot show about itself").
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
