@@ -137,15 +137,32 @@ promise anonymity or legal value.
 Gradients, frosted glass, decorative shadows, cards with a coloured left
 border, emoji, heavily rounded corners.
 
-## Open points
+## Implementation notes
 
-Decisions for the project owner, recorded here until settled.
+- **Outcome icons** in the history: `ok` uses the check circle, `error` the
+  octagon, `blocked` and `unknown` the triangle. The words are the existing
+  outcome words ("completato", "fallito", "bloccato", "esito sconosciuto").
+- **Anchoring** ("Ancorata" / "In attesa"): a receipt is anchored when a
+  checkpoint that has at least one timestamp token covers it
+  (`tree_size > seq`).
+- **Connection type** on the systems page comes from the `source.type` of
+  the system's latest non-genesis receipt.
+- `faint` is only used for the overview numerals (44 px).
 
-- **Subtitle wording.** The brief asks for "registro probatorio per agenti
-  AI"; the current one is "registro delle azioni AI". "Probatorio" can read
-  as a promise of legal value, which the tone rules exclude.
-- **Existing texts vs. new labels.** The brief names buttons "Esporta il
-  fascicolo" and "Verifica adesso" and states "Integra / Riuscita / Attivo /
-  Da controllare / Non riuscita"; the interface today says "Genera
-  fascicolo", "Sigilla adesso" and "verde / giallo / rosso". The brief also
-  says not to change existing texts.
+## Text choices
+
+Settled in the first implementation; each is one line in
+`apps/server/src/http/strings.ts` to change.
+
+- **Subtitle**: "registro probatorio per agenti AI", as the brief asks. It
+  replaces "registro delle azioni AI". "Probatorio" describes what the
+  register holds (evidence), not a claim of legal value; revisit if it reads
+  otherwise.
+- **Existing texts kept**: the buttons stay "Genera fascicolo" and "Sigilla
+  adesso", the state words stay "verde / giallo / rosso" (shown capitalised
+  by CSS). The brief's "Esporta il fascicolo", "Verifica adesso" and
+  "Integra / Da controllare / Non riuscita" were not applied, because the
+  brief also says not to change existing texts.
+- **New texts**, only where the new layout needs them: the overview's summary
+  sentence and subtitle, the history and systems column heads, "Ancorata" /
+  "In attesa", "attivo", and the connection type.

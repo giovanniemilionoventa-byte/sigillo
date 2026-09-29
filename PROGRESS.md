@@ -21,6 +21,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | N4 | Interfaccia nuova | fatto | Le tre domande in italiano, semaforo verde/giallo/rosso con parola, cronologia leggibile, pagina sistemi, tema chiaro/scuro/mobile; 537 test Node |
 | N5 | Demo selezione CV | fatto | 20 curriculum, modello fittizio (Ollama scritto ma non eseguibile qui), ispezione simulata, e2e reale; bug corretto in `sigillo.artifact()` |
 | N6 | Documentazione non tecnica | fatto | `ISPEZIONE.md` e `VIDEO.md` (in N5), `PROVA-LOCALE.md` corretto ed esteso alla fase 2 |
+| D1 | Veste grafica "Registro" | fatto | Solo aspetto: token, font incorporati, componenti, Panoramica/Cronologia/Sistemi; 914 test Node (sessione 13) |
 
 ## Decisioni prese dal committente — 2026-09-21
 
@@ -2544,6 +2545,36 @@ l'ultimo checkpoint; ora si aspetta `OK, with a warning` e "3 receipts not yet a
 Cosa ha comprato: la chiusura di un buco per cui un archivio privato dell'ultima ancora passava come
 valido. Documentazione allineata: `FORMAT.md` (verificatore), `SECURITY.md` ("what a single archive
 cannot show about itself").
+
+### Sessione 13 — 2026-09-29 — nuova veste grafica "Registro" (ramo `design/registro`)
+
+Solo aspetto: nessun cambio a logica, API, database, firmatario, verificatore o formato del
+fascicolo. La fonte di verità è ora `design/tokens.json` + `design/DESIGN.md`.
+
+1. **Token** come variabili CSS in `style.ts`, tema chiaro e scuro (resta `prefers-color-scheme`,
+   nessun interruttore). Contrasto WCAG AA verificato in entrambi i temi; due correzioni annotate in
+   DESIGN.md: `rule-strong` (bordi dei campi, non arrivava a 3:1) e `faint` scuro (mancava).
+2. **Font incorporati**: Newsreader 400/600, Public Sans 400/500/600, IBM Plex Mono 400/500, woff2
+   latino OFL presi dai pacchetti @fontsource (nessuna dipendenza aggiunta), in
+   `apps/server/assets/fonts` con le licenze. Serviti da `/fonts/` (`fonts.ts`, solo nomi in lista).
+   CSP in `deploy/Caddyfile`: aggiunto soltanto `font-src 'self'`. Il Dockerfile copia la cartella.
+3. **Componenti**: bottoni 48/44 px, campi, tabelle con linea in inchiostro sotto le intestazioni,
+   filtri, etichette mono maiuscole, intestazione da 72 px con il nuovo sigillo (due cerchi e un
+   rombo). Ogni stato ha icona di forma diversa + parola + colore.
+4. **Pagine**: Panoramica come registro (titolo che riassume lo stato, tre righe-registro, riga mono
+   con key_id e numero di ricevute); Cronologia come tabella N. | Ora | Azione | Esito | Ancoraggio |
+   Impronta con righe apribili (`<details>`, niente script); Sistemi come tabella più "come
+   collegare un agente" in tre colonne.
+5. **Altre pagine**: solo token e componenti.
+
+**Scelte sui testi** (confermabili o reversibili con una riga in `strings.ts`): sottotitolo
+"registro probatorio per agenti AI" come da brief; pulsanti e parole dello stato invariati ("Genera
+fascicolo", "Sigilla adesso", "verde/giallo/rosso"); testi nuovi solo dove la nuova impaginazione li
+richiede (frase riassuntiva, colonne, "Ancorata"/"In attesa", "attivo", tipo di collegamento).
+
+**Test**: Node 914 (prima 908), 1 saltato; nuovi test su font serviti e CSP, frase riassuntiva e
+icone, ancoraggio in cronologia. Screenshot prima/dopo (1280 e 390 px) in `design/screenshots/`.
+Verificatore non toccato.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
