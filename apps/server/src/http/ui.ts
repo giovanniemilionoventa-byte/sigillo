@@ -26,7 +26,7 @@ import {
   UI,
 } from "./strings.js";
 import { registerFonts } from "./fonts.js";
-import { SEAL_SVG, STYLE } from "./style.js";
+import { SEAL_SVG, STATE_ICONS, STYLE } from "./style.js";
 
 /**
  * The operator's view: server-rendered HTML, no framework and no build step,
@@ -810,8 +810,10 @@ function dayBounds(from: unknown, to: unknown): { from?: string; to?: string } {
   return { ...(start === undefined ? {} : { from: start }), ...(end === undefined ? {} : { to: end }) };
 }
 
+const STATE_ICON: Record<ChainStatus, string> = { green: STATE_ICONS.ok, yellow: STATE_ICONS.warn, red: STATE_ICONS.bad };
+
 function semaphore(status: ChainStatus): string {
-  return `<span class="stamp ${status}"><span class="dot ${status}" aria-hidden="true"></span><span class="status-word ${status}">${escape(UI.status[status])}</span></span>`;
+  return `<span class="stamp ${status}"><span class="dot ${status}" aria-hidden="true">${STATE_ICON[status]}</span><span class="status-word ${status}">${escape(UI.status[status])}</span></span>`;
 }
 
 /** A receipt's place in the ledger's margin: its number, the day, the time. */

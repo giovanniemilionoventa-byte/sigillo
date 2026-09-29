@@ -14,7 +14,7 @@ import type { Receipt } from "@sigillo/core";
 export const UI = {
   nav: { registro: "registro", sistemi: "sistemi", verificaDocumento: "verifica documento", esci: "esci" },
   brand: {
-    tagline: "registro delle azioni AI",
+    tagline: "registro probatorio per agenti AI",
     skip: "Vai al contenuto",
     signingKey: "Ricevute e sigilli firmati con la chiave",
   },
