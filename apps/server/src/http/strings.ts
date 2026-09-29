@@ -14,7 +14,7 @@ import type { Receipt } from "@sigillo/core";
 export const UI = {
   nav: { registro: "registro", sistemi: "sistemi", verificaDocumento: "verifica documento", esci: "esci" },
   brand: {
-    tagline: "registro delle azioni AI",
+    tagline: "registro probatorio per agenti AI",
     skip: "Vai al contenuto",
     signingKey: "Ricevute e sigilli firmati con la chiave",
   },
@@ -35,6 +35,19 @@ export const UI = {
     q3: "Mi prepari le prove?",
     noSystems: "Nessun sistema ancora. Creane uno nella pagina «sistemi».",
     recentActivity: "Ultime azioni",
+    // The main page's title: the situation in one sentence, by the worst state shown.
+    summary: {
+      none: "Nessun sistema scrive ancora in questo registro.",
+      green: (count: number): string => (count === 1 ? "Il registro è integro." : `Tutti i ${count} registri sono integri.`),
+      yellow: (count: number): string =>
+        `Nessuna alterazione trovata; ${count === 1 ? "un sistema è" : `${count} sistemi sono`} da controllare.`,
+      red: (count: number): string =>
+        count === 1 ? "Un registro non supera la verifica." : `${count} registri non superano la verifica.`,
+      lead: (count: number): string =>
+        `Tre domande su ${count === 1 ? "un sistema" : `${count} sistemi`}: se il registro è intatto, cosa ha fatto l'AI, e come preparare le prove.`,
+    },
+    systemsCount: (count: number): string => `${count} ${count === 1 ? "sistema" : "sistemi"}`,
+    actionsCount: (count: number): string => `${count} ${count === 1 ? "azione" : "azioni"}`,
     seeHistory: "vedi tutta la cronologia",
     chooseSystem: "Sistema",
     fromDate: "Dal",
@@ -78,6 +91,15 @@ export const UI = {
     lastActivity: "ultima attività",
     history: "cronologia",
     manage: "gestisci",
+    columns: { system: "Sistema", state: "Stato", receipts: "Ricevute", last: "Ultima ricevuta", manage: "Gestisci" },
+    active: "attivo",
+    // How the latest action reached sigillo, from the receipt's source.type.
+    connection: {
+      sdk: "collegato con l'SDK",
+      otlp: "collegato con OpenTelemetry",
+      api: "collegato con l'API nativa",
+      none: "nessuna azione ancora",
+    },
     createTitle: "Crea un nuovo sistema",
     nameLabel: "Identificativo del sistema",
     namePlaceholder: "acme-support-bot",
@@ -143,6 +165,9 @@ export const UI = {
   history: {
     eyebrow: "cronologia",
     technicalDetails: "Dettagli tecnici",
+    columns: { no: "N.", time: "Ora", action: "Azione", outcome: "Esito", anchor: "Ancoraggio", fingerprint: "Impronta" },
+    anchored: "Ancorata",
+    anchorPending: "In attesa",
     noMatches: "Nessuna ricevuta corrisponde ai filtri scelti.",
     searchButton: "Cerca",
     searchTitle: "Cerca e filtra",
@@ -355,6 +380,11 @@ export function describeReceipt(receipt: Receipt): string {
 /** A readable label for an artifact, e.g. "curriculum (usato in input)". */
 export function describeArtifact(role: "input" | "output", label: string): string {
   return `${label} (${role === "input" ? "usato in input" : "prodotto in output"})`;
+}
+
+/** The one word for an outcome, as the receipt sentences already use it. */
+export function outcomeWord(outcome: Receipt["outcome"]): string {
+  return OUTCOME_WORDS[outcome];
 }
 
 export function actionKindLabel(kind: Receipt["action"]["kind"]): string {

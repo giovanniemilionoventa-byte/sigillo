@@ -58,6 +58,7 @@ WORKDIR /app
 COPY --from=build /out/server ./
 COPY --from=build /out/verifier /verifier
 COPY apps/server/proto ./proto
+COPY apps/server/assets ./assets
 COPY deploy/backup.sh ./backup.sh
 
 # The database, the backups and the socket directory are volumes; the key is

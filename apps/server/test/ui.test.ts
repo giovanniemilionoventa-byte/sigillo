@@ -6,12 +6,13 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DOCUMENT_TEXT_SOURCE, documentFingerprints, readZip, TEXT_CANON_1 } from "@sigillo/core";
+import { DOCUMENT_TEXT_SOURCE, documentFingerprints, readZip, receiptHashHex, TEXT_CANON_1 } from "@sigillo/core";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { buildServer } from "../src/http/server.js";
 import { UI } from "../src/http/strings.js";
+import { FONT_FILES, STYLE } from "../src/http/style.js";
 import { VERIFY_DOCUMENT_SCRIPT } from "../src/http/ui.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
@@ -205,6 +206,36 @@ describe("the main page: È tutto a posto?", () => {
     expect(body).toContain('class="dot yellow"');
     expect(body).toContain('class="status-word yellow">giallo<');
     expect(body).toContain("la marca temporale è in attesa");
+  });
+
+  it("states the situation in one sentence, and pairs each state with an icon of its own shape", async () => {
+    healthMonitor.check();
+    const cookie = await signIn();
+    const body = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
+    expect(body).toContain(`<h1>${UI.home.summary.yellow(1)}</h1>`);
+    expect(body).toContain(`key_id <code>${signer.keyId}</code> · 6 ricevute`);
+    // The yellow icon is the triangle: its path starts at the apex.
+    expect(body).toMatch(/class="dot yellow" aria-hidden="true"><svg[^>]*><path d="M10 2\.25/);
+  });
+
+  it("marks each receipt in the history as anchored or waiting, with its outcome and fingerprint", async () => {
+    const cookie = await signIn();
+    const history = async (): Promise<string> =>
+      (await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}`, headers: { cookie } })).body;
+    const before = await history();
+    expect(before).toContain(`<span class="pending">${UI.history.anchorPending}</span>`);
+    expect(before).not.toContain(UI.history.anchored);
+    const checkpoint = await store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z");
+    if (checkpoint !== null) {
+      await store.recordTimestamp(checkpoint.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), "2026-03-29T15:00:05.000Z");
+    }
+    const after = await history();
+    expect(after).toContain(UI.history.anchored);
+    expect(after).not.toContain(UI.history.anchorPending);
+    const receipt = store.readChain(SYSTEM)[1];
+    expect(receipt).toBeDefined();
+    if (receipt !== undefined) expect(after).toContain(receiptHashHex(receipt));
+    expect(after).toContain("completato</span>");
   });
 
   it("turns green once a checkpoint anchors the chain", async () => {
@@ -1101,5 +1132,41 @@ describe("managing a system: deleting (M3)", () => {
       expect(response.statusCode, action).toBe(302);
     }
     expect((await app.inject({ method: "GET", url: `/ui/systems/${EMPTY}/manage` })).statusCode).toBe(302);
+  });
+});
+
+describe("the typefaces", () => {
+  it("serves every font the stylesheet names, from this origin, before any sign-in", async () => {
+    const named = [...STYLE.matchAll(/url\(([^)]+)\)/g)].map((match) => match[1]);
+    expect(named.length).toBe(FONT_FILES.length);
+    for (const url of named) {
+      expect(url, url).toMatch(/^\/fonts\/[a-z0-9-]+\.woff2$/);
+      const response = await app.inject({ method: "GET", url: url ?? "" });
+      expect(response.statusCode, url).toBe(200);
+      expect(response.headers["content-type"], url).toBe("font/woff2");
+      expect(response.rawPayload.subarray(0, 4).toString("latin1"), url).toBe("wOF2");
+      const onDisk = readFileSync(join(REPOSITORY_ROOT, "apps", "server", "assets", "fonts", (url ?? "").slice("/fonts/".length)));
+      expect(response.rawPayload.equals(onDisk), url).toBe(true);
+    }
+  });
+
+  it("serves nothing else under /fonts/", async () => {
+    for (const url of ["/fonts/LICENSE-newsreader.txt", "/fonts/..%2F..%2Fpackage.json", "/fonts/missing.woff2"]) {
+      expect((await app.inject({ method: "GET", url })).statusCode, url).toBe(404);
+    }
+  });
+
+  it("ships the licence of every family beside its files", () => {
+    for (const family of ["newsreader", "public-sans", "ibm-plex-mono"]) {
+      const licence = readFileSync(join(REPOSITORY_ROOT, "apps", "server", "assets", "fonts", `LICENSE-${family}.txt`), "utf8");
+      expect(licence, family).toContain("SIL Open Font License, Version 1.1");
+    }
+  });
+
+  it("is allowed by deploy/Caddyfile's CSP from this origin only", () => {
+    const caddyfile = readFileSync(join(REPOSITORY_ROOT, "deploy", "Caddyfile"), "utf8");
+    const policy = /Content-Security-Policy "([^"]+)"/.exec(caddyfile)?.[1] ?? "";
+    expect(policy.split("; ")).toContain("font-src 'self'");
+    expect(STYLE).not.toMatch(/https?:\/\//);
   });
 });

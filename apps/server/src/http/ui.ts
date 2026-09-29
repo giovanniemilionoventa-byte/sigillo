@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { DOCUMENT_TEXT_SOURCE, type DocumentFingerprints, type Receipt } from "@sigillo/core";
+import { DOCUMENT_TEXT_SOURCE, receiptHashHex, type DocumentFingerprints, type Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
 import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
@@ -22,10 +22,12 @@ import {
   describeDocumentMatch,
   describeReceipt,
   formatTs,
+  outcomeWord,
   systemTitle,
   UI,
 } from "./strings.js";
-import { SEAL_SVG, STYLE } from "./style.js";
+import { registerFonts } from "./fonts.js";
+import { SEAL_SVG, STATE_ICONS, STYLE } from "./style.js";
 
 /**
  * The operator's view: server-rendered HTML, no framework and no build step,
@@ -86,7 +88,7 @@ interface PageOptions {
   /** Which entry of the navigation this page belongs to. */
   current?: "registro" | "sistemi" | "verifica";
   /** The page's own heading: a small line above, the title, and a system_id beneath when there is one. */
-  head?: { eyebrow?: string; h1: string; sid?: string; badges?: string[] };
+  head?: { eyebrow?: string; h1: string; lead?: string; sid?: string; badges?: string[] };
   body: string;
 }
 
@@ -98,6 +100,7 @@ function page(options: PageOptions, signingKeyId: string): string {
       : `<div class="page-head">
 ${options.head.eyebrow === undefined ? "" : `<p class="eyebrow">${escape(options.head.eyebrow)}</p>`}
 <h1>${escape(options.head.h1)}${(options.head.badges ?? []).map((badge) => ` <span class="badge">${escape(badge)}</span>`).join("")}</h1>
+${options.head.lead === undefined ? "" : `<p class="lead">${escape(options.head.lead)}</p>`}
 ${options.head.sid === undefined ? "" : `<code class="sid">${escape(options.head.sid)}</code>`}
 </div>`;
   return `<!doctype html>
@@ -405,6 +408,8 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     }
   });
 
+  registerFonts(app);
+
   app.get("/", async (_request, reply) => reply.redirect("/ui", 302));
 
   app.get("/ui/login", async (request, reply) =>
@@ -474,8 +479,8 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       render({
         title: UI.home.heading,
         current: "registro",
-        head: { eyebrow: UI.home.eyebrow, h1: UI.home.heading },
-        body: homePage(store, options.healthMonitor, options.now(), justCheckpointed),
+        head: { eyebrow: UI.home.eyebrow, ...homeSummary(store, options.healthMonitor, options.now()) },
+        body: homePage(store, options.healthMonitor, options.now(), justCheckpointed, keyId),
       }),
     );
   });
@@ -609,7 +614,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       render({
         title: systemTitle(record),
         head: systemHead(record, UI.history.eyebrow),
-        body: historyPage(systemId, receipts, query),
+        body: historyPage(systemId, receipts, query, anchoredSize(store, systemId)),
       }),
     );
   });
@@ -807,8 +812,10 @@ function dayBounds(from: unknown, to: unknown): { from?: string; to?: string } {
   return { ...(start === undefined ? {} : { from: start }), ...(end === undefined ? {} : { to: end }) };
 }
 
+const STATE_ICON: Record<ChainStatus, string> = { green: STATE_ICONS.ok, yellow: STATE_ICONS.warn, red: STATE_ICONS.bad };
+
 function semaphore(status: ChainStatus): string {
-  return `<span class="stamp ${status}"><span class="dot ${status}" aria-hidden="true"></span><span class="status-word ${status}">${escape(UI.status[status])}</span></span>`;
+  return `<span class="stamp ${status}"><span class="dot ${status}" aria-hidden="true">${STATE_ICON[status]}</span><span class="status-word ${status}">${escape(UI.status[status])}</span></span>`;
 }
 
 /** A receipt's place in the ledger's margin: its number, the day, the time. */
@@ -829,25 +836,69 @@ function archivedButShown(record: SystemRecord, status: ChainStatus): string | n
   return null;
 }
 
-function homePage(
-  store: ReceiptStore,
-  healthMonitor: ChainHealthMonitor,
-  now: Date,
-  justCheckpointed: boolean,
-): string {
-  const t = UI.home;
+/** The systems the main page shows, with their state: archived ones only when archivedButShown says so. */
+function homeRows(store: ReceiptStore, healthMonitor: ChainHealthMonitor, now: Date) {
   const records = store.listSystemRecords();
   const rows = records.map((record) => ({ record, health: healthMonitor.statusFor(record.system_id, now) }));
   const shown = rows.filter(
     ({ record, health }) => record.archived_at === null || archivedButShown(record, health.status) !== null,
   );
-  const hidden = rows.length - shown.length;
+  return { records, rows, shown };
+}
 
-  const question = (numeral: string, id: string, title: string, content: string): string =>
-    `<section class="question" aria-labelledby="${id}">
-<div class="question-head"><span class="numeral" aria-hidden="true">${numeral}</span><h2 id="${id}">${escape(title)}</h2></div>
+/** The worst state among the systems shown: one red makes the page red. */
+function worstStatus(statuses: ChainStatus[]): ChainStatus {
+  return statuses.includes("red") ? "red" : statuses.includes("yellow") ? "yellow" : "green";
+}
+
+/** The main page's title and subtitle: the situation in one sentence. */
+function homeSummary(store: ReceiptStore, healthMonitor: ChainHealthMonitor, now: Date): { h1: string; lead: string } {
+  const t = UI.home.summary;
+  const { shown } = homeRows(store, healthMonitor, now);
+  if (shown.length === 0) return { h1: t.none, lead: UI.home.noSystems };
+  const count = (status: ChainStatus): number => shown.filter(({ health }) => health.status === status).length;
+  const worst = worstStatus(shown.map(({ health }) => health.status));
+  const h1 = worst === "red" ? t.red(count("red")) : worst === "yellow" ? t.yellow(count("yellow")) : t.green(shown.length);
+  return { h1, lead: t.lead(shown.length) };
+}
+
+/**
+ * One of the three questions as a line of the register: its numeral, the
+ * question and a detail, the state on the right when there is one, and what
+ * answers it underneath.
+ */
+function registerRow(
+  numeral: string,
+  id: string,
+  title: string,
+  detail: string | null,
+  state: { stamp?: string; line?: string } | null,
+  content: string,
+): string {
+  const right =
+    state === null
+      ? ""
+      : `<div class="row-state">${state.stamp ?? ""}${state.line === undefined ? "" : `<span class="label">${escape(state.line)}</span>`}</div>`;
+  return `<section class="question" aria-labelledby="${id}">
+<div class="register-row"><span class="numeral" aria-hidden="true">${numeral}</span><div class="row-text"><h2 id="${id}">${escape(title)}</h2>${
+    detail === null ? "" : `<p class="detail">${escape(detail)}</p>`
+  }</div>${right}</div>
+<div class="question-body">
 ${content}
+</div>
 </section>`;
+}
+
+function homePage(
+  store: ReceiptStore,
+  healthMonitor: ChainHealthMonitor,
+  now: Date,
+  justCheckpointed: boolean,
+  keyId: string,
+): string {
+  const t = UI.home;
+  const { records, rows, shown } = homeRows(store, healthMonitor, now);
+  const hidden = rows.length - shown.length;
 
   const q1 =
     records.length === 0
@@ -915,12 +966,20 @@ ${recent
   <label>${escape(t.toDate)}<input type="date" name="to"></label>
   <button type="submit" class="primary">${escape(t.generate)}</button>
 </form>
-<p class="hint">${escape(t.wholeChain)} ${escape(t.generateHint)}</p>
+<p class="hint">${escape(t.wholeChain)}</p>
 </div>`;
 
-  return `${question("I", "q1", t.q1, q1)}
-${question("II", "q2", t.q2, q2)}
-${question("III", "q3", t.q3, q3)}`;
+  const q1State =
+    shown.length === 0
+      ? null
+      : { stamp: semaphore(worstStatus(shown.map(({ health }) => health.status))), line: t.systemsCount(shown.length) };
+  const q2State = recent.length === 0 ? null : { line: t.actionsCount(recent.length) };
+  const receipts = records.reduce((total, record) => total + record.receipts, 0);
+
+  return `${registerRow("I", "q1", t.q1, null, q1State, q1)}
+${registerRow("II", "q2", t.q2, t.recentActivity, q2State, q2)}
+${registerRow("III", "q3", t.q3, t.generateHint, null, q3)}
+<p class="register-foot label">key_id <code>${escape(keyId)}</code> · ${escape(UI.systemsPage.receipts(receipts))}</p>`;
 }
 
 type SystemsView = "attivi" | "archiviati" | "tutti";
@@ -943,27 +1002,43 @@ function sistemiPage(store: ReceiptStore, view: SystemsView, extra: { notice?: s
     )
     .join("")}</ul>`;
 
+  const connection = (record: SystemRecord): string => {
+    const latest = store.searchReceipts({ systemId: record.system_id, limit: 1 })[0];
+    return latest === undefined || latest.action.kind === "genesis" ? t.connection.none : t.connection[latest.source.type];
+  };
+  const cell = (name: keyof typeof t.columns, content: string): string =>
+    `<td data-label="${escape(t.columns[name])}">${content}</td>`;
+
   const list =
     inView.length === 0
       ? `<p class="empty">${escape(t.noneInView[view])}</p>`
-      : `<ul class="systems">${inView
+      : `<div class="table-scroll"><table class="systems-table">
+<thead><tr>${(["system", "state", "receipts", "last", "manage"] as const).map((name) => `<th scope="col">${escape(t.columns[name])}</th>`).join("")}</tr></thead>
+<tbody>${inView
           .map((record) => {
             const link = escape(encodeURIComponent(record.system_id));
-            const meta = [
-              `<code class="sid">${escape(record.system_id)}</code>`,
-              escape(record.receipts <= 1 ? t.onlyGenesis : t.receipts(record.receipts)),
-              ...(record.last_received === null ? [] : [`${escape(t.lastActivity)} ${escape(formatTs(record.last_received))}`]),
-              ...(record.archived_at === null ? [] : [`${escape(UI.manage.archivedOn)} ${escape(formatTs(record.archived_at))}`]),
-            ].join(" · ");
-            return `<li>
-  <div class="system-name"><a href="/ui/systems/${link}">${escape(systemTitle(record))}</a>${
-    record.archived_at === null ? "" : ` <span class="badge">${escape(t.archivedBadge)}</span>`
-  }</div>
-  <p class="system-meta">${meta}</p>
-  <div class="system-links"><a href="/ui/systems/${link}">${escape(t.history)}</a><a href="/ui/systems/${link}/manage">${escape(t.manage)}</a></div>
-</li>`;
+            const state =
+              record.archived_at === null
+                ? `<span class="stamp green"><span class="dot" aria-hidden="true">${STATE_ICONS.ok}</span><span class="status-word">${escape(t.active)}</span></span>`
+                : `<span class="stamp archived"><span class="dot" aria-hidden="true">${STATE_ICONS.archived}</span><span class="status-word">${escape(t.archivedBadge)}</span></span>` +
+                  `<span class="label">${escape(UI.manage.archivedOn)} ${escape(formatTs(record.archived_at))}</span>`;
+            return `<tr>
+  ${cell("system", `<div class="system-name"><a href="/ui/systems/${link}">${escape(systemTitle(record))}</a></div><code class="sid">${escape(record.system_id)}</code> <span class="muted">· ${escape(connection(record))}</span>`)}
+  ${cell("state", state)}
+  ${cell("receipts", `<span class="num">${record.receipts}</span> <span class="sr">${escape(record.receipts <= 1 ? t.onlyGenesis : t.receipts(record.receipts))}</span>`)}
+  ${cell("last", record.last_received === null ? "—" : `<span class="num">${escape(formatTs(record.last_received))}</span>`)}
+  ${cell("manage", `<a href="/ui/systems/${link}">${escape(t.history)}</a> <a href="/ui/systems/${link}/manage">${escape(t.manage)}</a>`)}
+</tr>`;
           })
-          .join("\n")}</ul>`;
+          .join("\n")}</tbody></table></div>`;
+
+  const ways = [t.connectPython, t.connectOtlp, t.connectNative]
+    .map((way) => `<div class="way"><h3>${escape(way.title)}</h3><p class="hint">${escape(way.hint)}</p></div>`)
+    .join("");
+  const connect = `<h2>${escape(t.howToConnect)}</h2>
+<p class="hint">${escape(t.howToConnectIntro)}</p>
+<div class="ways">${ways}</div>
+<p class="hint">${escape(t.connectMore)}</p>`;
 
   const log = store.adminLog(20);
   const adminLog =
@@ -975,6 +1050,7 @@ function sistemiPage(store: ReceiptStore, view: SystemsView, extra: { notice?: s
 ${extra.error === undefined ? "" : `<p class="notice bad warn" role="alert">${escape(extra.error)}</p>`}
 ${tabs}
 ${list}
+${connect}
 <h2>${escape(t.createTitle)}</h2>
 <div class="sheet formal">
 <form method="post" action="/ui/sistemi" class="fields">
@@ -1101,15 +1177,37 @@ function systemCreatedPage(systemId: string, token: string): string {
 <p><a href="/ui/systems/${escape(encodeURIComponent(systemId))}/manage">${escape(t.manage)}</a> · <a href="/ui/sistemi">${escape(UI.nav.sistemi)}</a></p>`;
 }
 
-function receiptListItem(receipt: Receipt): string {
+/**
+ * How many receipts, from the start of the chain, a checkpoint with a
+ * timestamp token covers: those are anchored, the rest are waiting.
+ */
+function anchoredSize(store: ReceiptStore, systemId: string): number {
+  return store
+    .readCheckpoints(systemId)
+    .filter((stored) => store.readTimestamps(stored.id).length > 0)
+    .reduce((size, stored) => Math.max(size, stored.checkpoint.tree_size), 0);
+}
+
+const OUTCOME_STATE: Record<Receipt["outcome"], { css: ChainStatus; icon: string }> = {
+  ok: { css: "green", icon: STATE_ICONS.ok },
+  error: { css: "red", icon: STATE_ICONS.bad },
+  blocked: { css: "yellow", icon: STATE_ICONS.warn },
+  unknown: { css: "yellow", icon: STATE_ICONS.warn },
+};
+
+/** One receipt as a row of the history; it opens on the technical details. */
+function receiptListItem(receipt: Receipt, anchoredBelow: number): string {
+  const t = UI.history;
   const artifacts =
     receipt.v === 2 && receipt.artifacts !== undefined
       ? receipt.artifacts
           .map((a) => `<span class="tag">${escape(describeArtifact(a.role, a.label))}</span>`)
           .join(" ")
       : "";
+  const hash = receiptHashHex(receipt);
 
   const rows: string[] = [
+    `<tr><th>impronta</th><td class="hash">${escape(hash)}</td></tr>`,
     `<tr><th>seq</th><td>${receipt.seq}</td></tr>`,
     `<tr><th>ricevuto</th><td>${escape(receipt.ts_received)}</td></tr>`,
     `<tr><th>tipo</th><td>${escape(receipt.action.kind)}</td></tr>`,
@@ -1124,17 +1222,30 @@ function receiptListItem(receipt: Receipt): string {
     rows.push(`<tr><th>impronta output</th><td class="hash">${escape(receipt.output_hash)}</td></tr>`);
   }
 
-  const details = `<details><summary>${escape(UI.history.technicalDetails)}</summary>
-<div class="table-scroll"><table>${rows.join("\n")}</table></div>
-</details>`;
+  const [day, time] = formatTs(receipt.ts_received).split(", ");
+  const outcome = OUTCOME_STATE[receipt.outcome];
+  const anchored = receipt.seq < anchoredBelow;
+  const cell = (name: keyof typeof t.columns, content: string): string =>
+    `<span class="cell ${name}"><span class="sr">${escape(t.columns[name])}: </span>${content}</span>`;
 
-  return `<li>${ledgerMargin(receipt)}<div class="entry">${escape(describeReceipt(receipt))} ${artifacts}${details}</div></li>`;
+  return `<li><details><summary class="history-row">
+${cell("no", String(receipt.seq))}
+${cell("time", `<span class="day">${escape(day ?? "")}</span> <span class="hour">${escape(time ?? "")}</span>`)}
+${cell("action", `${escape(describeReceipt(receipt))}${artifacts === "" ? "" : ` ${artifacts}`}`)}
+${cell("outcome", `<span class="stamp ${outcome.css}"><span class="dot" aria-hidden="true">${outcome.icon}</span>${escape(outcomeWord(receipt.outcome))}</span>`)}
+${cell("anchor", anchored ? `<span class="muted">${escape(t.anchored)}</span>` : `<span class="pending">${escape(t.anchorPending)}</span>`)}
+${cell("fingerprint", `${escape(hash.slice(0, 12))}…`)}
+<span class="sr">${escape(t.technicalDetails)}</span>
+</summary>
+<div class="panel"><div class="table-scroll"><table>${rows.join("\n")}</table></div></div>
+</details></li>`;
 }
 
 function historyPage(
   systemId: string,
   receipts: Receipt[],
   query: Record<string, string | undefined>,
+  anchoredBelow: number,
 ): string {
   const t = UI.history;
   const kinds = ["", "tool_call", "llm_call", "agent_step", "decision", "genesis"];
@@ -1170,7 +1281,10 @@ function historyPage(
 ${
   receipts.length === 0
     ? `<p class="empty">${escape(t.noMatches)}</p>`
-    : `<ol class="ledger" reversed>${receipts.map(receiptListItem).join("\n")}</ol>`
+    : `<div class="history-head" aria-hidden="true">${(["no", "time", "action", "outcome", "anchor", "fingerprint"] as const)
+        .map((name) => `<span class="cell ${name}">${escape(t.columns[name])}</span>`)
+        .join("")}</div>
+<ol class="history" reversed>${receipts.map((receipt) => receiptListItem(receipt, anchoredBelow)).join("\n")}</ol>`
 }`;
 }
 
