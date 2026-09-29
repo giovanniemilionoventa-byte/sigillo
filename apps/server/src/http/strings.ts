@@ -35,6 +35,19 @@ export const UI = {
     q3: "Mi prepari le prove?",
     noSystems: "Nessun sistema ancora. Creane uno nella pagina «sistemi».",
     recentActivity: "Ultime azioni",
+    // The main page's title: the situation in one sentence, by the worst state shown.
+    summary: {
+      none: "Nessun sistema scrive ancora in questo registro.",
+      green: (count: number): string => (count === 1 ? "Il registro è integro." : `Tutti i ${count} registri sono integri.`),
+      yellow: (count: number): string =>
+        `Nessuna alterazione trovata; ${count === 1 ? "un sistema è" : `${count} sistemi sono`} da controllare.`,
+      red: (count: number): string =>
+        count === 1 ? "Un registro non supera la verifica." : `${count} registri non superano la verifica.`,
+      lead: (count: number): string =>
+        `Tre domande su ${count === 1 ? "un sistema" : `${count} sistemi`}: se il registro è intatto, cosa ha fatto l'AI, e come preparare le prove.`,
+    },
+    systemsCount: (count: number): string => `${count} ${count === 1 ? "sistema" : "sistemi"}`,
+    actionsCount: (count: number): string => `${count} ${count === 1 ? "azione" : "azioni"}`,
     seeHistory: "vedi tutta la cronologia",
     chooseSystem: "Sistema",
     fromDate: "Dal",

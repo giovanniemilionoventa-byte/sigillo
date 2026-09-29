@@ -207,39 +207,41 @@ pre.code { background: var(--surface); border: 1px solid var(--rule); padding: 1
 .login .tagline { margin: 0 0 32px; }
 .login input { width: 100%; }
 
-/* pages (restyled one at a time) */
-/* the three questions */
-.question { margin: 0 0 2.75rem; }
-.question > .question-head { display: flex; align-items: baseline; gap: .9rem;
-  border-bottom: 1px solid var(--rule); padding-bottom: .5rem; margin-bottom: 1rem; }
-.numeral { font: 600 1.6rem/1 var(--display); color: var(--accent); min-width: 2.2rem; }
-.question-head h2 { margin: 0; font-size: 1.55rem; }
+/* the overview: the three questions as lines of a register */
+.question { margin: 0 0 48px; }
+.register-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 4px 24px; align-items: start;
+  padding: 24px 0; border-top: 1px solid var(--ink); }
+.numeral { font: 400 44px/1 var(--display); color: var(--faint); }
+.register-row h2 { margin: 4px 0 0; font: 600 24px/1.25 var(--display); }
+.register-row .detail { margin: 4px 0 0; font-size: 15px; color: var(--muted); }
+.row-state { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding-top: 6px; }
+.question-body { margin-left: 96px; }
+.register-foot { margin: 48px 0 0; padding-top: 16px; border-top: 1px solid var(--rule); overflow-wrap: anywhere; }
+.register-foot code { font-size: 12px; color: var(--ink); }
 
-/* systems */
-.systems { list-style: none; padding: 0; margin: 0 0 1rem; border-top: 1px solid var(--rule); }
-.systems > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .2rem 1rem;
-  padding: .85rem 0; border-bottom: 1px solid var(--rule); }
-.system-name { font: 600 1.15rem/1.3 var(--display); overflow-wrap: anywhere; }
+/* systems on the overview */
+.systems { list-style: none; padding: 0; margin: 0 0 16px; border-top: 1px solid var(--rule); }
+.systems > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 24px;
+  padding: 16px 0; border-bottom: 1px solid var(--rule); }
+.system-name { font: 600 20px/1.3 var(--display); overflow-wrap: anywhere; }
 .system-name a { color: var(--ink); text-decoration: none; }
 .system-name a:hover { text-decoration: underline; }
-.system-meta { grid-column: 1 / -1; color: var(--muted); font-size: .92rem; margin: 0; }
-.system-links { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .2rem 1.1rem; font-size: .95rem; }
+.system-meta { grid-column: 1 / -1; color: var(--muted); font-size: 15px; margin: 0; }
+.system-links { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 24px; font-size: 15px; }
 
-/* the ledger: one entry per receipt, its number in the margin */
+/* the ledger: one entry per receipt, its number and time in the margin */
 .ledger { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--rule); }
-.ledger > li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); column-gap: 1rem;
-  padding: .75rem 0; border-bottom: 1px solid var(--rule); }
-.ledger .margin { font-family: var(--mono); font-size: .76rem; color: var(--muted); line-height: 1.5;
-  padding-right: .6rem; border-right: 2px solid var(--rule); }
-.ledger .margin .no { display: block; color: var(--ink); font-size: .82rem; }
+.ledger > li { display: grid; grid-template-columns: 128px minmax(0, 1fr); column-gap: 24px;
+  padding: 16px 0; border-bottom: 1px solid var(--rule); }
+.ledger .margin { font: 13px/1.5 var(--mono); color: var(--muted); }
+.ledger .margin .no { display: block; color: var(--ink); font-weight: 500; }
 .ledger .margin .when { display: block; }
-.ledger .entry { min-width: 0; }
-.ledger .entry .who { font-variant-caps: all-small-caps; letter-spacing: .06em; color: var(--muted); display: block;
-  font-size: .92rem; text-decoration: none; width: fit-content; }
+.ledger .entry { min-width: 0; font: 400 18px/1.4 var(--display); }
+.ledger .entry .who { display: block; width: fit-content; margin-bottom: 4px; font: 500 12px/1.4 var(--mono);
+  text-transform: uppercase; letter-spacing: .14em; color: var(--muted); text-decoration: none; }
 .ledger .entry a.who:hover { color: var(--accent); text-decoration: underline; }
-.tag { display: inline-block; background: var(--ground); border-radius: .2rem; padding: .05rem .5rem;
-  font-size: .85em; margin: .3rem .3rem 0 0; }
-
+.tag { display: inline-block; border: 1px solid var(--rule); border-radius: 2px; padding: 0 8px;
+  font: 13px/1.6 var(--text); margin: 4px 4px 0 0; }
 
 @media (max-width: 640px) {
   .masthead-inner { padding-top: 12px; gap: 4px 16px; }
@@ -250,6 +252,13 @@ pre.code { background: var(--surface); border: 1px solid var(--rule); padding: 1
   h2 { font-size: 24px; }
   .lead { font-size: 17px; }
   .sheet { padding: 16px; }
+  .register-row { grid-template-columns: 40px minmax(0, 1fr); }
+  .numeral { font-size: 32px; }
+  .row-state { grid-column: 2; align-items: flex-start; padding-top: 4px; }
+  .question-body { margin-left: 0; }
+  .ledger > li { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+  .ledger .margin .no, .ledger .margin .when { display: inline; }
+  .ledger .margin .no { margin-right: 8px; }
   form.fields > label, form.fields > button { width: 100%; }
   input[type="text"], input[type="password"], input[type="date"], select { width: 100%; }
 }

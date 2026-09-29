@@ -87,7 +87,7 @@ interface PageOptions {
   /** Which entry of the navigation this page belongs to. */
   current?: "registro" | "sistemi" | "verifica";
   /** The page's own heading: a small line above, the title, and a system_id beneath when there is one. */
-  head?: { eyebrow?: string; h1: string; sid?: string; badges?: string[] };
+  head?: { eyebrow?: string; h1: string; lead?: string; sid?: string; badges?: string[] };
   body: string;
 }
 
@@ -99,6 +99,7 @@ function page(options: PageOptions, signingKeyId: string): string {
       : `<div class="page-head">
 ${options.head.eyebrow === undefined ? "" : `<p class="eyebrow">${escape(options.head.eyebrow)}</p>`}
 <h1>${escape(options.head.h1)}${(options.head.badges ?? []).map((badge) => ` <span class="badge">${escape(badge)}</span>`).join("")}</h1>
+${options.head.lead === undefined ? "" : `<p class="lead">${escape(options.head.lead)}</p>`}
 ${options.head.sid === undefined ? "" : `<code class="sid">${escape(options.head.sid)}</code>`}
 </div>`;
   return `<!doctype html>
@@ -477,8 +478,8 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       render({
         title: UI.home.heading,
         current: "registro",
-        head: { eyebrow: UI.home.eyebrow, h1: UI.home.heading },
-        body: homePage(store, options.healthMonitor, options.now(), justCheckpointed),
+        head: { eyebrow: UI.home.eyebrow, ...homeSummary(store, options.healthMonitor, options.now()) },
+        body: homePage(store, options.healthMonitor, options.now(), justCheckpointed, keyId),
       }),
     );
   });
@@ -834,25 +835,69 @@ function archivedButShown(record: SystemRecord, status: ChainStatus): string | n
   return null;
 }
 
-function homePage(
-  store: ReceiptStore,
-  healthMonitor: ChainHealthMonitor,
-  now: Date,
-  justCheckpointed: boolean,
-): string {
-  const t = UI.home;
+/** The systems the main page shows, with their state: archived ones only when archivedButShown says so. */
+function homeRows(store: ReceiptStore, healthMonitor: ChainHealthMonitor, now: Date) {
   const records = store.listSystemRecords();
   const rows = records.map((record) => ({ record, health: healthMonitor.statusFor(record.system_id, now) }));
   const shown = rows.filter(
     ({ record, health }) => record.archived_at === null || archivedButShown(record, health.status) !== null,
   );
-  const hidden = rows.length - shown.length;
+  return { records, rows, shown };
+}
 
-  const question = (numeral: string, id: string, title: string, content: string): string =>
-    `<section class="question" aria-labelledby="${id}">
-<div class="question-head"><span class="numeral" aria-hidden="true">${numeral}</span><h2 id="${id}">${escape(title)}</h2></div>
+/** The worst state among the systems shown: one red makes the page red. */
+function worstStatus(statuses: ChainStatus[]): ChainStatus {
+  return statuses.includes("red") ? "red" : statuses.includes("yellow") ? "yellow" : "green";
+}
+
+/** The main page's title and subtitle: the situation in one sentence. */
+function homeSummary(store: ReceiptStore, healthMonitor: ChainHealthMonitor, now: Date): { h1: string; lead: string } {
+  const t = UI.home.summary;
+  const { shown } = homeRows(store, healthMonitor, now);
+  if (shown.length === 0) return { h1: t.none, lead: UI.home.noSystems };
+  const count = (status: ChainStatus): number => shown.filter(({ health }) => health.status === status).length;
+  const worst = worstStatus(shown.map(({ health }) => health.status));
+  const h1 = worst === "red" ? t.red(count("red")) : worst === "yellow" ? t.yellow(count("yellow")) : t.green(shown.length);
+  return { h1, lead: t.lead(shown.length) };
+}
+
+/**
+ * One of the three questions as a line of the register: its numeral, the
+ * question and a detail, the state on the right when there is one, and what
+ * answers it underneath.
+ */
+function registerRow(
+  numeral: string,
+  id: string,
+  title: string,
+  detail: string | null,
+  state: { stamp?: string; line?: string } | null,
+  content: string,
+): string {
+  const right =
+    state === null
+      ? ""
+      : `<div class="row-state">${state.stamp ?? ""}${state.line === undefined ? "" : `<span class="label">${escape(state.line)}</span>`}</div>`;
+  return `<section class="question" aria-labelledby="${id}">
+<div class="register-row"><span class="numeral" aria-hidden="true">${numeral}</span><div class="row-text"><h2 id="${id}">${escape(title)}</h2>${
+    detail === null ? "" : `<p class="detail">${escape(detail)}</p>`
+  }</div>${right}</div>
+<div class="question-body">
 ${content}
+</div>
 </section>`;
+}
+
+function homePage(
+  store: ReceiptStore,
+  healthMonitor: ChainHealthMonitor,
+  now: Date,
+  justCheckpointed: boolean,
+  keyId: string,
+): string {
+  const t = UI.home;
+  const { records, rows, shown } = homeRows(store, healthMonitor, now);
+  const hidden = rows.length - shown.length;
 
   const q1 =
     records.length === 0
@@ -920,12 +965,20 @@ ${recent
   <label>${escape(t.toDate)}<input type="date" name="to"></label>
   <button type="submit" class="primary">${escape(t.generate)}</button>
 </form>
-<p class="hint">${escape(t.wholeChain)} ${escape(t.generateHint)}</p>
+<p class="hint">${escape(t.wholeChain)}</p>
 </div>`;
 
-  return `${question("I", "q1", t.q1, q1)}
-${question("II", "q2", t.q2, q2)}
-${question("III", "q3", t.q3, q3)}`;
+  const q1State =
+    shown.length === 0
+      ? null
+      : { stamp: semaphore(worstStatus(shown.map(({ health }) => health.status))), line: t.systemsCount(shown.length) };
+  const q2State = recent.length === 0 ? null : { line: t.actionsCount(recent.length) };
+  const receipts = records.reduce((total, record) => total + record.receipts, 0);
+
+  return `${registerRow("I", "q1", t.q1, null, q1State, q1)}
+${registerRow("II", "q2", t.q2, t.recentActivity, q2State, q2)}
+${registerRow("III", "q3", t.q3, t.generateHint, null, q3)}
+<p class="register-foot label">key_id <code>${escape(keyId)}</code> · ${escape(UI.systemsPage.receipts(receipts))}</p>`;
 }
 
 type SystemsView = "attivi" | "archiviati" | "tutti";

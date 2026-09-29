@@ -208,6 +208,16 @@ describe("the main page: È tutto a posto?", () => {
     expect(body).toContain("la marca temporale è in attesa");
   });
 
+  it("states the situation in one sentence, and pairs each state with an icon of its own shape", async () => {
+    healthMonitor.check();
+    const cookie = await signIn();
+    const body = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
+    expect(body).toContain(`<h1>${UI.home.summary.yellow(1)}</h1>`);
+    expect(body).toContain(`key_id <code>${signer.keyId}</code> · 6 ricevute`);
+    // The yellow icon is the triangle: its path starts at the apex.
+    expect(body).toMatch(/class="dot yellow" aria-hidden="true"><svg[^>]*><path d="M10 2\.25/);
+  });
+
   it("turns green once a checkpoint anchors the chain", async () => {
     const checkpoint = await store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z");
     if (checkpoint !== null) {
