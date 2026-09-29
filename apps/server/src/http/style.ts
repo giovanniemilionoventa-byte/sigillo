@@ -267,6 +267,18 @@ pre.code { background: var(--surface); border: 1px solid var(--rule); padding: 1
 .history .pending { color: var(--warn); font-weight: 600; }
 .history .panel { margin: 0 0 16px; }
 
+/* the systems page */
+.systems-table td { padding: 16px 12px; }
+.systems-table th:first-child, .systems-table td:first-child { padding-left: 0; }
+.systems-table .system-name { font: 600 22px/1.25 var(--display); margin-bottom: 4px; }
+.systems-table td[data-label] > .label { display: block; margin-top: 4px; }
+.systems-table .num { font: 13px/1.6 var(--mono); }
+.systems-table td:last-child a { display: inline-flex; align-items: center; min-height: 44px; margin-right: 16px; }
+.systems-table td:last-child { white-space: nowrap; padding-top: 6px; }
+.ways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; margin: 24px 0 16px; }
+.way { border-top: 1px solid var(--ink); padding-top: 16px; }
+.way h3 { margin: 0 0 8px; }
+
 @media (max-width: 640px) {
   .masthead-inner { padding-top: 12px; gap: 4px 16px; }
   .masthead nav a, .masthead nav button.link { white-space: nowrap; padding: 0 8px; }
@@ -286,6 +298,13 @@ pre.code { background: var(--surface); border: 1px solid var(--rule); padding: 1
   .history .time .day, .history .time .hour { display: inline; }
   .history .action { flex-basis: 100%; }
   .panel th, .panel td { display: block; padding: 0; border: none; }
+  .systems-table, .systems-table tbody, .systems-table tr, .systems-table td { display: block; }
+  .systems-table thead { display: none; }
+  .systems-table tr { padding: 16px 0; border-bottom: 1px solid var(--rule); }
+  .systems-table td, .systems-table td:first-child { padding: 4px 0; border: none; }
+  .systems-table td:not(:first-child)::before { content: attr(data-label); display: block; font: 500 12px/1.4 var(--mono);
+    text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
+  .ways { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .panel td { padding-bottom: 8px; }
   .ledger .margin .no, .ledger .margin .when { display: inline; }
   .ledger .margin .no { margin-right: 8px; }

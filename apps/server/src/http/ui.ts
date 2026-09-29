@@ -1002,27 +1002,43 @@ function sistemiPage(store: ReceiptStore, view: SystemsView, extra: { notice?: s
     )
     .join("")}</ul>`;
 
+  const connection = (record: SystemRecord): string => {
+    const latest = store.searchReceipts({ systemId: record.system_id, limit: 1 })[0];
+    return latest === undefined || latest.action.kind === "genesis" ? t.connection.none : t.connection[latest.source.type];
+  };
+  const cell = (name: keyof typeof t.columns, content: string): string =>
+    `<td data-label="${escape(t.columns[name])}">${content}</td>`;
+
   const list =
     inView.length === 0
       ? `<p class="empty">${escape(t.noneInView[view])}</p>`
-      : `<ul class="systems">${inView
+      : `<div class="table-scroll"><table class="systems-table">
+<thead><tr>${(["system", "state", "receipts", "last", "manage"] as const).map((name) => `<th scope="col">${escape(t.columns[name])}</th>`).join("")}</tr></thead>
+<tbody>${inView
           .map((record) => {
             const link = escape(encodeURIComponent(record.system_id));
-            const meta = [
-              `<code class="sid">${escape(record.system_id)}</code>`,
-              escape(record.receipts <= 1 ? t.onlyGenesis : t.receipts(record.receipts)),
-              ...(record.last_received === null ? [] : [`${escape(t.lastActivity)} ${escape(formatTs(record.last_received))}`]),
-              ...(record.archived_at === null ? [] : [`${escape(UI.manage.archivedOn)} ${escape(formatTs(record.archived_at))}`]),
-            ].join(" · ");
-            return `<li>
-  <div class="system-name"><a href="/ui/systems/${link}">${escape(systemTitle(record))}</a>${
-    record.archived_at === null ? "" : ` <span class="badge">${escape(t.archivedBadge)}</span>`
-  }</div>
-  <p class="system-meta">${meta}</p>
-  <div class="system-links"><a href="/ui/systems/${link}">${escape(t.history)}</a><a href="/ui/systems/${link}/manage">${escape(t.manage)}</a></div>
-</li>`;
+            const state =
+              record.archived_at === null
+                ? `<span class="stamp green"><span class="dot" aria-hidden="true">${STATE_ICONS.ok}</span><span class="status-word">${escape(t.active)}</span></span>`
+                : `<span class="stamp archived"><span class="dot" aria-hidden="true">${STATE_ICONS.archived}</span><span class="status-word">${escape(t.archivedBadge)}</span></span>` +
+                  `<span class="label">${escape(UI.manage.archivedOn)} ${escape(formatTs(record.archived_at))}</span>`;
+            return `<tr>
+  ${cell("system", `<div class="system-name"><a href="/ui/systems/${link}">${escape(systemTitle(record))}</a></div><code class="sid">${escape(record.system_id)}</code> <span class="muted">· ${escape(connection(record))}</span>`)}
+  ${cell("state", state)}
+  ${cell("receipts", `<span class="num">${record.receipts}</span> <span class="sr">${escape(record.receipts <= 1 ? t.onlyGenesis : t.receipts(record.receipts))}</span>`)}
+  ${cell("last", record.last_received === null ? "—" : `<span class="num">${escape(formatTs(record.last_received))}</span>`)}
+  ${cell("manage", `<a href="/ui/systems/${link}">${escape(t.history)}</a> <a href="/ui/systems/${link}/manage">${escape(t.manage)}</a>`)}
+</tr>`;
           })
-          .join("\n")}</ul>`;
+          .join("\n")}</tbody></table></div>`;
+
+  const ways = [t.connectPython, t.connectOtlp, t.connectNative]
+    .map((way) => `<div class="way"><h3>${escape(way.title)}</h3><p class="hint">${escape(way.hint)}</p></div>`)
+    .join("");
+  const connect = `<h2>${escape(t.howToConnect)}</h2>
+<p class="hint">${escape(t.howToConnectIntro)}</p>
+<div class="ways">${ways}</div>
+<p class="hint">${escape(t.connectMore)}</p>`;
 
   const log = store.adminLog(20);
   const adminLog =
@@ -1034,6 +1050,7 @@ function sistemiPage(store: ReceiptStore, view: SystemsView, extra: { notice?: s
 ${extra.error === undefined ? "" : `<p class="notice bad warn" role="alert">${escape(extra.error)}</p>`}
 ${tabs}
 ${list}
+${connect}
 <h2>${escape(t.createTitle)}</h2>
 <div class="sheet formal">
 <form method="post" action="/ui/sistemi" class="fields">

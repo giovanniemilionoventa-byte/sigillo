@@ -91,6 +91,15 @@ export const UI = {
     lastActivity: "ultima attività",
     history: "cronologia",
     manage: "gestisci",
+    columns: { system: "Sistema", state: "Stato", receipts: "Ricevute", last: "Ultima ricevuta", manage: "Gestisci" },
+    active: "attivo",
+    // How the latest action reached sigillo, from the receipt's source.type.
+    connection: {
+      sdk: "collegato con l'SDK",
+      otlp: "collegato con OpenTelemetry",
+      api: "collegato con l'API nativa",
+      none: "nessuna azione ancora",
+    },
     createTitle: "Crea un nuovo sistema",
     nameLabel: "Identificativo del sistema",
     namePlaceholder: "acme-support-bot",
