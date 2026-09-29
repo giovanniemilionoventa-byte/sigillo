@@ -144,6 +144,7 @@ th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--rule); 
 thead th, tr:first-child > th:only-child { border-bottom-color: var(--ink); }
 th { white-space: nowrap; }
 table.wide { min-width: 36rem; }
+th:first-child, td:first-child { padding-left: 0; }
 table.wide tr:first-child th { border-bottom-color: var(--ink); }
 .panel table { font-size: 13px; }
 .panel th, .panel td { padding: 6px 12px 6px 0; }
@@ -206,6 +207,7 @@ pre.code { background: var(--surface); border: 1px solid var(--rule); padding: 1
 .login .wordmark { font-size: 40px; margin: 16px 0 4px; }
 .login .tagline { margin: 0 0 32px; }
 .login input { width: 100%; }
+.login form label { margin-bottom: 16px; }
 
 /* the overview: the three questions as lines of a register */
 .question { margin: 0 0 48px; }
