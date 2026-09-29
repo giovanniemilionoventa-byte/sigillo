@@ -83,6 +83,12 @@ export interface VerificationSummary {
    * about this export's receipts (review point 4).
    */
   unlinked_checkpoints: number;
+  /**
+   * Receipts in this export after the newest checkpoint that is tied to them:
+   * nothing in the archive anchors them yet. Zero when no checkpoint is tied to
+   * the receipts at all; the "no checkpoint" and "not linked" notes say that.
+   */
+  unanchored_receipts: number;
 }
 
 export type Verification =
@@ -308,6 +314,9 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
   let rootsRecomputed = 0;
   let proofsChecked = 0;
   let unlinked = 0;
+  // A checkpoint over N receipts covers seq 0..N-1; this is the highest N among
+  // the checkpoints tied to these receipts.
+  let anchoredThrough: number | null = null;
 
   for (const [index, line] of jsonLines(bundle.checkpointsJsonl ?? "").entries()) {
     let value: unknown;
@@ -358,6 +367,7 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
     //     is rebuilt from them rather than taken on the checkpoint's word.
     const rebuildable = first.seq === 0 && receipts.length >= checkpoint.tree_size;
     if (!rebuildable && proofs.length === 0) unlinked += 1;
+    else anchoredThrough = Math.max(anchoredThrough ?? 0, checkpoint.tree_size);
     if (rebuildable) {
       const leaves = receipts
         .slice(0, checkpoint.tree_size)
@@ -496,6 +506,10 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
       roots_recomputed: rootsRecomputed,
       artifacts_indexed: artifactsIndex.length,
       unlinked_checkpoints: unlinked,
+      unanchored_receipts:
+        anchoredThrough === null
+          ? 0
+          : receipts.filter((receipt) => receipt.seq >= (anchoredThrough as number)).length,
     },
     receipts,
   };
@@ -560,6 +574,73 @@ export function compareWithPrevious(current: Receipt[], previous: Receipt[]): Ve
       at(1),
       `receipt seq ${firstNow.seq} does not link to the last receipt of the previous export`,
     );
+  }
+  return null;
+}
+
+/** The checkpoints of an export and the timestamp tokens it holds, by file name. */
+export interface AnchorSet {
+  checkpoints: CheckpointEntry[];
+  tokens: ReadonlyMap<string, Uint8Array>;
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((byte, index) => byte === b[index]);
+}
+
+/**
+ * The other half of --previous. compareWithPrevious shows that receipts were not
+ * cut or rewritten; this shows that the anchors were not either. Every
+ * checkpoint the earlier export held, and every timestamp token on it, must
+ * still be here, unchanged. Without this, taking the newest checkpoint and its
+ * token out of an archive (and correcting the manifest's counts) leaves a valid
+ * chain whose latest receipts have silently lost their anchor.
+ *
+ * The exporter leaves out a checkpoint that lies wholly before the first
+ * receipt of a window (tree_size <= first seq), so one of those is not asked for.
+ *
+ * Both exports must already have verified on their own.
+ */
+export function compareAnchorsWithPrevious(
+  current: AnchorSet,
+  previous: AnchorSet,
+  firstSeq: number,
+): Verification | null {
+  for (const before of previous.checkpoints) {
+    const size = before.checkpoint.tree_size;
+    if (size <= firstSeq) continue;
+
+    const now = current.checkpoints.find((entry) => entry.checkpoint.tree_size === size);
+    if (now === undefined) {
+      return fail(
+        "previous-export",
+        "checkpoints.jsonl",
+        `the previous export holds the checkpoint over ${size} receipts, and this one does not: a checkpoint has been removed`,
+      );
+    }
+    if (now.checkpoint.root_hash !== before.checkpoint.root_hash || now.checkpoint.sig !== before.checkpoint.sig) {
+      return fail(
+        "previous-export",
+        "checkpoints.jsonl",
+        `the checkpoint over ${size} receipts is not the one in the previous export: it has been replaced`,
+      );
+    }
+
+    for (const stamp of before.timestamps) {
+      const wanted = previous.tokens.get(stamp.file);
+      if (wanted === undefined) continue;
+      const kept = now.timestamps.some((candidate) => {
+        const bytes = current.tokens.get(candidate.file);
+        return candidate.tsa_url === stamp.tsa_url && bytes !== undefined && sameBytes(bytes, wanted);
+      });
+      if (!kept) {
+        return fail(
+          "previous-export",
+          "checkpoints.jsonl",
+          `the previous export holds a timestamp token from ${stamp.tsa_url} over the checkpoint of ${size} receipts, and this one does not: a token has been removed or replaced`,
+        );
+      }
+    }
   }
   return null;
 }

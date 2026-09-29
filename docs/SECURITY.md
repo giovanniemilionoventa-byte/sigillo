@@ -504,7 +504,10 @@ and nothing else.
   operator's `key_id` from another channel (`sigillo-verify --key-id`).
 - **That nothing was cut from its end.** Removing the last receipts and the
   checkpoints over them, and adjusting the manifest, leaves a valid shorter
-  chain. Caught only against an earlier export (`--previous`).
+  chain. Caught only against an earlier export (`--previous`), which also
+  catches a newest checkpoint or timestamp token taken out. On its own, the
+  verifier reports the receipts left after the newest checkpoint as "not yet
+  anchored" and does not print a plain `OK`.
 - **That the timestamp authority is who it claims.** Without its certificate
   (`--tsa-ca`), a token is only checked for the digest it carries. FreeTSA, the
   default authority, is not qualified under eIDAS.

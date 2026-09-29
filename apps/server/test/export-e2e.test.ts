@@ -232,8 +232,10 @@ describe("the whole chain, exported from the web view", () => {
   it("verifies with the authority's certificate and the operator's key", () => {
     const run = verify(archive, "--tsa-ca", tsa.caFile, "--key-id", signer.keyId);
     expect(run.code, run.stderr).toBe(0);
-    // genesis + three days of four receipts each
-    expect(run.stdout).toContain(`OK  ${SYSTEM}: 10 receipts, seq 0..9, signed by ${signer.keyId}`);
+    // genesis + three days of four receipts each. The third day came after the
+    // newest checkpoint, and the verdict says so instead of a plain OK.
+    expect(run.stdout).toContain(`OK, with a warning  ${SYSTEM}: 10 receipts, seq 0..9, signed by ${signer.keyId}`);
+    expect(run.stdout).toContain("3 receipts not yet anchored");
     expect(run.stdout).toContain("2 checkpoint(s), 2 root(s) rebuilt");
     expect(run.stdout.match(/: verified \(http:\/\/127\.0\.0\.1:\d+\/tsr\), attested time 20\d\d-/g)).toHaveLength(2);
     expect(run.stdout).toContain(`every signature is by a key you said to expect: ${signer.keyId}`);
