@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { DOCUMENT_TEXT_SOURCE, type DocumentFingerprints, type Receipt } from "@sigillo/core";
+import { DOCUMENT_TEXT_SOURCE, receiptHashHex, type DocumentFingerprints, type Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
 import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
@@ -22,6 +22,7 @@ import {
   describeDocumentMatch,
   describeReceipt,
   formatTs,
+  outcomeWord,
   systemTitle,
   UI,
 } from "./strings.js";
@@ -613,7 +614,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       render({
         title: systemTitle(record),
         head: systemHead(record, UI.history.eyebrow),
-        body: historyPage(systemId, receipts, query),
+        body: historyPage(systemId, receipts, query, anchoredSize(store, systemId)),
       }),
     );
   });
@@ -1159,15 +1160,37 @@ function systemCreatedPage(systemId: string, token: string): string {
 <p><a href="/ui/systems/${escape(encodeURIComponent(systemId))}/manage">${escape(t.manage)}</a> · <a href="/ui/sistemi">${escape(UI.nav.sistemi)}</a></p>`;
 }
 
-function receiptListItem(receipt: Receipt): string {
+/**
+ * How many receipts, from the start of the chain, a checkpoint with a
+ * timestamp token covers: those are anchored, the rest are waiting.
+ */
+function anchoredSize(store: ReceiptStore, systemId: string): number {
+  return store
+    .readCheckpoints(systemId)
+    .filter((stored) => store.readTimestamps(stored.id).length > 0)
+    .reduce((size, stored) => Math.max(size, stored.checkpoint.tree_size), 0);
+}
+
+const OUTCOME_STATE: Record<Receipt["outcome"], { css: ChainStatus; icon: string }> = {
+  ok: { css: "green", icon: STATE_ICONS.ok },
+  error: { css: "red", icon: STATE_ICONS.bad },
+  blocked: { css: "yellow", icon: STATE_ICONS.warn },
+  unknown: { css: "yellow", icon: STATE_ICONS.warn },
+};
+
+/** One receipt as a row of the history; it opens on the technical details. */
+function receiptListItem(receipt: Receipt, anchoredBelow: number): string {
+  const t = UI.history;
   const artifacts =
     receipt.v === 2 && receipt.artifacts !== undefined
       ? receipt.artifacts
           .map((a) => `<span class="tag">${escape(describeArtifact(a.role, a.label))}</span>`)
           .join(" ")
       : "";
+  const hash = receiptHashHex(receipt);
 
   const rows: string[] = [
+    `<tr><th>impronta</th><td class="hash">${escape(hash)}</td></tr>`,
     `<tr><th>seq</th><td>${receipt.seq}</td></tr>`,
     `<tr><th>ricevuto</th><td>${escape(receipt.ts_received)}</td></tr>`,
     `<tr><th>tipo</th><td>${escape(receipt.action.kind)}</td></tr>`,
@@ -1182,17 +1205,30 @@ function receiptListItem(receipt: Receipt): string {
     rows.push(`<tr><th>impronta output</th><td class="hash">${escape(receipt.output_hash)}</td></tr>`);
   }
 
-  const details = `<details><summary>${escape(UI.history.technicalDetails)}</summary>
-<div class="table-scroll"><table>${rows.join("\n")}</table></div>
-</details>`;
+  const [day, time] = formatTs(receipt.ts_received).split(", ");
+  const outcome = OUTCOME_STATE[receipt.outcome];
+  const anchored = receipt.seq < anchoredBelow;
+  const cell = (name: keyof typeof t.columns, content: string): string =>
+    `<span class="cell ${name}"><span class="sr">${escape(t.columns[name])}: </span>${content}</span>`;
 
-  return `<li>${ledgerMargin(receipt)}<div class="entry">${escape(describeReceipt(receipt))} ${artifacts}${details}</div></li>`;
+  return `<li><details><summary class="history-row">
+${cell("no", String(receipt.seq))}
+${cell("time", `<span class="day">${escape(day ?? "")}</span> <span class="hour">${escape(time ?? "")}</span>`)}
+${cell("action", `${escape(describeReceipt(receipt))}${artifacts === "" ? "" : ` ${artifacts}`}`)}
+${cell("outcome", `<span class="stamp ${outcome.css}"><span class="dot" aria-hidden="true">${outcome.icon}</span>${escape(outcomeWord(receipt.outcome))}</span>`)}
+${cell("anchor", anchored ? `<span class="muted">${escape(t.anchored)}</span>` : `<span class="pending">${escape(t.anchorPending)}</span>`)}
+${cell("fingerprint", `${escape(hash.slice(0, 12))}…`)}
+<span class="sr">${escape(t.technicalDetails)}</span>
+</summary>
+<div class="panel"><div class="table-scroll"><table>${rows.join("\n")}</table></div></div>
+</details></li>`;
 }
 
 function historyPage(
   systemId: string,
   receipts: Receipt[],
   query: Record<string, string | undefined>,
+  anchoredBelow: number,
 ): string {
   const t = UI.history;
   const kinds = ["", "tool_call", "llm_call", "agent_step", "decision", "genesis"];
@@ -1228,7 +1264,10 @@ function historyPage(
 ${
   receipts.length === 0
     ? `<p class="empty">${escape(t.noMatches)}</p>`
-    : `<ol class="ledger" reversed>${receipts.map(receiptListItem).join("\n")}</ol>`
+    : `<div class="history-head" aria-hidden="true">${(["no", "time", "action", "outcome", "anchor", "fingerprint"] as const)
+        .map((name) => `<span class="cell ${name}">${escape(t.columns[name])}</span>`)
+        .join("")}</div>
+<ol class="history" reversed>${receipts.map((receipt) => receiptListItem(receipt, anchoredBelow)).join("\n")}</ol>`
 }`;
 }
 

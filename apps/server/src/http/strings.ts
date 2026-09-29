@@ -156,6 +156,9 @@ export const UI = {
   history: {
     eyebrow: "cronologia",
     technicalDetails: "Dettagli tecnici",
+    columns: { no: "N.", time: "Ora", action: "Azione", outcome: "Esito", anchor: "Ancoraggio", fingerprint: "Impronta" },
+    anchored: "Ancorata",
+    anchorPending: "In attesa",
     noMatches: "Nessuna ricevuta corrisponde ai filtri scelti.",
     searchButton: "Cerca",
     searchTitle: "Cerca e filtra",
@@ -368,6 +371,11 @@ export function describeReceipt(receipt: Receipt): string {
 /** A readable label for an artifact, e.g. "curriculum (usato in input)". */
 export function describeArtifact(role: "input" | "output", label: string): string {
   return `${label} (${role === "input" ? "usato in input" : "prodotto in output"})`;
+}
+
+/** The one word for an outcome, as the receipt sentences already use it. */
+export function outcomeWord(outcome: Receipt["outcome"]): string {
+  return OUTCOME_WORDS[outcome];
 }
 
 export function actionKindLabel(kind: Receipt["action"]["kind"]): string {

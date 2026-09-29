@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DOCUMENT_TEXT_SOURCE, documentFingerprints, readZip, TEXT_CANON_1 } from "@sigillo/core";
+import { DOCUMENT_TEXT_SOURCE, documentFingerprints, readZip, receiptHashHex, TEXT_CANON_1 } from "@sigillo/core";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
@@ -216,6 +216,26 @@ describe("the main page: È tutto a posto?", () => {
     expect(body).toContain(`key_id <code>${signer.keyId}</code> · 6 ricevute`);
     // The yellow icon is the triangle: its path starts at the apex.
     expect(body).toMatch(/class="dot yellow" aria-hidden="true"><svg[^>]*><path d="M10 2\.25/);
+  });
+
+  it("marks each receipt in the history as anchored or waiting, with its outcome and fingerprint", async () => {
+    const cookie = await signIn();
+    const history = async (): Promise<string> =>
+      (await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}`, headers: { cookie } })).body;
+    const before = await history();
+    expect(before).toContain(`<span class="pending">${UI.history.anchorPending}</span>`);
+    expect(before).not.toContain(UI.history.anchored);
+    const checkpoint = await store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z");
+    if (checkpoint !== null) {
+      await store.recordTimestamp(checkpoint.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), "2026-03-29T15:00:05.000Z");
+    }
+    const after = await history();
+    expect(after).toContain(UI.history.anchored);
+    expect(after).not.toContain(UI.history.anchorPending);
+    const receipt = store.readChain(SYSTEM)[1];
+    expect(receipt).toBeDefined();
+    if (receipt !== undefined) expect(after).toContain(receiptHashHex(receipt));
+    expect(after).toContain("completato</span>");
   });
 
   it("turns green once a checkpoint anchors the chain", async () => {

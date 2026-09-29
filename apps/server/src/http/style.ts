@@ -243,6 +243,30 @@ pre.code { background: var(--surface); border: 1px solid var(--rule); padding: 1
 .tag { display: inline-block; border: 1px solid var(--rule); border-radius: 2px; padding: 0 8px;
   font: 13px/1.6 var(--text); margin: 4px 4px 0 0; }
 
+/* the history: one row per receipt, opening on its technical details */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.history-head, .history-row { display: grid; grid-template-columns: 56px 128px minmax(0, 1fr) 152px 112px 128px;
+  column-gap: 16px; align-items: baseline; }
+.history-head { padding: 0 0 8px; border-bottom: 1px solid var(--ink); font: 500 12px/1.4 var(--mono);
+  text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
+.history { list-style: none; padding: 0; margin: 0; }
+.history > li { border-bottom: 1px solid var(--rule); }
+.history details { margin: 0; }
+.history summary.history-row { display: grid; width: auto; min-height: 44px; padding: 16px 0; cursor: pointer;
+  font: 400 15px/1.45 var(--text); text-transform: none; letter-spacing: normal; color: var(--ink); list-style: none; }
+.history summary::-webkit-details-marker { display: none; }
+.history summary:hover .action { color: var(--accent); }
+.history .no { font: 500 13px/1.6 var(--mono); }
+.history .no::before { content: "+"; display: inline-block; width: 16px; color: var(--muted); }
+.history details[open] .no::before { content: "\\2212"; }
+.history .time, .history .fingerprint { font: 13px/1.6 var(--mono); color: var(--muted); }
+.history .time .day, .history .time .hour { display: block; }
+.history .action { font: 400 18px/1.4 var(--display); min-width: 0; }
+.history .outcome .stamp { font-size: 15px; }
+.history .dot svg { width: 16px; height: 16px; }
+.history .pending { color: var(--warn); font-weight: 600; }
+.history .panel { margin: 0 0 16px; }
+
 @media (max-width: 640px) {
   .masthead-inner { padding-top: 12px; gap: 4px 16px; }
   .masthead nav a, .masthead nav button.link { white-space: nowrap; padding: 0 8px; }
@@ -257,6 +281,12 @@ pre.code { background: var(--surface); border: 1px solid var(--rule); padding: 1
   .row-state { grid-column: 2; align-items: flex-start; padding-top: 4px; }
   .question-body { margin-left: 0; }
   .ledger > li { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+  .history-head { display: none; }
+  .history summary.history-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+  .history .time .day, .history .time .hour { display: inline; }
+  .history .action { flex-basis: 100%; }
+  .panel th, .panel td { display: block; padding: 0; border: none; }
+  .panel td { padding-bottom: 8px; }
   .ledger .margin .no, .ledger .margin .when { display: inline; }
   .ledger .margin .no { margin-right: 8px; }
   form.fields > label, form.fields > button { width: 100%; }
