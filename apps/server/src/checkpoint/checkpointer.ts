@@ -33,6 +33,7 @@ export interface CheckpointRun {
 
 export class Checkpointer {
   private timer: NodeJS.Timeout | undefined;
+  private running = false;
 
   constructor(private readonly options: CheckpointerOptions) {}
 
@@ -102,21 +103,33 @@ export class Checkpointer {
     return { checkpoints, timestamped: obtained, pending };
   }
 
+  /**
+   * Runs at once, then every interval. The first run must not wait for a full
+   * interval: a server restarted more often than that (a deploy, an update, a
+   * crash loop) would otherwise never reach its first tick and never write a
+   * checkpoint. A run still in progress when the next one is due is left to
+   * finish, so a slow authority cannot pile up overlapping runs.
+   */
   start(): void {
     if (this.timer !== undefined) return;
     const minutes = this.options.intervalMinutes ?? 60;
-    this.timer = setInterval(
-      () => {
-        void this.runOnce().catch((error: unknown) => {
+    const tick = (): void => {
+      if (this.running) return;
+      this.running = true;
+      void this.runOnce()
+        .catch((error: unknown) => {
           this.options.onError?.(
             `checkpoint run failed: ${error instanceof Error ? error.message : String(error)}`,
           );
+        })
+        .finally(() => {
+          this.running = false;
         });
-      },
-      minutes * 60 * 1000,
-    );
+    };
+    this.timer = setInterval(tick, minutes * 60 * 1000);
     // The timer must not be what keeps the process alive.
     this.timer.unref();
+    tick();
   }
 
   stop(): void {

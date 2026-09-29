@@ -2492,6 +2492,33 @@ quattro tipi di corrispondenza (~35). Nessuna astrazione nuova.
   ha di nuovo "verifica documento", e lo screenshot 09 mostra una corrispondenza vera (`text`)
   sul curriculum n. 2 incollato su una riga sola.
 
+### Sessione 11 — 2026-09-29 — la lista dei checkpoint nell'export era vuota: il job non faceva il primo giro all'avvio
+
+Richiesta del committente: verificare dal vivo il nucleo probatorio (checkpoint Merkle, marca FreeTSA,
+fascicolo, verificatore offline, manomissioni, trigger). Prova fatta su un database creato in questa
+sessione con signer e server veri, **non** sulla copia dei dati di produzione: nel repository e nel
+container non c'è nessun database né export reale. La causa dell'export vuoto è quindi dimostrata sul
+codice e riprodotta, non letta sui dati del committente.
+
+**Causa.** `Checkpointer.start()` usava solo `setInterval`: il primo giro avveniva dopo un intervallo
+intero (default 60 minuti dall'avvio). Un server riavviato più spesso (aggiornamenti con `update.sh`,
+deploy, crash) non arrivava mai al primo tick e non scriveva nessun checkpoint. Riprodotto: 9 ricevute,
+0 checkpoint, server acceso e sano. Con `--checkpoint-minutes 1` il job funzionava (checkpoint + marca
+FreeTSA al primo tick). Due altre cause possibili, non escludibili senza i dati: `TSA_URL` non impostato
+(il checkpoint c'è, ma senza marca) e un export su una finestra di ricevute che parte oltre l'ultimo
+checkpoint (l'export tiene solo i checkpoint che coprono la finestra, `archive.ts`).
+
+**Correzione** (`apps/server/src/checkpoint/checkpointer.ts`, +17 righe nette, nessun cambio nel
+verificatore né in `core`): `start()` fa un giro subito e poi a ogni intervallo; un giro ancora in corso
+non ne fa partire un secondo (autorità lenta). Test scritti prima (`checkpoint.test.ts`, "the checkpoint
+timer", 3 test, falliti per il motivo giusto prima della correzione). Node: 889 test verdi, 1 saltato.
+
+**Trovato e non modificato** (decisione del committente): il verificatore accetta come valido un
+fascicolo da cui sono stati tolti l'ultimo checkpoint e la sua marca, con il manifest riallineato: le
+ultime ricevute restano senza ancora e nessun messaggio lo dice, e `--previous` non controlla che i
+checkpoint dell'export precedente siano ancora presenti. Il troncamento delle ultime ricevute con
+checkpoint tolto è invece un limite già documentato (`SECURITY.md`) e `--previous` lo rileva.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

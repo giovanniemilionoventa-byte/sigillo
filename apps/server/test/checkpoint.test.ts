@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fromHex,
   inclusionProof,
@@ -371,6 +371,75 @@ describe("checkpointing every chain", () => {
     expect(run.checkpoints).toHaveLength(1);
     expect(run.timestamped).toBe(0);
     expect(run.pending).toBe(0);
+  });
+});
+
+describe("the checkpoint timer", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("runs once as soon as it starts, not only after a full interval", async () => {
+    await writeChain(4);
+    const checkpointer = new Checkpointer({ store, now, intervalMinutes: 60 });
+
+    checkpointer.start();
+    try {
+      // Well short of the 60 minutes: a server restarted more often than that
+      // used to never reach its first tick and never wrote a checkpoint.
+      await vi.waitFor(() => expect(store.latestCheckpoint(SYSTEM)).not.toBeNull(), { timeout: 5_000 });
+    } finally {
+      checkpointer.stop();
+    }
+  });
+
+  it("keeps running on its interval after the first run", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    await writeChain(2);
+    const checkpointer = new Checkpointer({ store, now, intervalMinutes: 60 });
+
+    checkpointer.start();
+    try {
+      await vi.waitFor(() => expect(store.latestCheckpoint(SYSTEM)?.checkpoint.tree_size).toBe(2));
+      await store.append(event(2));
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+      await vi.waitFor(() => expect(store.latestCheckpoint(SYSTEM)?.checkpoint.tree_size).toBe(3));
+    } finally {
+      checkpointer.stop();
+    }
+  });
+
+  it("does not start a second run while one is still going", async () => {
+    await writeChain(2);
+    let calls = 0;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow = {
+      listSystems: () => {
+        calls += 1;
+        return store.listSystems();
+      },
+      hasSystem: (id: string) => store.hasSystem(id),
+      createCheckpoint: async (id: string, ts: string) => {
+        await held;
+        return store.createCheckpoint(id, ts);
+      },
+      checkpointsAwaitingTimestamp: () => [],
+    } as unknown as ReceiptStore;
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const checkpointer = new Checkpointer({ store: slow, now, intervalMinutes: 1 });
+
+    checkpointer.start();
+    try {
+      await vi.waitFor(() => expect(calls).toBe(1));
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      expect(calls).toBe(1);
+    } finally {
+      release();
+      checkpointer.stop();
+    }
   });
 });
 
