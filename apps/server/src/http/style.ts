@@ -9,20 +9,43 @@
  * shape and a word.
  *
  * Everything is inline CSS: the content security policy (deploy/Caddyfile)
- * allows no stylesheet or image from anywhere. The seal in the masthead is
- * inline SVG.
+ * allows no stylesheet or image from anywhere, and fonts only from this
+ * origin (fonts.ts serves them). The seal in the masthead is inline SVG.
  */
 
+/**
+ * The typefaces, one file per weight, served from /fonts/ by fonts.ts. Only
+ * these names are served.
+ */
+const FACES = [
+  { family: "Newsreader", file: "newsreader-latin", weights: [400, 600] },
+  { family: "Public Sans", file: "public-sans-latin", weights: [400, 500, 600] },
+  { family: "IBM Plex Mono", file: "ibm-plex-mono-latin", weights: [400, 500] },
+] as const;
+
+export const FONT_FILES: readonly string[] = FACES.flatMap(({ file, weights }) =>
+  weights.map((weight) => `${file}-${weight}-normal.woff2`),
+);
+
+const FONT_FACE_CSS = FACES.flatMap(({ family, file, weights }) =>
+  weights.map(
+    (weight) =>
+      `@font-face { font-family: "${family}"; font-style: normal; font-weight: ${weight}; font-display: swap; ` +
+      `src: url(/fonts/${file}-${weight}-normal.woff2) format("woff2"); }`,
+  ),
+).join("\n");
+
 export const STYLE = `
+${FONT_FACE_CSS}
 :root {
   color-scheme: light dark;
   /* design/tokens.json, light theme */
   --ground: #f6f1e7; --surface: #fffdf8; --ink: #1c1917; --muted: #5c554b; --faint: #8b8272;
   --rule: #d9d0bf; --rule-strong: #948871; --accent: #8e2a24;
   --ok: #1f6b4a; --warn: #8a5a00; --bad: #a3261f;
-  --display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", P052, Georgia, serif;
-  --text: Charter, "Bitstream Charter", "Sitka Text", Cambria, "Noto Serif", "DejaVu Serif", Georgia, serif;
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --display: Newsreader, Georgia, serif;
+  --text: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root {

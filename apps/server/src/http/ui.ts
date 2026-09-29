@@ -25,6 +25,7 @@ import {
   systemTitle,
   UI,
 } from "./strings.js";
+import { registerFonts } from "./fonts.js";
 import { SEAL_SVG, STYLE } from "./style.js";
 
 /**
@@ -404,6 +405,8 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       await reply.code(403).type("text/plain; charset=utf-8").send("cross-origin request refused\n");
     }
   });
+
+  registerFonts(app);
 
   app.get("/", async (_request, reply) => reply.redirect("/ui", 302));
 

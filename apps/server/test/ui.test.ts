@@ -12,6 +12,7 @@ import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { buildServer } from "../src/http/server.js";
 import { UI } from "../src/http/strings.js";
+import { FONT_FILES, STYLE } from "../src/http/style.js";
 import { VERIFY_DOCUMENT_SCRIPT } from "../src/http/ui.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
@@ -1101,5 +1102,41 @@ describe("managing a system: deleting (M3)", () => {
       expect(response.statusCode, action).toBe(302);
     }
     expect((await app.inject({ method: "GET", url: `/ui/systems/${EMPTY}/manage` })).statusCode).toBe(302);
+  });
+});
+
+describe("the typefaces", () => {
+  it("serves every font the stylesheet names, from this origin, before any sign-in", async () => {
+    const named = [...STYLE.matchAll(/url\(([^)]+)\)/g)].map((match) => match[1]);
+    expect(named.length).toBe(FONT_FILES.length);
+    for (const url of named) {
+      expect(url, url).toMatch(/^\/fonts\/[a-z0-9-]+\.woff2$/);
+      const response = await app.inject({ method: "GET", url: url ?? "" });
+      expect(response.statusCode, url).toBe(200);
+      expect(response.headers["content-type"], url).toBe("font/woff2");
+      expect(response.rawPayload.subarray(0, 4).toString("latin1"), url).toBe("wOF2");
+      const onDisk = readFileSync(join(REPOSITORY_ROOT, "apps", "server", "assets", "fonts", (url ?? "").slice("/fonts/".length)));
+      expect(response.rawPayload.equals(onDisk), url).toBe(true);
+    }
+  });
+
+  it("serves nothing else under /fonts/", async () => {
+    for (const url of ["/fonts/LICENSE-newsreader.txt", "/fonts/..%2F..%2Fpackage.json", "/fonts/missing.woff2"]) {
+      expect((await app.inject({ method: "GET", url })).statusCode, url).toBe(404);
+    }
+  });
+
+  it("ships the licence of every family beside its files", () => {
+    for (const family of ["newsreader", "public-sans", "ibm-plex-mono"]) {
+      const licence = readFileSync(join(REPOSITORY_ROOT, "apps", "server", "assets", "fonts", `LICENSE-${family}.txt`), "utf8");
+      expect(licence, family).toContain("SIL Open Font License, Version 1.1");
+    }
+  });
+
+  it("is allowed by deploy/Caddyfile's CSP from this origin only", () => {
+    const caddyfile = readFileSync(join(REPOSITORY_ROOT, "deploy", "Caddyfile"), "utf8");
+    const policy = /Content-Security-Policy "([^"]+)"/.exec(caddyfile)?.[1] ?? "";
+    expect(policy.split("; ")).toContain("font-src 'self'");
+    expect(STYLE).not.toMatch(/https?:\/\//);
   });
 });
