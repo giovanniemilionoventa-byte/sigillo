@@ -412,6 +412,6 @@ describe("text that would not survive canonicalisation", () => {
     const chain = store.readChain(SYSTEM);
     expect(chain).toHaveLength(before + 1);
     const last = chain[chain.length - 1];
-    expect(last?.v === 2 ? last.model?.provider : undefined).toBe("p".repeat(256));
+    expect(last !== undefined && last.v !== 1 ? last.model?.provider : undefined).toBe("p".repeat(256));
   });
 });

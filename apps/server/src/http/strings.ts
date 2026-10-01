@@ -339,7 +339,7 @@ export function describeReceipt(receipt: Receipt): string {
   const { action, actor, outcome } = receipt;
   const ok = outcome === "ok";
   const onBehalfOf = onBehalfOfClause(actor.on_behalf_of);
-  const model = receipt.v === 2 ? receipt.model : undefined;
+  const model = receipt.v !== 1 ? receipt.model : undefined;
 
   if (action.kind === "genesis") {
     return `Il sistema «${action.name}» ha aperto il registro.`;

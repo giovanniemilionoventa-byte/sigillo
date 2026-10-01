@@ -128,6 +128,31 @@ CREATE TABLE IF NOT EXISTS admin_log (
 
 CREATE INDEX IF NOT EXISTS admin_log_by_system ON admin_log (system_id);
 
+-- Who a pseudonym token stands for (receipt version 4). Not evidence, and
+-- deliberately not append-only: deleting a row is how a person is erased, after
+-- which nothing links the token in their receipts to them. identifier is
+-- normalised (normaliseSubjectIdentifier), so one person has one token. The
+-- store turns secure_delete on, so a deleted row is overwritten, not just
+-- unlinked, in this file.
+CREATE TABLE IF NOT EXISTS subjects (
+  token      TEXT PRIMARY KEY,
+  identifier TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+) STRICT;
+
+-- The nonce under which a version 4 receipt's salted input or output digest
+-- was computed. Without it the digest cannot be opened, nor its content found
+-- by guessing; deleting the row is how a receipt is cut off from its content.
+-- Not append-only, for that reason.
+CREATE TABLE IF NOT EXISTS openings (
+  system_id TEXT    NOT NULL,
+  seq       INTEGER NOT NULL,
+  role      TEXT    NOT NULL CHECK (role IN ('input', 'output')),
+  nonce     TEXT    NOT NULL,
+  PRIMARY KEY (system_id, seq, role),
+  FOREIGN KEY (system_id, seq) REFERENCES receipts (system_id, seq)
+) STRICT;
+
 -- The chains whose receipts, checkpoints and tokens may be deleted: those
 -- that hold only their genesis, and whose deletion, naming that genesis by
 -- its hash, is already logged. Every delete guard below asks this view.
@@ -261,5 +286,11 @@ export function applySchema(db: Database.Database): void {
       ON receipts (json_extract(canonical, '$.input_hash'));
     CREATE INDEX IF NOT EXISTS receipts_by_output_hash
       ON receipts (json_extract(canonical, '$.output_hash'));
+  `);
+  // "Every receipt on behalf of this person": the token, as the receipt holds
+  // it, found from the identifier through the subjects table.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS receipts_by_on_behalf_of
+      ON receipts (json_extract(canonical, '$.actor.on_behalf_of'));
   `);
 }

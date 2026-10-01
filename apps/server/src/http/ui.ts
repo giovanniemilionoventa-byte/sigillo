@@ -1199,7 +1199,7 @@ const OUTCOME_STATE: Record<Receipt["outcome"], { css: ChainStatus; icon: string
 function receiptListItem(receipt: Receipt, anchoredBelow: number): string {
   const t = UI.history;
   const artifacts =
-    receipt.v === 2 && receipt.artifacts !== undefined
+    receipt.v !== 1 && receipt.artifacts !== undefined
       ? receipt.artifacts
           .map((a) => `<span class="tag">${escape(describeArtifact(a.role, a.label))}</span>`)
           .join(" ")
