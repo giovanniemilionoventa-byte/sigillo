@@ -869,7 +869,28 @@ published under an identifier that is not its own `key_id` is rejected, because
     says which of the two it did. Either way it prints the time the authority
     attests (`genTime`, the `Time stamp` line of `openssl ts -reply -text`):
     that, not the checkpoint's own `ts` or the `obtained_at` recorded by the
-    server, is the evidence of when the checkpoint existed.
+    server, is the evidence of when the checkpoint existed. `genTime` is read
+    from the token's DER by `@sigillo/core` (the code the exporter uses too)
+    and through openssl; a token on which the two readings differ fails.
+14. The times (`anchorTimes` in `@sigillo/core`). Over the checkpoints tied to
+    these receipts, a checkpoint's proven time is the earliest `genTime` of its
+    tokens, and a receipt existed no later than the proven time of the first
+    timestamped checkpoint whose tree includes it. Then:
+    - a receipt whose `ts_received` is later than that time by more than
+      `--clock-tolerance` (default 5 minutes) **fails** (`anchor-time`);
+    - taken in order of `tree_size`, a proven time earlier than one before it
+      **fails** (`anchor-order`);
+    - a proven time more than `--max-anchor-delay` (default 60 minutes) after
+      the checkpoint's own `ts` is a **warning** (`anchor-delay`): until then
+      only the server's clock vouched for the checkpoint.
+
+    The report opens with how many checkpoints are proven and how many were
+    timestamped late, the longest gap between two consecutive proven times,
+    and the receipts at the end that no timestamp covers yet; then the proven
+    time of each checkpoint and, for each range of receipts, the time it
+    existed by. The PDF in the archive prints the same, computed by the same
+    function. These rules read only fields the format already has: an archive
+    made before them is checked by them as it is.
 
 Two optional inputs extend the checks with what an archive cannot supply
 itself: `--key-id <id>` (a signature by any key but these fails, at check 7
@@ -881,6 +902,8 @@ unchanged, except a checkpoint wholly before the receipts a later window
 starts at). Without `--previous`, receipts after the newest checkpoint that
 is tied to them are reported as "N receipts not yet anchored", and the
 verdict reads `OK, with a warning` instead of `OK`; the exit status stays 0.
+The same holds for an `anchor-delay` warning. With `--strict`, every warning
+is a failure instead, and the exit status is 1.
 
 A verifier stops at the first failure and names the file, the line and the
 check. Any failure means the export is not evidence of anything.

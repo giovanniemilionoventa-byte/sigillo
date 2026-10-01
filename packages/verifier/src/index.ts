@@ -1,5 +1,13 @@
-export { compareWithPrevious, openDigest, verifyBundle } from "./verify.js";
-export type { Bundle, Opening, Verification, VerificationCheck, VerificationSummary, VerifyOptions } from "./verify.js";
+export { anchorTimesOf, compareWithPrevious, openDigest, verifyBundle } from "./verify.js";
+export type {
+  Bundle,
+  LinkedCheckpoint,
+  Opening,
+  Verification,
+  VerificationCheck,
+  VerificationSummary,
+  VerifyOptions,
+} from "./verify.js";
 export { genTimeFrom, verifyTimestamps } from "./timestamps.js";
 export type {
   TimestampCheck,

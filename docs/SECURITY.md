@@ -575,7 +575,7 @@ rotation to whatever runs it (systemd's journal rotates on its own).
 ## What sigillo cannot detect
 
 This list matters as much as the tamper tests that pass
-(`apps/server/test/tamper.test.ts`, 17 scenarios run through the real
+(`apps/server/test/tamper.test.ts`, 18 scenarios run through the real
 verifier). A verifier that says OK has checked what is below it on this page,
 and nothing else.
 
@@ -637,10 +637,26 @@ and nothing else.
   signatures. `init-from-db` takes the database's word once, at the upgrade:
   it checks every chain's links, hashes and signatures, but it cannot tell a
   chain rewritten earlier through the old socket from a true one.
+- **Replace everything, with the key itself or with signatures from before
+  protocol version 2.** A consistent forged history, signed with the real key
+  and anchored afresh, has every hash, signature, root and token valid. What
+  gives it away is the time the authority attests (`genTime`), which
+  `sigillo-verify` takes as the proven time of each checkpoint: the fresh
+  tokens lie long after the checkpoints' own times, and that is an
+  `anchor-delay` warning (verdict `OK, with a warning`; an error, exit 1, with
+  `--strict`). Tamper scenario 18. A forger who also moves the checkpoints'
+  own times forward avoids the warning, but then every receipt is proven to
+  exist only from the day of the forgery, which the report prints for each
+  range of receipts ("existed no later than …"); an auditor who expects the
+  records to be older sees it there. An export given to someone earlier
+  (`--previous`) catches either.
 - **Move the clock, within the tolerance.** `ts_received` is the server's own
   clock; the signer refuses one further than `SIGILLO_SIGNER_CLOCK_TOLERANCE_SECONDS`
-  (300) from its own, or earlier than the receipt before it. Within that
-  window, and between two timestamps, only those clocks vouch for when
+  (300) from its own, or earlier than the receipt before it. `sigillo-verify`
+  also refuses one later than a timestamp that already includes the receipt
+  (`anchor-time`, beyond `--clock-tolerance`, 5 minutes by default), and
+  timestamps that go backwards as the tree grows (`anchor-order`). Within
+  those windows, and between two timestamps, only those clocks vouch for when
   something happened.
 
 **What a single archive cannot show about itself.**

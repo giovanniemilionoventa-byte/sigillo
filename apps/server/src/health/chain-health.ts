@@ -1,5 +1,10 @@
 import { type KeyObject } from "node:crypto";
-import { GENESIS_PREV_HASH, receiptHashHex, verifyReceiptSignature } from "@sigillo/core";
+import {
+  DEFAULT_MAX_ANCHOR_DELAY_MS,
+  GENESIS_PREV_HASH,
+  receiptHashHex,
+  verifyReceiptSignature,
+} from "@sigillo/core";
 import { formatTs } from "../http/strings.js";
 import type { ReceiptStore } from "../storage/store.js";
 
@@ -10,6 +15,12 @@ import type { ReceiptStore } from "../storage/store.js";
  * matter most — the chain links and the signatures — incrementally, so a
  * system with a long history is not re-verified from its genesis on every
  * tick, only from wherever the last tick left off.
+ *
+ * It also watches the anchoring. A checkpoint whose timestamp has not arrived
+ * is retried by the checkpointer, and is not worth a yellow light until it
+ * has waited longer than `maxAnchorDelayMs`, the delay sigillo-verify accepts
+ * (--max-anchor-delay); nor is one timestamped within it. Beyond it, the next
+ * export will carry an anchor-delay warning, and the light says so now.
  *
  * A failure is sticky: once a system turns red it stays red until the process
  * restarts. Manufacturing an "un-failing" would mean deciding when a broken
@@ -38,6 +49,7 @@ export class ChainHealthMonitor {
     private readonly store: ReceiptStore,
     private readonly publicKey: KeyObject,
     private readonly staleAfterMs: number,
+    private readonly maxAnchorDelayMs: number = DEFAULT_MAX_ANCHOR_DELAY_MS,
   ) {}
 
   /** Verifies whatever is new since the last call, for every system that exists. */
@@ -136,18 +148,40 @@ export class ChainHealthMonitor {
     const stale = minutesSinceActivity > this.staleAfterMs / 60_000;
 
     const checkpoint = this.store.latestCheckpoint(systemId);
-    const anchored = checkpoint !== null && this.store.readTimestamps(checkpoint.id).length > 0;
+    const tolerance = Math.round(this.maxAnchorDelayMs / 60_000);
+    // How the newest checkpoint stands with its timestamp: none yet within the
+    // tolerance is "coming"; none beyond it, or one attested beyond it, is late.
+    let anchoring: "anchored" | "coming" | "missing" | "late" | "none" = "none";
+    let lateBy = 0;
+    if (checkpoint !== null) {
+      const declared = Date.parse(checkpoint.checkpoint.ts);
+      const attested = this.store
+        .readTimestamps(checkpoint.id)
+        .map((stamp) => (stamp.genTime === undefined ? declared : Date.parse(stamp.genTime)));
+      if (attested.length === 0) {
+        anchoring = now.getTime() - declared > this.maxAnchorDelayMs ? "missing" : "coming";
+      } else {
+        lateBy = Math.min(...attested) - declared;
+        anchoring = lateBy > this.maxAnchorDelayMs ? "late" : "anchored";
+      }
+    }
 
     const total = tip.seq + 1;
-    if (anchored && !stale) {
+    if ((anchoring === "anchored" || anchoring === "coming") && !stale && checkpoint !== null) {
       return {
         status: "green",
-        message: `Registro integro. ${total} azion${total === 1 ? "e" : "i"} registrat${total === 1 ? "a" : "e"}, ultimo sigillo del ${formatTs(checkpoint.checkpoint.ts)}.`,
+        message:
+          `Registro integro. ${total} azion${total === 1 ? "e" : "i"} registrat${total === 1 ? "a" : "e"}, ultimo sigillo del ${formatTs(checkpoint.checkpoint.ts)}` +
+          `${anchoring === "coming" ? ", marca temporale in arrivo" : ""}.`,
       };
     }
 
     const reasons: string[] = [];
-    if (!anchored) reasons.push("la marca temporale è in attesa");
+    if (anchoring === "none") reasons.push("la marca temporale è in attesa");
+    if (anchoring === "missing") reasons.push(`manca la marca temporale da oltre ${tolerance} minuti`);
+    if (anchoring === "late") {
+      reasons.push(`l'ultima marca temporale è arrivata ${Math.round(lateBy / 60_000)} minuti dopo il sigillo, oltre i ${tolerance} ammessi`);
+    }
     if (stale) reasons.push(`nessuna attività da oltre ${Math.round(this.staleAfterMs / 60_000)} minuti`);
     return {
       status: "yellow",

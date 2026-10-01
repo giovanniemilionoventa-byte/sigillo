@@ -2,12 +2,13 @@
  * The time an RFC 3161 token attests (genTime), read from the token's own
  * bytes.
  *
- * The web view and the PDF report used to show when the server received a
- * token (`obtained_at`), which is the server's clock. The evidence of when a
- * checkpoint existed is genTime, signed by the authority (review point 8).
- * The verifier reads it through openssl; the server, which shows it on every
- * page load, reads it here instead of starting a process per token. The two
- * readings are compared on real tokens in test/gentime.test.ts.
+ * genTime, signed by the authority, is the evidence of when a checkpoint
+ * existed; the time the server received the token (`obtained_at`) is only the
+ * server's clock (review point 8). The server and the verifier both read it
+ * here, so the PDF, VERIFY.md, the web view and `sigillo-verify` cannot
+ * disagree about it. The verifier also reads it through openssl and fails a
+ * token on which the two readings differ; they are compared on real tokens in
+ * apps/server/test/gentime.test.ts.
  *
  * Only the path to genTime is walked:
  *
@@ -19,8 +20,10 @@
  *   TSTInfo        ::= SEQUENCE { version, policy, messageImprint, serialNumber,
  *                                 genTime GeneralizedTime, ... }
  *
- * A token that does not have this shape gives undefined, never a guess. This
- * reads the time; it does not check the token (the verifier does).
+ * A token that does not have this shape, has bytes after its end, or carries a
+ * time that is not a real UTC date gives undefined, never a guess. This reads
+ * the time; it does not check the token's signature (the verifier does, with
+ * openssl). Pure: no disk, no network, no clock.
  */
 
 interface Element {
@@ -66,7 +69,7 @@ const GENERALIZED_TIME = 0x18;
 
 export function genTimeOfToken(token: Uint8Array): string | undefined {
   const outer = element(token, 0, token.length);
-  if (outer?.tag !== SEQUENCE) return undefined;
+  if (outer?.tag !== SEQUENCE || outer.end !== token.length) return undefined;
 
   // A TimeStampResp starts with a status SEQUENCE; a bare token with an OID.
   let contentInfo: Element | undefined = outer;
@@ -94,7 +97,10 @@ export function genTimeOfToken(token: Uint8Array): string | undefined {
   if (match === null) return undefined;
   const [, year, month, day, hours, minutes, seconds, fraction] = match;
   const millis = Math.floor(Number(`0${fraction ?? ""}`) * 1000);
-  return new Date(
+  const date = new Date(
     Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), Number(seconds), millis),
-  ).toISOString();
+  );
+  // Date.UTC rolls 30 February over into March; a real date reads back the same.
+  const iso = date.toISOString();
+  return iso.slice(0, 19) === `${year}-${month}-${day}T${hours}:${minutes}:${seconds}` ? iso : undefined;
 }

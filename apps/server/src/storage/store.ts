@@ -22,6 +22,7 @@ import {
   RECEIPT_VERSION_4,
   SALT_NONCE_BYTES,
   saltedDigest,
+  genTimeOfToken,
   sha256,
   toHex,
   verifyDigestSignature,
@@ -38,7 +39,6 @@ import {
   type UnsignedReceipt,
 } from "@sigillo/core";
 import { SignerRefusedError } from "../signer/errors.js";
-import { genTimeOfToken } from "../timestamp/gentime.js";
 import { applySchema } from "./schema.js";
 
 /**

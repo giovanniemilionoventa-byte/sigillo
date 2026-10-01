@@ -1,5 +1,11 @@
 import PDFDocument from "pdfkit";
-import type { CheckpointEntry, Manifest } from "@sigillo/core";
+import {
+  DEFAULT_MAX_ANCHOR_DELAY_MS,
+  formatDuration,
+  type AnchorTimes,
+  type CheckpointEntry,
+  type Manifest,
+} from "@sigillo/core";
 import type { Verification } from "@sigillo/verifier";
 
 /**
@@ -31,6 +37,73 @@ export interface ReportInput {
   genTimes?: ReadonlyMap<string, string>;
   /** The system's label in the web view when the file was exported: see ArchiveInput. */
   displayName?: string;
+  /** When each checkpoint and receipt is proven to have existed; absent when verification failed. */
+  provenTimes?: AnchorTimes;
+}
+
+/**
+ * When the records are proven to have existed: by the time each timestamp
+ * authority attests (genTime), never by the server's clock. Placed first,
+ * because it is the part a reader most needs and can least check by eye.
+ */
+function provenTimesSection(
+  document: PDFKit.PDFDocument,
+  proven: AnchorTimes | undefined,
+  heading: (text: string) => void,
+  row: (label: string, value: string) => void,
+): void {
+  heading("When these records are proven to have existed");
+  if (proven === undefined) {
+    document.text("Not established: the export failed its own verification (see below).");
+    return;
+  }
+  document.fontSize(9).fillColor("#444444");
+  document.text(
+    "The evidence of when a checkpoint existed is the time the timestamp authority attests inside " +
+      "its token, not the time the server wrote. Each receipt existed no later than the first " +
+      "timestamped checkpoint that includes it. Times as read from the tokens; sigillo-verify " +
+      "--tsa-ca also checks the authority's signature on each.",
+  );
+  document.fontSize(10).fillColor("black").moveDown(0.3);
+
+  const timestamped = proven.checkpoints.filter((entry) => entry.provenAt !== undefined).length;
+  row(
+    "Timestamps",
+    `${timestamped} checkpoint(s) proven by a timestamp, ${proven.late} timestamped late ` +
+      `(more than ${DEFAULT_MAX_ANCHOR_DELAY_MS / 60_000} min after their own time)`,
+  );
+  const gap = proven.longestGap;
+  row(
+    "Longest gap between two timestamps",
+    gap === null ? "none, fewer than two timestamps" : `${formatDuration(gap.ms)} (${gap.from} to ${gap.to})`,
+  );
+  const tail = proven.unproven;
+  row(
+    "Receipts at the end not yet timestamped",
+    tail === null ? "none" : `${tail.count} (seq ${tail.from_seq}..${tail.to_seq})`,
+  );
+  document.moveDown(0.3);
+
+  for (const entry of proven.checkpoints) {
+    document.fillColor(entry.late ? "#a11" : "black");
+    document.text(
+      `Checkpoint over ${entry.tree_size} receipts: ` +
+        (entry.provenAt === undefined ? "not timestamped" : `proven ${entry.provenAt}`) +
+        ` (declared ${entry.ts})${entry.late ? ", timestamped late" : ""}`,
+    );
+  }
+  document.fillColor("black").moveDown(0.3);
+  for (const range of proven.ranges) {
+    document.text(`Receipts seq ${range.from_seq}..${range.to_seq} existed no later than ${range.existedBy}`);
+  }
+  if (tail !== null) {
+    document.text(`Receipts seq ${tail.from_seq}..${tail.to_seq} not yet timestamped`);
+  }
+  for (const problem of [...proven.errors, ...proven.warnings]) {
+    document.moveDown(0.3).fillColor("#a11");
+    document.text(`${proven.errors.includes(problem) ? "Error" : "Warning"}, ${problem.check} at ${problem.location}: ${problem.detail}`);
+    document.fillColor("black");
+  }
 }
 
 export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
@@ -82,6 +155,8 @@ export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
   );
   document.fillColor("black");
   rule();
+
+  provenTimesSection(document, input.provenTimes, heading, row);
 
   heading("The system and the period");
   row("System", manifest.system_id);

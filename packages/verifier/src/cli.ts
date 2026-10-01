@@ -3,7 +3,10 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Command } from "commander";
 import {
+  DEFAULT_CLOCK_TOLERANCE_MS,
+  DEFAULT_MAX_ANCHOR_DELAY_MS,
   documentFingerprints,
+  formatDuration,
   fromHex,
   readZip,
   safeParseCheckpointEntry,
@@ -13,6 +16,7 @@ import {
 } from "@sigillo/core";
 import { verifyTimestamps } from "./timestamps.js";
 import {
+  anchorTimesOf,
   compareAnchorsWithPrevious,
   compareWithPrevious,
   openDigest,
@@ -37,6 +41,7 @@ const CHECKS = [
   "every inclusion proof rebuilds its checkpoint's root",
   "the manifest's range and counts describe what the archive actually holds",
   "every RFC 3161 token is checked with openssl",
+  "no receipt was received after a timestamp that includes it, and the timestamps run forward with the tree",
 ];
 
 interface Archive {
@@ -125,6 +130,15 @@ function readArchive(target: string): Archive {
   return statSync(target).isDirectory() ? readDirectory(target) : readArchiveFile(target);
 }
 
+/** A number of minutes from the command line, or exit 2 naming the option. */
+function minutes(option: string, value: string): number {
+  if (!/^[0-9]+$/.test(value)) {
+    process.stderr.write(`${option} takes a whole number of minutes, received ${JSON.stringify(value)}\n`);
+    process.exit(2);
+  }
+  return Number(value) * 60_000;
+}
+
 function parseCheckpoints(bundle: Bundle): CheckpointEntry[] {
   const entries: CheckpointEntry[] = [];
   for (const line of (bundle.checkpointsJsonl ?? "").split("\n")) {
@@ -152,12 +166,33 @@ program
     "--previous <path>",
     "an export of the same chain received earlier: this one must contain it unchanged, reach at least as far, and still hold all its checkpoints and timestamp tokens",
   )
+  .option(
+    "--clock-tolerance <minutes>",
+    "how far the server's clock may run ahead of the authority's: a receipt received later than that after a timestamp including it fails",
+    String(DEFAULT_CLOCK_TOLERANCE_MS / 60_000),
+  )
+  .option(
+    "--max-anchor-delay <minutes>",
+    "a checkpoint the authority dates more than this after its own time is a warning: until then only the server vouched for it",
+    String(DEFAULT_MAX_ANCHOR_DELAY_MS / 60_000),
+  )
+  .option("--strict", "treat every warning as an error")
   .option("--quiet", "print only the verdict")
   .action(
     async (
       target: string,
-      options: { tsaCa?: string; keyId?: string[]; previous?: string; quiet?: boolean },
+      options: {
+        tsaCa?: string;
+        keyId?: string[];
+        previous?: string;
+        clockTolerance: string;
+        maxAnchorDelay: string;
+        strict?: boolean;
+        quiet?: boolean;
+      },
     ) => {
+    const clockToleranceMs = minutes("--clock-tolerance", options.clockTolerance);
+    const maxAnchorDelayMs = minutes("--max-anchor-delay", options.maxAnchorDelay);
     let archive: Archive;
     try {
       archive = readArchive(target);
@@ -221,14 +256,55 @@ program
       process.exit(1);
     }
 
+    // The time each checkpoint is proven to have existed is the time its
+    // token attests, and every receipt is held to it (see anchorTimes).
+    const genTimes = new Map(
+      timestamps.checks.flatMap((check) => (check.genTime === undefined ? [] : [[check.file, check.genTime] as const])),
+    );
+    const anchors = anchorTimesOf(result, genTimes, { clockToleranceMs, maxAnchorDelayMs });
+    if (anchors.errors.length > 0) {
+      for (const error of anchors.errors) {
+        process.stderr.write(`FAILED  ${error.check} at ${error.location}\n`);
+        process.stderr.write(`        ${error.detail}\n`);
+      }
+      process.exit(1);
+    }
+
     const { summary } = result;
     // Receipts after the newest checkpoint have no anchor yet. Against an earlier
     // export that is just new material; on its own it may also be an archive
     // whose newest checkpoint was taken out, so it is never a plain OK.
     const unanchored = options.previous === undefined ? summary.unanchored_receipts : 0;
+    if (options.strict === true && (unanchored > 0 || anchors.warnings.length > 0)) {
+      for (const warning of anchors.warnings) {
+        process.stderr.write(`FAILED  ${warning.check} at ${warning.location} (--strict)\n`);
+        process.stderr.write(`        ${warning.detail}\n`);
+      }
+      if (unanchored > 0) {
+        process.stderr.write(`FAILED  unanchored at receipts.jsonl:${summary.receipts - unanchored + 1} (--strict)\n`);
+        process.stderr.write(`        ${unanchored} receipt(s) after the newest checkpoint are not anchored\n`);
+      }
+      process.exit(1);
+    }
+    const warned = unanchored > 0 || anchors.warnings.length > 0;
     process.stdout.write(
-      `${unanchored > 0 ? "OK, with a warning" : "OK"}  ${summary.system_id}: ${summary.receipts} receipts, seq ${summary.first_seq}..${summary.last_seq}, ` +
+      `${warned ? "OK, with a warning" : "OK"}  ${summary.system_id}: ${summary.receipts} receipts, seq ${summary.first_seq}..${summary.last_seq}, ` +
         `signed by ${summary.key_ids.join(", ")}\n`,
+    );
+    // What the timestamps prove, first: how many checkpoints, how late, the
+    // longest stretch no timestamp covers, and what none covers yet.
+    const proven = anchors.checkpoints.filter((entry) => entry.provenAt !== undefined).length;
+    process.stdout.write(
+      `    timestamps: ${proven} checkpoint(s) proven by a timestamp, ${anchors.late} timestamped late ` +
+        `(more than ${maxAnchorDelayMs / 60_000} min after their own time)\n`,
+    );
+    const gap = anchors.longestGap;
+    process.stdout.write(
+      `    longest gap between two timestamps: ${gap === null ? "none, fewer than two timestamps" : `${formatDuration(gap.ms)} (${gap.from} to ${gap.to})`}\n`,
+    );
+    const tail = anchors.unproven;
+    process.stdout.write(
+      `    receipts at the end not yet timestamped: ${tail === null ? "none" : `${tail.count} (seq ${tail.from_seq}..${tail.to_seq})`}\n`,
     );
     if (summary.checkpoints > 0) {
       process.stdout.write(
@@ -268,6 +344,27 @@ program
         `    timestamp ${check.file}: ${check.status} (${check.tsaUrl})` +
           `${check.genTime === undefined ? "" : `, attested time ${check.genTime}`}\n`,
       );
+    }
+    for (const warning of anchors.warnings) {
+      process.stdout.write(`    warning: ${warning.check} at ${warning.location}: ${warning.detail}\n`);
+    }
+    // Proven when the authority's signature was checked; without --tsa-ca the
+    // time is only what the token says.
+    const how = options.tsaCa === undefined ? "attested" : "proven";
+    for (const entry of anchors.checkpoints) {
+      process.stdout.write(
+        `    checkpoint over ${entry.tree_size} receipts: ` +
+          (entry.provenAt === undefined
+            ? "not timestamped"
+            : `${how} ${entry.provenAt}${options.tsaCa === undefined ? ", signature not checked" : ""}`) +
+          ` (declared ${entry.ts})\n`,
+      );
+    }
+    for (const range of anchors.ranges) {
+      process.stdout.write(`    seq ${range.from_seq}..${range.to_seq}: existed no later than ${range.existedBy}\n`);
+    }
+    if (tail !== null) {
+      process.stdout.write(`    seq ${tail.from_seq}..${tail.to_seq}: not yet timestamped\n`);
     }
     for (const warning of timestamps.warnings) {
       process.stdout.write(`    note: ${warning}\n`);
@@ -312,7 +409,7 @@ program
       }
 
       process.stdout.write("\nverified:\n");
-      for (const check of CHECKS.slice(0, tokensChecked === 0 ? -1 : undefined)) {
+      for (const check of CHECKS.slice(0, tokensChecked === 0 ? -2 : undefined)) {
         process.stdout.write(`  - ${check}\n`);
       }
       if (notDone.length > 0) {

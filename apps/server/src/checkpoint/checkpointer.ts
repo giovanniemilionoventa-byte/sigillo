@@ -14,6 +14,13 @@ import {
  * signed whether or not the timestamp authority is reachable; the token is
  * fetched afterwards and retried until it arrives. An authority that is down
  * delays the anchor, it does not cost a checkpoint.
+ *
+ * The delay matters, though: the time the authority attests is the proven
+ * time of the checkpoint, and sigillo-verify warns about one timestamped more
+ * than --max-anchor-delay (60 minutes by default) after its own time. So a
+ * run that leaves tokens missing tries again after `retryMinutes`, and keeps
+ * trying at that pace until none is missing, rather than waiting a whole
+ * interval. The light on the main page turns yellow once a token is overdue.
  */
 
 export interface CheckpointerOptions {
@@ -23,6 +30,8 @@ export interface CheckpointerOptions {
   tsa?: TsaOptions;
   retry?: RetryOptions;
   intervalMinutes?: number;
+  /** How soon to ask again for tokens a run could not obtain. Default 5. */
+  retryMinutes?: number;
   onError?: (message: string) => void;
 }
 
@@ -34,6 +43,7 @@ export interface CheckpointRun {
 
 export class Checkpointer {
   private timer: NodeJS.Timeout | undefined;
+  private retryTimer: NodeJS.Timeout | undefined;
   private running = false;
 
   constructor(private readonly options: CheckpointerOptions) {}
@@ -121,17 +131,7 @@ export class Checkpointer {
     if (this.timer !== undefined) return;
     const minutes = this.options.intervalMinutes ?? 60;
     const tick = (): void => {
-      if (this.running) return;
-      this.running = true;
-      void this.runOnce()
-        .catch((error: unknown) => {
-          this.options.onError?.(
-            `checkpoint run failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        })
-        .finally(() => {
-          this.running = false;
-        });
+      void this.exclusively(() => this.runOnce());
     };
     this.timer = setInterval(tick, minutes * 60 * 1000);
     // The timer must not be what keeps the process alive.
@@ -139,10 +139,40 @@ export class Checkpointer {
     tick();
   }
 
+  /**
+   * Runs `work` unless a run is already going, then schedules a retry of the
+   * timestamps if any are still missing.
+   */
+  private async exclusively(work: () => Promise<{ pending: number }>): Promise<void> {
+    if (this.running) return;
+    this.running = true;
+    let pending = 0;
+    try {
+      ({ pending } = await work());
+    } catch (error: unknown) {
+      this.options.onError?.(
+        `checkpoint run failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      this.running = false;
+    }
+    if (pending > 0 && this.timer !== undefined && this.retryTimer === undefined) {
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = undefined;
+        void this.exclusively(() => this.timestampPending());
+      }, (this.options.retryMinutes ?? 5) * 60 * 1000);
+      this.retryTimer.unref();
+    }
+  }
+
   stop(): void {
     if (this.timer !== undefined) {
       clearInterval(this.timer);
       this.timer = undefined;
+    }
+    if (this.retryTimer !== undefined) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = undefined;
     }
   }
 }
