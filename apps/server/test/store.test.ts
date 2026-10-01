@@ -191,7 +191,7 @@ describe("version 2 fields, as every receipt now carries them in version 4", () 
     expect(receipt.model).toEqual({ name: "qwen2.5:3b", provider: "ollama", digest: "sha256:deadbeef" });
   });
 
-  it("chains a receipt with a model to its predecessor exactly as any other", async () => {
+  it("chains a receipt with a model to its predecessor like every other receipt", async () => {
     const first = await store.append(event());
     const second = await store.append(
       event({ model: { name: "gpt-4o", provider: "openai", digest: null } }),

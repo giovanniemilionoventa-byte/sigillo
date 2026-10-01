@@ -9,7 +9,9 @@ import {
   type CheckpointEntry,
   type Manifest,
   type ManifestKey,
+  type OpeningEntry,
   type Receipt,
+  type SubjectEntry,
   type ZipEntry,
 } from "@sigillo/core";
 import { verifyBundle, type Verification } from "@sigillo/verifier";
@@ -26,6 +28,8 @@ import { verifyInstructions } from "./verify-instructions.js";
  *   checkpoints.jsonl  each checkpoint with its inclusion proofs and tokens
  *   timestamps/*.tsr   the RFC 3161 tokens, exactly as the authority returned
  *   manifest.json      the public keys, the range, the counts
+ *   openings.jsonl     only if asked: nonces of chosen salted digests
+ *   subjects.jsonl     only if asked: who chosen pseudonym tokens stand for
  *   report.pdf         the same facts, for a person
  *   VERIFY.md          how to check all of it without this software
  *
@@ -55,6 +59,15 @@ export interface ArchiveInput {
    * checkpoints. Without them, only an export from seq 0 can.
    */
   chainLeaves?: readonly string[];
+  /**
+   * What the archive discloses beyond the receipts, only when the operator
+   * chose it, for the receipts and tokens chosen: by default an export names
+   * nobody and opens no salted digest. A nonce lets whoever holds the archive
+   * test guesses of short content, and an identifier names a person, so
+   * neither goes out unless asked for. Entries for receipts or tokens outside
+   * the exported window are left out.
+   */
+  disclose?: { openings?: readonly OpeningEntry[]; subjects?: readonly SubjectEntry[] };
 }
 
 export interface BuiltArchive {
@@ -171,13 +184,25 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
 
   const checkpointsJsonl = entries.map((entry) => `${JSON.stringify(entry)}\n`).join("");
 
+  const exported = new Set(receipts.map((receipt) => receipt.seq));
+  const tokensUsed = new Set(receipts.flatMap((receipt) => receipt.actor.on_behalf_of ?? []));
+  const openingsJsonl = (input.disclose?.openings ?? [])
+    .filter((entry) => exported.has(entry.seq))
+    .map((entry) => `${JSON.stringify({ seq: entry.seq, role: entry.role, nonce: entry.nonce })}\n`)
+    .join("");
+  const subjectsJsonl = (input.disclose?.subjects ?? [])
+    .filter((entry) => tokensUsed.has(entry.token))
+    .map((entry) => `${JSON.stringify({ token: entry.token, identifier: entry.identifier })}\n`)
+    .join("");
+
   // The manifest declares the highest receipt version actually present, so an
   // export that mixes receipt versions (a chain upgraded mid-flight) still
   // makes a claim the verifier can check against the receipts themselves.
   const receiptVersion = receipts.reduce<number>((max, receipt) => Math.max(max, receipt.v), 0) as
     | 1
     | 2
-    | 3;
+    | 3
+    | 4;
 
   const manifest: Manifest = {
     sigillo_version: SIGILLO_VERSION,
@@ -204,6 +229,8 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     receiptsJsonl,
     checkpointsJsonl,
     artifactsIndexJsonl,
+    ...(openingsJsonl === "" ? {} : { openingsJsonl }),
+    ...(subjectsJsonl === "" ? {} : { subjectsJsonl }),
   });
 
   const actionCounts = new Map<string, number>();
@@ -234,9 +261,19 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     { name: "receipts.jsonl", data: encode(receiptsJsonl) },
     { name: "checkpoints.jsonl", data: encode(checkpointsJsonl) },
     { name: "artifacts-index.jsonl", data: encode(artifactsIndexJsonl) },
+    ...(openingsJsonl === "" ? [] : [{ name: "openings.jsonl", data: encode(openingsJsonl) }]),
+    ...(subjectsJsonl === "" ? [] : [{ name: "subjects.jsonl", data: encode(subjectsJsonl) }]),
     ...tokens,
     { name: "report.pdf", data: report },
-    { name: "VERIFY.md", data: encode(verifyInstructions(manifest, entries, genTimes, displayName)) },
+    {
+      name: "VERIFY.md",
+      data: encode(
+        verifyInstructions(manifest, entries, genTimes, displayName, {
+          openings: openingsJsonl !== "",
+          subjects: subjectsJsonl !== "",
+        }),
+      ),
+    },
   ];
 
   return { zip: createZip(archiveEntries), entries: archiveEntries, manifest, verification };

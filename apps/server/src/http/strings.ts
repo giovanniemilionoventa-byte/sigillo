@@ -12,7 +12,7 @@ import type { Receipt } from "@sigillo/core";
  */
 
 export const UI = {
-  nav: { registro: "registro", sistemi: "sistemi", verificaDocumento: "verifica documento", esci: "esci" },
+  nav: { registro: "registro", sistemi: "sistemi", persone: "persone", verificaDocumento: "verifica documento", esci: "esci" },
   brand: {
     tagline: "registro probatorio per agenti AI",
     skip: "Vai al contenuto",
@@ -55,6 +55,15 @@ export const UI = {
     wholeChain: "Lascia vuoto per l'intero registro.",
     generate: "Genera fascicolo",
     generateHint: "Uno .zip con le ricevute, i checkpoint, le marche temporali e il rapporto.",
+    disclose: {
+      summary: "Divulgazioni facoltative",
+      hint:
+        "Di norma il fascicolo non nomina nessuno e non apre nessuna impronta: le ricevute portano solo pseudonimi e impronte con sale. Compila questi campi solo se chi lo riceve deve sapere di più, e solo per ciò che serve.",
+      subjectsLabel: "Nomina le persone dietro questi pseudonimi (psn_…, separati da spazi)",
+      openingsLabel: "Includi i nonce delle impronte di queste ricevute (numeri, per esempio 4 7-9)",
+      openingsHint:
+        "Con un nonce, chi ha il contenuto può dimostrare che l'impronta è sua; ma chi ha il fascicolo può anche provare a indovinare un contenuto breve, come un punteggio o un esito.",
+    },
     checkpointNow: "Sigilla adesso",
     checkpointHint:
       "Normalmente non serve: ogni sistema viene sigillato da solo a intervalli regolari. " +
@@ -133,8 +142,32 @@ export const UI = {
       `Il sistema ${systemId} è stato eliminato. L'operazione è scritta nel registro amministrativo.`,
     adminLogTitle: "Registro amministrativo",
     adminLogHint:
-      "Rinomine, archiviazioni ed eliminazioni di sistemi: chi, quando, cosa. È fuori dalle catene, e come loro non si modifica.",
+      "Rinomine, archiviazioni ed eliminazioni di sistemi, cancellazioni di interessati e di nonce: chi, quando, cosa. È fuori dalle catene, e come loro non si modifica.",
     adminLogEmpty: "Nessuna operazione ancora.",
+  },
+  people: {
+    title: "persone",
+    heading: "Persone",
+    eyebrow: "per conto di chi ha agito l'AI",
+    intro:
+      "Le ricevute non contengono nomi: al posto di chi ha ordinato un'azione c'è uno pseudonimo (psn_…). Quale persona c'è dietro ciascuno è scritto in una tabella a parte, fuori dal registro, che si può cancellare.",
+    searchLabel: "Identificativo della persona",
+    searchSubmit: "Cerca",
+    notFound:
+      "Nessuno pseudonimo per questo identificativo: la persona non compare in nessuna ricevuta, oppure è già stata cancellata.",
+    tokenLabel: "Pseudonimo",
+    receipts: (count: number): string =>
+      count === 0
+        ? "Nessuna ricevuta con questo pseudonimo."
+        : `${count} ${count === 1 ? "ricevuta" : "ricevute"} con questo pseudonimo, dalla più recente`,
+    eraseTitle: "Cancella l'interessato",
+    eraseHint:
+      "Elimina la corrispondenza tra questa persona e il suo pseudonimo. Le ricevute restano valide e verificabili, ma nessuno potrà più collegarle a lei; se tornasse, avrebbe uno pseudonimo nuovo. Nel registro amministrativo resta solo lo pseudonimo. L'operazione non si annulla. I backup fatti prima conservano la corrispondenza finché non vengono sostituiti.",
+    eraseConfirm: (token: string): string => `Per confermare, scrivi lo pseudonimo esatto: ${token}`,
+    eraseSubmit: "Cancella definitivamente",
+    erased: (token: string): string =>
+      `Fatto: le ricevute con lo pseudonimo ${token} non sono più collegabili a nessuna persona. L'operazione è nel registro amministrativo.`,
+    confirmMismatch: "Il testo scritto non corrisponde allo pseudonimo: niente è stato cancellato.",
   },
   manage: {
     eyebrow: "gestisci il sistema",
@@ -283,6 +316,8 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "system.archive": "archiviato",
   "system.unarchive": "riattivato",
   "system.delete": "eliminato",
+  "subject.erase": "interessato cancellato",
+  "openings.erase": "nonce cancellati",
 };
 
 /** One line of the administrative log, for the systems page. */
@@ -298,6 +333,13 @@ export function describeAdminEntry(entry: {
   if (entry.action === "system.rename") {
     const name = (value: unknown): string => (typeof value === "string" ? `«${value}»` : "nessun nome");
     extra = `: da ${name(entry.detail["from"])} a ${name(entry.detail["to"])}`;
+  }
+  if (entry.action === "subject.erase") {
+    return `${formatTs(entry.ts)} — ${what}: pseudonimo ${String(entry.detail["token"])} (${entry.actor})`;
+  }
+  if (entry.action === "openings.erase") {
+    const seqs = Array.isArray(entry.detail["seqs"]) ? entry.detail["seqs"].join(", ") : "";
+    extra = ` per le ricevute ${seqs} (${String(entry.detail["erased"])})`;
   }
   return `${formatTs(entry.ts)} — ${entry.system_id} ${what}${extra} (${entry.actor})`;
 }

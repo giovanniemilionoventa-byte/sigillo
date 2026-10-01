@@ -14,6 +14,8 @@ export function verifyInstructions(
   genTimes: ReadonlyMap<string, string> = new Map(),
   /** The system's label in the web view at export time, if it had one: see ArchiveInput. */
   displayName?: string,
+  /** Whether the archive carries openings.jsonl and subjects.jsonl, which only an explicit choice adds. */
+  disclosed: { openings: boolean; subjects: boolean } = { openings: false, subjects: false },
 ): string {
   const key = manifest.keys[0];
   const anchored = checkpoints.filter((entry) => entry.timestamps.length > 0);
@@ -49,13 +51,43 @@ key**, and, if you have one, **an export of the same chain you received earlier*
 | \`checkpoints.jsonl\` | each signed checkpoint, its inclusion proofs, and the timestamp tokens anchoring it |
 | \`artifacts-index.jsonl\` | one line per document fingerprint a receipt names, pointing back at it |
 | \`timestamps/\` | the RFC 3161 tokens, byte for byte as the authority returned them |
-| \`manifest.json\` | the public keys, the range and the counts this archive claims |
+| \`manifest.json\` | the public keys, the range and the counts this archive claims |${
+    disclosed.openings
+      ? "\n| \`openings.jsonl\` | the nonces of some salted digests, disclosed on purpose: see \"Opening a digest\" |"
+      : ""
+  }${
+    disclosed.subjects
+      ? "\n| \`subjects.jsonl\` | who some pseudonym tokens stand for, disclosed on purpose: the operator's statement, not signed |"
+      : ""
+  }
 | \`report.pdf\` | the same facts written for a reader |
 | \`VERIFY.md\` | this file |
 
 A receipt holds no prompt, no tool argument and no model output. Where content
-existed, the receipt carries its SHA-256 digest and nothing else.
+existed, the receipt carries its SHA-256 digest and nothing else. From receipt
+version 4 on, a receipt names no person either: \`on_behalf_of\` is a
+pseudonym token (\`psn_\` and 32 hex characters), and who it stands for is
+kept by the operator, outside the record, and can be erased. A digest the
+server computed is salted (\`input_hash_scheme: "salted"\`): SHA-256 of a
+32-byte random nonce followed by the content, so short content cannot be found
+by trying candidates, and the same content gives a different digest in every
+receipt. The nonces stay with the operator unless an export discloses some.
 
+## Opening a digest
+
+Whoever has the content can show that a digest is of it: under its nonce for a
+salted digest, without one for a plain one.
+
+\`\`\`sh
+sigillo-verify open <this archive> <seq> input --text 'the content'
+sigillo-verify open <this archive> <seq> output --file content.txt --nonce <64 hex characters>
+\`\`\`
+
+${
+  disclosed.openings
+    ? "This archive discloses some nonces in `openings.jsonl`, and `open` takes them from there.\n"
+    : "This archive discloses no nonce: ask the operator for the one you need, or it may no longer exist.\n"
+}
 ## The quick way
 
 \`\`\`sh
