@@ -217,7 +217,9 @@ class EndToEndTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("FAILED", result.stderr)
 
-    def test_sigillo_artifact_produces_a_v3_receipt_with_both_fingerprints(self) -> None:
+    def test_sigillo_artifact_produces_a_receipt_with_both_fingerprints_unchanged(self) -> None:
+        # Receipt version 4 since the server stopped writing anything older;
+        # the two artifact fingerprints are exactly what version 3 carried.
         content = "il contenuto esatto del curriculum\r\ndi un candidato di prova,  per un test\r\n"
         expected_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
         # sigillo-text/1, written out by hand: one space for every run of
@@ -254,7 +256,8 @@ tracing.flush()
         receipts = [json.loads(line) for line in receipts_text.splitlines() if line]
 
         tool_call = next(r for r in receipts if r["action"]["name"] == "leggi_curriculum")
-        self.assertEqual(tool_call["v"], 3)
+        self.assertEqual(tool_call["v"], 4)
+        self.assertEqual((tool_call["input_hash_scheme"], tool_call["output_hash_scheme"]), (None, None))
         self.assertEqual(
             tool_call["artifacts"],
             [{"role": "input", "label": "curriculum", "media_type": "text/plain",

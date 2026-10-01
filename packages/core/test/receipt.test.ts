@@ -6,6 +6,7 @@ import {
   receiptHashHex,
   RECEIPT_VERSION_2,
   RECEIPT_VERSION_3,
+  RECEIPT_VERSION_4,
   safeParseReceipt,
   TEXT_CANON_1,
   type Receipt,
@@ -199,9 +200,9 @@ describe("receipt schema", () => {
   });
 
   it("refuses to parse a schema version it does not implement", () => {
-    expectRejected(withField("v", RECEIPT_VERSION_3 + 1), "v");
+    expectRejected(withField("v", RECEIPT_VERSION_4 + 1), "v");
     expectRejected(withField("v", 0), "v");
-    expect(() => parseReceipt(withField("v", RECEIPT_VERSION_3 + 1))).toThrow();
+    expect(() => parseReceipt(withField("v", RECEIPT_VERSION_4 + 1))).toThrow();
   });
 
   it("reports the failing field so a verifier can name it", () => {

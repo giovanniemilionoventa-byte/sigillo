@@ -4,7 +4,7 @@ import { DOCUMENT_TEXT_SOURCE, receiptHashHex, type DocumentFingerprints, type R
 import type { ApiKeyStore } from "../auth/api-keys.js";
 import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
-import { buildArchive } from "../export/archive.js";
+import { archiveFromStore, positionsIn, tokensIn } from "../export/from-store.js";
 import type { ChainHealthMonitor, ChainStatus } from "../health/chain-health.js";
 import {
   normaliseDisplayName,
@@ -86,7 +86,7 @@ interface PageOptions {
   /** The document title, before " — sigillo". */
   title: string;
   /** Which entry of the navigation this page belongs to. */
-  current?: "registro" | "sistemi" | "verifica";
+  current?: "registro" | "sistemi" | "persone" | "verifica";
   /** The page's own heading: a small line above, the title, and a system_id beneath when there is one. */
   head?: { eyebrow?: string; h1: string; lead?: string; sid?: string; badges?: string[] };
   body: string;
@@ -116,6 +116,7 @@ ${options.head.sid === undefined ? "" : `<code class="sid">${escape(options.head
   <nav aria-label="sezioni">
     <a href="/ui"${here("registro")}>${escape(UI.nav.registro)}</a>
     <a href="/ui/sistemi"${here("sistemi")}>${escape(UI.nav.sistemi)}</a>
+    <a href="/ui/persone"${here("persone")}>${escape(UI.nav.persone)}</a>
     <a href="/ui/verify-document"${here("verifica")}>${escape(UI.nav.verificaDocumento)}</a>
     <form class="inline" method="post" action="/ui/logout"><button type="submit" class="link">${escape(UI.nav.esci)}</button></form>
   </nav>
@@ -493,12 +494,14 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
 
   app.post("/ui/export", async (request, reply) => {
     if (!requireSession(request, reply)) return reply;
-    const body = request.body as { system_id?: unknown; from?: unknown; to?: unknown } | undefined;
+    const body = request.body as
+      | { system_id?: unknown; from?: unknown; to?: unknown; subjects?: unknown; openings?: unknown }
+      | undefined;
     const systemId = typeof body?.system_id === "string" ? body.system_id : "";
     if (!store.hasSystem(systemId)) {
       return reply.code(404).send({ error: `no system called ${systemId}` });
     }
-    return sendArchive(reply, systemId, dayBounds(body?.from, body?.to));
+    return sendArchive(reply, systemId, dayBounds(body?.from, body?.to), body);
   });
 
   const systemsView = (value: unknown): SystemsView =>
@@ -758,28 +761,65 @@ ${rows}
     return reply.redirect(`/ui/sistemi?eliminato=${encodeURIComponent(systemId)}`, 303);
   });
 
+  // People: who the pseudonym tokens stand for. The identifier is posted,
+  // never put in an address, so it stays out of the browser's history and of
+  // any log that keeps addresses.
+
+  const renderPeople = (
+    search: { identifier: string; token: string | null } | null,
+    extra: { notice?: string; error?: string } = {},
+  ): string =>
+    render({
+      title: UI.people.title,
+      current: "persone",
+      head: { eyebrow: UI.people.eyebrow, h1: UI.people.heading },
+      body: peoplePage(store, search, extra),
+    });
+
+  app.get("/ui/persone", async (request, reply) => {
+    if (!requireSession(request, reply)) return reply;
+    const erased = (request.query as { cancellato?: string }).cancellato;
+    // Said only for an erasure the administrative log actually holds.
+    const done =
+      typeof erased === "string" &&
+      store.adminLog(10_000).some((entry) => entry.action === "subject.erase" && entry.detail["token"] === erased);
+    return html(reply, renderPeople(null, done ? { notice: UI.people.erased(erased) } : {}));
+  });
+
+  app.post("/ui/persone", async (request, reply) => {
+    if (!requireSession(request, reply)) return reply;
+    const body = request.body as { identifier?: unknown } | undefined;
+    const identifier = typeof body?.identifier === "string" ? body.identifier : "";
+    return html(reply, renderPeople({ identifier, token: store.subjectToken(identifier) }));
+  });
+
+  app.post("/ui/persone/cancella", async (request, reply) => {
+    if (!requireSession(request, reply)) return reply;
+    const body = request.body as { token?: unknown; confirm?: unknown } | undefined;
+    const token = typeof body?.token === "string" ? body.token : "";
+    // The exact token, typed out: not a "sei sicuro?" a thumb can tap.
+    if (body?.confirm !== token || token === "") {
+      return html(reply, renderPeople(null, { error: UI.people.confirmMismatch }), 400);
+    }
+    if (!(await store.eraseSubject(token, adminRequest(request)))) {
+      return html(reply, renderPeople(null, { error: UI.people.notFound }), 404);
+    }
+    request.log.info({ action: "subject.erase", token }, "a subject was erased");
+    return reply.redirect(`/ui/persone?cancellato=${encodeURIComponent(token)}`, 303);
+  });
+
   async function sendArchive(
     reply: FastifyReply,
     systemId: string,
     range: { from?: string; to?: string },
+    body: { subjects?: unknown; openings?: unknown } | undefined,
   ): Promise<FastifyReply> {
-    const receipts =
-      range.from === undefined && range.to === undefined
-        ? store.readChain(systemId)
-        : store.readChainInRange(systemId, range.from, range.to);
-
-    const archive = await buildArchive({
-      systemId,
-      // The name as it is now: the archive keeps it, whatever it becomes later.
-      displayName: store.systemRecord(systemId)?.display_name ?? null,
-      receipts,
-      checkpoints: store.readCheckpoints(systemId).map((stored) => ({
-        stored,
-        timestamps: store.readTimestamps(stored.id),
-      })),
-      chainLeaves: store.readReceiptHashes(systemId),
-      // Every key the chain has been signed with, not only today's.
-      keys: store.signingKeys(),
+    const archive = await archiveFromStore(store, systemId, {
+      range,
+      // Nobody is named and no digest opened unless the operator asked, here,
+      // for these tokens and these positions.
+      subjects: tokensIn(body?.subjects),
+      openings: positionsIn(body?.openings),
       exportedAt: options.now().toISOString(),
     });
 
@@ -800,7 +840,7 @@ ${rows}
     if (!store.hasSystem(systemId)) {
       return reply.code(404).send({ error: `no system called ${systemId}` });
     }
-    return sendArchive(reply, systemId, {});
+    return sendArchive(reply, systemId, {}, request.body as { subjects?: unknown; openings?: unknown } | undefined);
   });
 }
 
@@ -964,6 +1004,7 @@ ${recent
   </label>
   <label>${escape(t.fromDate)}<input type="date" name="from"></label>
   <label>${escape(t.toDate)}<input type="date" name="to"></label>
+  ${discloseFields()}
   <button type="submit" class="primary">${escape(t.generate)}</button>
 </form>
 <p class="hint">${escape(t.wholeChain)}</p>
@@ -1199,7 +1240,7 @@ const OUTCOME_STATE: Record<Receipt["outcome"], { css: ChainStatus; icon: string
 function receiptListItem(receipt: Receipt, anchoredBelow: number): string {
   const t = UI.history;
   const artifacts =
-    receipt.v === 2 && receipt.artifacts !== undefined
+    receipt.v !== 1 && receipt.artifacts !== undefined
       ? receipt.artifacts
           .map((a) => `<span class="tag">${escape(describeArtifact(a.role, a.label))}</span>`)
           .join(" ")
@@ -1241,6 +1282,68 @@ ${cell("fingerprint", `${escape(hash.slice(0, 12))}…`)}
 </details></li>`;
 }
 
+/** The two optional disclosures of an export, folded away: by default an export names nobody and opens nothing. */
+function discloseFields(): string {
+  const t = UI.home.disclose;
+  return `<details class="search"><summary>${escape(t.summary)}</summary>
+<p class="hint">${escape(t.hint)}</p>
+<label>${escape(t.subjectsLabel)}<input type="text" name="subjects" autocomplete="off" spellcheck="false"></label>
+<label>${escape(t.openingsLabel)}<input type="text" name="openings" autocomplete="off" inputmode="numeric"></label>
+<p class="hint">${escape(t.openingsHint)}</p>
+</details>`;
+}
+
+/** The people page: search by identifier, through the subjects table, and the erasure of what it finds. */
+function peoplePage(
+  store: ReceiptStore,
+  search: { identifier: string; token: string | null } | null,
+  extra: { notice?: string; error?: string },
+): string {
+  const t = UI.people;
+  let result = "";
+  if (search !== null && search.token === null) {
+    result = `<p class="empty">${escape(t.notFound)}</p>`;
+  } else if (search !== null && search.token !== null) {
+    const token = search.token;
+    const receipts = store.receiptsOnBehalfOf(token, 500);
+    const records = new Map(store.listSystemRecords().map((record) => [record.system_id, record]));
+    result = `<div class="sheet formal">
+<p>${escape(t.tokenLabel)}: <code>${escape(token)}</code></p>
+<h2>${escape(t.receipts(receipts.length))}</h2>
+<ol class="ledger">${receipts
+      .map((receipt) => {
+        const record = records.get(receipt.system_id);
+        const link = escape(encodeURIComponent(receipt.system_id));
+        return `<li class="person-receipt">${ledgerMargin(receipt)}<div class="entry"><a class="who" href="/ui/systems/${link}">${escape(
+          record === undefined ? receipt.system_id : systemTitle(record),
+        )}</a>${escape(describeReceipt(receipt))} <span class="muted small">(seq ${receipt.seq})</span></div></li>`;
+      })
+      .join("\n")}</ol>
+<h2>${escape(t.eraseTitle)}</h2>
+<p class="hint">${escape(t.eraseHint)}</p>
+<form method="post" action="/ui/persone/cancella" class="fields">
+  <input type="hidden" name="token" value="${escape(token)}">
+  <label>${escape(t.eraseConfirm(token))}
+    <input type="text" name="confirm" autocomplete="off" spellcheck="false" required>
+  </label>
+  <button type="submit" class="danger">${escape(t.eraseSubmit)}</button>
+</form>
+</div>`;
+  }
+  return `${extra.notice === undefined ? "" : `<p class="notice" role="status">${escape(extra.notice)}</p>`}
+${extra.error === undefined ? "" : `<p class="notice bad warn" role="alert">${escape(extra.error)}</p>`}
+<p class="hint">${escape(t.intro)}</p>
+<div class="sheet formal">
+<form method="post" action="/ui/persone" class="fields">
+  <label>${escape(t.searchLabel)}
+    <input type="text" name="identifier" value="${escape(search?.identifier ?? "")}" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+  </label>
+  <button type="submit" class="primary">${escape(t.searchSubmit)}</button>
+</form>
+</div>
+${result}`;
+}
+
 function historyPage(
   systemId: string,
   receipts: Receipt[],
@@ -1257,6 +1360,7 @@ function historyPage(
 
 <div class="sheet formal">
 <form method="post" action="/ui/systems/${link}/export" class="fields">
+  ${discloseFields()}
   <button type="submit" class="primary">${escape(UI.home.generate)}</button>
 </form>
 <p class="hint">${escape(UI.home.generateHint)}</p>

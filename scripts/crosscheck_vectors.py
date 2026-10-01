@@ -40,8 +40,12 @@ MANDATORY = {
     "input_hash", "output_hash", "outcome", "source", "prev_hash", "key_id", "sig",
 }
 # Version 2 adds these two, both optional, and nothing else. Version 3 adds
-# nothing at the receipt level: only `text` inside an artifact.
+# nothing at the receipt level: only `text` inside an artifact. Version 4 adds
+# the two mandatory hash schemes, and requires on_behalf_of to be a token.
 V2_OPTIONAL = {"artifacts", "model"}
+V4_MANDATORY = {"input_hash_scheme", "output_hash_scheme"}
+HASH_SCHEMES = {"plain", "salted"}
+PSEUDONYM = re.compile(r"^psn_[0-9a-f]{32}$")
 TEXT_CANON_1 = "sigillo-text/1"
 
 # sigillo-text/1 as docs/FORMAT.md section 2.5.1 writes it, with the character
@@ -83,7 +87,7 @@ def check_text_vectors():
 
 
 def check_artifact(where, artifact, version):
-    allowed = {"role", "label", "media_type", "sha256"} | ({"text"} if version == 3 else set())
+    allowed = {"role", "label", "media_type", "sha256"} | ({"text"} if version >= 3 else set())
     check({"role", "label", "media_type", "sha256"} <= set(artifact) <= allowed, where + "artifact fields")
     if "text" in artifact:
         text = artifact["text"]
@@ -111,9 +115,24 @@ def check_model(where, model):
 def check_shape(name, receipt):
     where = f"{name}: "
     version = receipt.get("v")
-    check(version in (1, 2, 3), where + "v must be 1, 2 or 3")
+    check(version in (1, 2, 3, 4), where + "v must be 1, 2, 3 or 4")
 
     extra = set(receipt) - MANDATORY
+    if version == 4:
+        check(V4_MANDATORY <= extra, where + "a v4 receipt must carry input_hash_scheme and output_hash_scheme")
+        extra = extra - V4_MANDATORY
+        for role in ("input", "output"):
+            scheme = receipt.get(f"{role}_hash_scheme")
+            check(scheme is None or scheme in HASH_SCHEMES, where + f"{role}_hash_scheme value")
+            check(
+                (scheme is None) == (receipt.get(f"{role}_hash") is None),
+                where + f"{role}_hash_scheme must be null exactly when {role}_hash is",
+            )
+        on_behalf_of = receipt.get("actor", {}).get("on_behalf_of")
+        check(
+            on_behalf_of is None or PSEUDONYM.match(on_behalf_of) is not None,
+            where + "a v4 on_behalf_of must be a psn_ pseudonym token",
+        )
     if version == 1:
         check(extra == set(), where + f"a v1 receipt must not carry {sorted(extra)}")
     else:
@@ -176,9 +195,19 @@ def main():
     vectors = document["vectors"]
     check(len(vectors) >= 10, f"expected at least 10 vectors, found {len(vectors)}")
     check(
-        document.get("receipt_versions") == [1, 2, 3],
-        "vector file must declare receipt_versions [1, 2, 3]",
+        document.get("receipt_versions") == [1, 2, 3, 4],
+        "vector file must declare receipt_versions [1, 2, 3, 4]",
     )
+
+    # Salted digests (docs/FORMAT.md 2.7): SHA-256 of the nonce's 32 bytes
+    # followed by the value's RFC 8785 form.
+    salted = document.get("salted_digests", [])
+    check(len(salted) >= 4, "expected at least 4 salted digest vectors")
+    for entry in salted:
+        nonce = bytes.fromhex(entry["nonce_hex"])
+        check(len(nonce) == 32, f"salted digest {entry['name']}: the nonce must be 32 bytes")
+        digest = hashlib.sha256(nonce + canonical_json(entry["value"]).encode("utf-8")).hexdigest()
+        check(digest == entry["digest"], f"salted digest {entry['name']}: {digest} differs from {entry['digest']}")
 
     seen_hashes = {}
     for vector in vectors:
@@ -205,7 +234,8 @@ def main():
             print(f"  {failure}", file=sys.stderr)
         return 1
     print(
-        f"crosscheck: ok, {len(vectors)} receipt vectors and {text_vectors} sigillo-text/1 vectors "
+        f"crosscheck: ok, {len(vectors)} receipt vectors, {len(salted)} salted digests and "
+        f"{text_vectors} sigillo-text/1 vectors "
         "re-derived independently in Python"
     )
     return 0

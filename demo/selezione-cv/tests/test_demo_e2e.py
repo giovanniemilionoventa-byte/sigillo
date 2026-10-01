@@ -172,9 +172,15 @@ class DemoEndToEndTest(unittest.TestCase):
         llm_calls = [r for r in receipts if r["action"]["kind"] == "llm_call"]
         self.assertEqual(len(llm_calls), CANDIDATE_COUNT)
 
-        # Every real action was recorded as acting for the same recruiter.
+        # Every real action was recorded as acting for the same recruiter, by
+        # pseudonym (receipt version 4): the receipts carry her token, and only
+        # the server's erasable subjects table says it is elena.rizzo.
+        token = self._run(["node", str(SERVER_CLI), "subject", "find", "elena.rizzo",
+                           "--db", str(self.db_path)]).strip()
+        self.assertRegex(token, r"^psn_[0-9a-f]{32}$")
         for receipt in receipts[1:]:
-            self.assertEqual(receipt["actor"].get("on_behalf_of"), "elena.rizzo")
+            self.assertEqual(receipt["actor"].get("on_behalf_of"), token)
+        self.assertNotIn("elena.rizzo", receipts_text)
 
         # One input artifact (the CV) and one output artifact (the reply) per
         # candidate, indexed on both sides — this is what N3's verifier check

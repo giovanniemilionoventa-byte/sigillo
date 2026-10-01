@@ -1,14 +1,15 @@
 #!/usr/bin/env node
-import { statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { hostname, userInfo } from "node:os";
 import Database from "better-sqlite3";
 import { Command } from "commander";
-import { DEFAULT_MAX_ANCHOR_DELAY_MS, publicKeyFromRaw } from "@sigillo/core";
+import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw } from "@sigillo/core";
 import { ApiKeyStore } from "./auth/api-keys.js";
 import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
 import { cookieSecure, port, positiveInteger, readSecret, trustProxy } from "./config.js";
-import { buildArchive } from "./export/archive.js";
+import { archiveFromStore, positionsIn, tokensIn } from "./export/from-store.js";
 import { ChainHealthMonitor } from "./health/chain-health.js";
 import { buildServer } from "./http/server.js";
 import { SignerClient } from "./signer/client.js";
@@ -376,7 +377,9 @@ system
 
 program
   .command("admin-log")
-  .description("Print the administrative log: renames, archivals and deletions of systems, newest first")
+  .description(
+    "Print the administrative log: renames, archivals and deletions of systems, erasures of subjects and nonces, newest first",
+  )
   .option("--limit <n>", "how many entries", "100")
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
   .action((options: DatabaseOption & { limit: string }) => {
@@ -504,40 +507,155 @@ program
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
   .requiredOption("--signer-socket <path>", "the signer's socket", process.env["SIGILLO_SIGNER_SOCKET"])
   .requiredOption("--out <file>", "where to write the .zip archive")
-  .action(async (systemId: string, options: DatabaseOption & { signerSocket: string; out: string }) => {
-    const signer = await SignerClient.connect(options.signerSocket);
-    const store = ReceiptStore.open(options.db, signer);
-    try {
-      const archive = await buildArchive({
-        systemId,
-        displayName: store.systemRecord(systemId)?.display_name ?? null,
-        receipts: store.readChain(systemId),
-        checkpoints: store.readCheckpoints(systemId).map((stored) => ({
-          stored,
-          timestamps: store.readTimestamps(stored.id),
-        })),
-        chainLeaves: store.readReceiptHashes(systemId),
-        keys: store.signingKeys(),
-        exportedAt: now(),
-      });
+  .option(
+    "--subject <token>",
+    "name the person behind this pseudonym token in subjects.jsonl (repeatable); by default nobody is named",
+    (value: string, previous: string[] | undefined) => [...(previous ?? []), value],
+  )
+  .option(
+    "--open <seqs>",
+    "disclose the nonces of these receipts' salted digests in openings.jsonl, such as 4 or 7-9 (repeatable); by default none",
+    (value: string, previous: string[] | undefined) => [...(previous ?? []), value],
+  )
+  .action(
+    async (
+      systemId: string,
+      options: DatabaseOption & { signerSocket: string; out: string; subject?: string[]; open?: string[] },
+    ) => {
+      const signer = await SignerClient.connect(options.signerSocket);
+      const store = ReceiptStore.open(options.db, signer);
+      try {
+        const archive = await archiveFromStore(store, systemId, {
+          subjects: tokensIn((options.subject ?? []).join(" ")),
+          openings: positionsIn((options.open ?? []).join(" ")),
+          exportedAt: now(),
+        });
 
-      writeFileSync(options.out, archive.zip);
-      process.stdout.write(
-        `wrote ${archive.manifest.counts.receipts} receipts, ` +
-          `${archive.manifest.counts.checkpoints} checkpoint(s) and ` +
-          `${archive.manifest.counts.timestamps} timestamp token(s) to ${options.out}\n`,
-      );
-      process.stdout.write(
-        archive.verification.ok
-          ? "the archive verifies\n"
-          : `WARNING: the archive does not verify: ${archive.verification.check} at ${archive.verification.location}: ${archive.verification.detail}\n`,
-      );
-      if (!archive.verification.ok) process.exitCode = 1;
+        writeFileSync(options.out, archive.zip);
+        process.stdout.write(
+          `wrote ${archive.manifest.counts.receipts} receipts, ` +
+            `${archive.manifest.counts.checkpoints} checkpoint(s) and ` +
+            `${archive.manifest.counts.timestamps} timestamp token(s) to ${options.out}\n`,
+        );
+        for (const name of ["subjects.jsonl", "openings.jsonl"]) {
+          if (archive.entries.some((entry) => entry.name === name)) process.stdout.write(`disclosed on request: ${name}\n`);
+        }
+        process.stdout.write(
+          archive.verification.ok
+            ? "the archive verifies\n"
+            : `WARNING: the archive does not verify: ${archive.verification.check} at ${archive.verification.location}: ${archive.verification.detail}\n`,
+        );
+        if (!archive.verification.ok) process.exitCode = 1;
+      } finally {
+        store.close();
+        signer.close();
+      }
+    },
+  );
+
+const subject = program
+  .command("subject")
+  .description("The people behind pseudonym tokens: find one, or erase one (GDPR erasure)");
+
+subject
+  .command("find")
+  .description("Print the pseudonym token of an identifier, in any spelling that normalises the same")
+  .argument("<identifier>")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action((identifier: string, options: DatabaseOption) => {
+    const store = ReceiptStore.open(options.db);
+    try {
+      const token = store.subjectToken(identifier);
+      if (token === null) {
+        process.stderr.write("no token for this identifier: never seen, or erased\n");
+        process.exit(1);
+      }
+      process.stdout.write(`${token}\n`);
     } finally {
       store.close();
-      signer.close();
     }
   });
+
+subject
+  .command("erase")
+  .description(
+    "Erase a person: delete which identifier a token stands for. Their receipts stay valid and no longer " +
+      "lead to them; the administrative log records the token only",
+  )
+  .option("--identifier <identifier>", "the person, by identifier")
+  .option("--token <token>", "the person, by pseudonym token")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action(async (options: DatabaseOption & { identifier?: string; token?: string }) => {
+    if ((options.identifier === undefined) === (options.token === undefined)) {
+      throw new Error("give exactly one of --identifier or --token");
+    }
+    await withStore(options.db, async (store) => {
+      const token = options.token ?? store.subjectToken(options.identifier ?? "");
+      if (token === null || !isPseudonym(token) || !(await store.eraseSubject(token, cliRequest()))) {
+        process.stderr.write("nothing to erase: no such subject (never seen, or already erased)\n");
+        process.exit(1);
+      }
+      process.stdout.write(`erased ${token}: its receipts no longer lead to anyone\n`);
+      process.stdout.write("the erasure is in the administrative log (sigillo-server admin-log)\n");
+    });
+  });
+
+const openings = program
+  .command("openings")
+  .description("The nonces of salted input and output digests");
+
+openings
+  .command("erase")
+  .description(
+    "Delete the nonces of some receipts, so that nobody can show any more what their input or output digests " +
+      "were computed over. By position, or by a document: every receipt naming it, and the rest of their traces",
+  )
+  .argument("[system_id]", "the system, with --seq")
+  .option(
+    "--seq <seqs>",
+    "positions, such as 4 or 7-9 (repeatable)",
+    (value: string, previous: string[] | undefined) => [...(previous ?? []), value],
+  )
+  .option("--document <path>", "a document (a candidate's CV): found by its SHA-256, which is computed here")
+  .requiredOption(
+    "--confirm <system_id>",
+    "each system whose receipts are affected, typed out (repeatable)",
+    (value: string, previous: string[] | undefined) => [...(previous ?? []), value],
+  )
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action(
+    async (
+      systemId: string | undefined,
+      options: DatabaseOption & { seq?: string[]; document?: string; confirm: string[] },
+    ) => {
+      if ((options.document === undefined) === (options.seq === undefined)) {
+        throw new Error("give exactly one of --seq (with a system_id) or --document");
+      }
+      if (options.seq !== undefined && systemId === undefined) throw new Error("--seq needs a system_id");
+      await withStore(options.db, async (store) => {
+        const targets =
+          options.document === undefined
+            ? [{ system_id: systemId ?? "", seqs: positionsIn(options.seq?.join(" ")) }]
+            : store.receiptsOfDocument(createHash("sha256").update(readFileSync(options.document)).digest("hex"));
+        if (targets.length === 0 || targets.every((target) => target.seqs.length === 0)) {
+          process.stderr.write("no receipt found: nothing was erased\n");
+          process.exit(1);
+        }
+        const unconfirmed = targets.filter((target) => !options.confirm.includes(target.system_id));
+        if (unconfirmed.length > 0) {
+          throw new Error(
+            `receipts of ${unconfirmed.map((target) => target.system_id).join(", ")} are affected: confirm each with ` +
+              "--confirm <system_id>. Nothing was erased",
+          );
+        }
+        for (const target of targets) {
+          const erased = await store.eraseOpenings(target.system_id, target.seqs, cliRequest());
+          process.stdout.write(`${target.system_id}: seq ${target.seqs.join(", ")}: ${erased} nonce(s) erased\n`);
+        }
+        process.stdout.write("the erasure is in the administrative log (sigillo-server admin-log)\n");
+      });
+    },
+  );
 
 try {
   await program.parseAsync(process.argv);

@@ -155,19 +155,19 @@ describe("appending to a chain", () => {
   });
 });
 
-describe("version 2 fields", () => {
+describe("version 2 fields, as every receipt now carries them in version 4", () => {
   beforeEach(async () => {
     await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
   });
 
-  it("stays v1, with neither member, when the event carries no artifacts or model", async () => {
+  it("writes v4 with neither member when the event carries no artifacts or model", async () => {
     const receipt = await store.append(event());
-    expect(receipt.v).toBe(1);
+    expect(receipt.v).toBe(4);
     expect(receipt).not.toHaveProperty("artifacts");
     expect(receipt).not.toHaveProperty("model");
   });
 
-  it("becomes v2 when the event carries an artifact", async () => {
+  it("carries an artifact exactly as given", async () => {
     const receipt = await store.append(
       event({
         artifacts: [
@@ -175,24 +175,24 @@ describe("version 2 fields", () => {
         ],
       }),
     );
-    expect(receipt.v).toBe(2);
-    if (receipt.v !== 2) return;
+    expect(receipt.v).toBe(4);
+    if (receipt.v === 1) return;
     expect(receipt.artifacts).toEqual([
       { role: "input", label: "curriculum", media_type: "text/plain", sha256: "a".repeat(64) },
     ]);
     expect(receipt).not.toHaveProperty("model");
   });
 
-  it("becomes v2 when the event carries a model", async () => {
+  it("carries a model exactly as given", async () => {
     const receipt = await store.append(
       event({ model: { name: "qwen2.5:3b", provider: "ollama", digest: "sha256:deadbeef" } }),
     );
-    expect(receipt.v).toBe(2);
-    if (receipt.v !== 2) return;
+    expect(receipt.v).toBe(4);
+    if (receipt.v === 1) return;
     expect(receipt.model).toEqual({ name: "qwen2.5:3b", provider: "ollama", digest: "sha256:deadbeef" });
   });
 
-  it("chains a v2 receipt to a v1 predecessor exactly as it would another v1", async () => {
+  it("chains a receipt with a model to its predecessor like every other receipt", async () => {
     const first = await store.append(event());
     const second = await store.append(
       event({ model: { name: "gpt-4o", provider: "openai", digest: null } }),
@@ -218,14 +218,14 @@ describe("version 2 fields", () => {
     expect(parseReceipt({ ...JSON.parse(row.canonical), sig: receipt.sig })).toEqual(receipt);
   });
 
-  it("writes a v3 receipt only when an artifact carries a text fingerprint", async () => {
+  it("carries a text fingerprint beside an artifact's exact one, and none where none was given", async () => {
     const text = { canon: TEXT_CANON_1, sha256: "e".repeat(64) };
     const plain = { role: "input" as const, label: "curriculum", media_type: "text/plain", sha256: "c".repeat(64) };
     const v2 = await store.append(event({ artifacts: [plain] }));
     const v3 = await store.append(event({ artifacts: [{ ...plain, text }] }));
-    expect(v2.v).toBe(2);
-    expect(v3.v).toBe(3);
-    expect(v3.v === 3 ? v3.artifacts?.[0]?.text : undefined).toEqual(text);
+    expect([v2.v, v3.v]).toEqual([4, 4]);
+    expect(v2.v === 4 ? v2.artifacts?.[0] : undefined).not.toHaveProperty("text");
+    expect(v3.v === 4 ? v3.artifacts?.[0]?.text : undefined).toEqual(text);
   });
 });
 

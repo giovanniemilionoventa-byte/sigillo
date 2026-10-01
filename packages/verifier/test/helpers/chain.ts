@@ -39,9 +39,11 @@ function timestamp(index: number): string {
 
 /** Per-seq departures from an all-v1 chain, for tests that need a v2 or mixed chain. */
 export interface ReceiptOverride {
-  v?: 1 | 2 | 3;
+  v?: 1 | 2 | 3 | 4;
   artifacts?: ArtifactEntryV3[];
   model?: ModelInfo;
+  /** Any other member, set as given: an actor, a digest and its scheme. */
+  fields?: Record<string, unknown>;
 }
 
 /**
@@ -79,6 +81,8 @@ export function buildReceipts(
       key_id: identity.keyId,
       ...(override?.artifacts === undefined ? {} : { artifacts: override.artifacts }),
       ...(override?.model === undefined ? {} : { model: override.model }),
+      ...(override?.v === 4 ? { input_hash_scheme: null, output_hash_scheme: null } : {}),
+      ...override?.fields,
     } as UnsignedReceipt;
     const receipt = signReceipt(unsigned, identity.privateKey);
     receipts.push(receipt);
@@ -97,7 +101,8 @@ export function buildManifest(receipts: Receipt[], identity: SigningIdentity): M
   const receiptVersion = receipts.reduce<number>((max, receipt) => Math.max(max, receipt.v), 0) as
     | 1
     | 2
-    | 3;
+    | 3
+    | 4;
   return {
     sigillo_version: "0.1.0",
     receipt_version: receiptVersion,

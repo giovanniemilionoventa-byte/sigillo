@@ -1,4 +1,4 @@
-import type { KeyObject } from "node:crypto";
+import { randomBytes, type KeyObject } from "node:crypto";
 import Database from "better-sqlite3";
 import {
   canonicalReceiptBytes,
@@ -7,16 +7,21 @@ import {
   verifyReceiptSignature,
   fromHex,
   GENESIS_PREV_HASH,
+  HASH_SCHEME_PLAIN,
+  HASH_SCHEME_SALTED,
+  isPseudonym,
   keyIdFromRawPublicKey,
   merkleRoot,
   parseCheckpoint,
   parseReceipt,
   parseUnsignedReceipt,
+  PSEUDONYM_RANDOM_BYTES,
+  pseudonymFromRandom,
   publicKeyFromRaw,
   receiptHashHex,
-  RECEIPT_VERSION_1,
-  RECEIPT_VERSION_2,
-  RECEIPT_VERSION_3,
+  RECEIPT_VERSION_4,
+  SALT_NONCE_BYTES,
+  saltedDigest,
   genTimeOfToken,
   sha256,
   toHex,
@@ -26,6 +31,7 @@ import {
   type ArtifactEntryV3,
   type DocumentFingerprints,
   type Checkpoint,
+  type HashScheme,
   type ModelInfo,
   type Outcome,
   type Receipt,
@@ -57,7 +63,14 @@ export interface SigningService {
   head(systemId: string): Promise<Receipt | null>;
 }
 
-/** An action to be recorded. Its position in the chain is not the caller's to choose. */
+/**
+ * An action to be recorded. Its position in the chain is not the caller's to
+ * choose. The receipt written for it is always version 4: `actor.on_behalf_of`
+ * may name a person here, and leaves as a pseudonym token; an input or output
+ * arrives either as a digest the client computed (`input_hash`, recorded as
+ * plain) or as the value itself (`raw_input`, digested here under a fresh
+ * nonce and never kept), not both.
+ */
 export interface ChainEvent {
   system_id: string;
   ts_event: string;
@@ -66,12 +79,10 @@ export interface ChainEvent {
   action: Action;
   input_hash: string | null;
   output_hash: string | null;
+  raw_input?: { value: unknown };
+  raw_output?: { value: unknown };
   outcome: Outcome;
   source: Source;
-  /**
-   * Either one, present, makes the stored receipt v2 rather than v1; an
-   * artifact with a text fingerprint makes it v3.
-   */
   artifacts?: ArtifactEntryV3[];
   model?: ModelInfo;
 }
@@ -184,13 +195,16 @@ export type AdminAction =
   /** A receipt the signer had signed but this database lacked was written (a crash between the two). */
   | "signer.recovered"
   /** The signer's head and this database's tip disagree in a way nothing here corrects. */
-  | "signer.divergence";
+  | "signer.divergence"
+  | "subject.erase"
+  | "openings.erase";
 
 /** One line of the administrative log: something done to a system outside its chain. */
 export interface AdminLogEntry {
   id: number;
   ts: string;
   action: AdminAction;
+  /** Empty for an erasure of a subject, which concerns every system. */
   system_id: string;
   /** Who did it: "web <address>" from the web view, "cli <user>@<host>" from the command line. */
   actor: string;
@@ -239,9 +253,50 @@ export function normaliseDisplayName(value: string): string | null {
   return trimmed;
 }
 
+const SUBJECT_IDENTIFIER_MAX = 256;
+
+/**
+ * An identifier as the subjects table keys it, so that one person gets one
+ * token however a source spells them: Unicode NFC, no space at either end,
+ * lower case. It is never written anywhere else.
+ */
+export function normaliseSubjectIdentifier(value: string): string {
+  if (!value.isWellFormed()) {
+    throw new StorageError(
+      "receipt field actor.on_behalf_of is not well-formed Unicode (it holds half of a surrogate pair): nothing was signed or written",
+    );
+  }
+  const normalised = value.normalize("NFC").trim().toLowerCase();
+  if (normalised.length === 0) throw new StorageError("an on_behalf_of identifier cannot be empty");
+  if (normalised.length > SUBJECT_IDENTIFIER_MAX) {
+    throw new StorageError(`an on_behalf_of identifier is at most ${SUBJECT_IDENTIFIER_MAX} characters`);
+  }
+  return normalised;
+}
+
+/** Which receipts of a system to cut off from their content: see receiptsOfDocument. */
+export interface ReceiptPositions {
+  system_id: string;
+  seqs: number[];
+}
+
 interface StoredRow {
   canonical: string;
   sig: string;
+}
+
+/** An input or output digest as a version 4 receipt holds it, and the nonce of a salted one. */
+interface Digest {
+  hash: string | null;
+  scheme: HashScheme | null;
+  nonce: string | null;
+}
+
+/** What an event becomes before its position is known: its actor and its two digests. */
+interface Prepared {
+  actor: Actor;
+  input: Digest;
+  output: Digest;
 }
 
 interface TipRow extends ChainTip {
@@ -392,6 +447,9 @@ export class ReceiptStore {
     write.pragma("synchronous = FULL");
     write.pragma("foreign_keys = ON");
     write.pragma("busy_timeout = 5000");
+    // A deleted subject or nonce is overwritten with zeros, not left in a
+    // free page of the file for anyone with a copy to read (eraseSubject).
+    write.pragma("secure_delete = ON");
     applySchema(write);
 
     if (signer !== undefined) {
@@ -877,6 +935,142 @@ export class ReceiptStore {
     );
   }
 
+  /** The token standing for this identifier, in any spelling normaliseSubjectIdentifier folds together; null if none. */
+  subjectToken(identifier: string): string | null {
+    let normalised: string;
+    try {
+      normalised = normaliseSubjectIdentifier(identifier);
+    } catch {
+      return null;
+    }
+    const row = this.read.prepare("SELECT token FROM subjects WHERE identifier = ?").get(normalised) as
+      | { token: string }
+      | undefined;
+    return row?.token ?? null;
+  }
+
+  /** The identifier a token stands for, or null: never known, or erased. */
+  subjectIdentifier(token: string): string | null {
+    const row = this.read.prepare("SELECT identifier FROM subjects WHERE token = ?").get(token) as
+      | { identifier: string }
+      | undefined;
+    return row?.identifier ?? null;
+  }
+
+  /** Every receipt made on behalf of `token`, across systems, newest first. */
+  receiptsOnBehalfOf(token: string, limit = 500): Receipt[] {
+    const rows = this.read
+      .prepare(
+        `SELECT canonical, sig FROM receipts
+         WHERE json_extract(canonical, '$.actor.on_behalf_of') = ?
+         ORDER BY ts_received DESC, system_id, seq DESC LIMIT ?`,
+      )
+      .all(token, Math.min(Math.max(limit, 1), 10_000)) as StoredRow[];
+    return rows.map(rowToReceipt);
+  }
+
+  /**
+   * Erases a person: deletes the row that says who `token` stands for, and
+   * logs the erasure by the token alone. Every receipt stays exactly as it
+   * was, valid and verifiable, and no longer leads to anyone. The file's
+   * write-ahead log is folded back and emptied straight after, so the deleted
+   * identifier is not left behind in it (copies made before, backups
+   * included, still hold it until they are rotated away: SECURITY.md).
+   * False when there was no such row, and then nothing is logged.
+   */
+  async eraseSubject(token: string, request: AdminRequest): Promise<boolean> {
+    const erased = await this.enqueue(() =>
+      this.inTransaction(async () => {
+        const removed = this.write.prepare("DELETE FROM subjects WHERE token = ?").run(token).changes;
+        if (removed > 0) this.logAdmin("subject.erase", "", request, { token });
+        return removed > 0;
+      }),
+    );
+    if (erased) await this.foldWriteAheadLog();
+    return erased;
+  }
+
+  /** The nonce of a salted digest, hex, or null: a plain digest, none at all, or erased. */
+  opening(systemId: string, seq: number, role: "input" | "output"): string | null {
+    const row = this.read
+      .prepare("SELECT nonce FROM openings WHERE system_id = ? AND seq = ? AND role = ?")
+      .get(systemId, seq, role) as { nonce: string } | undefined;
+    return row?.nonce ?? null;
+  }
+
+  /** Every nonce still held for these receipts of a system, for an export that is asked to disclose them. */
+  openingsOf(systemId: string, seqs: readonly number[]): { seq: number; role: "input" | "output"; nonce: string }[] {
+    const statement = this.read.prepare(
+      "SELECT seq, role, nonce FROM openings WHERE system_id = ? AND seq = ? ORDER BY role",
+    );
+    return [...new Set(seqs)]
+      .sort((a, b) => a - b)
+      .flatMap((seq) => statement.all(systemId, seq) as { seq: number; role: "input" | "output"; nonce: string }[]);
+  }
+
+  /**
+   * Cuts receipts off from their content: deletes the nonces of their salted
+   * digests, after which neither the operator nor anyone else can show what
+   * they were computed over. Logged with the positions and the count, never a
+   * nonce. Returns how many nonces were deleted.
+   */
+  async eraseOpenings(systemId: string, seqs: readonly number[], request: AdminRequest): Promise<number> {
+    const positions = [...new Set(seqs)].sort((a, b) => a - b);
+    const erased = await this.administer(systemId, () => {
+      const statement = this.write.prepare("DELETE FROM openings WHERE system_id = ? AND seq = ?");
+      const count = positions.reduce((total, seq) => total + statement.run(systemId, seq).changes, 0);
+      this.logAdmin("openings.erase", systemId, request, { seqs: positions, erased: count });
+      return count;
+    });
+    await this.foldWriteAheadLog();
+    return erased;
+  }
+
+  /**
+   * The receipts to cut off when a document's subject asks to be forgotten
+   * (a candidate and their CV): every receipt that names the document by its
+   * exact or its text fingerprint, and every receipt of the same system that
+   * shares a trace with one of those — the rest of that run of the agent,
+   * whose inputs and outputs were the document's content or came from it.
+   */
+  receiptsOfDocument(sha256: string): ReceiptPositions[] {
+    const rows = this.read
+      .prepare(
+        `WITH named AS (
+           SELECT DISTINCT system_id, seq FROM artifacts WHERE sha256 = @digest OR text_sha256 = @digest
+         )
+         SELECT DISTINCT r.system_id, r.seq FROM receipts r
+         WHERE EXISTS (SELECT 1 FROM named n WHERE n.system_id = r.system_id AND n.seq = r.seq)
+            OR r.source_trace_id IN (
+                 SELECT n2.source_trace_id FROM named n JOIN receipts n2 ON n2.system_id = n.system_id AND n2.seq = n.seq
+                 WHERE n2.source_trace_id IS NOT NULL AND n2.system_id = r.system_id
+               )
+         ORDER BY r.system_id, r.seq`,
+      )
+      .all({ digest: sha256 }) as { system_id: string; seq: number }[];
+    const bySystem = new Map<string, number[]>();
+    for (const row of rows) bySystem.set(row.system_id, [...(bySystem.get(row.system_id) ?? []), row.seq]);
+    return [...bySystem].map(([system_id, seqs]) => ({ system_id, seqs }));
+  }
+
+  /**
+   * Moves everything in the write-ahead log into the database file and
+   * empties the log, so that rows just overwritten by secure_delete do not
+   * survive in it. On the write queue, so that no receipt transaction of
+   * this store is open meanwhile. Best effort: a reader in another process
+   * can hold the log open, and then SQLite's next automatic checkpoint does
+   * it; the erasure itself is already committed.
+   */
+  private async foldWriteAheadLog(): Promise<void> {
+    await this.enqueue(async () => {
+      try {
+        this.write.pragma("wal_checkpoint(TRUNCATE)");
+      } catch {
+        // Committed either way: see above.
+      }
+    });
+  }
+
   /**
    * One administrative change, on the write queue and inside one IMMEDIATE
    * transaction: the change and its log entry are written together or not at
@@ -1053,31 +1247,75 @@ export class ReceiptStore {
   }
 
   /**
-   * The receipt an event becomes after `tip`. A receipt takes the lowest
-   * version that can hold what it carries: v1 for neither artifacts nor
-   * model, v3 only for a text fingerprint. A chain otherwise keeps writing
-   * what every existing reader expects.
+   * An input or output digest and its scheme: as the client computed it
+   * (plain), or computed here from the value under a fresh 32-byte nonce
+   * (salted), which insertRow stores in `openings` with the receipt.
+   * The value itself goes no further than this function.
+   */
+  private digestFor(
+    role: "input" | "output",
+    clientHash: string | null,
+    raw: { value: unknown } | undefined,
+  ): Digest {
+    if (raw !== undefined && clientHash !== null) {
+      throw new StorageError(`an action carries either its ${role} or a digest of it, not both`);
+    }
+    if (raw === undefined) {
+      return { hash: clientHash, scheme: clientHash === null ? null : HASH_SCHEME_PLAIN, nonce: null };
+    }
+    const nonce = new Uint8Array(randomBytes(SALT_NONCE_BYTES));
+    return { hash: saltedDigest(nonce, raw.value), scheme: HASH_SCHEME_SALTED, nonce: toHex(nonce) };
+  }
+
+  /**
+   * The actor as a receipt may hold it: `on_behalf_of` replaced by the
+   * person's token, created on first sight inside the caller's transaction (so
+   * a receipt that is rolled back takes its new subject with it). A value that
+   * is already a token is the caller's own pseudonym, and passes as it is.
+   * With `write` false nothing is written: a new person gets a stand-in
+   * token, for checkEvent, which only needs to know the receipt would be valid.
+   */
+  private pseudonymous(actor: Actor, ts: string, write: boolean): Actor {
+    const named = actor.on_behalf_of;
+    if (named === undefined || isPseudonym(named)) return actor;
+    const identifier = normaliseSubjectIdentifier(named);
+    const known = this.write.prepare("SELECT token FROM subjects WHERE identifier = ?").get(identifier) as
+      | { token: string }
+      | undefined;
+    if (known !== undefined) return { ...actor, on_behalf_of: known.token };
+    const token = pseudonymFromRandom(new Uint8Array(randomBytes(PSEUDONYM_RANDOM_BYTES)));
+    if (write) {
+      this.write.prepare("INSERT INTO subjects (token, identifier, created_at) VALUES (?, ?, ?)").run(token, identifier, ts);
+    }
+    return { ...actor, on_behalf_of: token };
+  }
+
+  /**
+   * The receipt an event becomes after `tip`, with its actor and digests as
+   * `prepared` made them. Every receipt is written as version 4, whatever it
+   * carries: the version that holds no identifier in the clear and says how
+   * each digest was made. Receipts already written keep their own version.
    *
    * ts_received is never earlier than the receipt before it: the signer
    * refuses one that is, so a server clock stepping back is absorbed here
    * (the receipt says "received no earlier than the one before") instead of
    * stopping the chain until the clock catches up.
    */
-  private buildUnsigned(event: ChainEvent, tip: TipRow | undefined, keyId: string): UnsignedReceipt {
-    const isV3 = event.artifacts?.some((artifact) => artifact.text !== undefined) === true;
-    const isV2 = event.artifacts !== undefined || event.model !== undefined;
+  private buildUnsigned(event: ChainEvent, tip: TipRow | undefined, keyId: string, prepared: Prepared): UnsignedReceipt {
     const tsReceived =
       tip !== undefined && Date.parse(event.ts_received) < Date.parse(tip.ts_received) ? tip.ts_received : event.ts_received;
     const unsigned = parseUnsignedReceipt({
-      v: isV3 ? RECEIPT_VERSION_3 : isV2 ? RECEIPT_VERSION_2 : RECEIPT_VERSION_1,
+      v: RECEIPT_VERSION_4,
       system_id: event.system_id,
       seq: tip === undefined ? 0 : tip.seq + 1,
       ts_event: event.ts_event,
       ts_received: tsReceived,
-      actor: event.actor,
+      actor: prepared.actor,
       action: event.action,
-      input_hash: event.input_hash,
-      output_hash: event.output_hash,
+      input_hash: prepared.input.hash,
+      input_hash_scheme: prepared.input.scheme,
+      output_hash: prepared.output.hash,
+      output_hash_scheme: prepared.output.scheme,
       outcome: event.outcome,
       source: event.source,
       prev_hash: tip === undefined ? GENESIS_PREV_HASH : tip.hash,
@@ -1103,14 +1341,28 @@ export class ReceiptStore {
     return unsigned;
   }
 
+  /** The actor and digests of an event as its receipt holds them; `write` as in pseudonymous. */
+  private prepare(event: ChainEvent, write: boolean): Prepared {
+    return {
+      actor: this.pseudonymous(event.actor, event.ts_received, write),
+      input: this.digestFor("input", event.input_hash, event.raw_input),
+      output: this.digestFor("output", event.output_hash, event.raw_output),
+    };
+  }
+
   /**
    * Everything about an event that can be refused before its position is
    * known, so that a batch with a bad event in it is refused before any of it
    * is signed. The position used here is a stand-in; the real one is
-   * assigned in insertReceipt.
+   * assigned in insertReceipt. Nothing is written: no subject, no nonce.
    */
   private checkEvent(event: ChainEvent): void {
-    this.buildUnsigned(event, { seq: 0, hash: GENESIS_PREV_HASH, ts_received: event.ts_received }, this.writer().signer.keyId);
+    this.buildUnsigned(
+      event,
+      { seq: 0, hash: GENESIS_PREV_HASH, ts_received: event.ts_received },
+      this.writer().signer.keyId,
+      this.prepare(event, false),
+    );
   }
 
   /**
@@ -1149,7 +1401,8 @@ export class ReceiptStore {
       throw new StorageError(`unknown system ${event.system_id}: create its chain first`);
     }
 
-    const unsigned = this.buildUnsigned(event, tip, signer.keyId);
+    const prepared = this.prepare(event, true);
+    const unsigned = this.buildUnsigned(event, tip, signer.keyId, prepared);
     const digest = sha256(canonicalReceiptBytes(unsigned));
     const sig = await signer.signReceipt(unsigned);
     // Validated again after signing: the signer is a separate process, and
@@ -1166,12 +1419,16 @@ export class ReceiptStore {
     if (mode === "genesis") {
       this.registerStatement.run({ system_id: event.system_id, created_at: event.ts_received });
     }
-    this.insertRow(receipt);
+    this.insertRow(receipt, prepared);
     return { receipt, duplicate: false };
   }
 
-  /** Writes a signed receipt, and its artifact rows. The caller holds the transaction. */
-  private insertRow(receipt: Receipt): void {
+  /**
+   * Writes a signed receipt, its artifact rows, and the nonces of its salted
+   * digests when they are known: a receipt recovered from the signer's head
+   * comes without them (reconcileNow). The caller holds the transaction.
+   */
+  private insertRow(receipt: Receipt, nonces?: Pick<Prepared, "input" | "output">): void {
     // One set of bytes: the ones stored as `canonical`, whose hash is stored
     // as `hash`, and which the signature was checked over.
     const canonicalBytes = canonicalReceiptBytes(receipt);
@@ -1191,6 +1448,13 @@ export class ReceiptStore {
       source_trace_id: receipt.source.trace_id ?? null,
       source_span_id: receipt.source.span_id ?? null,
     });
+
+    for (const [role, digest] of [["input", nonces?.input], ["output", nonces?.output]] as const) {
+      if (digest === undefined || digest.nonce === null) continue;
+      this.write
+        .prepare("INSERT INTO openings (system_id, seq, role, nonce) VALUES (?, ?, ?, ?)")
+        .run(receipt.system_id, receipt.seq, role, digest.nonce);
+    }
 
     if (receipt.v !== 1 && receipt.artifacts !== undefined) {
       for (const artifact of receipt.artifacts) {

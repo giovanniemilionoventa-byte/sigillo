@@ -43,11 +43,10 @@ CURRICULA_DIR = HERE / "curricula"
 OUTBOX_DIR = pathlib.Path(os.environ.get("SIGILLO_DEMO_OUTBOX", str(HERE / "outbox")))
 
 SYSTEM_ID = os.environ.get("SIGILLO_SYSTEM_ID", "selezione-cv")
-# A plain name on purpose, so ISPEZIONE.md's walkthrough has something a
-# non-technical reader can recognise on the "cosa ha fatto l'AI?" page. A real
-# deployment that wants a pseudonymous on_behalf_of should wrap this in
-# sigillo.pseudonym(value, key=...) — see sdk-python/README.md, "Pseudonymous
-# identities" (fase 9, decision F).
+# A plain name, as an agent naturally sends it: since receipt version 4 the
+# server never writes it into a receipt. It replaces it with a pseudonym token
+# (psn_...), and keeps which person the token stands for in a separate table
+# an administrator can erase ("persone" page, `sigillo-server subject erase`).
 RECRUITER_ID = os.environ.get("SIGILLO_RECRUITER_ID", "elena.rizzo")
 POSITION = "Sviluppatore Backend Junior"
 

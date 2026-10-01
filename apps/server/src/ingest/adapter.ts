@@ -1,5 +1,4 @@
 import {
-  hashCanonicalJson,
   TEXT_CANON_1,
   type Action,
   type Actor,
@@ -20,16 +19,23 @@ import type { AttributeValue, OtlpSpan } from "./otlp.js";
  * drop a span silently. Anything that is not an AI action at all is counted and
  * ignored, which is different from being unrecognised.
  *
- * No payload is ever carried through: an input or output the source provided is
- * reduced to a digest right here, and the value is not returned.
+ * An input or output arrives either already digested by the caller (the SDK's
+ * filter) or as the value itself. A digest is passed on as `input_hash`; a
+ * value is passed on as `raw_input`, only as far as the store, which digests
+ * it under a fresh nonce (receipt version 4, a salted digest) and keeps
+ * nothing of it.
  */
 
 export interface AdaptedAction {
   action: Action;
   actor: Actor;
   outcome: Outcome;
+  /** A digest the caller computed: recorded as plain. */
   input_hash: string | null;
   output_hash: string | null;
+  /** A value received in the clear, for the store to digest with a salt. Never with a digest beside it. */
+  raw_input?: { value: string };
+  raw_output?: { value: string };
   source: Source;
   ts_event: string;
   /** Present only when the span carried at least one `sigillo.artifact` event. */
@@ -90,7 +96,7 @@ function text(attributes: Map<string, AttributeValue>, ...names: string[]): stri
  * between the two halves of a pair, which would create a lone surrogate here.
  *
  * Only text that is recorded as text comes through here: a payload that is
- * hashed (`digestOf`) is hashed exactly as it arrived.
+ * digested (`payloadOf`) is digested exactly as it arrived.
  */
 function cap(value: string, limit = 256): string {
   const whole = value.toWellFormed();
@@ -112,38 +118,46 @@ function isoFromUnixNano(nanos: bigint): string {
   return new Date(Number(nanos / 1_000_000n)).toISOString();
 }
 
-function digestOf(attributes: Map<string, AttributeValue>, ...names: string[]): string | null {
-  const value = text(attributes, ...names);
-  return value === null ? null : hashCanonicalJson(value);
-}
-
 /**
- * Input and output, hashed where the digest was computed: `sigillo.input.sha256`
+ * Input or output, as the digest the caller computed — `sigillo.input.sha256`
  * / `sigillo.output.sha256`, which the Python SDK's filter attaches instead of
- * the raw value it would otherwise send (fase 9, decision D6). Both dialects
+ * the raw value it would otherwise send (fase 9, decision D6) — or else as the
+ * raw value under `names`, for the store to digest with a salt. Both dialects
  * read the same two names, since the filter that attaches them runs ahead of
  * whichever instrumentation produced the span.
  *
  * A value there that is not a real SHA-256 — not this SDK's doing, but nothing
- * on the wire promises that — is not trusted as one: this falls back to
- * hashing `names` exactly as it always has, rather than recording something
- * that only looks like a digest. That fallback still counts in `rawContent`:
- * fase 9, decision D. It is never refused (an older SDK, or one built by
- * someone else, still gets recorded), but a span whose content had to be
- * hashed here, rather than by the caller, is worth knowing about during a
- * pilot's first days — see `AdaptedBatch.rawContentHashed`.
+ * on the wire promises that — is not trusted as one: this falls back to the
+ * raw value, rather than recording something that only looks like a digest.
+ * That fallback still counts in `rawContent`: fase 9, decision D. It is never
+ * refused (an older SDK, or one built by someone else, still gets recorded),
+ * but a span whose content crossed the network in the clear is worth knowing
+ * about during a pilot's first days — see `AdaptedBatch.rawContentHashed`.
  */
-function preferPreHashed(
+function payloadOf(
   attributes: Map<string, AttributeValue>,
-  preHashedName: string,
+  role: "input" | "output",
   rawContent: { count: number },
   ...names: string[]
-): string | null {
-  const preHashed = text(attributes, preHashedName);
-  if (preHashed !== null && SHA256_HEX.test(preHashed)) return preHashed;
-  const raw = digestOf(attributes, ...names);
-  if (raw !== null) rawContent.count += 1;
-  return raw;
+): Partial<Pick<AdaptedAction, "raw_input" | "raw_output">> & { hash: string | null } {
+  const preHashed = text(attributes, `sigillo.${role}.sha256`);
+  if (preHashed !== null && SHA256_HEX.test(preHashed)) return { hash: preHashed };
+  const raw = text(attributes, ...names);
+  if (raw === null) return { hash: null };
+  rawContent.count += 1;
+  return { hash: null, [`raw_${role}`]: { value: raw } };
+}
+
+/** Input and output for an adapted action, each as a client digest or a raw value, with the members exactly present. */
+function payloads(
+  attributes: Map<string, AttributeValue>,
+  rawContent: { count: number },
+  inputNames: string[],
+  outputNames: string[],
+): Pick<AdaptedAction, "input_hash" | "output_hash" | "raw_input" | "raw_output"> {
+  const { hash: input_hash, ...input } = payloadOf(attributes, "input", rawContent, ...inputNames);
+  const { hash: output_hash, ...output } = payloadOf(attributes, "output", rawContent, ...outputNames);
+  return { input_hash, output_hash, ...input, ...output };
 }
 
 /**
@@ -252,8 +266,7 @@ function adaptGenAi(span: OtlpSpan, unknown: Set<string>, rawContent: { count: n
     action: { kind, name: cap(name ?? span.name ?? operation ?? "unknown") },
     actor: buildActor(span, agent),
     outcome: outcomeOf(span),
-    input_hash: preferPreHashed(span.attributes, "sigillo.input.sha256", rawContent, "gen_ai.input.messages", "gen_ai.prompt"),
-    output_hash: preferPreHashed(span.attributes, "sigillo.output.sha256", rawContent, "gen_ai.output.messages", "gen_ai.completion"),
+    ...payloads(span.attributes, rawContent, ["gen_ai.input.messages", "gen_ai.prompt"], ["gen_ai.output.messages", "gen_ai.completion"]),
     source: { type: "otlp", trace_id: span.traceId, span_id: span.spanId },
     ts_event: isoFromUnixNano(span.startUnixNano),
     startUnixNano: span.startUnixNano,
@@ -283,8 +296,7 @@ function adaptOpenInference(span: OtlpSpan, unknown: Set<string>, rawContent: { 
     action: { kind, name: cap(name ?? span.name ?? declared) },
     actor: buildActor(span, text(span.attributes, "llm.system")),
     outcome: outcomeOf(span),
-    input_hash: preferPreHashed(span.attributes, "sigillo.input.sha256", rawContent, "input.value"),
-    output_hash: preferPreHashed(span.attributes, "sigillo.output.sha256", rawContent, "output.value"),
+    ...payloads(span.attributes, rawContent, ["input.value"], ["output.value"]),
     source: { type: "otlp", trace_id: span.traceId, span_id: span.spanId },
     ts_event: isoFromUnixNano(span.startUnixNano),
     startUnixNano: span.startUnixNano,

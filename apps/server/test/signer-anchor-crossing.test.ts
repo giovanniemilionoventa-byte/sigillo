@@ -9,6 +9,7 @@ import { generateKeyFile, startSignerDaemon, type SignerDaemon } from "../../sig
 import { buildArchive } from "../src/export/archive.js";
 import { SignerClient } from "../src/signer/client.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
+import { appendLegacyReceipt } from "./helpers/legacy-receipt.js";
 import { createLocalTsa, type LocalTsa } from "./helpers/local-tsa.js";
 
 /**
@@ -53,19 +54,25 @@ const textArtifact = {
   text: { canon: TEXT_CANON_1, sha256: textSha256(DOCUMENT) ?? "" },
 };
 
-/** seq 1..5: v1, v2 (artifact and model), v3 (text fingerprint), v2, v3. */
-const EVENTS: Partial<ChainEvent>[] = [
-  {},
-  { artifacts: [plainArtifact], model: { name: "qwen2.5:3b", provider: "ollama", digest: null } },
-  { artifacts: [textArtifact] },
-  { model: { name: "qwen2.5:3b", provider: "ollama", digest: null } },
-  { artifacts: [textArtifact] },
+/**
+ * seq 1..6: v1, v2 (artifact and model), v3 (text fingerprint), v2, v3 — the
+ * versions the server wrote before receipt version 4, signed by the signer
+ * and put on the chain as it put them — and then v4, which the store writes
+ * itself (a pseudonym, and a salted input).
+ */
+const EVENTS: { version: 1 | 2 | 3 | 4; extra: Partial<ChainEvent> }[] = [
+  { version: 1, extra: {} },
+  { version: 2, extra: { artifacts: [plainArtifact], model: { name: "qwen2.5:3b", provider: "ollama", digest: null } } },
+  { version: 3, extra: { artifacts: [textArtifact] } },
+  { version: 2, extra: { model: { name: "qwen2.5:3b", provider: "ollama", digest: null } } },
+  { version: 3, extra: { artifacts: [textArtifact] } },
+  { version: 4, extra: { actor: { agent: "screener", on_behalf_of: "elena.rizzo" }, raw_input: { value: "score: 7" } } },
 ];
 
 interface Plan {
-  /** ts_received of seq 1..5. */
+  /** ts_received of seq 1..6. */
   received: string[];
-  /** Checkpoints after seq 2 (tree 3) and after seq 5 (tree 6): the signer's time and the authority's. */
+  /** Checkpoints after seq 2 (tree 3) and after seq 6 (tree 7): the signer's time and the authority's. */
   checkpoints: [{ at: string; genTime: string }, { at: string; genTime: string }];
 }
 
@@ -90,22 +97,40 @@ async function archiveOf(plan: Plan): Promise<{ path: string; receipts: Receipt[
     store = ReceiptStore.open(`${base}.db`, client);
     await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
 
-    for (const [index, extra] of EVENTS.entries()) {
+    for (const [index, { version, extra }] of EVENTS.entries()) {
       const tsReceived = plan.received[index] as string;
       signerClock = new Date(tsReceived);
-      await store.append({
-        system_id: SYSTEM,
-        ts_event: tsReceived,
-        ts_received: tsReceived,
-        actor: { agent: "screener" },
-        action: { kind: "llm_call", name: `valuta-${index + 1}` },
-        input_hash: null,
-        output_hash: null,
-        outcome: "ok",
-        source: { type: "sdk" },
-        ...extra,
-      });
-      const checkpoint = index === 1 ? plan.checkpoints[0] : index === 4 ? plan.checkpoints[1] : undefined;
+      const action = { kind: "llm_call" as const, name: `valuta-${index + 1}` };
+      if (version === 4) {
+        await store.append({
+          system_id: SYSTEM,
+          ts_event: tsReceived,
+          ts_received: tsReceived,
+          actor: { agent: "screener" },
+          action,
+          input_hash: null,
+          output_hash: null,
+          outcome: "ok",
+          source: { type: "sdk" },
+          ...extra,
+        });
+      } else {
+        await appendLegacyReceipt(`${base}.db`, store, client, {
+          v: version,
+          system_id: SYSTEM,
+          ts_event: tsReceived,
+          ts_received: tsReceived,
+          actor: { agent: "screener" },
+          action,
+          input_hash: null,
+          output_hash: null,
+          outcome: "ok",
+          source: { type: "sdk" },
+          ...(extra.artifacts === undefined ? {} : { artifacts: extra.artifacts }),
+          ...(extra.model === undefined ? {} : { model: extra.model }),
+        });
+      }
+      const checkpoint = index === 1 ? plan.checkpoints[0] : index === 5 ? plan.checkpoints[1] : undefined;
       if (checkpoint !== undefined) {
         signerClock = new Date(checkpoint.at);
         const written = await store.createCheckpoint(SYSTEM);
@@ -143,41 +168,42 @@ function verify(path: string, ...extra: string[]): { code: number | null; stdout
 }
 
 const ON_TIME: Plan = {
-  received: ["2026-03-29T14:01:00.000Z", "2026-03-29T14:02:00.000Z", "2026-03-29T14:20:00.000Z", "2026-03-29T14:21:00.000Z", "2026-03-29T14:22:00.000Z"],
+  received: ["2026-03-29T14:01:00.000Z", "2026-03-29T14:02:00.000Z", "2026-03-29T14:20:00.000Z", "2026-03-29T14:21:00.000Z", "2026-03-29T14:22:00.000Z", "2026-03-29T14:23:00.000Z"],
   checkpoints: [
     { at: "2026-03-29T14:05:00.000Z", genTime: "2026-03-29T14:05:03.000Z" },
     { at: "2026-03-29T14:30:00.000Z", genTime: "2026-03-29T14:30:04.000Z" },
   ],
 };
 
-describe("receipts v1, v2 and v3, signed by the signer over its socket, with proven times", () => {
+describe("receipts v1 to v4, signed by the signer over its socket, with proven times", () => {
   let run: Awaited<ReturnType<typeof archiveOf>>;
   beforeAll(async () => {
     run = await archiveOf(ON_TIME);
   }, 60_000);
 
-  it("are all accepted and signed by the signer, v3 text fingerprints included", () => {
-    expect(run.receipts.map((receipt) => receipt.v)).toEqual([1, 1, 2, 3, 2, 3]);
+  it("are all accepted and signed by the signer, v3 text fingerprints and a v4 pseudonym included", () => {
+    expect(run.receipts.map((receipt) => receipt.v)).toEqual([4, 1, 2, 3, 2, 3, 4]); // the genesis is written by the store, so v4
     const v3 = run.receipts[3];
     expect(v3?.v === 3 ? v3.artifacts?.[0]?.text?.sha256 : undefined).toBe(textSha256(DOCUMENT));
+    expect(run.receipts[6]?.actor.on_behalf_of).toMatch(/^psn_[0-9a-f]{32}$/);
   });
 
   it("verify in full under --strict, each version given the time it existed by", () => {
     const result = verify(run.path, "--strict");
     expect(result.code, result.stderr).toBe(0);
-    expect(result.stdout).toMatch(/^OK {2}selezione-cv: 6 receipts/);
+    expect(result.stdout).toMatch(/^OK {2}selezione-cv: 7 receipts/);
     expect(result.stdout).toContain("3 document fingerprint(s) indexed");
     expect(result.stdout).toContain("timestamps: 2 checkpoint(s) proven by a timestamp, 0 timestamped late");
-    // seq 2 is v2; seq 3 and 5 are v3, seq 4 v2.
+    // seq 2 is v2; seq 3 and 5 are v3, seq 4 v2, seq 6 v4.
     expect(result.stdout).toContain("seq 0..2: existed no later than 2026-03-29T14:05:03.000Z\n");
-    expect(result.stdout).toContain("seq 3..5: existed no later than 2026-03-29T14:30:04.000Z\n");
+    expect(result.stdout).toContain("seq 3..6: existed no later than 2026-03-29T14:30:04.000Z\n");
     // The checkpoints' own times are the signer's.
     expect(result.stdout).toContain("checkpoint over 3 receipts: proven 2026-03-29T14:05:03.000Z (declared 2026-03-29T14:05:00.000Z)");
   }, 30_000);
 
   it("carry the proven times into report.pdf and VERIFY.md, next to the document fingerprints", (context) => {
     const verifyMd = new TextDecoder().decode(run.files.get("VERIFY.md"));
-    expect(verifyMd).toContain("seq 3..5: existed no later than 2026-03-29T14:30:04.000Z");
+    expect(verifyMd).toContain("seq 3..6: existed no later than 2026-03-29T14:30:04.000Z");
     expect(verifyMd).toContain("sigillo-verify doc <this archive> <the file>");
 
     const pdfPath = join(directory, "crossing.pdf");
@@ -192,16 +218,18 @@ describe("receipts v1, v2 and v3, signed by the signer over its socket, with pro
     const flat = text.replace(/\s+/g, " ");
     expect(flat).toContain("2 checkpoint(s) proven by a timestamp, 0 timestamped late");
     expect(flat).toContain("Receipts seq 0..2 existed no later than 2026-03-29T14:05:03.000Z");
-    expect(flat).toContain("Receipts seq 3..5 existed no later than 2026-03-29T14:30:04.000Z");
+    expect(flat).toContain("Receipts seq 3..6 existed no later than 2026-03-29T14:30:04.000Z");
+    expect(flat).toContain("receipt version 4");
+    expect(flat).toContain("This file names nobody");
     expect(flat).toContain("3 document fingerprint(s) are recorded");
   }, 30_000);
 });
 
-describe("the time checks, on v2 and v3 receipts alike", () => {
+describe("the time checks, on v2, v3 and v4 receipts alike", () => {
   it("fail a v2 receipt received after the timestamp that includes it", async () => {
     // seq 2 (v2) received 14:20, in a tree the authority dated 14:05.
     const run = await archiveOf({
-      received: ["2026-03-29T14:01:00.000Z", "2026-03-29T14:20:00.000Z", "2026-03-29T14:21:00.000Z", "2026-03-29T14:22:00.000Z", "2026-03-29T14:23:00.000Z"],
+      received: ["2026-03-29T14:01:00.000Z", "2026-03-29T14:20:00.000Z", "2026-03-29T14:21:00.000Z", "2026-03-29T14:22:00.000Z", "2026-03-29T14:23:00.000Z", "2026-03-29T14:24:00.000Z"],
       checkpoints: [
         { at: "2026-03-29T14:20:30.000Z", genTime: "2026-03-29T14:05:00.000Z" },
         { at: "2026-03-29T14:30:00.000Z", genTime: "2026-03-29T14:30:04.000Z" },
@@ -217,16 +245,32 @@ describe("the time checks, on v2 and v3 receipts alike", () => {
   it("fail a v3 receipt received after the timestamp that includes it", async () => {
     // seq 5 (v3) received 14:50, in a tree the authority dated 14:30.
     const run = await archiveOf({
-      received: ["2026-03-29T14:01:00.000Z", "2026-03-29T14:02:00.000Z", "2026-03-29T14:20:00.000Z", "2026-03-29T14:21:00.000Z", "2026-03-29T14:50:00.000Z"],
+      received: ["2026-03-29T14:01:00.000Z", "2026-03-29T14:02:00.000Z", "2026-03-29T14:20:00.000Z", "2026-03-29T14:21:00.000Z", "2026-03-29T14:50:00.000Z", "2026-03-29T14:51:00.000Z"],
       checkpoints: [
         { at: "2026-03-29T14:05:00.000Z", genTime: "2026-03-29T14:05:03.000Z" },
-        { at: "2026-03-29T14:50:30.000Z", genTime: "2026-03-29T14:30:00.000Z" },
+        { at: "2026-03-29T14:51:30.000Z", genTime: "2026-03-29T14:30:00.000Z" },
       ],
     });
     expect(run.receipts[5]?.v).toBe(3);
     const result = verify(run.path);
     expect(result.code, result.stdout).toBe(1);
     expect(result.stderr).toContain("FAILED  anchor-time at receipts.jsonl:6\n");
+  }, 60_000);
+
+  it("fail a v4 receipt received after the timestamp that includes it, and name it", async () => {
+    // seq 6 (v4) received 14:51, in a tree the authority dated 14:30; seq 5 (v3), received before, is fine.
+    const run = await archiveOf({
+      received: ["2026-03-29T14:01:00.000Z", "2026-03-29T14:02:00.000Z", "2026-03-29T14:20:00.000Z", "2026-03-29T14:21:00.000Z", "2026-03-29T14:22:00.000Z", "2026-03-29T14:51:00.000Z"],
+      checkpoints: [
+        { at: "2026-03-29T14:05:00.000Z", genTime: "2026-03-29T14:05:03.000Z" },
+        { at: "2026-03-29T14:51:30.000Z", genTime: "2026-03-29T14:30:00.000Z" },
+      ],
+    });
+    expect(run.receipts[6]?.v).toBe(4);
+    const result = verify(run.path);
+    expect(result.code, result.stdout).toBe(1);
+    expect(result.stderr).toContain("FAILED  anchor-time at receipts.jsonl:7\n");
+    expect(result.stderr).toContain("receipt seq 6 was received at 2026-03-29T14:51:00.000Z");
   }, 60_000);
 
   it("warn about a late anchor over v3 receipts, and fail it under --strict", async () => {

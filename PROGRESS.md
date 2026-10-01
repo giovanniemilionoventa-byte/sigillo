@@ -24,6 +24,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | D1 | Veste grafica "Registro" | fatto | Solo aspetto: token, font incorporati, componenti, Panoramica/Cronologia/Sistemi; 914 test Node (sessione 13) |
 | S1 | Il signer custode della catena | fatto | Protocollo 2: il signer firma solo la ricevuta successiva di ogni catena, calcola da sé radice e ora dei checkpoint, tiene il proprio stato (con frontiera di Merkle) nel suo volume; riconciliazione all'avvio, `init-from-db`; 950 test Node, 49 SDK Python, 22 demo (sessione 14) |
 | A1 | Ora provata delle marche (genTime) | fatto | genTime = ora provata di ogni checkpoint: errori `anchor-time`/`anchor-order`, avviso `anchor-delay`, `--strict`; report e PDF con "provato il"/"esistente al più tardi il"; ritentativi e semaforo giallo oltre la tolleranza; scenario di manomissione 18; dopo il merge con S1: 997 test Node, 49 SDK Python, 22 demo (sessione 15) |
+| P1 | Ricevute senza dati personali (formato v4) | fatto | Pseudonimi `psn_` in una tabella `subjects` cancellabile, impronte con sale per input/output ricevuti in chiaro con i nonce in `openings`, cancellazione di interessati e di nonce, export senza identificativi per default, `sigillo-verify open`; v1–v3 restano valide; 989 test Node (sessione 16) |
 
 ## Decisioni prese dal committente — 2026-09-21
 
@@ -2787,6 +2788,160 @@ in rete); SDK Python 49, demo 22, cross-check dei vettori Python, smoke della di
 della richiesta. Con un `SIGILLO_CHECKPOINT_MINUTES` più lungo di 60 il ritardo resta misurato
 dall'ora del checkpoint, quindi non cambia; con FreeTSA giù per più di un'ora, l'export successivo
 avrà l'avviso, che è il comportamento voluto.
+
+### Sessione 16 — 2026-10-01 — ricevute senza dati personali in chiaro (formato v4)
+
+Richiesta del committente: le ricevute v2 contenevano identificativi in chiaro
+(`on_behalf_of` = `elena.rizzo`) e impronte senza sale, ricostruibili per tentativi per i dati
+corti; il registro è append-only, quindi una richiesta di cancellazione GDPR non si poteva
+onorare. Lavoro test-first, un commit per passo.
+
+**Una deviazione dalla richiesta, obbligata.** La richiesta parlava di "schema v3", ma la v3
+esiste già (sessione 10, impronta del testo `sigillo-text/1`) ed è nelle ricevute già scritte. La
+regola 3 di `CLAUDE.md` impone un numero nuovo: il nuovo schema è la **v4** (= v3 + quanto sotto).
+
+**0. Prima di tutto, la regressione** (`artifact-hash-regression.test.ts`, primo commit, scritto
+e verde sul codice di prima): impronta esatta e `sigillo-text/1` di un CV contro costanti calcolate
+con `sha256sum`; l'hash del sorgente che il browser esegue e dello script della pagina; il percorso
+span → ricevuta → `findDocument` → `sigillo-verify doc`. Passa invariato alla fine: l'hashing
+degli artifacts e la verifica documento non sono cambiati di un byte.
+
+**Formato v4** (`packages/core`, `docs/FORMAT.md` 2.2, 2.7, 7.3, 10.6):
+- `actor.on_behalf_of`, se presente, deve essere `psn_` + 32 esadecimali (128 bit casuali);
+  qualunque altro valore rende la ricevuta invalida;
+- due membri obbligatori, `input_hash_scheme` e `output_hash_scheme`: `plain` (SHA-256 della forma
+  RFC 8785, l'unico schema di v1–v3, quello che manda un client che calcola da sé) o `salted`
+  (SHA-256 di un nonce di 32 byte seguito dagli stessi byte); `null` esattamente quando l'impronta è
+  `null`;
+- artifacts identici alla v3. Il server scrive **solo v4** da ora, genesi compresa; v1–v3 restano
+  verificabili, anche mescolate nella stessa catena e nello stesso export (provato con una ricevuta
+  v2 vera inserita nel database prima delle v4).
+- 3 vettori v4 e 4 impronte con sale nuovi in `vectors.json`, ricalcolati in modo indipendente dal
+  cross-check Python (che ora controlla anche le regole della v4). I 23 vettori di prima sono
+  invariati byte per byte.
+
+**Parte A, pseudonimi.**
+1. Tabella `subjects` (token ↔ identificativo normalizzato: NFC, senza spazi ai bordi, minuscolo),
+   modificabile, fuori dalle catene.
+2. Lo store sostituisce `on_behalf_of` con il token dentro la stessa transazione della ricevuta (se
+   la ricevuta va in rollback, sparisce anche la riga nuova). Un valore che è già un token passa così
+   com'è. Test: l'identificativo non compare in nessuna riga delle tabelle di prova
+   (ricevute, artifacts, checkpoint, log, sistemi); e cercato nei **byte** del file del database e
+   del suo WAL, c'è prima della cancellazione e non c'è più dopo — cosa possibile solo se non è mai
+   entrato nelle tabelle append-only. L'SDK usa come etichetta di default ruolo e tipo
+   (`input application/pdf`), mai il nome del file (test con `CV_Elena_Rizzo.pdf`).
+3. "Cancella interessato": web (pagina «persone», si conferma scrivendo il token) e CLI
+   (`sigillo-server subject erase --identifier|--token`). Elimina la riga con `secure_delete` attivo
+   e svuota il WAL; nel registro amministrativo c'è solo il token. Le ricevute restano valide; se la
+   persona torna riceve un token nuovo, non collegato al vecchio.
+4. Ricerca per persona nella pagina «persone» (l'identificativo va in POST, mai nell'indirizzo) e
+   `sigillo-server subject find`. Export: nessun identificativo per default; `subjects.jsonl` solo
+   per i token scelti (campo nel modulo, `export --subject`).
+
+**Parte B, impronte con sale.**
+5. Il contenuto che il server riceve in chiaro (OTLP `input.value`/`output.value` e gli equivalenti
+   GenAI, `input`/`output` dell'API nativa) arriva allo store, che lo impronta con un nonce nuovo da
+   32 byte e lo scarta; il nonce va nella tabella `openings`, cancellabile. Le impronte calcolate dal
+   client restano come sono, marcate `plain`.
+6. Export senza nonce per default; `openings.jsonl` solo per le ricevute scelte (campo nel modulo,
+   `export --open 4 --open 7-9`). Il verificatore controlla che ogni nonce divulgato appartenga a
+   un'impronta `salted` dell'archivio, e ogni identificativo a un token usato. Nuovo comando
+   `sigillo-verify open <archivio> <seq> input|output --text|--file [--json] [--nonce]`.
+7. `sigillo-server openings erase` per posizione o con `--document <file>`: trova le ricevute che
+   nominano il documento (impronta esatta o del testo) e quelle dello stesso `trace_id`, chiede
+   `--confirm <system_id>` per ogni sistema toccato, cancella i nonce, scrive posizioni e conteggio
+   nel registro amministrativo. Poi il CV si cancella dove lo tiene l'operatore (sigillo non l'ha mai
+   avuto).
+8. Test (`privacy-store.test.ts`, `privacy-e2e.test.ts`, `core/test/privacy.test.ts`,
+   `verifier/test/privacy.test.ts`): lo stesso contenuto ha impronte diverse in ricevute diverse
+   (anche "score: 7" che è l'output di un'azione e l'input della successiva); "score: 7" non si
+   ritrova provando 0–100, varianti ed esiti; con il nonce `sigillo-verify open` dice MATCH, dopo la
+   cancellazione NO MATCH e il nonce non è più nei byte del file; le ricevute v2 restano valide.
+
+**Corretto strada facendo**: la cronologia e le frasi della vista web mostravano artifacts e modello
+solo per `v === 2`, quindi non per le ricevute v3 (e non le avrebbero mostrate per le v4).
+
+**Test**: Node da 914 a **989** (1 saltato, come prima); SDK Python 50 (erano 49), demo 22, tutti
+verdi; lint, typecheck, build, `smoke-dist`, cross-check Python verdi. Quattro test vecchi
+descrivevano la semantica superata (impronta semplice calcolata dal server, versione minima
+possibile, `on_behalf_of` in chiaro nella demo): aggiornati, non tolti.
+
+**Dimensione del verificatore** (regola 5): circa +400 righe tra `packages/verifier/src` (+195) e
+le parti di core che usa (`privacy.ts` 57, schema v4 e righe di export ~130, indice ~30). Cosa hanno
+comprato: un formato che non contiene dati personali e un verificatore che lo sa leggere; il
+controllo dei due file di divulgazione, senza il quale un archivio potrebbe "nominare" token che
+non ha; il comando `open`, l'unico modo per chi riceve un archivio di usare un nonce.
+
+**Limiti noti, scritti in `SECURITY.md` ("Erasing a person")**:
+- i **backup** (`backup.sh`) e le copie del file conservano righe cancellate finché non vengono
+  ruotati (14 giorni di default); gli export fatti prima con divulgazioni le conservano per sempre;
+- un'**impronta calcolata dal client** resta `plain`, quindi indovinabile se il valore è corto. È
+  proprio ciò che fa l'SDK Python per default (`redact_content=True`): il contenuto non lascia
+  l'agente, ma l'impronta è senza sale;
+- un token mandato già pronto dal client (`psn_…`) è accettato com'è: 128 bit scelti da lui;
+- la verifica di un documento come intero input/output (corrispondenza "json") non trova più le
+  impronte `salted`: è voluto, senza nonce non sono collegate a nessun contenuto;
+- la vista web mostra lo pseudonimo, non il nome; il nome si trova solo dalla pagina «persone».
+- non verificato con Docker (non gira qui); nessuna modifica a `deploy/`.
+
+**Domande per il committente**
+1. *SDK con sale*: proposta di far calcolare all'SDK l'impronta `salted` e mandare al server solo
+   impronta e nonce (il contenuto continuerebbe a non lasciare l'agente, e l'impronta non sarebbe più
+   indovinabile). Oggi la richiesta diceva di lasciare `plain` le impronte del client, e così è.
+2. *Token mandati dal client*: accettarli solo se esistono già in `subjects`?
+3. *Backup*: accorciare la rotazione di default, o documentare un tempo massimo di cancellazione
+   effettiva (oggi: fino a 14 giorni)?
+
+**Merge con `main` (S1, il signer custode della catena, sessione 14).** Unito con un merge, senza
+rebase né force push. Conflitti risolti tenendo entrambe le parti:
+- `store.ts`: la scrittura di S1 (`buildUnsigned` puro, `checkEvent` che rifiuta un batch prima di
+  firmare, `insertRow`, `signReceipt` al signer, riconciliazione) resta com'è; dentro ci sono ora la
+  v4, la pseudonimizzazione e le impronte con sale. `checkEvent` non scrive nulla: per una persona
+  nuova usa un token provvisorio, e la riga `subjects` si crea solo in `insertReceipt`. I nonce li
+  scrive `insertRow`, che per una ricevuta recuperata dal signer non li ha;
+- tipo `AdminAction` e etichette in `strings.ts`: le tre voci `signer.*` di S1 e le due di P1;
+- questa voce: la sessione di S1 resta la 14, questa diventa la **15** nel merge precedente e la **16** dopo il merge con A1 (sessione 15 di main).
+Nessun numero in collisione: né migrazioni del database, né versione del pacchetto, né scenari di
+manomissione numerati (quelli di S1 sono in `signer-guard.test.ts`); le versioni delle ricevute non
+cambiano (la v4 resta v4, la v3 resta v3).
+
+Due test di P1 si appoggiavano al vecchio helper del signer, che firmava qualunque impronta: ora
+la ricevuta v2 "storica" la firma il signer vero (che così prova di accettare la v2). Nuovo
+`privacy-crossings.test.ts`, sei test sugli incroci:
+- processo `sigillo-signer` reale: firma ricevute v4 con pseudonimo e impronte con sale; il suo stato
+  (che contiene la ricevuta di testa) non contiene né il nome né il contenuto; rifiuta come
+  `malformed` una v4 con un nome in chiaro o con schema e impronta discordi; firma una v2 e poi delle
+  v4 nella stessa catena, che si esporta e si verifica; una v4 recuperata dopo un crash resta valida,
+  senza nonce e senza riga `subjects` (scritto in `SECURITY.md`);
+- orari: le regole d'orario del signer (5 minuti dal suo orologio, mai prima della ricevuta
+  precedente) valgono uguali per v2 e v4; l'ora attestata dall'autorità (token RFC 3161 vero) e il
+  periodo del manifest, controllato dal verificatore, su un export misto v2/v4;
+- export e PDF: entrambi portano l'ora attestata e le divulgazioni scelte. Il PDF ha ora una sezione
+  "People and content" che dice se il fascicolo nomina qualcuno e se contiene nonce.
+
+**Non c'è su `main`** un controllo nuovo sugli orari nel verificatore: gli orari "provati" sono quelli
+che esistevano (ora attestata della marca, periodo del manifest) più le regole d'orario del signer
+di S1, ed è su questi che girano i test sopra.
+
+**Secondo merge con `main` (A1, genTime come ora provata, sessione 15).** Conflitti risolti tenendo
+entrambe le parti, in otto file:
+- `core/src/index.ts`, `verifier/src/index.ts`: esportano insieme `privacy.js` (v4) e `gentime.js`/
+  `anchoring.js` (A1); il verificatore esporta `anchorTimesOf` e `openDigest`;
+- `verifier/src/cli.ts`, `server/src/cli.ts`, `storage/store.ts`: unione degli import (`formatDuration`
+  e `fromHex`; `DEFAULT_MAX_ANCHOR_DELAY_MS` e `isPseudonym`; `genTimeOfToken` ora in core);
+- `export/archive.ts`, `export/verify-instructions.ts`: `verifyInstructions(manifest, entries,
+  genTimes, displayName, provenTimes, disclosed)` — le ore provate di A1 prima, le divulgazioni di P1
+  dopo; il PDF e VERIFY.md hanno entrambe le sezioni;
+- questa voce: la sessione di A1 resta la 15, questa diventa la **16**.
+Numerazione: gli scenari di manomissione di main arrivano al 18 e questo branch non ne ha aggiunti
+(i suoi test sono in file propri); nessuna migrazione del database o versione di pacchetto in
+collisione; lo schema delle ricevute resta v4 in core, signer, verificatore, SDK e documenti.
+
+Un incrocio vero, trovato dai test: `signer-anchor-crossing.test.ts` (A1) faceva scrivere allo store
+ricevute v1, v2 e v3, che lo store ora non scrive più. Il test conserva il suo scopo: le ricevute
+vecchie le firma il signer vero e le inserisce un helper (`helpers/legacy-receipt.ts`), come faceva il
+server di prima; in più c'è una ricevuta v4 (pseudonimo, impronta con sale). Nuovo caso: una v4
+ricevuta dopo la marca che la include fa fallire `anchor-time`, nominando la ricevuta.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

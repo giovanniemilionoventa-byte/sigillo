@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyServerOptions } from "fastify";
 import { z } from "zod";
-import { hashCanonicalJson, type Receipt } from "@sigillo/core";
+import type { Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
 import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
@@ -104,7 +104,7 @@ const receiptRequestSchema = z
       .optional(),
     input_hash: hex64.nullable().optional(),
     output_hash: hex64.nullable().optional(),
-    /** A value to hash here and discard. Never stored, never logged. */
+    /** A value to digest here with a salt, and discard. Never stored, never logged. */
     input: z.unknown().optional(),
     output: z.unknown().optional(),
   })
@@ -287,6 +287,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         action: action.action,
         input_hash: action.input_hash,
         output_hash: action.output_hash,
+        ...(action.raw_input === undefined ? {} : { raw_input: action.raw_input }),
+        ...(action.raw_output === undefined ? {} : { raw_output: action.raw_output }),
         outcome: action.outcome,
         source: action.source,
         ...(action.artifacts === undefined ? {} : { artifacts: action.artifacts }),
@@ -367,10 +369,11 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         ts_received: receivedAt,
         actor: body.actor,
         action: body.action,
-        input_hash:
-          body.input_hash ?? (body.input === undefined ? null : hashCanonicalJson(body.input)),
-        output_hash:
-          body.output_hash ?? (body.output === undefined ? null : hashCanonicalJson(body.output)),
+        input_hash: body.input_hash ?? null,
+        output_hash: body.output_hash ?? null,
+        // "input" in body, not body.input !== undefined: a JSON null is a value too.
+        ...("input" in body ? { raw_input: { value: body.input } } : {}),
+        ...("output" in body ? { raw_output: { value: body.output } } : {}),
         outcome: body.outcome,
         source: body.source ?? { type: "api" },
       });

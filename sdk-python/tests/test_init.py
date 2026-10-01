@@ -290,6 +290,31 @@ class SigilloInitTest(unittest.TestCase):
         # What left this process must not contain the document itself.
         self.assertNotIn(content.encode("utf-8"), body)
 
+    def test_artifact_labels_by_role_and_type_by_default_never_by_file_name(self) -> None:
+        tracing = sigillo.init(
+            endpoint=self.base, api_key="k", system_id="s", instrument=[]
+        )
+        self.addCleanup(tracing.shutdown)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "CV_Elena_Rizzo.pdf"
+            path.write_bytes(b"%PDF-1.4 un curriculum")
+            tracer = tracing.provider.get_tracer("sigillo.tests")
+            with tracer.start_as_current_span("leggi_curriculum") as span:
+                span.set_attribute("gen_ai.operation.name", "execute_tool")
+                sigillo.artifact(path, role="input")
+                sigillo.artifact("una risposta", role="output")
+            tracing.flush()
+
+        body = _Capture.bodies[0]
+        labels = [
+            _string_attributes(event.attributes)["sigillo.artifact.label"]
+            for event in _first_span(body).events
+        ]
+        self.assertEqual(labels, ["input application/pdf", "output text/plain"])
+        self.assertNotIn(b"Elena", body)
+        self.assertNotIn(b"Rizzo", body)
+
     def test_artifact_reads_a_file_and_guesses_its_media_type(self) -> None:
         tracing = sigillo.init(
             endpoint=self.base, api_key="k", system_id="s", instrument=[]

@@ -387,7 +387,7 @@ def init(
 def artifact(
     data: bytes | str | _os.PathLike,
     role: str,
-    label: str,
+    label: str | None = None,
     media_type: str | None = None,
     span: _Span | None = None,
 ) -> None:
@@ -396,7 +396,9 @@ def artifact(
     `data` is the document itself — raw `bytes`, a `str` of exact text content
     (hashed as its UTF-8 bytes), or a path to read it from — never a filename
     to describe it with: `label` is that, a category such as `"curriculum"`,
-    chosen so it cannot carry a person's name. Hashing happens here, in this
+    chosen so it cannot carry a person's name. Without one, the label is the
+    role and the media type (`"input application/pdf"`): never the file's
+    name, which so often is a person's. Hashing happens here, in this
     process; only the digests are attached to the span, as an event named
     `sigillo.artifact`. The document's content is never sent anywhere.
 
@@ -429,7 +431,7 @@ def artifact(
     effective_media_type = media_type or default_media_type
     attributes = {
         "sigillo.artifact.role": role,
-        "sigillo.artifact.label": label,
+        "sigillo.artifact.label": label or f"{role} {effective_media_type}",
         "sigillo.artifact.media_type": effective_media_type,
         "sigillo.artifact.sha256": _hashlib.sha256(raw).hexdigest(),
     }

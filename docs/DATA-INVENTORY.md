@@ -12,7 +12,24 @@ Everything in a receipt is covered by its hash, its signature and the chain.
 **Nothing recorded in a receipt can later be corrected or erased** without
 breaking verification from that receipt onwards: that is the property sigillo
 exists to provide. So data minimisation has to happen *before* a value reaches
-sigillo, in the agent or its instrumentation. Nothing downstream can undo it.
+the chain. Nothing downstream can undo it.
+
+Since receipt version 4 (2026-10-01) the server does part of that itself, for
+the two places where personal data most often arrived:
+
+- **who an action was for**: `actor.on_behalf_of` is a pseudonym token
+  (`psn_` + 128 random bits), never the identifier that was sent. Which
+  identifier a token stands for is in the `subjects` table, outside the chain,
+  and deleting that row is how a person is erased: their receipts stay valid
+  and no longer lead to them (`docs/SECURITY.md`, "Erasing a person");
+- **input and output it receives in the clear**: digested under a 32-byte
+  random nonce (`input_hash_scheme: "salted"`), kept in the `openings` table,
+  outside the chain and deletable. Short content cannot be found from the
+  digest by trying values, and the same content gives a different digest in
+  every receipt.
+
+Every other text member is still recorded exactly as sent, and the
+recommendations at the end of this page still apply.
 
 ## Field by field
 
@@ -20,7 +37,7 @@ sigillo, in the agent or its instrumentation. Nothing downstream can undo it.
 |---|---|---|
 | `system_id` | the operator, when the system is created (CLI or web view) | 1–128 characters |
 | `actor.agent` | native API: the caller. OTLP: `gen_ai.agent.name`, else `gen_ai.provider.name` / `gen_ai.system` (GenAI) or `llm.system` (OpenInference), else the resource's `service.name`, else `unknown`. The Python SDK sets `service.name` to the `system_id` | 1–256 |
-| `actor.on_behalf_of` | native API: the caller. OTLP: the span attribute `user.id`, else `enduser.id`. Absent when neither is set | 1–256 |
+| `actor.on_behalf_of` | native API: the caller. OTLP: the span attribute `user.id`, else `enduser.id`. Absent when neither is set. **Replaced by the server with a `psn_` token** before the receipt is written (version 4); the identifier goes only into the `subjects` table | 1–256 sent; a token recorded |
 | `action.name` | native API: the caller. OTLP: the tool name, the model name or the agent name, depending on the kind of action, else **the span's own name** | 1–256 |
 | `artifacts[].label`, `artifacts[].media_type` | the `sigillo.artifact(...)` call in the agent's code | 1–256, 1–128 |
 | `model.name`, `model.provider`, `model.digest` | OTLP: `gen_ai.request.model` / `llm.model_name`, the provider attributes above, `sigillo.model.digest` | 1–256 each |
@@ -93,13 +110,18 @@ digest can be checked by anyone who holds, or can guess, the original.
 - **A document**: whoever has the file can confirm it was used. That is the
   point of the feature.
 - **A short or predictable value**: an outcome such as `"colloquio"` /
-  `"non_idoneo"`, a score, a yes or no. The digest can be recovered by
-  hashing each candidate value, because sigillo's digests are not salted.
+  `"non_idoneo"`, a score, a yes or no. A **plain** digest can be recovered by
+  hashing each candidate value. A **salted** one (version 4, what the server
+  computes for content it receives in the clear) cannot, without its nonce:
+  exports leave the nonces out unless asked for chosen receipts, and deleting
+  a receipt's nonces cuts it off from its content for good. A digest the
+  client computed itself (`sigillo.input.sha256`, the native API's
+  `input_hash`) is recorded as it came, marked `plain`, and stays guessable.
 
 ## What travels to the server without being stored
 
-The ingest adapter always reduces `input.value` and `output.value` to digests,
-and discards every other payload attribute of a span (`llm.input_messages`,
+The ingest adapter always reduces `input.value` and `output.value` to digests
+(salted ones, since version 4), and discards every other payload attribute of a span (`llm.input_messages`,
 tool parameters and so on): none of it is ever written to the database, the
 export or the logs. Whether it reaches the server **at all** depends on where
 the digest is computed.
@@ -125,11 +147,12 @@ span is still recorded.
 
 ## Recommendations for an integration
 
-- **`on_behalf_of`**: an opaque identifier, not a name or an email address. For
-  example, the id of the user's account in the system the agent serves, whose
-  meaning stays in that system. The Python SDK's `sigillo.pseudonym(value,
-  key)` turns an existing identifier into one, with a key that stays with the
-  caller and is never sent to sigillo.
+- **`on_behalf_of`**: the server pseudonymises it, but the identifier still
+  reaches the server and sits in the `subjects` table until erased. An opaque
+  identifier is still better than a name or an email address: for example, the
+  id of the user's account in the system the agent serves. The Python SDK's
+  `sigillo.pseudonym(value, key)` turns an existing identifier into one, with a
+  key that stays with the caller and is never sent to sigillo.
 - **Action names**: code identifiers such as tool names, node names or model
   names. Do not create spans whose *name* is built from data (`"reply to Mario
   Rossi"`): for an unrecognised tool or node, the span name is what becomes
@@ -137,6 +160,7 @@ span is still recorded.
 - **`service.name`**: the `system_id`, as the SDK sets it. A hostname or a
   person's name here becomes `actor.agent`.
 - **Artifact labels**: a category (`curriculum`), never a file name. A file name
-  can carry a person's name.
+  can carry a person's name. Without a label, `sigillo.artifact()` uses the
+  role and the media type (`input application/pdf`), never the file name.
 - **Before going live**: export the first receipts and read `receipts.jsonl`.
   Whatever text is there will be in every receipt from then on.

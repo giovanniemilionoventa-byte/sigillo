@@ -236,15 +236,15 @@ describe("the OpenInference dialect", () => {
     expect(byName(batch.actions, "RunnableSequence").action.kind).toBe("agent_step");
   });
 
-  it("records digests of input and output, never the values", () => {
+  it("passes input and output on as values for the store to digest with a salt, never as a plain digest", () => {
+    // The store digests them under a fresh nonce and keeps nothing of them
+    // (privacy-store.test.ts, privacy-e2e.test.ts): a plain digest of short
+    // content would be found by guessing.
     const tool = byName(batch.actions, "search_orders");
-    expect(tool.input_hash).toBe(hashCanonicalJson('{"order_id":"A-1099"}'));
-    expect(tool.output_hash).toBe(hashCanonicalJson('{"status":"shipped"}'));
-
-    const serialised = JSON.stringify(batch);
-    expect(serialised).not.toContain("A-1099");
-    expect(serialised).not.toContain("shipped");
-    expect(serialised).not.toContain("where is my order");
+    expect(tool.input_hash).toBeNull();
+    expect(tool.output_hash).toBeNull();
+    expect(tool.raw_input).toEqual({ value: '{"order_id":"A-1099"}' });
+    expect(tool.raw_output).toEqual({ value: '{"status":"shipped"}' });
   });
 
   it("maps span status to outcome", () => {
@@ -522,7 +522,7 @@ describe("content already hashed by the SDK (fase 9, D6)", () => {
     expect(action?.input_hash).not.toBe(hashCanonicalJson('{"order_id":"A-1099"}'));
   });
 
-  it("falls back to hashing the raw value when the SDK's digest is not a real SHA-256", () => {
+  it("falls back to the raw value when the SDK's digest is not a real SHA-256", () => {
     const span = jsonSpan({
       attributes: {
         "openinference.span.kind": "TOOL",
@@ -532,7 +532,8 @@ describe("content already hashed by the SDK (fase 9, D6)", () => {
       },
     });
     const [action] = adaptSpans([span]).actions;
-    expect(action?.input_hash).toBe(hashCanonicalJson('{"order_id":"A-1099"}'));
+    expect(action?.input_hash).toBeNull();
+    expect(action?.raw_input).toEqual({ value: '{"order_id":"A-1099"}' });
   });
 
   it("is absent, as before, when neither a digest nor a value is present", () => {

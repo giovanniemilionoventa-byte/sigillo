@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { canonicalReceiptBytes, receiptHashHex, safeParseReceipt } from "@sigillo/core";
+import { canonicalReceiptBytes, fromHex, receiptHashHex, safeParseReceipt, saltedDigest } from "@sigillo/core";
 
 interface Vector {
   name: string;
@@ -15,6 +15,7 @@ interface VectorFile {
   format: string;
   receipt_versions: number[];
   vectors: Vector[];
+  salted_digests: { name: string; nonce_hex: string; value: unknown; digest: string }[];
 }
 
 const vectorFile = JSON.parse(
@@ -26,12 +27,12 @@ describe("receipt test vectors", () => {
     expect(vectorFile.vectors.length).toBeGreaterThanOrEqual(10);
   });
 
-  it("declares exactly the versions the vectors actually contain, including v1, v2 and v3", () => {
+  it("declares exactly the versions the vectors actually contain, v1 to v4", () => {
     const actual = [
       ...new Set(vectorFile.vectors.map((vector) => (vector.receipt as { v: number }).v)),
     ].sort();
     expect(vectorFile.receipt_versions).toEqual(actual);
-    expect(actual).toEqual([1, 2, 3]);
+    expect(actual).toEqual([1, 2, 3, 4]);
   });
 
   it("gives every vector a unique name and a unique hash", () => {
@@ -40,6 +41,12 @@ describe("receipt test vectors", () => {
     expect(names.size).toBe(vectorFile.vectors.length);
     expect(hashes.size).toBe(vectorFile.vectors.length);
   });
+
+  for (const salted of vectorFile.salted_digests) {
+    it(`re-derives the salted digest ${salted.name}`, () => {
+      expect(saltedDigest(fromHex(salted.nonce_hex), salted.value)).toBe(salted.digest);
+    });
+  }
 
   for (const vector of vectorFile.vectors) {
     describe(vector.name, () => {
