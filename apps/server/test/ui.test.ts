@@ -775,14 +775,16 @@ describe("the verify-document page", () => {
     expect(VERIFY_DOCUMENT_SCRIPT).toContain("sigilloFingerprintInputs(bytes)");
   });
 
-  it("is in the navigation again, marked as the current page when open", async () => {
+  it("is in the sidebar's tools, marked as the current page when open", async () => {
     const cookie = await signIn();
+    const entry = /<a class="side-item" href="\/ui\/verify-document"( aria-current="page")?>[^]*?verifica documento<\/span><\/a>/;
     for (const url of ["/ui", "/ui/sistemi", `/ui/systems/${SYSTEM}`]) {
       const body = (await app.inject({ method: "GET", url, headers: { cookie } })).body;
-      expect(body).toContain('<a href="/ui/verify-document">verifica documento</a>');
+      expect(entry.exec(body)?.[1], url).toBeUndefined();
+      expect(body.indexOf(UI.nav.tools), url).toBeLessThan(body.indexOf('href="/ui/verify-document"'));
     }
     const own = (await app.inject({ method: "GET", url: "/ui/verify-document", headers: { cookie } })).body;
-    expect(own).toContain('<a href="/ui/verify-document" aria-current="page">verifica documento</a>');
+    expect(entry.exec(own)?.[1]).toBe(' aria-current="page"');
   });
 
   it("finds a v3 text by its text fingerprint and says it is the same text, not the same bytes", async () => {
@@ -1136,9 +1138,15 @@ describe("managing a system: deleting (M3)", () => {
 });
 
 describe("the typefaces", () => {
-  it("serves every font the stylesheet names, from this origin, before any sign-in", async () => {
-    const named = [...STYLE.matchAll(/url\(([^)]+)\)/g)].map((match) => match[1]);
-    expect(named.length).toBe(FONT_FILES.length);
+  it("names no web font: direction B uses the system's own", () => {
+    expect(STYLE).not.toContain("@font-face");
+    expect(STYLE).not.toMatch(/url\(/);
+    expect(STYLE).toContain("-apple-system");
+  });
+
+  it("still serves the files of direction Registro, from this origin, before any sign-in", async () => {
+    const named = FONT_FILES.map((name) => `/fonts/${name}`);
+    expect(named.length).toBe(7);
     for (const url of named) {
       expect(url, url).toMatch(/^\/fonts\/[a-z0-9-]+\.woff2$/);
       const response = await app.inject({ method: "GET", url: url ?? "" });
@@ -1170,3 +1178,122 @@ describe("the typefaces", () => {
     expect(STYLE).not.toMatch(/https?:\/\//);
   });
 });
+
+describe("the shell: sidebar and sign-in (Interfaccia B, B1)", () => {
+  const sidebarOf = (body: string): string => /<div class="sidebar" id="menu">([^]*?)<main id="main"/.exec(body)?.[1] ?? "";
+
+  it("lists each system shown on the main page with its real chain state, as an icon and a word, and its receipts", async () => {
+    healthMonitor.check();
+    const cookie = await signIn();
+    const side = sidebarOf((await app.inject({ method: "GET", url: "/ui/sistemi", headers: { cookie } })).body);
+    // Not anchored yet: the monitor says yellow, and so does the sidebar.
+    expect(healthMonitor.statusFor(SYSTEM, new Date(NOW)).status).toBe("yellow");
+    expect(side).toContain(
+      `<a class="side-item" href="/ui/systems/${SYSTEM}"><span class="dot yellow" aria-hidden="true">`,
+    );
+    expect(side).toContain(`<span class="sr">giallo: </span><span class="side-label">${SYSTEM}</span><span class="side-count">6</span>`);
+  });
+
+  it("follows the chain check, not a fixed word: a tampered chain is red in the sidebar", async () => {
+    const raw = new Database(join(directory, "sigillo.db"));
+    raw.exec("DROP TRIGGER receipts_no_update");
+    const row = raw.prepare("SELECT canonical FROM receipts WHERE system_id = ? AND seq = 2").get(SYSTEM) as { canonical: string };
+    raw.prepare("UPDATE receipts SET canonical = ? WHERE system_id = ? AND seq = 2").run(
+      row.canonical.replace('"outcome":"ok"', '"outcome":"error"'),
+      SYSTEM,
+    );
+    raw.close();
+    const freshMonitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS);
+    freshMonitor.check();
+    const freshApp = buildServer({
+      store,
+      keys,
+      now: () => new Date(NOW),
+      ui: {
+        password: PASSWORD,
+        signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
+        healthMonitor: freshMonitor,
+        checkpointer,
+      },
+    });
+    await freshApp.ready();
+    try {
+      const cookie = await signIn(freshApp);
+      const side = sidebarOf((await freshApp.inject({ method: "GET", url: "/ui/persone", headers: { cookie } })).body);
+      expect(side).toContain('<span class="dot red" aria-hidden="true">');
+      expect(side).toContain('<span class="sr">rosso: </span>');
+    } finally {
+      await freshApp.close();
+    }
+  });
+
+  it("has the register, the systems with a + to create one, the archived and all systems, the tools, the key and a POST sign-out", async () => {
+    await store.createSystem("vecchio", "2026-03-29T15:00:00.000Z");
+    await store.archiveSystem("vecchio", { actor: "test", ts: NOW });
+    const cookie = await signIn();
+    const side = sidebarOf((await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body);
+    expect(side).toContain('<a class="side-item" href="/ui" aria-current="page">');
+    expect(side).toContain(`<a class="side-add" href="/ui/sistemi#crea" aria-label="${UI.systemsPage.createTitle}">`);
+    // An archived system is not in the list, only counted under "archiviati".
+    expect(side).not.toContain('href="/ui/systems/vecchio"');
+    expect(side).toMatch(/href="\/ui\/sistemi\?vista=archiviati">[^]*?archiviati<\/span><span class="side-count">1<\/span>/);
+    expect(side).toContain('href="/ui/sistemi?vista=tutti"');
+    expect(side).toContain(UI.nav.allSystems);
+    expect(side).toContain('href="/ui/persone"');
+    expect(side).toContain(`${UI.brand.signingKey} <code>${signer.keyId}</code>`);
+    expect(side).toMatch(/<form method="post" action="\/ui\/logout"><button type="submit" class="side-item">/);
+  });
+
+  it("marks the system being looked at, and the systems views, as the current entry", async () => {
+    const cookie = await signIn();
+    for (const [url, marked] of [
+      [`/ui/systems/${SYSTEM}`, `href="/ui/systems/${SYSTEM}" aria-current="page"`],
+      [`/ui/systems/${SYSTEM}/manage`, `href="/ui/systems/${SYSTEM}" aria-current="page"`],
+      ["/ui/sistemi", 'href="/ui/sistemi" aria-current="page"'],
+      ["/ui/sistemi?vista=archiviati", 'href="/ui/sistemi?vista=archiviati" aria-current="page"'],
+      ["/ui/sistemi?vista=tutti", 'href="/ui/sistemi?vista=tutti" aria-current="page"'],
+      ["/ui/persone", 'href="/ui/persone" aria-current="page"'],
+    ] as const) {
+      const side = sidebarOf((await app.inject({ method: "GET", url, headers: { cookie } })).body);
+      expect(side, url).toContain(marked);
+      expect(side.match(/aria-current="page"/g), url).toHaveLength(1);
+    }
+  });
+
+  it("opens the sidebar on a phone as a menu, with a link and :target, and no script", async () => {
+    const cookie = await signIn();
+    const body = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
+    expect(body).toContain('<a class="menu-open" href="#menu">');
+    expect(body).toContain('<div class="sidebar" id="menu">');
+    expect(body).toContain('<a class="menu-close" href="#main">');
+    expect(STYLE).toContain(".sidebar:target {");
+    expect(body).not.toContain("<script");
+  });
+
+  it("splits the sign-in page: who this is on the left, the password on the right", async () => {
+    const body = (await app.inject({ method: "GET", url: "/ui/login" })).body;
+    expect(body).toContain(UI.login.pitch);
+    for (const question of [UI.home.q1, UI.home.q2, UI.home.q3]) expect(body).toContain(escapeHtml(question));
+    expect(body).toContain('<form method="post" action="/ui/login" class="login-form">');
+    expect(body).toContain('<input type="password" name="password" autocomplete="current-password" autofocus required>');
+    expect(body).not.toContain('role="alert"');
+    expect(body).not.toContain('required aria-invalid="true"');
+  });
+
+  it("marks the field and says why when the password is wrong, with the same words as a lockout", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/ui/login",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      payload: "password=wrong",
+    });
+    expect(response.statusCode).toBe(401);
+    expect(response.body).toContain('autofocus required aria-invalid="true" aria-describedby="login-error">');
+    expect(response.body).toContain(`<p class="field-error" id="login-error" role="alert">`);
+    expect(response.body).toContain(escapeHtml(UI.login.wrong));
+  });
+});
+
+function escapeHtml(text: string): string {
+  return text.replaceAll("&", "&amp;").replaceAll("'", "&#39;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}

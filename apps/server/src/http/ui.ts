@@ -27,7 +27,20 @@ import {
   UI,
 } from "./strings.js";
 import { registerFonts } from "./fonts.js";
-import { SEAL_SVG, STATE_ICONS, STYLE } from "./style.js";
+import {
+  archivedButShown,
+  escape,
+  homeRows,
+  loginPage,
+  OUTCOME_STATE,
+  page,
+  pageHead,
+  semaphore,
+  shellFor,
+  worstStatus,
+  type NavCurrent,
+} from "./layout.js";
+import { STATE_ICONS } from "./style.js";
 
 /**
  * The operator's view: server-rendered HTML, no framework and no build step,
@@ -71,63 +84,6 @@ export const DEFAULT_LOGIN_LIMITS: ThrottleSettings = {
   lockoutMs: 5 * 60_000,
   maxLockoutMs: 60 * 60_000,
 };
-
-/** Everything that reaches HTML goes through here. */
-function escape(value: unknown): string {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-interface PageOptions {
-  /** The document title, before " — sigillo". */
-  title: string;
-  /** Which entry of the navigation this page belongs to. */
-  current?: "registro" | "sistemi" | "persone" | "verifica";
-  /** The page's own heading: a small line above, the title, and a system_id beneath when there is one. */
-  head?: { eyebrow?: string; h1: string; lead?: string; sid?: string; badges?: string[] };
-  body: string;
-}
-
-function page(options: PageOptions, signingKeyId: string): string {
-  const here = (name: PageOptions["current"]): string => (options.current === name ? ' aria-current="page"' : "");
-  const head =
-    options.head === undefined
-      ? ""
-      : `<div class="page-head">
-${options.head.eyebrow === undefined ? "" : `<p class="eyebrow">${escape(options.head.eyebrow)}</p>`}
-<h1>${escape(options.head.h1)}${(options.head.badges ?? []).map((badge) => ` <span class="badge">${escape(badge)}</span>`).join("")}</h1>
-${options.head.lead === undefined ? "" : `<p class="lead">${escape(options.head.lead)}</p>`}
-${options.head.sid === undefined ? "" : `<code class="sid">${escape(options.head.sid)}</code>`}
-</div>`;
-  return `<!doctype html>
-<html lang="it"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<title>${escape(options.title)} — sigillo</title>
-<style>${STYLE}</style>
-</head><body>
-<a class="skip" href="#main">${escape(UI.brand.skip)}</a>
-<header class="masthead"><div class="masthead-inner">
-  <a class="brand" href="/ui">${SEAL_SVG}<span><span class="wordmark">sigillo</span><span class="tagline">${escape(UI.brand.tagline)}</span></span></a>
-  <nav aria-label="sezioni">
-    <a href="/ui"${here("registro")}>${escape(UI.nav.registro)}</a>
-    <a href="/ui/sistemi"${here("sistemi")}>${escape(UI.nav.sistemi)}</a>
-    <a href="/ui/persone"${here("persone")}>${escape(UI.nav.persone)}</a>
-    <a href="/ui/verify-document"${here("verifica")}>${escape(UI.nav.verificaDocumento)}</a>
-    <form class="inline" method="post" action="/ui/logout"><button type="submit" class="link">${escape(UI.nav.esci)}</button></form>
-  </nav>
-</div></header>
-<main id="main">
-${head}
-${options.body}
-</main>
-<footer class="colophon"><p>${escape(UI.brand.signingKey)} <code>${escape(signingKeyId)}</code></p></footer>
-</body></html>`;
-}
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
@@ -288,27 +244,6 @@ function verifyDocumentResult(
   return `<section id="sigillo-doc-result" class="sheet"><h2>${escape(t.resultTitle)}</h2>${searched}<ul>${items}</ul></section>`;
 }
 
-function loginPage(message?: string): string {
-  return `<!doctype html>
-<html lang="it"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<title>sigillo</title><style>${STYLE}</style></head><body>
-<main class="login" id="main">
-${SEAL_SVG}
-<span class="wordmark">sigillo</span>
-<p class="tagline">${escape(UI.brand.tagline)}</p>
-${message === undefined ? "" : `<p class="notice bad" role="alert">${escape(message)}</p>`}
-<form method="post" action="/ui/login" class="sheet formal">
-  <label>${escape(UI.login.label)}
-    <input type="password" name="password" autocomplete="current-password" autofocus required>
-  </label>
-  <p><button type="submit" class="primary">${escape(UI.login.submit)}</button></p>
-</form>
-</main>
-</body></html>`;
-}
-
 export function registerUi(app: FastifyInstance, options: UiOptions): void {
   // A fresh secret per process: a restart signs everyone out, which for an
   // operator's view is the right trade against storing anything.
@@ -463,7 +398,32 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   });
 
   const keyId = options.signerKey.key_id;
-  const render = (pageOptions: PageOptions): string => page(pageOptions, keyId);
+  /** A page in the shell; the sidebar is read fresh, with the same health as the main page's traffic lights. */
+  interface RenderOptions {
+    title: string;
+    current?: NavCurrent;
+    head?: { eyebrow?: string; h1: string; lead?: string; sid?: string; badges?: string[] };
+    mainClass?: string;
+    body: string;
+  }
+  const render = (pageOptions: RenderOptions): string => {
+    const head = pageOptions.head;
+    const heading =
+      head === undefined
+        ? ""
+        : pageHead(head) +
+          (head.sid === undefined ? "" : `<p><code class="sid">${escape(head.sid)}</code></p>`) +
+          (head.badges ?? []).map((badge) => `<span class="badge">${escape(badge)}</span>`).join(" ");
+    return page(
+      {
+        title: pageOptions.title,
+        ...(pageOptions.current === undefined ? {} : { current: pageOptions.current }),
+        ...(pageOptions.mainClass === undefined ? {} : { mainClass: pageOptions.mainClass }),
+        body: heading + pageOptions.body,
+      },
+      shellFor(store, options.healthMonitor, options.now(), keyId),
+    );
+  };
 
   /** Who is acting, for the administrative log: this view has one password, so an address is what there is. */
   const adminRequest = (request: FastifyRequest): AdminRequest => ({
@@ -510,7 +470,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   const renderSistemi = (view: SystemsView, extra: { notice?: string; error?: string } = {}): string =>
     render({
       title: UI.systemsPage.title,
-      current: "sistemi",
+      current: view === "attivi" ? "sistemi" : view,
       head: { eyebrow: UI.systemsPage.eyebrow, h1: UI.systemsPage.heading },
       body: sistemiPage(store, view, extra),
     });
@@ -588,7 +548,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     );
 
   /** The heading of every page about one system: its name, its system_id, and whether it is archived. */
-  const systemHead = (record: SystemRecord, eyebrow: string): NonNullable<PageOptions["head"]> => ({
+  const systemHead = (record: SystemRecord, eyebrow: string): NonNullable<RenderOptions["head"]> => ({
     eyebrow,
     h1: systemTitle(record),
     sid: record.system_id,
@@ -616,6 +576,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       reply,
       render({
         title: systemTitle(record),
+        current: `system:${systemId}`,
         head: systemHead(record, UI.history.eyebrow),
         body: historyPage(systemId, receipts, query, anchoredSize(store, systemId)),
       }),
@@ -657,6 +618,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       reply,
       render({
         title: `${systemTitle(record)} — ${UI.checkpoints.title}`,
+        current: `system:${systemId}`,
         head: systemHead(record, UI.checkpoints.title),
         body: `<p class="small"><a href="/ui/systems/${link}">← ${escape(UI.systemsPage.history)}</a></p>
 <p class="hint">${escape(UI.checkpoints.explain)}</p>
@@ -678,7 +640,7 @@ ${rows}
   const renderManage = (record: SystemRecord, extra: { notice?: string; error?: string } = {}): string =>
     render({
       title: `${systemTitle(record)} — ${UI.systemsPage.manage}`,
-      current: "sistemi",
+      current: `system:${record.system_id}`,
       head: systemHead(record, UI.manage.eyebrow),
       body: managePage(record, extra),
     });
@@ -852,43 +814,10 @@ function dayBounds(from: unknown, to: unknown): { from?: string; to?: string } {
   return { ...(start === undefined ? {} : { from: start }), ...(end === undefined ? {} : { to: end }) };
 }
 
-const STATE_ICON: Record<ChainStatus, string> = { green: STATE_ICONS.ok, yellow: STATE_ICONS.warn, red: STATE_ICONS.bad };
-
-function semaphore(status: ChainStatus): string {
-  return `<span class="stamp ${status}"><span class="dot ${status}" aria-hidden="true">${STATE_ICON[status]}</span><span class="status-word ${status}">${escape(UI.status[status])}</span></span>`;
-}
-
 /** A receipt's place in the ledger's margin: its number, the day, the time. */
 function ledgerMargin(receipt: Receipt): string {
   const [day, time] = formatTs(receipt.ts_received).split(", ");
   return `<div class="margin"><span class="no">n. ${receipt.seq}</span><span class="when">${escape(day ?? "")}</span> <span class="when">${escape(time ?? "")}</span></div>`;
-}
-
-/**
- * Why an archived system is on the main page after all, or null if it is
- * not. Archiving takes a system out of sight, never a problem with it: a
- * chain that fails verification, or that keeps receiving actions, is shown.
- */
-function archivedButShown(record: SystemRecord, status: ChainStatus): string | null {
-  if (record.archived_at === null) return null;
-  if (status === "red") return UI.home.archivedRed;
-  if (record.last_received !== null && record.last_received > record.archived_at) return UI.home.archivedActive;
-  return null;
-}
-
-/** The systems the main page shows, with their state: archived ones only when archivedButShown says so. */
-function homeRows(store: ReceiptStore, healthMonitor: ChainHealthMonitor, now: Date) {
-  const records = store.listSystemRecords();
-  const rows = records.map((record) => ({ record, health: healthMonitor.statusFor(record.system_id, now) }));
-  const shown = rows.filter(
-    ({ record, health }) => record.archived_at === null || archivedButShown(record, health.status) !== null,
-  );
-  return { records, rows, shown };
-}
-
-/** The worst state among the systems shown: one red makes the page red. */
-function worstStatus(statuses: ChainStatus[]): ChainStatus {
-  return statuses.includes("red") ? "red" : statuses.includes("yellow") ? "yellow" : "green";
 }
 
 /** The main page's title and subtitle: the situation in one sentence. */
@@ -1229,13 +1158,6 @@ function anchoredSize(store: ReceiptStore, systemId: string): number {
     .reduce((size, stored) => Math.max(size, stored.checkpoint.tree_size), 0);
 }
 
-const OUTCOME_STATE: Record<Receipt["outcome"], { css: ChainStatus; icon: string }> = {
-  ok: { css: "green", icon: STATE_ICONS.ok },
-  error: { css: "red", icon: STATE_ICONS.bad },
-  blocked: { css: "yellow", icon: STATE_ICONS.warn },
-  unknown: { css: "yellow", icon: STATE_ICONS.warn },
-};
-
 /** One receipt as a row of the history; it opens on the technical details. */
 function receiptListItem(receipt: Receipt, anchoredBelow: number): string {
   const t = UI.history;
@@ -1392,4 +1314,3 @@ ${
 }`;
 }
 
-export { escape };

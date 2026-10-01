@@ -12,7 +12,18 @@ import type { Receipt } from "@sigillo/core";
  */
 
 export const UI = {
-  nav: { registro: "registro", sistemi: "sistemi", persone: "persone", verificaDocumento: "verifica documento", esci: "esci" },
+  nav: {
+    registro: "registro",
+    sistemi: "sistemi",
+    persone: "persone",
+    verificaDocumento: "verifica documento",
+    esci: "esci",
+    label: "sezioni",
+    allSystems: "Tutti i sistemi",
+    tools: "Strumenti",
+    menu: "Menu",
+    close: "Chiudi",
+  },
   brand: {
     tagline: "registro probatorio per agenti AI",
     skip: "Vai al contenuto",
@@ -25,6 +36,15 @@ export const UI = {
     // the login handler in ui.ts.
     wrong:
       "Accesso non riuscito. Controlla la password; dopo troppi tentativi sbagliati l'accesso resta sospeso per qualche minuto.",
+    lead: "Inserisci la password amministratore per aprire il registro.",
+    restricted: "Accesso riservato all'amministratore di questa installazione.",
+    pitch: "Tre domande, una risposta sola: il registro.",
+    // The three questions (UI.home.q1-q3) as the login page explains them.
+    points: {
+      q1: "Ogni registro viene verificato: integro, da controllare o non supera la verifica.",
+      q2: "Strumenti, modelli, passi e decisioni, una ricevuta firmata per azione.",
+      q3: "Un fascicolo .zip con ricevute, checkpoint e marche temporali.",
+    },
   },
   home: {
     title: "sigillo",
@@ -82,6 +102,27 @@ export const UI = {
     green: "verde",
     yellow: "giallo",
     red: "rosso",
+  },
+  // A system's chain, in the header of its pages: the same check as the
+  // traffic lights of the main page, in three words.
+  chain: {
+    green: "Registro integro",
+    yellow: "Da controllare",
+    red: "Verifica fallita",
+  },
+  system: {
+    tabsLabel: "Sezioni del sistema",
+    receipts: (count: number): string => `${count} ${count === 1 ? "ricevuta" : "ricevute"}`,
+  },
+  exportSheet: {
+    title: (name: string): string => `Genera il fascicolo di ${name}`,
+    period: "Periodo",
+    cancel: "Annulla",
+  },
+  notFound: {
+    title: "non trovato",
+    heading: "Non trovato",
+    system: (systemId: string): string => `Nessun sistema chiamato ${systemId}.`,
   },
   systemsPage: {
     title: "sistemi",
