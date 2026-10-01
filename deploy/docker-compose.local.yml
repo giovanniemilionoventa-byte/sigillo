@@ -39,6 +39,9 @@ services:
       - signer-socket:/run/sigillo
     # It speaks only over the socket: no network at all.
     network_mode: none
+    environment:
+      # How far a receipt's time may be from the signer's own clock (seconds).
+      SIGILLO_SIGNER_CLOCK_TOLERANCE_SECONDS: ${SIGILLO_SIGNER_CLOCK_TOLERANCE_SECONDS:-300}
     logging: *logging
     healthcheck:
       test: ["CMD", "test", "-S", "/run/sigillo/signer.sock"]

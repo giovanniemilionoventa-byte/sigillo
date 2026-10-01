@@ -225,7 +225,7 @@ describe("the main page: È tutto a posto?", () => {
     const before = await history();
     expect(before).toContain(`<span class="pending">${UI.history.anchorPending}</span>`);
     expect(before).not.toContain(UI.history.anchored);
-    const checkpoint = await store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z");
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint !== null) {
       await store.recordTimestamp(checkpoint.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), "2026-03-29T15:00:05.000Z");
     }
@@ -239,7 +239,7 @@ describe("the main page: È tutto a posto?", () => {
   });
 
   it("turns green once a checkpoint anchors the chain", async () => {
-    const checkpoint = await store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z");
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint !== null) {
       await store.recordTimestamp(
         checkpoint.id,
@@ -583,7 +583,7 @@ describe("the checkpoints page", () => {
   });
 
   it("shows each checkpoint and whether a timestamp covers it", async () => {
-    const checkpoint = await store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z");
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     const cookie = await signIn();
 
     let body = (

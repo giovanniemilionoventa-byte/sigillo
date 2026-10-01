@@ -13,6 +13,9 @@ import { buildServer, type ServerOptions } from "../src/http/server.js";
 import { SignerClient } from "../src/signer/client.js";
 import { ReceiptStore } from "../src/storage/store.js";
 
+/** These tests write at fixed dates; the signer's clock check has tests of its own. */
+const ANY_CLOCK = Number.POSITIVE_INFINITY;
+
 /**
  * The server as production runs it: a real signer daemon on a real socket, a
  * real SignerClient, real SQLite. What is checked here is how it behaves when
@@ -66,7 +69,7 @@ beforeEach(async () => {
   databasePath = join(directory, "sigillo.db");
   socketPath = join(directory, "signer.sock");
   keyPath = join(directory, "signer.key");
-  daemon = await startSignerDaemon({ socketPath, key: generateKeyFile(keyPath) });
+  daemon = await startSignerDaemon({ socketPath, stateDir: join(directory, "signer-state"), clockToleranceMs: ANY_CLOCK, key: generateKeyFile(keyPath) });
   signer = await SignerClient.connect(socketPath, { timeoutMs: 1000 });
   store = ReceiptStore.open(databasePath, signer);
   await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
@@ -101,13 +104,13 @@ describe("when the signer goes away", () => {
     expect(down.statusCode).toBe(503);
     expect(down.json()).toEqual({ status: "signer unavailable" });
 
-    daemon = await startSignerDaemon({ socketPath, key: generateKeyFile(join(directory, "unused.key")) });
+    daemon = await startSignerDaemon({ socketPath, stateDir: join(directory, "signer-state"), clockToleranceMs: ANY_CLOCK, key: generateKeyFile(join(directory, "unused.key")) });
     // A signer with a different key is not "back".
     expect((await app.inject({ method: "GET", url: "/healthz" })).statusCode).toBe(503);
     await daemon.close();
 
     const { loadKeyFile } = await import("../../signer/src/index.js");
-    daemon = await startSignerDaemon({ socketPath, key: loadKeyFile(keyPath) });
+    daemon = await startSignerDaemon({ socketPath, stateDir: join(directory, "signer-state"), clockToleranceMs: ANY_CLOCK, key: loadKeyFile(keyPath) });
     expect((await app.inject({ method: "GET", url: "/healthz" })).statusCode).toBe(200);
   });
 

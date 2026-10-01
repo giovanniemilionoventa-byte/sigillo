@@ -1,16 +1,30 @@
 import { createConnection, type Socket } from "node:net";
-import { keyIdFromRawPublicKey } from "@sigillo/core";
+import {
+  keyIdFromRawPublicKey,
+  safeParseCheckpoint,
+  safeParseReceipt,
+  type Checkpoint,
+  type Receipt,
+  type UnsignedReceipt,
+} from "@sigillo/core";
 import type { SigningService } from "../storage/store.js";
+import { refusalFrom, SignerUnavailableError } from "./errors.js";
+
+export { SignerRefusedError, SignerUnavailableError } from "./errors.js";
 
 /**
- * The server's half of the signer protocol. It knows a socket path and nothing
- * else: there is no code path here that can read a key file, and the signing
- * key never enters this process.
+ * The server's half of the signer protocol, version 2 (apps/signer/src/daemon.ts).
+ * It knows a socket path and nothing else: there is no code path here that can
+ * read a key file, and the signing key never enters this process. Nor can it
+ * ask for a signature over an arbitrary hash any more: it hands the signer a
+ * whole receipt, and the signer decides whether that receipt is the next one
+ * of its chain.
  *
  * What comes back over the socket is checked, not trusted: the announced
- * key_id must match the public key, and a signature must have the shape the
- * receipt format requires. Whether a signature actually verifies over the
- * receipt it is for is checked by the store, before anything is written.
+ * key_id must match the public key, a signature must have the shape the
+ * receipt format requires, and a checkpoint or a head must parse as one.
+ * Whether a signature actually verifies over what it is for is checked by the
+ * store, before anything is written.
  *
  * Every request carries an id of its own, and a reply is matched to the request
  * whose id it echoes, never by arrival order. Order alone is not enough: once
@@ -34,6 +48,7 @@ const SIGNATURE = /^[A-Za-z0-9+/]{86}==$/;
 const KEY_ID = /^[0-9a-f]{16}$/;
 const NEWLINE = 0x0a;
 const DEFAULT_TIMEOUT_MS = 5000;
+const PROTOCOL_VERSION = 2;
 
 interface Pending {
   resolve: (reply: Record<string, unknown>) => void;
@@ -44,13 +59,6 @@ interface Pending {
 export interface SignerClientOptions {
   /** How long one request may wait for its reply before it fails. */
   timeoutMs?: number;
-}
-
-export class SignerUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SignerUnavailableError";
-  }
 }
 
 export class SignerClient implements SigningService {
@@ -92,7 +100,7 @@ export class SignerClient implements SigningService {
    */
   async healthy(): Promise<boolean> {
     try {
-      const reply = await this.request({ method: "pubkey" });
+      const reply = await this.request({ method: "PUBKEY" });
       return reply["key_id"] === this.identity?.keyId;
     } catch {
       return false;
@@ -108,14 +116,9 @@ export class SignerClient implements SigningService {
     return this.requireIdentity().publicKeyBase64;
   }
 
-  async sign(digest: Uint8Array): Promise<string> {
-    if (digest.length !== 32) {
-      throw new Error(`a receipt hash is 32 bytes, received ${digest.length}`);
-    }
-    const reply = await this.request({
-      method: "sign",
-      digest: Buffer.from(digest).toString("hex"),
-    });
+  /** Asks for a signature over `receipt`, which the signer gives only to the next receipt of its chain. */
+  async signReceipt(receipt: UnsignedReceipt): Promise<string> {
+    const reply = await this.request({ method: "SIGN_RECEIPT", receipt });
     const sig = reply["sig"];
     if (typeof sig !== "string" || !SIGNATURE.test(sig)) {
       throw new SignerUnavailableError("the signer returned a malformed signature");
@@ -123,6 +126,26 @@ export class SignerClient implements SigningService {
     return sig;
   }
 
+  /** A checkpoint the signer builds from its own state: the root and the time are its own. */
+  async checkpoint(systemId: string): Promise<Checkpoint> {
+    const reply = await this.request({ method: "CHECKPOINT", system_id: systemId });
+    const parsed = safeParseCheckpoint(reply["checkpoint"]);
+    if (!parsed.ok) {
+      throw new SignerUnavailableError(`the signer returned a malformed checkpoint: ${parsed.error}`);
+    }
+    return parsed.checkpoint;
+  }
+
+  /** The last receipt the signer signed for the system, or null if it has signed none. */
+  async head(systemId: string): Promise<Receipt | null> {
+    const reply = await this.request({ method: "GET_HEAD", system_id: systemId });
+    if (reply["head"] === null) return null;
+    const parsed = safeParseReceipt(reply["head"]);
+    if (!parsed.ok) {
+      throw new SignerUnavailableError(`the signer returned a malformed head: ${parsed.error}`);
+    }
+    return parsed.receipt;
+  }
 
   private requireIdentity(): { keyId: string; publicKeyBase64: string } {
     if (this.identity === null) {
@@ -180,7 +203,7 @@ export class SignerClient implements SigningService {
   }
 
   private async handshake(): Promise<{ keyId: string; publicKeyBase64: string }> {
-    const reply = await this.send({ method: "pubkey" });
+    const reply = await this.send({ method: "PUBKEY" });
     const keyId = reply["key_id"];
     const publicKeyBase64 = reply["public_key_base64"];
 
@@ -247,7 +270,11 @@ export class SignerClient implements SigningService {
     clearTimeout(waiting.timer);
 
     if (fields["ok"] !== true) {
-      waiting.reject(new SignerUnavailableError(`the signer refused: ${String(fields["error"])}`));
+      waiting.reject(
+        fields["code"] === "version"
+          ? new SignerUnavailableError(`the signer speaks another protocol version: ${String(fields["error"])}`)
+          : refusalFrom(fields["code"], fields["error"]),
+      );
       return;
     }
     waiting.resolve(fields);
@@ -317,7 +344,7 @@ export class SignerClient implements SigningService {
         reject(new SignerUnavailableError("the signer did not answer in time"));
       }, this.timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
-      socket.write(`${JSON.stringify({ id, ...message })}\n`);
+      socket.write(`${JSON.stringify({ v: PROTOCOL_VERSION, id, ...message })}\n`);
     });
   }
 }

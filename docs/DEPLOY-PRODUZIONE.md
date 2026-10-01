@@ -557,6 +557,44 @@ Il database e la chiave stanno nei volumi e non vengono toccati. **Non rigenerar
 mai la chiave** durante un aggiornamento. Non usare mai `docker compose down -v`:
 `-v` cancella i volumi, e con loro la chiave e il database.
 
+#### Aggiornare da una versione in cui il signer non teneva memoria delle catene
+
+Dal protocollo 2 del signer (ottobre 2026) il signer tiene un registro proprio di
+ogni catena, nel suo volume accanto alla chiave (`/var/lib/sigillo-key/state`),
+e firma solo la ricevuta che viene dopo l'ultima che ha firmato
+(`docs/SECURITY.md`, "The signer's own record of every chain"). Un'installazione
+che già contiene catene va aggiornata **una volta**, a mano, con il server e il
+signer fermi, invece di lanciare `update.sh`:
+
+```sh
+$ cd /srv/sigillo && git pull --ff-only && cd deploy
+$ docker compose build
+$ docker compose stop server signer
+$ docker volume ls | grep sigillo-data          # il nome completo del volume del database
+$ docker compose run --rm --no-deps -v sigillo_sigillo-data:/var/lib/sigillo signer \
+    init-from-db --db /var/lib/sigillo/sigillo.db --state /var/lib/sigillo-key/state
+$ docker compose up -d
+$ docker compose restart caddy
+```
+
+(Se `docker volume ls` mostra un nome diverso da `sigillo_sigillo-data`, usa
+quello.) L'esito atteso del comando `init-from-db`: una riga per ogni sistema,
+`<sistema>: seq N, N+1 receipts, head <64 hex>`, una per ogni sistema eliminato
+in passato (`deleted, its identifier stays retired`) e infine
+`initialised … system(s) … written to the administrative log`. Nella pagina
+Sistemi, il registro amministrativo mostra una riga «registrato nello stato del
+firmatario» per ogni sistema.
+
+Il comando controlla ogni catena (posizioni, collegamenti, impronte, firme) e si
+rifiuta se una non torna, senza scrivere niente. Si esegue una volta sola: una
+seconda volta si rifiuta. Se lo salti, il server parte comunque, ma mostra in
+rosso ogni sistema che esisteva («Il firmatario e il database non concordano»)
+e il signer non firma più nulla per quei sistemi finché non lo esegui.
+
+**Non verificato con Docker** (Docker non gira nell'ambiente in cui è stato
+scritto): il comando è provato con il signer e il database veri, non dentro i
+container.
+
 ### 6.4 Se il signer si riavvia, o la chiave cambia
 
 Se il container `signer` si riavvia, il server si ricollega da solo alla
@@ -580,6 +618,15 @@ $ docker compose up -d
 
 (Il volume deve essere vuoto: se contiene già una chiave nuova, va tolta prima;
 chiedi aiuto prima di farlo.)
+
+**Il registro del signer** (`/var/lib/sigillo-key/state`) sta nello stesso
+volume della chiave. Se il signer riparte con il volume intatto riprende
+esattamente da dove era. Se il volume è andato perso, la copia del punto 3.3
+riporta la chiave ma non il registro: ogni sistema diventa rosso. Il registro
+si ricostruisce allora dal database con `init-from-db`, come al punto 6.3: è
+un atto di fiducia nel database, e resta scritto nel registro amministrativo.
+Non rimettere mai un registro vecchio preso da un backup: il signer si
+troverebbe indietro rispetto al database, e ogni sistema diventerebbe rosso.
 
 ### 6.5 La marca temporale qualificata
 
@@ -606,6 +653,8 @@ verifica.
 | La verifica dice `imprint-only` | manca `--tsa-ca` | punto 5.3 |
 | La verifica dice `FAILED  key` con `--key-id` | il fascicolo è firmato con un'altra chiave | confronta il `key_id` con quello del punto 3.2; se non coincide, il fascicolo non è vostro, o la chiave è cambiata (6.4) |
 | `docker compose build` fallisce durante `pnpm install` | rete verso il registro npm | riprova |
+| Un sistema è rosso: «Il firmatario e il database non concordano» | aggiornamento senza `init-from-db`; registro del signer perso; oppure il database è stato toccato | leggi il dettaglio nel registro amministrativo (pagina Sistemi) o in `docker compose logs server`; nel primo caso esegui il punto 6.3, negli altri **fermati e chiedi aiuto**: nulla viene corretto da solo |
+| Le ricevute tornano `503` e il log del server dice `ts_received … from the signer's clock` | l'orologio del server host è sbagliato | sincronizza l'orologio (punto 1.2); la tolleranza è `SIGILLO_SIGNER_CLOCK_TOLERANCE_SECONDS` (300) |
 
 ---
 

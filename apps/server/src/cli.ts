@@ -162,6 +162,17 @@ program
     const store = ReceiptStore.open(options.db, signer);
     const keys = ApiKeyStore.open(options.db);
 
+    // Every chain's tip against the signer's head, before any request is
+    // served: a receipt signed and lost to a crash is written now; any other
+    // disagreement turns that system red and is left for a person.
+    for (const outcome of await store.reconcileWithSigner()) {
+      if (outcome.status === "recovered") {
+        process.stdout.write(`${outcome.system_id}: recovered seq ${outcome.seq} from the signer\n`);
+      } else if (outcome.status === "diverged") {
+        process.stderr.write(`${outcome.system_id}: the signer and the database disagree: ${outcome.detail}\n`);
+      }
+    }
+
     const uiMounted = adminPassword !== undefined;
     const healthMonitor = uiMounted
       ? new ChainHealthMonitor(

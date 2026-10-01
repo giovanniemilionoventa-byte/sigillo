@@ -113,6 +113,17 @@ export class ChainHealthMonitor {
     if (state?.failed === true) {
       return { status: "red", message: `Verifica fallita: ${state.failureDetail ?? "la catena non torna"}.` };
     }
+    // The signer keeps its own record of every chain. When the two disagree
+    // in any way other than the one the server repairs by itself, nothing
+    // more is written to this chain until a person has looked.
+    if (this.store.signerDivergence(systemId) !== null) {
+      return {
+        status: "red",
+        message:
+          "Il firmatario e il database non concordano su questo registro: nessuna correzione automatica, " +
+          "il dettaglio è nel registro amministrativo.",
+      };
+    }
 
     const tip = this.store.tip(systemId);
     if (tip === null) {

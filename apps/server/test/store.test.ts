@@ -16,6 +16,7 @@ import {
   receiptHash,
   receiptHashHex,
   type Receipt,
+  type UnsignedReceipt,
 } from "@sigillo/core";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
@@ -569,7 +570,7 @@ describe("verifying every signature before it is stored", () => {
   /** The same key, the same key_id, but a genuine signature over some other digest. */
   function signerSigningTheWrongDigest(): TestSigner {
     const honest = createTestSigner();
-    return { ...honest, sign: async () => honest.sign(new Uint8Array(32).fill(7)) };
+    return { ...honest, signReceipt: async () => honest.forge(new Uint8Array(32).fill(7)) };
   }
 
   async function reopenWith(liar: TestSigner): Promise<ReceiptStore> {
@@ -589,7 +590,7 @@ describe("verifying every signature before it is stored", () => {
 
   it("refuses a well-formed signature that does not verify at all", async () => {
     await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
-    const liar = { ...signer, sign: async () => "A".repeat(86) + "==" };
+    const liar = { ...signer, signReceipt: async () => "A".repeat(86) + "==" };
     await reopenWith(liar);
 
     await expect(store.append(event())).rejects.toThrow(/does not verify/);
@@ -599,9 +600,9 @@ describe("verifying every signature before it is stored", () => {
 
   it("refuses a valid signature over a different digest, made with the very same key", async () => {
     await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
-    const other = await signer.sign(receiptHash(store.readChain(SYSTEM)[0] as Receipt));
+    const other = await signer.forge(receiptHash(store.readChain(SYSTEM)[0] as Receipt));
     // A genuine signature by this signer's key — just not over this receipt.
-    const liar = { ...signer, sign: async () => other };
+    const liar = { ...signer, signReceipt: async () => other };
     await reopenWith(liar);
 
     await expect(store.append(event())).rejects.toThrow(/does not verify/);
@@ -611,7 +612,7 @@ describe("verifying every signature before it is stored", () => {
   it("refuses a signature made with a different key under this signer's key_id", async () => {
     await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
     const impostor = createTestSigner();
-    const liar = { ...signer, sign: (digest: Uint8Array) => impostor.sign(digest) };
+    const liar = { ...signer, signReceipt: (receipt: UnsignedReceipt) => impostor.forge(receiptHash(receipt)) };
     await reopenWith(liar);
 
     await expect(store.append(event())).rejects.toThrow(/does not verify/);
@@ -621,7 +622,7 @@ describe("verifying every signature before it is stored", () => {
   it("keeps the chain writable afterwards: the refused position is taken by the next good receipt", async () => {
     await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
     const honest = signer;
-    await reopenWith({ ...honest, sign: async () => "A".repeat(86) + "==" });
+    await reopenWith({ ...honest, signReceipt: async () => "A".repeat(86) + "==" });
     await expect(store.append(event())).rejects.toThrow(/does not verify/);
 
     await reopenWith(honest);
@@ -644,9 +645,12 @@ describe("verifying every signature before it is stored", () => {
   it("refuses a checkpoint whose signature does not verify", async () => {
     await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
     await store.append(event());
-    await reopenWith({ ...signer, sign: async () => "A".repeat(86) + "==" });
+    await reopenWith({
+      ...signer,
+      checkpoint: async (systemId: string) => ({ ...(await signer.checkpoint(systemId)), sig: "A".repeat(86) + "==" }),
+    });
 
-    await expect(store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z")).rejects.toThrow(
+    await expect(store.createCheckpoint(SYSTEM)).rejects.toThrow(
       /does not verify/,
     );
     expect(tableCount("checkpoints")).toBe(0);

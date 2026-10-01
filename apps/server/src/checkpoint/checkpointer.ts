@@ -1,3 +1,4 @@
+import { SignerRefusedError } from "../signer/errors.js";
 import type { ReceiptStore, StoredCheckpoint } from "../storage/store.js";
 import {
   requestTimestampWithRetry,
@@ -41,14 +42,20 @@ export class Checkpointer {
   async checkpointAll(): Promise<StoredCheckpoint[]> {
     const written: StoredCheckpoint[] = [];
     for (const systemId of this.options.store.listSystems()) {
-      const ts = this.options.now().toISOString();
       let checkpoint: StoredCheckpoint | null;
       try {
-        checkpoint = await this.options.store.createCheckpoint(systemId, ts);
+        // The signer builds it, root and time included, from its own record.
+        checkpoint = await this.options.store.createCheckpoint(systemId);
       } catch (error) {
         // An empty system deleted between the listing and its turn has
         // nothing left to check point; that is not a failed run.
         if (!this.options.store.hasSystem(systemId)) continue;
+        // A chain the signer disagrees with gets no checkpoint, and is
+        // already red and in the administrative log; the others still do.
+        if (error instanceof SignerRefusedError) {
+          this.options.onError?.(`no checkpoint for ${systemId}: ${error.message}`);
+          continue;
+        }
         throw error;
       }
       if (checkpoint !== null) {
