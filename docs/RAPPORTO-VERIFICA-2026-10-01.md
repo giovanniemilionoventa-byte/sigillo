@@ -199,5 +199,5 @@ nella simulazione.
    toccate?
 2. **Problema 2**: si decide ora se l'SDK debba calcolare impronte con sale
    (era la domanda 1 della sessione 16)?
-3. Vuoi che apra una pull request per la branch `chore/crosscheck-v4`, e una per
-   i problemi bassi (9–13), che sono piccoli?
+3. La branch `chore/crosscheck-v4` è nella pull request #22, in bozza e non
+   unita. Vuoi che ne apra un'altra per i problemi bassi (9–13), che sono piccoli?
