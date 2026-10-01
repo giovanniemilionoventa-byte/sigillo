@@ -22,7 +22,8 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | N5 | Demo selezione CV | fatto | 20 curriculum, modello fittizio (Ollama scritto ma non eseguibile qui), ispezione simulata, e2e reale; bug corretto in `sigillo.artifact()` |
 | N6 | Documentazione non tecnica | fatto | `ISPEZIONE.md` e `VIDEO.md` (in N5), `PROVA-LOCALE.md` corretto ed esteso alla fase 2 |
 | D1 | Veste grafica "Registro" | fatto | Solo aspetto: token, font incorporati, componenti, Panoramica/Cronologia/Sistemi; 914 test Node (sessione 13) |
-| A1 | Ora provata delle marche (genTime) | fatto | genTime = ora provata di ogni checkpoint: errori `anchor-time`/`anchor-order`, avviso `anchor-delay`, `--strict`; report e PDF con "provato il"/"esistente al più tardi il"; ritentativi e semaforo giallo oltre la tolleranza; scenario di manomissione 18; 955 test Node (sessione 14) |
+| S1 | Il signer custode della catena | fatto | Protocollo 2: il signer firma solo la ricevuta successiva di ogni catena, calcola da sé radice e ora dei checkpoint, tiene il proprio stato (con frontiera di Merkle) nel suo volume; riconciliazione all'avvio, `init-from-db`; 950 test Node, 49 SDK Python, 22 demo (sessione 14) |
+| A1 | Ora provata delle marche (genTime) | fatto | genTime = ora provata di ogni checkpoint: errori `anchor-time`/`anchor-order`, avviso `anchor-delay`, `--strict`; report e PDF con "provato il"/"esistente al più tardi il"; ritentativi e semaforo giallo oltre la tolleranza; scenario di manomissione 18; dopo il merge con S1: 997 test Node, 49 SDK Python, 22 demo (sessione 15) |
 
 ## Decisioni prese dal committente — 2026-09-21
 
@@ -2577,7 +2578,123 @@ richiede (frase riassuntiva, colonne, "Ancorata"/"In attesa", "attivo", tipo di 
 icone, ancoraggio in cronologia. Screenshot prima/dopo (1280 e 390 px) in `design/screenshots/`.
 Verificatore non toccato.
 
-### Sessione 14 — 2026-10-01 — il genTime diventa l'ora provata di ogni checkpoint
+### Sessione 14 — 2026-10-01 — il signer custode della catena (S1)
+
+**Il problema.** Il signer firmava qualunque impronta di 32 byte gli arrivasse sul socket. Con il
+server compromesso, l'attaccante non rubava la chiave ma otteneva comunque firme vere su ricevute
+false, catene riscritte e checkpoint su storie false. **Ora un server compromesso può al massimo
+aggiungere ricevute nuove in coda; non può riscrivere né biforcare il passato.** La firma resta
+Ed25519 sui 32 byte dell'impronta: ricevute, checkpoint ed export esistenti restano validi, e il
+verificatore non è stato toccato (formato invariato, nessun `v` nuovo).
+
+**Cosa è cambiato.**
+1. **Protocollo del socket, versione 2** (`apps/signer/src/daemon.ts`, `signer.ts`). Il metodo
+   `sign` (hash grezzo) non esiste più. Quattro richieste, ognuna con `v: 2` e `id` obbligatori,
+   riga massima 256 KiB, schema zod strict (un campo sconosciuto è un rifiuto), elaborate una alla
+   volta (la gestione è sincrona dalla lettura della riga alla risposta, fsync compreso), al massimo
+   16 connessioni:
+   - `SIGN_RECEIPT` (ricevuta senza `sig`): il signer ricalcola l'impronta con `packages/core` e
+     firma solo se `seq` = testa+1 e `prev_hash` = impronta della testa; per un sistema mai visto
+     solo `seq` 0 (che dev'essere una genesi); `key_id` dev'essere il suo; `ts_received` entro la
+     tolleranza dal suo orologio (default 300 s, `--clock-tolerance-seconds` o
+     `SIGILLO_SIGNER_CLOCK_TOLERANCE_SECONDS`) e mai precedente alla ricevuta prima. Stringhe non
+     Unicode ben formato rifiutate. Rifiuti con un `code` (`sequence`, `clock`, `invalid`,
+     `malformed`, `version`, `unknown_system`);
+   - `CHECKPOINT(system_id)`: dimensione, radice e ora le calcola il signer dal proprio stato e dal
+     proprio orologio; la richiesta non può portarne nessuna;
+   - `GET_HEAD(system_id)`: l'ultima ricevuta firmata, firma compresa, o `null`;
+   - `PUBKEY`.
+2. **Stato del signer** (`state.ts`), nel suo volume (`/var/lib/sigillo-key/state`, cartella 0700,
+   file 0600), mai nel DB del server: un file per sistema (nome = SHA-256 del `system_id`) con
+   `seq`, impronta, ultima ricevuta firmata e frontiera di Merkle. Scrittura atomica e durevole
+   (file a parte, fsync, rename, fsync della cartella) **prima** della risposta. Se lo stato
+   nuovo non si riesce a scrivere, il signer non risponde con la firma e smette di servire del
+   tutto (il comando esce, Docker lo riavvia da ciò che è su disco): così non può mai firmare due
+   volte la stessa posizione. Un file incoerente impedisce al signer di partire; un `.tmp`
+   lasciato da un crash viene scartato.
+3. **Frontiera di Merkle in core** (`packages/core/src/merkle-frontier.ts`): append, radice,
+   serializzazione, stessa convenzione delle foglie di `merkle.ts`. Test property-based (fast-check):
+   radice uguale al calcolo completo a ogni dimensione, fino a 300 foglie casuali, e dopo un giro di
+   serializzazione; vettori RFC 6962 0..17.
+4. **Server.** `SigningService` ha ora `signReceipt`, `checkpoint`, `head`. All'avvio (`serve`) e a
+   ogni rifiuto di posizione confronta la testa del DB con `GET_HEAD`: se il signer è avanti di una
+   sola ricevuta che si aggancia alla testa del DB la inserisce (log amministrativo
+   `signer.recovered`, con trace/span id); se quello span è già nella catena, o in qualsiasi altro
+   caso, **semaforo rosso** (anche nella pagina, nuovo messaggio), voce `signer.divergence` nel log
+   amministrativo, nessuna correzione. Il checkpoint viene scritto solo se dimensione e radice del
+   signer coincidono con quelle del DB, altrimenti rosso e niente checkpoint. Un rifiuto del signer
+   è un `503`.
+5. **`sigillo-signer init-from-db --db --state`** (`init-from-db.ts`), una tantum, con server e
+   signer fermi: controlla ogni catena (posizioni, collegamenti, impronte, firme sotto le chiavi di
+   `signing_keys`), scrive lo stato, segna come ritirati gli id dei sistemi cancellati (il signer
+   non darà mai loro una nuova catena), scrive una voce `signer.init` per sistema nel log
+   amministrativo e un marcatore. Una seconda esecuzione è rifiutata; un sistema che il signer
+   conosce già con un'altra testa non viene mai sovrascritto (e allora non scrive niente).
+
+**Due scelte che cambiano un comportamento esistente** (le dico perché toccano test esistenti):
+- **Lotto OTLP non più tutto-o-niente.** Ogni ricevuta è ora nella sua transazione, scritta appena
+  firmata. Motivo: una ricevuta firmata dal signer non deve mai essere annullata dal server,
+  altrimenti un crash a metà lotto lascerebbe il signer avanti di più ricevute, caso che per
+  specifica non si recupera da solo. Prima di firmare la prima ricevuta l'intero lotto viene
+  controllato (un evento malformato rifiuta il lotto senza scrivere niente). Il reinvio
+  dell'esportatore viene comunque scritto una volta sola grazie a trace/span id (fase 9).
+  `batch-atomic.test.ts`: la prima asserzione ora si aspetta la ricevuta già firmata (`tool-0`)
+  invece della sola genesi; il risultato finale dopo il reinvio è identico.
+- **`ts_received` mai precedente alla ricevuta prima.** Il signer lo rifiuterebbe; il server ora
+  lo porta al valore della ricevuta precedente se il proprio orologio è tornato indietro, invece di
+  bloccare la catena finché l'orologio non recupera.
+
+**Test.** Node: da 914 a **950** verdi (1 saltato, come prima). Nuovi: frontiera (8), protocollo del
+signer (36, il vecchio `daemon.test.ts` riscritto) e suo stato (6), scenari di manomissione nuovi
+`signer-guard.test.ts` (12) e migrazione `signer-migration.test.ts` (4), tutti con il processo
+`sigillo-signer` vero e crittografia vera. **Scenari nuovi**: seq già usato con contenuto diverso
+(rifiutato, anche con contenuto identico); `prev_hash` sbagliato e seconda genesi (rifiutati);
+checkpoint su albero falso (non richiedibile: il signer rifiuta radice/dimensione/ora; DB
+riscritto → nessun checkpoint, rosso, log); crash tra firma e insert (recuperato all'avvio da
+`sigillo-server serve` vero, recuperato alla scrittura successiva, reinvio OTLP non duplicato);
+riavvio del signer (kill -9) con stato conservato; signer avanti di due e signer senza stato
+(rosso, log, nulla corretto); orologio a +10 minuti (rifiutato, non è una divergenza). Python: SDK
+**49** e demo **22** verdi (signer vero con `--state`). `smoke-dist` e cross-check Python verdi.
+
+**I 17 scenari di manomissione esistenti** (`tamper.test.ts`, 26 test) restano verdi. Tre cose
+cambiano nel modo in cui sono costruiti, non in cosa verificano: (a) 7b e 13 ri-firmavano "con il
+socket del signer"; il socket ora lo rifiuta, quindi firmano con la chiave stessa (`forge` nel
+signer di prova), cioè l'attaccante che ha la chiave o firme ottenute prima dell'aggiornamento;
+(b) l'ora del checkpoint ora è del signer, quindi il test fissa l'orologio del signer invece di
+passarla allo store; (c) lo scenario 3d costruisce il secondo fascicolo come seconda installazione
+con la stessa chiave ma uno stato proprio.
+
+**Altri test esistenti adattati all'interfaccia nuova**, senza cambiare cosa provano:
+`createCheckpoint(system)` non prende più l'ora; i test che scrivono a date fisse usano il signer in
+processo senza controllo dell'orologio (il controllo ha test propri); `signer-client.test.ts` scrive
+all'ora vera e il caso "scrittura scaduta" ora si aspetta la ricevuta che il signer ha firmato
+davvero (recuperata) prima di quella successiva; `key-rotation.test.ts` mantiene lo stato del
+signer quando cambia la chiave (stesso volume); `dedup.test.ts` (database di prima della fase 9)
+passa da `init-from-db`.
+
+**Documentazione.** `SECURITY.md`: nuova sezione "The signer's own record of every chain";
+riscritte "If the server is compromised" e "What a compromised server can do" (le affermazioni sul
+socket che firma qualunque impronta non erano più vere). `DEPLOY-PRODUZIONE.md`: aggiornamento con
+`init-from-db` (6.3), registro del signer perso (6.4), due righe nuove in "Se qualcosa va storto".
+`API.md`, `README.md`, Dockerfile (`--state`), compose (tolleranza), `.env.example`,
+`run_demo.sh`.
+
+**Dipendenze.** `apps/signer` usa ora `zod` e `better-sqlite3` (quest'ultima solo per
+`init-from-db`): entrambe già nella lista approvata. Nessuna dipendenza nuova.
+
+**Dimensione del verificatore** (regola 5): invariata, il verificatore non è stato toccato.
+
+**Cosa non è verificato.** Docker qui non gira: il comando `init-from-db` dentro i container (con
+il volume del database montato nel signer, punto 6.3) è scritto ma non eseguito; il nome del volume
+`sigillo_sigillo-data` va controllato con `docker volume ls`.
+
+**Limiti, scritti anche in `SECURITY.md`.** Il server compromesso può ancora aggiungere ricevute
+false e aprire catene nuove; il verificatore non consulta il signer, quindi un export tagliato si
+scopre ancora con `--previous`; `init-from-db` si fida del database una volta, all'aggiornamento:
+ciò che fosse stato riscritto col vecchio socket prima resta firmato; chi legge il volume del
+signer ha anche la chiave.
+
+### Sessione 15 — 2026-10-01 — il genTime diventa l'ora provata di ogni checkpoint
 
 Il buco: le marche RFC 3161 erano controllate solo con `openssl ts -verify`, e il loro genTime non
 veniva confrontato con nulla. Chi controlla server e chiave poteva riscrivere tutta la catena,
@@ -2639,6 +2756,32 @@ da 2099 a **2437 di solo codice (+338)**. Sopra la soglia, quindi lo annoto. Cos
 `anchoring.ts` (205, la regola dei tempi, la metà commenti e tipi); nel verificatore +143 (opzioni,
 `--strict`, la sezione del report, il confronto genTime DER/openssl). Nessuna astrazione nuova oltre
 `anchorTimesOf`, che evita di scrivere due volte lo stesso adattamento in CLI ed esportatore.
+
+**Merge con `main` dopo S1 (signer custode della catena, sessione 14).** I due rami sono stati
+sviluppati in parallelo; merge di `origin/main` nel ramo (nessun rebase). Conflitti risolti tenendo
+entrambe le parti:
+- `store.ts`: import di `SignerRefusedError` (S1) tenuto; l'import di `genTimeOfToken` dal vecchio
+  `timestamp/gentime.ts` tolto, perché ora viene da `@sigillo/core` (già nell'import di core).
+- `chain-health.test.ts`, `export-e2e.test.ts`: S1 ha tolto l'ora dal `createCheckpoint` (il checkpoint
+  lo data il signer con il proprio orologio). I test di questo ramo ora muovono l'orologio del signer
+  (`now`) invece di passare l'ora al server; in `export-e2e` signer e TSA seguono lo stesso orologio
+  iniettato del server, con lo `stateDir` e la tolleranza di S1.
+- `SECURITY.md`: tenuto l'elenco di S1 ("what a compromised server can do"); la voce "replace
+  everything" di questo ramo è stata riscritta per chi ha la chiave stessa o firme di prima del
+  protocollo 2, e la voce sull'orologio unisce il controllo del signer e quello `anchor-time`.
+- `PROGRESS.md`: entrambe le righe di tabella (S1, A1) e entrambe le sessioni; questa rinumerata 15.
+- Lo scenario 18 firma con `forge` (la chiave stessa), come S1 ha fatto per 7b e 13: il socket del
+  signer, da protocollo 2, rifiuta quelle firme.
+Nessuna collisione di numeri: S1 non ha aggiunto scenari numerati in `tamper.test.ts` (i suoi sono in
+`signer-guard.test.ts`), né migrazioni di schema; versioni di ricevute e protocollo invariate.
+Effetto utile dell'incrocio: l'ora dichiarata di un checkpoint ora è quella del signer, non del
+server, e `anchor-delay` la confronta con il genTime. Nuovo test d'incrocio
+`signer-anchor-crossing.test.ts`: catena v1→v2→v3 firmata dal daemon del signer sul socket vero
+(controllo d'orologio attivo), checkpoint del signer marcati dalla TSA locale, export verificato da
+`sigillo-verify` (anche `--strict`), errori `anchor-time` su una ricevuta v2 e su una v3, avviso di
+ritardo su ricevute v3, e PDF/VERIFY.md con le ore provate accanto alle impronte dei documenti.
+Dopo il merge: Node 997 verdi (950 di main + 41 di questo ramo + 6 d'incrocio), 1 saltato (FreeTSA
+in rete); SDK Python 49, demo 22, cross-check dei vettori Python, smoke della dist: tutti verdi.
 
 **Da decidere** (non bloccante): i default 5 minuti di tolleranza e 60 di ritardo massimo sono quelli
 della richiesta. Con un `SIGILLO_CHECKPOINT_MINUTES` più lungo di 60 il ritardo resta misurato

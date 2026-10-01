@@ -8,9 +8,9 @@ or an attacker would want to know before relying on a sigillo log.
 One Ed25519 private key signs every receipt and every checkpoint.
 
 It lives in a file owned by the **signer**, a separate process that does one
-thing: it answers `pubkey`, and it signs 32-byte digests handed to it over a
-local Unix socket. It has no network access at all, and in the supplied
-`docker-compose.yml` it runs with `network_mode: none`.
+thing: over a local Unix socket, it signs the next receipt of each chain, and
+checkpoints over the chains it has signed. It has no network access at all, and
+in the supplied `docker-compose.yml` it runs with `network_mode: none`.
 
 - The key file is written with permission `0600`, and the signer **refuses to
   load a key file that anyone else can read**.
@@ -32,35 +32,49 @@ local Unix socket. It has no network access at all, and in the supplied
 - In Docker the key volume is mounted on the signer only. The server and the
   signer share one volume, and it contains one socket.
 
-The signer is not a general signing oracle. `sign` takes a 64-character
-lowercase hex digest and nothing else: not a document, not a digest of the wrong
-length, not a digest in a different encoding. Every other input is refused. A
-request may also carry an `id`, which the signer echoes on its reply and which
-is the only thing the server matches replies by: a reply that arrives after its
-request has timed out is ignored, and can never complete a later request.
+The signer is not a signing oracle. Until protocol version 2 it signed any
+32-byte digest it was handed; it no longer signs a digest at all. It speaks
+four requests (`PUBKEY`, `SIGN_RECEIPT`, `CHECKPOINT`, `GET_HEAD`; see "The
+signer's own record of every chain" below), each one line of at most 256 KiB,
+each checked against a strict schema in which an unknown field is a refusal,
+and handles them one at a time. Every request carries an `id`, which the
+signer echoes on its reply and which is the only thing the server matches
+replies by: a reply that arrives after its request has timed out is ignored,
+and can never complete a later request.
 
 What the signer returns is checked, not trusted. Before a receipt or a
 checkpoint is written, the server verifies its signature over exactly the bytes
 it is about to store, under the public key the signer announced (whose
 identifier must be the `key_id` the record carries). A signature that does not
-verify is refused and the transaction is rolled back: nothing is written, and
-the position in the chain stays free for the next record.
+verify is refused and the transaction is rolled back: nothing is written. If
+the signer did sign that position, its own record says so, and the next write
+takes that receipt, with its real signature, from `GET_HEAD` (below) before
+going on.
 
 ## If the server is compromised
 
 Assume an attacker has full control of the server process and its database file.
 
-**What they can do.** Write new receipts, because the server's job is to write
-receipts and the signer will sign any digest it is given. A sigillo log does not
-prevent an attacker with the server from adding false entries going forward.
-They can also delete the database file, or replace it with another one.
+**What they can do.** Write new receipts at the end of each chain, because the
+server's job is to write receipts and the signer signs the next one of every
+chain it is given, with a `ts_received` within the signer's clock tolerance
+(five minutes by default). Open new chains under identifiers the signer has
+never seen. A sigillo log does not prevent an attacker with the server from
+adding false entries going forward. They can also delete the database file, or
+replace it with another one.
 
-And, while they hold the server, **rewrite what is not yet anchored, and have
-it signed with the real key.** The signer's isolation stops the key from being
-*taken*: once the attacker is out, they cannot sign any more. It does not stop
-the key from being *used* through the socket while they are in, and the signer
-cannot tell a legitimate digest from a forged one. The key alone is therefore
-no protection for the past; what protects it is below.
+**What the signer stops them doing, even before anything is anchored.** Since
+protocol version 2 the signer keeps its own record of every chain (below), and
+signs a receipt only if it is the next one: the position after the last it
+signed, hanging off that receipt's hash. Through the socket, an attacker cannot
+get a second signature at a position already signed (a rewrite), a receipt
+that hangs off anything but the last one signed (a fork), a second genesis for
+a chain that exists, or a checkpoint over any tree but the one the signer
+built itself. Rewriting the past now takes the key itself, not just the
+socket. A database rewritten or cut short underneath the server no longer
+agrees with the signer's record: the server finds it at its next start, at the
+next refused position or at the next checkpoint, turns the system red, writes
+it to the administrative log, and signs no checkpoint over it.
 
 **What they cannot do.** Change or remove a receipt that is already covered by a
 checkpoint that has been timestamped, without that being visible to someone who
@@ -93,6 +107,73 @@ backdated by whoever holds the key.
 moment of the theft. Timestamped checkpoints still bound what existed before
 that moment: an auditor holding an old export can show that the receipts in it
 are the ones that existed then.
+
+## The signer's own record of every chain
+
+Protocol version 2 of the signer socket (`apps/signer/src/daemon.ts`) replaces
+"sign these 32 bytes" with requests the signer can judge for itself:
+
+| request | what the signer does |
+|---|---|
+| `SIGN_RECEIPT` (an unsigned receipt) | recomputes its hash with `packages/core`, and signs it only if `seq` is its last `seq` + 1 and `prev_hash` is its last receipt's hash (for a system it has never seen: only `seq` 0, a genesis); `key_id` must be its own; `ts_received` must be within the clock tolerance of its own clock and not earlier than the receipt before |
+| `CHECKPOINT` (a `system_id`) | signs a checkpoint whose size, root and time it computes itself, from its record and its clock; the request cannot carry any of them |
+| `GET_HEAD` (a `system_id`) | returns the last receipt it signed for that system, signature included, or nothing |
+| `PUBKEY` | returns the key identifier and the raw public key |
+
+The signature is unchanged: Ed25519 over the 32 bytes of the receipt hash (or
+checkpoint hash). Every receipt, checkpoint and export made before stays valid,
+and the verifier did not change.
+
+**The record.** For each system, in the signer's own volume next to the key
+(`/var/lib/sigillo-key/state`, one file per system, readable by the signer's
+user only): the last `seq`, its hash, the last signed receipt, and the Merkle
+frontier of the chain (the roots of the perfect subtrees of RFC 6962,
+`packages/core/src/merkle-frontier.ts`), from which a checkpoint's root is
+computed without keeping the chain. A file is replaced atomically and durably
+— written aside, `fsync`, renamed, the directory `fsync`ed — **before** the
+signer answers: a signature the server has received is one the signer will
+remember after a crash. If a new state cannot be made durable, the signer
+returns no signature and stops serving altogether (the command exits, and
+Docker restarts it from what is on disk): what it holds in memory might no
+longer be what is on disk, and it must never sign the same position twice.
+The record is never in the server's database; the server cannot read or
+change it. A state file that does not hold together stops the signer from
+starting.
+
+**When the database and the record disagree.** The server compares every
+chain's tip with `GET_HEAD` when it starts, and again whenever the signer
+refuses a receipt's position. One case has a safe answer and is repaired by
+itself: the signer **one receipt ahead**, that receipt hanging off the
+database's tip — the server died between the signature and the insert. The
+receipt is written, once (a span already on the chain under the same
+`trace_id`/`span_id` makes it a divergence instead), and the repair goes to the
+administrative log as `signer.recovered`. **Every other disagreement** — the
+signer further ahead, behind, on another branch, with no record of a chain the
+database has, or a checkpoint whose root is not the database's — turns the
+system red, goes to the administrative log as `signer.divergence`, and is not
+corrected: which side is right is for a person to establish. Until then the
+signer refuses that chain's next receipt.
+
+An OTLP batch is written receipt by receipt for the same reason: a receipt the
+signer has signed is never rolled back by the server, so a crash part-way
+leaves the signer at most one receipt ahead. The exporter's resend of the
+batch finds the receipts already written by `trace_id`/`span_id`.
+
+**Upgrading an installation from before the record existed.** Run
+`sigillo-signer init-from-db` once, with the server and the signer stopped
+(`docs/DEPLOY-PRODUZIONE.md`). It reads every chain from the database, checks
+its positions, links, hashes and signatures, writes the signer's record, marks
+every system deleted earlier as retired (its identifier is never given a chain
+again, by the signer as well as by the server), and writes one `signer.init`
+entry per system to the administrative log. It refuses to run a second time,
+and never overwrites a system the signer already knows. Until it has run, the
+server shows every existing system red, and the signer refuses to extend them.
+
+**What the record does not protect.** Whoever can read the signer's volume has
+the key as well, and can sign anything. A server that holds the socket can
+still add false receipts and open new chains. And `init-from-db` takes the
+database's word once: what was rewritten through the old socket before the
+upgrade stays as it was signed.
 
 ## Renaming, archiving and deleting a system
 
@@ -481,33 +562,47 @@ and nothing else.
   chain, indistinguishably from the agent. Revoking the key stops it from the
   next request on; what was written before stays.
 - **`ts_event`** is the source's claim and is never checked against anything.
-- **Duplicates.** An OTLP batch retried after a partial failure can record the
-  same span twice (review point 6); the two receipts are both genuine records
-  of what arrived.
+- **Duplicates.** A span resent by an OTLP exporter is recognised by its
+  `trace_id`/`span_id` and written once. A native API request retried after a
+  failure carries no such name, and can be recorded twice; the two receipts
+  are both genuine records of what arrived.
 
 **What a compromised server can do before anyone checks.**
-- **Rewrite what is not yet timestamped.** Receipts since the last anchored
-  checkpoint (up to `SIGILLO_CHECKPOINT_MINUTES`, plus however long the
-  authority is unreachable) can be rewritten and re-signed with the real key
-  through the signer's socket. Nothing in the chain shows it.
-- **Replace everything, if nothing was ever handed out.** A database replaced
-  wholesale with a consistent forged history, signed through the same signer and
-  anchored afresh, has every hash, signature, root and token valid. What gives
-  it away is the time the authority attests (`genTime`), which `sigillo-verify`
-  takes as the proven time of each checkpoint: the fresh tokens lie long after
-  the checkpoints' own times, and that is an `anchor-delay` warning (verdict
-  `OK, with a warning`; an error, exit 1, with `--strict`). Tamper scenario 18.
-  A forger who also moves the checkpoints' own times forward avoids the
-  warning, but then every receipt is proven to exist only from the day of the
-  forgery, which the report prints for each range of receipts ("existed no
-  later than …"); an auditor who expects the records to be older sees it
-  there. An export given to someone earlier (`--previous`) catches either.
-- **Move the clock, within limits.** `ts_received` is the server's own clock.
-  It cannot be set after a timestamp that already includes the receipt
-  (`anchor-time`, an error beyond `--clock-tolerance`, 5 minutes by default),
-  and the timestamps must run forward as the tree grows (`anchor-order`). But
-  between two timestamps, only the server's clock vouches for when something
-  happened.
+- **Add false receipts, and open false chains.** At the end of every chain,
+  and under any identifier the signer has never signed for. The signer cannot
+  tell a true action from a made-up one.
+- **Hide the chain from an export.** An export cut short, built from a
+  database the attacker controls, is not checked against the signer by
+  `sigillo-verify`: as before, it is caught against an earlier export
+  (`--previous`). The operator's own server shows the system red as soon as it
+  compares the database with the signer again.
+- **Use what was signed before protocol version 2.** Until an installation is
+  upgraded and `sigillo-signer init-from-db` has run, the signer signed any
+  digest, so a history rewritten before that moment can carry genuine
+  signatures. `init-from-db` takes the database's word once, at the upgrade:
+  it checks every chain's links, hashes and signatures, but it cannot tell a
+  chain rewritten earlier through the old socket from a true one.
+- **Replace everything, with the key itself or with signatures from before
+  protocol version 2.** A consistent forged history, signed with the real key
+  and anchored afresh, has every hash, signature, root and token valid. What
+  gives it away is the time the authority attests (`genTime`), which
+  `sigillo-verify` takes as the proven time of each checkpoint: the fresh
+  tokens lie long after the checkpoints' own times, and that is an
+  `anchor-delay` warning (verdict `OK, with a warning`; an error, exit 1, with
+  `--strict`). Tamper scenario 18. A forger who also moves the checkpoints'
+  own times forward avoids the warning, but then every receipt is proven to
+  exist only from the day of the forgery, which the report prints for each
+  range of receipts ("existed no later than …"); an auditor who expects the
+  records to be older sees it there. An export given to someone earlier
+  (`--previous`) catches either.
+- **Move the clock, within the tolerance.** `ts_received` is the server's own
+  clock; the signer refuses one further than `SIGILLO_SIGNER_CLOCK_TOLERANCE_SECONDS`
+  (300) from its own, or earlier than the receipt before it. `sigillo-verify`
+  also refuses one later than a timestamp that already includes the receipt
+  (`anchor-time`, beyond `--clock-tolerance`, 5 minutes by default), and
+  timestamps that go backwards as the tree grows (`anchor-order`). Within
+  those windows, and between two timestamps, only those clocks vouch for when
+  something happened.
 
 **What a single archive cannot show about itself.**
 - **That the key is the operator's.** A wholly fabricated archive, signed with

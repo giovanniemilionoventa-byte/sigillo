@@ -7,7 +7,7 @@ import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
 import { adaptSpans } from "../ingest/adapter.js";
 import { decodeJsonTraces, decodeProtobufTraces, OtlpDecodeError } from "../ingest/otlp.js";
-import { SignerUnavailableError } from "../signer/client.js";
+import { SignerRefusedError, SignerUnavailableError } from "../signer/errors.js";
 import type { ReceiptStore } from "../storage/store.js";
 import { registerUi } from "./ui.js";
 
@@ -176,6 +176,13 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (error instanceof SignerUnavailableError) {
       request.log.warn({ err: error }, "signer unavailable");
       return reply.code(503).send({ error: "the signer is not available; try again later" });
+    }
+    // The signer said no to a position or a time: nothing the caller sent
+    // was wrong, and the operator's view shows the system red when it is not
+    // something a retry will get past.
+    if (error instanceof SignerRefusedError) {
+      request.log.warn({ err: error }, "signer refused");
+      return reply.code(503).send({ error: "the signer refused to sign this receipt now; try again later" });
     }
     const status = error.statusCode ?? 500;
     if (status >= 500) {
@@ -370,7 +377,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     } catch (error) {
       // The signer being away is not the caller's fault; the error handler
       // turns it into a 503. Anything else the store refused was the request.
-      if (error instanceof SignerUnavailableError) throw error;
+      if (error instanceof SignerUnavailableError || error instanceof SignerRefusedError) throw error;
       return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
     }
 

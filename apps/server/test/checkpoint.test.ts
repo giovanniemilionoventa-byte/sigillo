@@ -30,9 +30,10 @@ let clock: Date;
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "sigillo-checkpoint-"));
   databasePath = join(directory, "sigillo.db");
-  signer = createTestSigner();
-  store = ReceiptStore.open(databasePath, signer);
   clock = new Date("2026-03-29T15:00:00.000Z");
+  // A checkpoint's time is the signer's own; here the signer shares the test's clock.
+  signer = createTestSigner({ now: () => clock });
+  store = ReceiptStore.open(databasePath, signer);
 });
 
 afterEach(() => {
@@ -79,7 +80,7 @@ const tokenResponse = (): Response =>
 describe("writing a checkpoint", () => {
   it("commits to every receipt in the chain", async () => {
     await writeChain(9);
-    const stored = await store.createCheckpoint(SYSTEM, clock.toISOString());
+    const stored = await store.createCheckpoint(SYSTEM);
 
     expect(stored).not.toBeNull();
     if (stored === null) return;
@@ -97,7 +98,7 @@ describe("writing a checkpoint", () => {
 
   it("proves the inclusion of every receipt it covers", async () => {
     await writeChain(11);
-    const stored = await store.createCheckpoint(SYSTEM, clock.toISOString());
+    const stored = await store.createCheckpoint(SYSTEM);
     if (stored === null) throw new Error("no checkpoint");
 
     const hashes = store.readReceiptHashes(SYSTEM).map((hash) => fromHex(hash));
@@ -113,17 +114,17 @@ describe("writing a checkpoint", () => {
 
   it("writes nothing when the chain has not grown", async () => {
     await writeChain(4);
-    expect(await store.createCheckpoint(SYSTEM, clock.toISOString())).not.toBeNull();
-    expect(await store.createCheckpoint(SYSTEM, "2026-03-29T16:00:00.000Z")).toBeNull();
+    expect(await store.createCheckpoint(SYSTEM)).not.toBeNull();
+    expect(await store.createCheckpoint(SYSTEM)).toBeNull();
     expect(store.readCheckpoints(SYSTEM)).toHaveLength(1);
   });
 
   it("writes another once the chain has grown", async () => {
     await writeChain(4);
-    await store.createCheckpoint(SYSTEM, clock.toISOString());
+    await store.createCheckpoint(SYSTEM);
     await store.append(event(99));
 
-    const second = await store.createCheckpoint(SYSTEM, "2026-03-29T16:00:00.000Z");
+    const second = await store.createCheckpoint(SYSTEM);
     expect(second?.checkpoint.tree_size).toBe(5);
     expect(second?.checkpoint.root_hash).not.toBe(
       store.readCheckpoints(SYSTEM)[0]?.checkpoint.root_hash,
@@ -132,7 +133,7 @@ describe("writing a checkpoint", () => {
   });
 
   it("refuses to check point a system that has no receipts", async () => {
-    await expect(store.createCheckpoint("never-created", clock.toISOString())).rejects.toThrow(
+    await expect(store.createCheckpoint("never-created")).rejects.toThrow(
       /unknown system/,
     );
   });
@@ -140,8 +141,8 @@ describe("writing a checkpoint", () => {
   it("keeps each chain's checkpoints to itself", async () => {
     await writeChain(4);
     await writeChain(6, OTHER);
-    await store.createCheckpoint(SYSTEM, clock.toISOString());
-    await store.createCheckpoint(OTHER, clock.toISOString());
+    await store.createCheckpoint(SYSTEM);
+    await store.createCheckpoint(OTHER);
 
     expect(store.readCheckpoints(SYSTEM).map((c) => c.checkpoint.tree_size)).toEqual([4]);
     expect(store.readCheckpoints(OTHER).map((c) => c.checkpoint.tree_size)).toEqual([6]);
@@ -150,7 +151,7 @@ describe("writing a checkpoint", () => {
 
   it("cannot be modified once written", async () => {
     await writeChain(3);
-    await store.createCheckpoint(SYSTEM, clock.toISOString());
+    await store.createCheckpoint(SYSTEM);
     const raw = new Database(databasePath);
     expect(() => raw.exec("UPDATE checkpoints SET tree_size = 99")).toThrow(/append-only/);
     expect(() => raw.exec("DELETE FROM checkpoints")).toThrow(/append-only/);
@@ -460,9 +461,9 @@ describe("the checkpoint timer", () => {
         return store.listSystems();
       },
       hasSystem: (id: string) => store.hasSystem(id),
-      createCheckpoint: async (id: string, ts: string) => {
+      createCheckpoint: async (id: string) => {
         await held;
-        return store.createCheckpoint(id, ts);
+        return store.createCheckpoint(id);
       },
       checkpointsAwaitingTimestamp: () => [],
     } as unknown as ReceiptStore;

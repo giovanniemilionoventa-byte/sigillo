@@ -20,7 +20,8 @@ let store: ReceiptStore;
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "sigillo-health-"));
   databasePath = join(directory, "sigillo.db");
-  signer = createTestSigner();
+  // The signer dates checkpoints by its own clock: here, the test's NOW.
+  signer = createTestSigner({ now: () => new Date(NOW) });
   store = ReceiptStore.open(databasePath, signer);
 });
 
@@ -68,7 +69,7 @@ describe("a freshly created system", () => {
   it("stays green while a checkpoint's timestamp is late by less than the tolerance", async () => {
     // The authority may be down for a while: the checkpointer retries, and
     // within the tolerance that is not yet something to look at.
-    await store.createCheckpoint(SYSTEM, NOW);
+    await store.createCheckpoint(SYSTEM);
     const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS, 60 * 60_000);
     monitor.check();
     const health = monitor.statusFor(SYSTEM, new Date(Date.parse(NOW) + 60 * 60_000));
@@ -77,7 +78,7 @@ describe("a freshly created system", () => {
   });
 
   it("turns yellow once a checkpoint has waited for its timestamp beyond the tolerance", async () => {
-    await store.createCheckpoint(SYSTEM, NOW);
+    await store.createCheckpoint(SYSTEM);
     const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS, 60 * 60_000);
     monitor.check();
     const health = monitor.statusFor(SYSTEM, new Date(Date.parse(NOW) + 61 * 60_000));
@@ -87,7 +88,7 @@ describe("a freshly created system", () => {
 
   it("turns yellow when the newest checkpoint was timestamped beyond the tolerance", async () => {
     // What sigillo-verify will warn about in the next export (anchor-delay).
-    const checkpoint = await store.createCheckpoint(SYSTEM, NOW);
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint === null) throw new Error("no checkpoint");
     const tsa = createLocalTsa();
     try {
@@ -104,7 +105,7 @@ describe("a freshly created system", () => {
   }, 30_000);
 
   it("is green once anchored and recently active", async () => {
-    const checkpoint = await store.createCheckpoint(SYSTEM, NOW);
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint !== null) {
       await store.recordTimestamp(checkpoint.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), NOW);
     }
@@ -116,7 +117,7 @@ describe("a freshly created system", () => {
   });
 
   it("turns yellow again once anchored but stale for too long", async () => {
-    const checkpoint = await store.createCheckpoint(SYSTEM, NOW);
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint !== null) {
       await store.recordTimestamp(checkpoint.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), NOW);
     }
@@ -153,7 +154,7 @@ describe("a freshly created system", () => {
     await store.append(event({ action: { kind: "tool_call", name: "call-2" } }));
     monitor.check();
 
-    const checkpoint = await store.createCheckpoint(SYSTEM, NOW);
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint !== null) {
       await store.recordTimestamp(checkpoint.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), NOW);
     }

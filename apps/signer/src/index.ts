@@ -1,4 +1,10 @@
 export { generateKeyFile, loadKeyFile } from "./key-file.js";
 export type { SignerKey } from "./key-file.js";
-export { startSignerDaemon } from "./daemon.js";
-export type { SignerDaemon } from "./daemon.js";
+export { handleLine, PROTOCOL_VERSION, startSignerDaemon } from "./daemon.js";
+export type { SignerDaemon, SignerDaemonOptions } from "./daemon.js";
+export { DEFAULT_CLOCK_TOLERANCE_MS, Refusal, Signer } from "./signer.js";
+export type { RefusalCode, SignerOptions } from "./signer.js";
+export { isChain, StateDirectory } from "./state.js";
+export type { ChainState, RetiredSystem, SystemState } from "./state.js";
+export { INIT_MARKER, initFromDatabase } from "./init-from-db.js";
+export type { InitReport } from "./init-from-db.js";

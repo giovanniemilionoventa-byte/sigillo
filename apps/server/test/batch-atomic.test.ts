@@ -9,12 +9,21 @@ import { buildServer } from "../src/http/server.js";
 import { SignerClient } from "../src/signer/client.js";
 import { ReceiptStore, type SigningService } from "../src/storage/store.js";
 
+/** These tests write at fixed dates; the signer's clock check has tests of its own. */
+const ANY_CLOCK = Number.POSITIVE_INFINITY;
+
 /**
- * Review point 6: the spans of one OTLP batch used to be written one by one.
- * When the signer failed after the first of them, the server answered 503,
- * the exporter sent the whole batch again, and the spans written the first
- * time were written twice, for good. A real signer daemon, killed after it
- * has signed the first receipt of a batch; a real SignerClient; real SQLite.
+ * Review point 6: when the signer failed part-way through an OTLP batch, the
+ * server answered 503, the exporter sent the whole batch again, and the spans
+ * written the first time were written twice, for good. A real signer daemon,
+ * killed after it has signed the first receipt of a batch; a real
+ * SignerClient; real SQLite.
+ *
+ * The batch used to be one transaction, all or nothing. Since the signer
+ * keeps its own record of every chain, a receipt it has signed must not be
+ * rolled back here: each receipt is committed as soon as it is signed, and
+ * the resend is written once because the spans already written are found by
+ * trace_id/span_id.
  */
 
 const SYSTEM = "acme-support-bot";
@@ -35,15 +44,17 @@ beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), "sigillo-batch-"));
   socketPath = join(directory, "signer.sock");
   keyPath = join(directory, "signer.key");
-  daemon = await startSignerDaemon({ socketPath, key: generateKeyFile(keyPath) });
+  daemon = await startSignerDaemon({ socketPath, stateDir: join(directory, "signer-state"), clockToleranceMs: ANY_CLOCK, key: generateKeyFile(keyPath) });
   client = await SignerClient.connect(socketPath, { timeoutMs: 1000 });
   // The real client, with one hook: the moment the daemon dies is chosen by
   // the test, so that it falls between two receipts of the same batch.
   const signer: SigningService = {
     keyId: client.keyId,
     publicKeyBase64: client.publicKeyBase64,
-    sign: async (digest) => {
-      const signature = await client.sign(digest);
+    checkpoint: (systemId) => client.checkpoint(systemId),
+    head: (systemId) => client.head(systemId),
+    signReceipt: async (receipt) => {
+      const signature = await client.signReceipt(receipt);
       if (dieAfterNextSignature) {
         dieAfterNextSignature = false;
         await daemon?.close();
@@ -106,14 +117,14 @@ const send = (count: number): Promise<number> =>
     .then((response) => response.statusCode);
 
 describe("an OTLP batch", () => {
-  it("is written whole or not at all, so the exporter's retry writes it once", async () => {
+  it("keeps what the signer signed before it failed, so the exporter's retry writes each span once", async () => {
     dieAfterNextSignature = true;
     expect(await send(3)).toBe(503);
-    // Nothing of the failed batch was kept: the chain is still the genesis alone.
-    expect(store.readChain(SYSTEM).map((receipt) => receipt.seq)).toEqual([0]);
+    // The one receipt the signer signed is kept, and nothing after it.
+    expect(store.readChain(SYSTEM).map((receipt) => receipt.action.name)).toEqual([SYSTEM, "tool-0"]);
 
     // The signer comes back, and the exporter sends the same batch again.
-    daemon = await startSignerDaemon({ socketPath, key: loadKeyFile(keyPath) });
+    daemon = await startSignerDaemon({ socketPath, stateDir: join(directory, "signer-state"), clockToleranceMs: ANY_CLOCK, key: loadKeyFile(keyPath) });
     expect(await send(3)).toBe(200);
     const names = store.readChain(SYSTEM).map((receipt) => receipt.action.name);
     expect(names).toEqual([SYSTEM, "tool-0", "tool-1", "tool-2"]);
@@ -122,7 +133,7 @@ describe("an OTLP batch", () => {
   it("still leaves no gap and no half-written row behind", async () => {
     dieAfterNextSignature = true;
     await send(3);
-    daemon = await startSignerDaemon({ socketPath, key: loadKeyFile(keyPath) });
+    daemon = await startSignerDaemon({ socketPath, stateDir: join(directory, "signer-state"), clockToleranceMs: ANY_CLOCK, key: loadKeyFile(keyPath) });
     expect(await send(2)).toBe(200);
     expect(store.readChain(SYSTEM).map((receipt) => receipt.seq)).toEqual([0, 1, 2]);
   });

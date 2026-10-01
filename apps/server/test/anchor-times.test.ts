@@ -62,7 +62,10 @@ function event(index: number, tsReceived: string): ChainEvent {
 /** Builds the chain, checkpoints and tokens of `plan`, exports it, and returns the zip's path. */
 async function archiveOf(plan: Plan): Promise<string> {
   counter += 1;
-  const signer = createTestSigner();
+  // The signer dates each checkpoint by its own clock, so the test sets that
+  // clock to the time the plan wants the checkpoint to declare.
+  let signerClock = "2026-03-29T14:00:00.000Z";
+  const signer = createTestSigner({ now: () => new Date(signerClock) });
   const store = ReceiptStore.open(join(directory, `chain-${counter}.db`), signer);
   try {
     await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
@@ -71,7 +74,8 @@ async function archiveOf(plan: Plan): Promise<string> {
       await store.append(event(seq, plan.received[seq - 1] as string));
       while (pending[0] !== undefined && pending[0].treeSize === seq + 1) {
         const wanted = pending.shift() as Plan["checkpoints"][number];
-        const checkpoint = await store.createCheckpoint(SYSTEM, wanted.ts);
+        signerClock = wanted.ts;
+        const checkpoint = await store.createCheckpoint(SYSTEM);
         if (checkpoint === null) throw new Error("no checkpoint");
         if (wanted.genTime !== undefined) {
           const token = tsa.stampAt(checkpoint.checkpoint.root_hash, wanted.genTime);

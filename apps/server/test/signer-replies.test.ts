@@ -1,10 +1,17 @@
-import { createHash, generateKeyPairSync, type KeyObject, sign, verify } from "node:crypto";
+import { generateKeyPairSync, type KeyObject, sign, verify } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { keyIdFromRawPublicKey, rawPublicKeyBytes } from "@sigillo/core";
+import {
+  GENESIS_PREV_HASH,
+  keyIdFromRawPublicKey,
+  rawPublicKeyBytes,
+  receiptHash,
+  toHex,
+  type UnsignedReceipt,
+} from "@sigillo/core";
 import { SignerClient, SignerUnavailableError } from "../src/signer/client.js";
 
 /**
@@ -22,7 +29,7 @@ import { SignerClient, SignerUnavailableError } from "../src/signer/client.js";
 interface HeldRequest {
   id: unknown;
   digest: string;
-  /** Sends the real signature over this request's digest, under its own id. */
+  /** Sends the real signature over this request's receipt hash, under its own id. */
   answer: () => void;
 }
 
@@ -34,8 +41,24 @@ let publicKey: KeyObject;
 let held: HeldRequest[];
 let peer: Socket | undefined;
 
-const digestOf = (text: string): Uint8Array =>
-  new Uint8Array(createHash("sha256").update(text).digest());
+/** A receipt told apart from the others by its action's name. */
+const receiptNamed = (text: string): UnsignedReceipt => ({
+  v: 1,
+  system_id: "acme-support-bot",
+  seq: 0,
+  ts_event: "2026-10-01T09:00:00.000Z",
+  ts_received: "2026-10-01T09:00:00.000Z",
+  actor: { agent: "acme-support-bot" },
+  action: { kind: "genesis", name: text },
+  input_hash: null,
+  output_hash: null,
+  outcome: "ok",
+  source: { type: "api" },
+  prev_hash: GENESIS_PREV_HASH,
+  key_id: "0123456789abcdef",
+});
+
+const digestOf = (text: string): Uint8Array => receiptHash(receiptNamed(text));
 
 const signatureOver = (digestHex: string): string =>
   Buffer.from(sign(null, Buffer.from(digestHex, "hex"), privateKey)).toString("base64");
@@ -73,7 +96,7 @@ beforeEach(async () => {
         const request = JSON.parse(buffer.slice(0, index)) as Record<string, unknown>;
         buffer = buffer.slice(index + 1);
         index = buffer.indexOf("\n");
-        if (request["method"] === "pubkey") {
+        if (request["method"] === "PUBKEY") {
           // The handshake is answered at once, as the real signer would.
           send({
             ...(request["id"] === undefined ? {} : { id: request["id"] }),
@@ -83,7 +106,7 @@ beforeEach(async () => {
           });
           continue;
         }
-        const digest = String(request["digest"]);
+        const digest = toHex(receiptHash(request["receipt"] as UnsignedReceipt));
         held.push({
           id: request["id"],
           digest,
@@ -113,8 +136,8 @@ describe("matching replies to requests", () => {
     try {
       const a = digestOf("A");
       const b = digestOf("B");
-      const first = client.sign(a);
-      const second = client.sign(b);
+      const first = client.signReceipt(receiptNamed("A"));
+      const second = client.signReceipt(receiptNamed("B"));
       await requestsHeld(2);
 
       held[1]?.answer(); // B first
@@ -131,7 +154,7 @@ describe("matching replies to requests", () => {
   it("sends a distinct id with every request", async () => {
     const client = await SignerClient.connect(socketPath);
     try {
-      const requests = [client.sign(digestOf("1")), client.sign(digestOf("2")), client.sign(digestOf("3"))];
+      const requests = [client.signReceipt(receiptNamed("1")), client.signReceipt(receiptNamed("2")), client.signReceipt(receiptNamed("3"))];
       await requestsHeld(3);
       const ids = held.map((request) => request.id);
       expect(ids.every((id) => typeof id === "string" && id.length > 0)).toBe(true);
@@ -148,9 +171,9 @@ describe("matching replies to requests", () => {
     try {
       const a = digestOf("A");
       const b = digestOf("B");
-      await expect(client.sign(a)).rejects.toBeInstanceOf(SignerUnavailableError);
+      await expect(client.signReceipt(receiptNamed("A"))).rejects.toBeInstanceOf(SignerUnavailableError);
 
-      const second = client.sign(b);
+      const second = client.signReceipt(receiptNamed("B"));
       await requestsHeld(2);
       held[0]?.answer(); // A, too late, arrives first
       held[1]?.answer(); // then B's own
@@ -166,18 +189,17 @@ describe("matching replies to requests", () => {
   it("ignores a late reply that arrives after the next request was already answered", async () => {
     const client = await SignerClient.connect(socketPath, { timeoutMs: 500 });
     try {
-      const a = digestOf("A");
       const b = digestOf("B");
       const c = digestOf("C");
-      await expect(client.sign(a)).rejects.toBeInstanceOf(SignerUnavailableError);
+      await expect(client.signReceipt(receiptNamed("A"))).rejects.toBeInstanceOf(SignerUnavailableError);
 
-      const second = client.sign(b);
+      const second = client.signReceipt(receiptNamed("B"));
       await requestsHeld(2);
       held[1]?.answer();
       expect(verifies(b, await second)).toBe(true);
 
       held[0]?.answer(); // A's reply, now with nobody waiting for it
-      const third = client.sign(c);
+      const third = client.signReceipt(receiptNamed("C"));
       await requestsHeld(3);
       held[2]?.answer();
       expect(verifies(c, await third)).toBe(true);
@@ -189,12 +211,11 @@ describe("matching replies to requests", () => {
   it("times out one request without failing the others still waiting", async () => {
     const client = await SignerClient.connect(socketPath, { timeoutMs: 1000 });
     try {
-      const a = digestOf("A");
       const b = digestOf("B");
-      const first = client.sign(a);
+      const first = client.signReceipt(receiptNamed("A"));
       await requestsHeld(1);
       await new Promise((resolve) => setTimeout(resolve, 500));
-      const second = client.sign(b);
+      const second = client.signReceipt(receiptNamed("B"));
       await requestsHeld(2);
 
       // A reaches its deadline; B, sent 500 ms later, has not reached its own.
@@ -210,7 +231,7 @@ describe("matching replies to requests", () => {
     const client = await SignerClient.connect(socketPath);
     try {
       const a = digestOf("A");
-      const pending = client.sign(a);
+      const pending = client.signReceipt(receiptNamed("A"));
       await requestsHeld(1);
       send({ id: "never-sent", ok: true, sig: signatureOver(Buffer.from(digestOf("X")).toString("hex")) });
       held[0]?.answer();
@@ -223,8 +244,8 @@ describe("matching replies to requests", () => {
   it("fails every request, at once and for good, on a reply with no id", async () => {
     const client = await SignerClient.connect(socketPath);
     try {
-      const first = client.sign(digestOf("A"));
-      const second = client.sign(digestOf("B"));
+      const first = client.signReceipt(receiptNamed("A"));
+      const second = client.signReceipt(receiptNamed("B"));
       await requestsHeld(2);
       // A signer that does not echo ids (an older build) cannot be matched
       // safely: nothing is guessed from arrival order.
@@ -232,7 +253,7 @@ describe("matching replies to requests", () => {
 
       await expect(first).rejects.toThrow(/request id/);
       await expect(second).rejects.toThrow(/request id/);
-      await expect(client.sign(digestOf("C"))).rejects.toBeInstanceOf(SignerUnavailableError);
+      await expect(client.signReceipt(receiptNamed("C"))).rejects.toBeInstanceOf(SignerUnavailableError);
     } finally {
       client.close();
     }
@@ -241,11 +262,11 @@ describe("matching replies to requests", () => {
   it("fails every request, at once and for good, on a reply that is not JSON", async () => {
     const client = await SignerClient.connect(socketPath);
     try {
-      const pending = client.sign(digestOf("A"));
+      const pending = client.signReceipt(receiptNamed("A"));
       await requestsHeld(1);
       send("this is not json");
       await expect(pending).rejects.toBeInstanceOf(SignerUnavailableError);
-      await expect(client.sign(digestOf("B"))).rejects.toBeInstanceOf(SignerUnavailableError);
+      await expect(client.signReceipt(receiptNamed("B"))).rejects.toBeInstanceOf(SignerUnavailableError);
     } finally {
       client.close();
     }
@@ -254,8 +275,8 @@ describe("matching replies to requests", () => {
   it("fails just the refused request when the signer refuses it under its id", async () => {
     const client = await SignerClient.connect(socketPath);
     try {
-      const first = client.sign(digestOf("A"));
-      const second = client.sign(digestOf("B"));
+      const first = client.signReceipt(receiptNamed("A"));
+      const second = client.signReceipt(receiptNamed("B"));
       await requestsHeld(2);
       send({ id: held[0]?.id, ok: false, error: "refused for the test" });
       held[1]?.answer();

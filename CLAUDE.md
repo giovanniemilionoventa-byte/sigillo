@@ -38,7 +38,7 @@ This file collects the permanent rules for anyone (human or AI) working on this 
 packages/core       pure library: schema, canonicalization, hashing, chain, signing, Merkle
                      NO network, disk, or clock access — everything passed in as a parameter
 packages/verifier    open-source CLI, depends only on core (+ system openssl for RFC 3161)
-apps/signer          separate process holding the private key
+apps/signer          separate process holding the private key and its own record of every chain
 apps/server          ingest, storage, checkpoints, timestamps, export, minimal UI
 sdk-python/          thin Python package (separate folder, not a pnpm workspace member)
 deploy/              Dockerfile, docker-compose.yml, Caddyfile

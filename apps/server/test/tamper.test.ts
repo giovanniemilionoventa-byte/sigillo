@@ -51,6 +51,8 @@ const RECEIPTS = 12;
 let directory: string;
 let tsa: LocalTsa;
 let signer: TestSigner;
+/** The signer's clock: a checkpoint's time is the signer's, so the tests set it where they need it. */
+let signerClock = new Date("2026-03-29T15:00:00.000Z");
 let original: Map<string, Uint8Array>;
 let counter = 0;
 
@@ -74,7 +76,8 @@ async function produceArchive(withSigner: TestSigner, database: string): Promise
   try {
     await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
     for (let index = 1; index < RECEIPTS; index += 1) await store.append(event(index));
-    const checkpoint = await store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z");
+    signerClock = new Date("2026-03-29T15:00:00.000Z");
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint === null) throw new Error("no checkpoint");
     // Dated by the authority five seconds after the checkpoint, as on a server
     // whose authority answered at once.
@@ -100,7 +103,7 @@ async function produceArchive(withSigner: TestSigner, database: string): Promise
 beforeAll(async () => {
   directory = mkdtempSync(join(tmpdir(), "sigillo-tamper-"));
   tsa = createLocalTsa();
-  signer = createTestSigner();
+  signer = createTestSigner({ now: () => signerClock });
   original = new Map(readZip(await produceArchive(signer, join(directory, "real.db"))).map((e) => [e.name, e.data]));
 }, 60_000);
 
@@ -272,14 +275,16 @@ describe("the ten scenarios of phase 6", () => {
   }, 30_000);
 
   it("7b. ...even signed by the real key, as an attacker holding the server could have it signed", async () => {
-    // SECURITY.md: with the server, an attacker can use the signer's socket.
-    // A checkpoint over a wrong root, properly signed, still does not match
-    // the receipts it claims to cover.
+    // Since protocol 2 the signer's socket builds every checkpoint's root
+    // itself (signer-guard.test.ts), so this takes the key itself, or a
+    // signature obtained through the socket before the upgrade. A checkpoint
+    // over a wrong root, properly signed, still does not match the receipts
+    // it claims to cover.
     const [entry] = linesOf<Entry>(original, "checkpoints.jsonl");
     if (entry === undefined) throw new Error("no checkpoint");
     const { sig: _sig, ...unsigned } = entry.checkpoint;
     const wrong = { ...unsigned, root_hash: `${"0".repeat(63)}1` };
-    entry.checkpoint = { ...wrong, sig: await signer.sign(checkpointHash(wrong)) };
+    entry.checkpoint = { ...wrong, sig: await signer.forge(checkpointHash(wrong)) };
     expectCaught(verify(doctor({ "checkpoints.jsonl": jsonl([entry]) })), "merkle-root", "checkpoints.jsonl:1");
   }, 30_000);
 
@@ -355,8 +360,11 @@ describe("beyond the ten", () => {
 
   it("13. history rewritten after an export was handed over", async () => {
     const receipts = receiptsOf(original);
-    // Re-signed with the real key through the signer, and relinked: the
-    // archive alone verifies, the earlier export does not agree with it.
+    // Re-signed with the real key, and relinked: the archive alone verifies,
+    // the earlier export does not agree with it. Since protocol 2 the
+    // signer's socket refuses every one of these signatures
+    // (signer-guard.test.ts); what is left is an attacker with the key itself,
+    // or with signatures obtained through the socket before the upgrade.
     {
       for (let index = 3; index < receipts.length; index += 1) {
         const { sig: _sig, ...unsigned } = receipts[index] as Receipt;
@@ -365,7 +373,7 @@ describe("beyond the ten", () => {
           ...(index === 3 ? { outcome: "blocked" as const } : {}),
           prev_hash: receiptHashHex(receipts[index - 1] as Receipt),
         };
-        receipts[index] = { ...rewritten, sig: await signer.sign(fromHex(receiptHashHex(rewritten))) } as Receipt;
+        receipts[index] = { ...rewritten, sig: await signer.forge(fromHex(receiptHashHex(rewritten))) } as Receipt;
       }
       const leaves = receipts.map((receipt) => fromHex(receiptHashHex(receipt)));
       const [entry] = linesOf<Entry>(original, "checkpoints.jsonl");
@@ -378,7 +386,7 @@ describe("beyond the ten", () => {
       const rewrittenArchive = doctor({
         "receipts.jsonl": jsonl(receipts),
         "checkpoints.jsonl": jsonl([
-          { checkpoint: { ...checkpoint, sig: await signer.sign(checkpointHash(checkpoint)) }, proofs: [], timestamps: [] },
+          { checkpoint: { ...checkpoint, sig: await signer.forge(checkpointHash(checkpoint)) }, proofs: [], timestamps: [] },
         ]),
         "manifest.json": bytesOf(JSON.stringify(manifest)),
         ...tokenFiles,
@@ -422,8 +430,11 @@ describe("beyond the ten", () => {
 describe("rewritten by whoever holds the server and its key", () => {
   /**
    * The whole chain rebuilt from seq 1 with one outcome changed, re-signed
-   * through the real signer, checkpointed under the original checkpoint's
-   * time and timestamped afresh by a genuine authority. Every hash, signature,
+   * with the real key, checkpointed under the original checkpoint's time and
+   * timestamped afresh by a genuine authority. Since protocol 2 the signer's
+   * socket refuses every one of these signatures (signer-guard.test.ts), so
+   * this is an attacker with the key itself, or with signatures obtained
+   * through the socket before the upgrade. Every hash, signature,
    * root and token is valid: only the time the authority attests betrays it.
    */
   async function rewrite(checkpointTs?: string): Promise<Map<string, Uint8Array>> {
@@ -435,7 +446,7 @@ describe("rewritten by whoever holds the server and its key", () => {
         ...(index === 3 ? { outcome: "blocked" as const } : {}),
         prev_hash: receiptHashHex(receipts[index - 1] as Receipt),
       };
-      receipts[index] = { ...rewritten, sig: await signer.sign(fromHex(receiptHashHex(rewritten))) } as Receipt;
+      receipts[index] = { ...rewritten, sig: await signer.forge(fromHex(receiptHashHex(rewritten))) } as Receipt;
     }
     const [entry] = linesOf<Entry>(original, "checkpoints.jsonl");
     if (entry === undefined) throw new Error("no checkpoint");
@@ -446,7 +457,7 @@ describe("rewritten by whoever holds the server and its key", () => {
     return doctor({
       "receipts.jsonl": jsonl(receipts),
       "checkpoints.jsonl": jsonl([
-        { ...entry, checkpoint: { ...checkpoint, sig: await signer.sign(checkpointHash(checkpoint)) }, proofs: [] },
+        { ...entry, checkpoint: { ...checkpoint, sig: await signer.forge(checkpointHash(checkpoint)) }, proofs: [] },
       ]),
       // A new token, from the real authority, today.
       [file]: new Uint8Array(tsa.stamp(root)),
@@ -483,9 +494,11 @@ describe("the newest checkpoint and its token taken out (review point 3d)", () =
    * second checkpoint (`stale`) and once after it (`staged`).
    */
   async function produceStaged(database: string): Promise<{ stale: Map<string, Uint8Array>; staged: Map<string, Uint8Array> }> {
-    const store = ReceiptStore.open(database, signer);
+    // A second installation under the same key: its own database, and its own signer state.
+    const store = ReceiptStore.open(database, createTestSigner({ key: signer.key, now: () => signerClock }));
     const checkpointAndAnchor = async (at: string): Promise<void> => {
-      const written = await store.createCheckpoint(SYSTEM, at);
+      signerClock = new Date(at);
+      const written = await store.createCheckpoint(SYSTEM);
       if (written === null) throw new Error("no checkpoint");
       const stampedAt = new Date(Date.parse(at) + 5000).toISOString();
       const token = tsa.stampAt(written.checkpoint.root_hash, stampedAt);

@@ -79,6 +79,15 @@ export {
   rootFromInclusionProof,
 } from "./merkle.js";
 
+export {
+  emptyFrontier,
+  frontierAppend,
+  frontierRoot,
+  parseFrontier,
+  serializeFrontier,
+} from "./merkle-frontier.js";
+export type { MerkleFrontier, SerializedFrontier } from "./merkle-frontier.js";
+
 export { keyIdFromRawPublicKey, publicKeyFromRaw, rawPublicKeyBytes } from "./keys.js";
 
 export { manifestKeySchema, manifestSchema, safeParseManifest } from "./manifest.js";

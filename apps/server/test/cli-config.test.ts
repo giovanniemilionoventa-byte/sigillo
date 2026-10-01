@@ -161,6 +161,7 @@ describe("secrets read from a file", () => {
     const socketPath = join(directory, "signer.sock");
     const daemon: SignerDaemon = await startSignerDaemon({
       socketPath,
+      stateDir: join(directory, "signer-state"),
       key: generateKeyFile(join(directory, "signer.key")),
     });
     try {

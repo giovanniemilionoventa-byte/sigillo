@@ -746,6 +746,25 @@ Il progetto potrebbe non essere più pubblico, o il nome del ramo principale
 potrebbe essere cambiato. Chiedi a chi ti ha dato questa guida il link
 aggiornato.
 
+### Dopo aver scaricato una versione nuova, i sistemi sono rossi
+
+Il messaggio è «Il firmatario e il database non concordano su questo registro».
+Succede se la prova è stata fatta con una versione di sigillo precedente
+all'ottobre 2026: da allora il firmatario tiene un registro proprio di ogni
+catena, e quello di una prova vecchia non ce l'ha. Per una prova la cosa più
+semplice è ricominciare da capo (qui sotto). Se invece vuoi tenere le ricevute
+che hai già, ferma i container e fai costruire al firmatario il suo registro a
+partire dal database, una volta sola:
+
+```sh
+docker compose stop server signer
+docker compose run --rm --no-deps -v sigillo-locale_sigillo-data:/var/lib/sigillo signer init-from-db --db /var/lib/sigillo/sigillo.db --state /var/lib/sigillo-key/state
+docker compose up -d
+```
+
+**Cosa fa:** controlla ogni catena e la registra nel firmatario; lo scrive anche
+nel registro amministrativo della pagina Sistemi. Si può fare una volta sola.
+
 ### Voglio ricominciare da capo
 
 ```sh

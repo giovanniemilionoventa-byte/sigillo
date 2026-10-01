@@ -16,6 +16,9 @@ import { SignerClient } from "../src/signer/client.js";
 import { ReceiptStore } from "../src/storage/store.js";
 import { createLocalTsa, type LocalTsa } from "./helpers/local-tsa.js";
 
+/** These tests write at fixed dates; the signer's clock check has tests of its own. */
+const ANY_CLOCK = Number.POSITIVE_INFINITY;
+
 /**
  * Phase 7: the whole path an evidence file takes, end to end, with nothing
  * stood in for. A signer daemon on a real socket with a key file; the server
@@ -171,9 +174,16 @@ beforeAll(async () => {
   databasePath = join(directory, "sigillo.db");
   socketPath = join(directory, "signer.sock");
   tsa = createLocalTsa();
-  // The authority keeps the same (injected) time as the server.
+  // The authority and the signer keep the same (injected) time as the server:
+  // the checkpoint's own time is the signer's, the genTime the authority's.
   const tsaUrl = await tsa.listen(() => new Date(clock));
-  daemon = await startSignerDaemon({ socketPath, key: generateKeyFile(join(directory, "signer.key")) });
+  daemon = await startSignerDaemon({
+    socketPath,
+    stateDir: join(directory, "signer-state"),
+    now: () => new Date(clock),
+    clockToleranceMs: ANY_CLOCK,
+    key: generateKeyFile(join(directory, "signer.key")),
+  });
   signer = await SignerClient.connect(socketPath);
   store = ReceiptStore.open(databasePath, signer);
   keys = ApiKeyStore.open(databasePath);
