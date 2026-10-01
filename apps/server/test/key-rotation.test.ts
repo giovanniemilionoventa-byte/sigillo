@@ -44,14 +44,16 @@ beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), "sigillo-rotation-"));
   databasePath = join(directory, "sigillo.db");
   oldSigner = createTestSigner();
-  newSigner = createTestSigner();
 
   // The server under the old key...
   const before = ReceiptStore.open(databasePath, oldSigner);
   await before.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
   for (let index = 1; index <= 3; index += 1) await before.append(event(index));
-  await before.createCheckpoint(SYSTEM, "2026-03-29T14:40:00.000Z");
+  await before.createCheckpoint(SYSTEM);
   before.close();
+  // A new key file in the signer's volume; the signer's record of each chain,
+  // in the same volume, stays.
+  newSigner = createTestSigner({ stateDir: oldSigner.stateDir });
 });
 
 afterEach(() => {

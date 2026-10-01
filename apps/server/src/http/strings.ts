@@ -283,6 +283,9 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "system.archive": "archiviato",
   "system.unarchive": "riattivato",
   "system.delete": "eliminato",
+  "signer.init": "registrato nello stato del firmatario",
+  "signer.recovered": "ricevuta recuperata dal firmatario",
+  "signer.divergence": "in disaccordo con il firmatario",
 };
 
 /** One line of the administrative log, for the systems page. */

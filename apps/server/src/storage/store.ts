@@ -4,6 +4,7 @@ import {
   canonicalReceiptBytes,
   checkpointHash,
   CHECKPOINT_VERSION,
+  verifyReceiptSignature,
   fromHex,
   GENESIS_PREV_HASH,
   keyIdFromRawPublicKey,
@@ -12,6 +13,7 @@ import {
   parseReceipt,
   parseUnsignedReceipt,
   publicKeyFromRaw,
+  receiptHashHex,
   RECEIPT_VERSION_1,
   RECEIPT_VERSION_2,
   RECEIPT_VERSION_3,
@@ -27,11 +29,19 @@ import {
   type Outcome,
   type Receipt,
   type Source,
+  type UnsignedReceipt,
 } from "@sigillo/core";
+import { SignerRefusedError } from "../signer/errors.js";
 import { genTimeOfToken } from "../timestamp/gentime.js";
 import { applySchema } from "./schema.js";
 
-/** Whatever holds the private key. In production this is the separate signer process. */
+/**
+ * Whatever holds the private key. In production this is the separate signer
+ * process, which keeps its own record of every chain: it signs a receipt only
+ * if it is the next one of its chain, and builds checkpoints from that record
+ * rather than from anything this process tells it (apps/signer/src/signer.ts).
+ * A refusal is a SignerRefusedError; no answer is a SignerUnavailableError.
+ */
 export interface SigningService {
   readonly keyId: string;
   /**
@@ -39,7 +49,12 @@ export interface SigningService {
    * signature it is handed against this key before it writes anything.
    */
   readonly publicKeyBase64: string;
-  sign(digest: Uint8Array): Promise<string>;
+  /** The signature over `receipt`'s hash, if the signer accepts it as the next of its chain. */
+  signReceipt(receipt: UnsignedReceipt): Promise<string>;
+  /** A signed checkpoint over the signer's own record of the chain, at the signer's own time. */
+  checkpoint(systemId: string): Promise<Checkpoint>;
+  /** The last receipt the signer signed for the system, or null. */
+  head(systemId: string): Promise<Receipt | null>;
 }
 
 /** An action to be recorded. Its position in the chain is not the caller's to choose. */
@@ -65,6 +80,20 @@ export interface ChainTip {
   seq: number;
   hash: string;
 }
+
+/**
+ * What comparing a chain's tip in the database with the signer's head found.
+ * `recovered`: the signer was one receipt ahead, and that receipt hung off the
+ * database's tip, so it was written (a crash between signature and insert).
+ * `diverged`: anything else that does not match, recorded and left alone.
+ */
+export type ReconcileOutcome =
+  | { system_id: string; status: "in_sync" }
+  | { system_id: string; status: "recovered"; seq: number; hash: string }
+  | { system_id: string; status: "diverged"; detail: string };
+
+/** The largest canonical receipt the store asks the signer to sign; its socket takes 256 KiB a line. */
+const MAX_RECEIPT_BYTES = 192 * 1024;
 
 /**
  * How a document matched a record, strongest first. `bytes`: the exact bytes
@@ -145,7 +174,17 @@ export interface SystemRecord {
   last_received: string | null;
 }
 
-export type AdminAction = "system.rename" | "system.archive" | "system.unarchive" | "system.delete";
+export type AdminAction =
+  | "system.rename"
+  | "system.archive"
+  | "system.unarchive"
+  | "system.delete"
+  /** The signer's state was built from this database's chains (sigillo-signer init-from-db). */
+  | "signer.init"
+  /** A receipt the signer had signed but this database lacked was written (a crash between the two). */
+  | "signer.recovered"
+  /** The signer's head and this database's tip disagree in a way nothing here corrects. */
+  | "signer.divergence";
 
 /** One line of the administrative log: something done to a system outside its chain. */
 export interface AdminLogEntry {
@@ -203,6 +242,10 @@ export function normaliseDisplayName(value: string): string | null {
 interface StoredRow {
   canonical: string;
   sig: string;
+}
+
+interface TipRow extends ChainTip {
+  ts_received: string;
 }
 
 interface CheckpointRow {
@@ -294,6 +337,8 @@ export class ReceiptStore {
   private readonly insertArtifactStatement: Database.Statement;
   private readonly registerStatement: Database.Statement;
   private readonly duplicateStatement: Database.Statement;
+  /** Chains found to disagree with the signer since this store was opened: system_id → what was found. */
+  private readonly divergences = new Map<string, string>();
 
   private constructor(
     private readonly write: Database.Database,
@@ -302,7 +347,7 @@ export class ReceiptStore {
     private readonly verificationKey: KeyObject | undefined,
   ) {
     this.tipStatement = this.write.prepare(
-      "SELECT seq, hash FROM receipts WHERE system_id = ? ORDER BY seq DESC LIMIT 1",
+      "SELECT seq, hash, ts_received FROM receipts WHERE system_id = ? ORDER BY seq DESC LIMIT 1",
     );
     this.registerStatement = this.write.prepare(
       "INSERT INTO systems (system_id, created_at) VALUES (@system_id, @created_at)",
@@ -391,7 +436,7 @@ export class ReceiptStore {
           `${systemId} belonged to a system deleted on ${deletedOn}, and is not reused: choose another identifier`,
         );
       }
-      return this.writeReceipt(
+      const written = await this.writeReceipt(
         {
           system_id: systemId,
           ts_event: ts,
@@ -405,6 +450,7 @@ export class ReceiptStore {
         },
         "genesis",
       );
+      return written.receipt;
     });
   }
 
@@ -532,35 +578,63 @@ export class ReceiptStore {
     if (event.action.kind === "genesis") {
       throw new StorageError("a genesis receipt is written by createSystem, not by append");
     }
-    return this.enqueue(() => this.writeReceipt(event, "continuation"));
+    this.checkEvent(event);
+    return this.enqueue(async () => (await this.writeReceipt(event, "continuation")).receipt);
   }
 
   /**
-   * Appends several receipts in one transaction: all of them, or none. An OTLP
-   * exporter resends a whole batch when a request fails, so a batch half
-   * written before a failure would have its first half written twice, for
-   * good (review point 6). It also resends a batch the server *did* finish,
-   * whenever the response never reached it — that half of the same problem is
-   * `duplicates`: how many of `events` were already on the chain, by the
-   * `trace_id`/`span_id` that name a span, and so were not written again.
+   * Appends several receipts, in order, each in a transaction of its own. An
+   * OTLP exporter resends a whole batch when a request fails, or when the
+   * response never reached it; a span already on the chain is found by the
+   * `trace_id`/`span_id` that name it and not written again, so the resend
+   * writes each span exactly once (review point 6). `duplicates` is how many
+   * of `events` were found that way.
+   *
+   * Every event is checked before the first is signed, so a malformed one
+   * refuses the batch with nothing written. Once signing has started, each
+   * receipt is committed as soon as it is signed: the signer remembers what
+   * it signed, and a receipt it signed must not be rolled back here. A failure
+   * part-way (the signer gone) leaves the batch's first receipts written, and
+   * the exporter's resend finds them as duplicates. A crash part-way leaves
+   * the signer at most one receipt ahead, which is what reconcile recovers.
    */
   async appendBatch(events: readonly ChainEvent[]): Promise<{ receipts: Receipt[]; duplicates: number }> {
     if (events.some((event) => event.action.kind === "genesis")) {
       throw new StorageError("a genesis receipt is written by createSystem, not by append");
     }
     if (events.length === 0) return { receipts: [], duplicates: 0 };
-    return this.enqueue(() =>
-      this.inTransaction(async () => {
-        const receipts: Receipt[] = [];
-        let duplicates = 0;
-        for (const event of events) {
-          const written = await this.insertReceipt(event, "continuation");
-          receipts.push(written.receipt);
-          if (written.duplicate) duplicates += 1;
-        }
-        return { receipts, duplicates };
-      }),
-    );
+    for (const event of events) this.checkEvent(event);
+    return this.enqueue(async () => {
+      const receipts: Receipt[] = [];
+      let duplicates = 0;
+      for (const event of events) {
+        const written = await this.writeReceipt(event, "continuation");
+        receipts.push(written.receipt);
+        if (written.duplicate) duplicates += 1;
+      }
+      return { receipts, duplicates };
+    });
+  }
+
+  /**
+   * Compares the tip of each chain (all of them, or those named) with the
+   * signer's head, and recovers the one case that has a safe answer: the
+   * signer one receipt ahead, that receipt hanging off the database's tip.
+   * Anything else is recorded — signerDivergence(), the administrative log —
+   * and nothing is corrected. The server runs this at start-up; a refusal of
+   * a receipt's position runs it for that chain.
+   */
+  async reconcileWithSigner(systemIds: readonly string[] = this.listSystems()): Promise<ReconcileOutcome[]> {
+    return this.enqueue(async () => {
+      const outcomes: ReconcileOutcome[] = [];
+      for (const systemId of systemIds) outcomes.push(await this.reconcileNow(systemId));
+      return outcomes;
+    });
+  }
+
+  /** What the last comparison with the signer found wrong with this chain, or null. */
+  signerDivergence(systemId: string): string | null {
+    return this.divergences.get(systemId) ?? null;
   }
 
   /**
@@ -638,12 +712,15 @@ export class ReceiptStore {
   }
 
   /**
-   * Signs and stores a checkpoint over everything the chain holds right now.
-   * Returns null when the last checkpoint already covered the same receipts:
-   * a chain with nothing new does not need another statement about it.
+   * Asks the signer for a checkpoint over the chain and stores it, once it is
+   * shown to cover exactly what the chain holds here. The root and the time
+   * are the signer's, from its own record: this process cannot have a
+   * checkpoint signed over a tree the signer did not build. Returns null when
+   * the last checkpoint already covered the same receipts: a chain with
+   * nothing new does not need another statement about it.
    */
-  async createCheckpoint(systemId: string, ts: string): Promise<StoredCheckpoint | null> {
-    return this.enqueue(() => this.writeCheckpoint(systemId, ts));
+  async createCheckpoint(systemId: string): Promise<StoredCheckpoint | null> {
+    return this.enqueue(() => this.writeCheckpoint(systemId));
   }
 
   readCheckpoints(systemId: string): StoredCheckpoint[] {
@@ -852,49 +929,50 @@ export class ReceiptStore {
     this.write.close();
   }
 
-  private async writeCheckpoint(systemId: string, ts: string): Promise<StoredCheckpoint | null> {
-    const signer = this.signer;
-    const verificationKey = this.verificationKey;
-    if (signer === undefined || verificationKey === undefined) {
-      throw new StorageError("this store was opened for reading only: it has no signer");
+  private async writeCheckpoint(systemId: string): Promise<StoredCheckpoint | null> {
+    const { signer, verificationKey } = this.writer();
+
+    // The chain here first agrees with the signer's record, or is brought
+    // level with it (a receipt signed and lost to a crash), or nothing is
+    // signed at all.
+    const agreement = await this.reconcileNow(systemId);
+    if (agreement.status === "diverged") {
+      throw new SignerRefusedError("sequence", `no checkpoint for ${systemId}: ${agreement.detail}`);
     }
-    this.write.exec("BEGIN IMMEDIATE");
-    try {
-      const hashes = (
-        this.write.prepare("SELECT hash FROM receipts WHERE system_id = ? ORDER BY seq").all(
-          systemId,
-        ) as { hash: string }[]
-      ).map((row) => row.hash);
 
-      if (hashes.length === 0) {
-        throw new StorageError(`unknown system ${systemId}: it has no receipts to check point`);
-      }
+    const hashes = (
+      this.write.prepare("SELECT hash FROM receipts WHERE system_id = ? ORDER BY seq").all(systemId) as { hash: string }[]
+    ).map((row) => row.hash);
+    if (hashes.length === 0) {
+      throw new StorageError(`unknown system ${systemId}: it has no receipts to check point`);
+    }
+    const covered = this.write
+      .prepare("SELECT tree_size FROM checkpoints WHERE system_id = ? ORDER BY tree_size DESC LIMIT 1")
+      .get(systemId) as { tree_size: number } | undefined;
+    if (covered !== undefined && covered.tree_size === hashes.length) {
+      return null;
+    }
 
-      const covered = this.write
-        .prepare("SELECT tree_size FROM checkpoints WHERE system_id = ? ORDER BY tree_size DESC LIMIT 1")
-        .get(systemId) as { tree_size: number } | undefined;
-      if (covered !== undefined && covered.tree_size === hashes.length) {
-        this.write.exec("COMMIT");
-        return null;
-      }
+    const checkpoint = await signer.checkpoint(systemId);
+    // Checked, not trusted, exactly as for a receipt: the signature first,
+    // then that the tree it describes is the tree this database holds.
+    if (
+      checkpoint.system_id !== systemId ||
+      checkpoint.key_id !== signer.keyId ||
+      !verifyDigestSignature(checkpointHash(checkpoint), checkpoint.sig, verificationKey)
+    ) {
+      throw refusedSignature("checkpoint", signer.keyId);
+    }
+    const root = toHex(merkleRoot(hashes.map((hash) => fromHex(hash))));
+    if (checkpoint.tree_size !== hashes.length || checkpoint.root_hash !== root) {
+      const detail =
+        `the signer's checkpoint covers ${checkpoint.tree_size} receipts with root ${checkpoint.root_hash}, ` +
+        `and this database holds ${hashes.length} with root ${root}`;
+      this.recordDivergence(systemId, detail);
+      throw new SignerRefusedError("sequence", `no checkpoint for ${systemId}: ${detail}`);
+    }
 
-      const unsigned = {
-        v: CHECKPOINT_VERSION,
-        system_id: systemId,
-        tree_size: hashes.length,
-        root_hash: toHex(merkleRoot(hashes.map((hash) => fromHex(hash)))),
-        ts,
-        key_id: signer.keyId,
-      } as const;
-
-      const digest = checkpointHash(unsigned);
-      const sig = await signer.sign(digest);
-      const checkpoint = parseCheckpoint({ ...unsigned, sig });
-      // Checked, not trusted, exactly as for a receipt below.
-      if (!verifyDigestSignature(digest, checkpoint.sig, verificationKey)) {
-        throw refusedSignature("checkpoint", signer.keyId);
-      }
-
+    return this.inTransaction(async () => {
       const result = this.write
         .prepare(
           `INSERT INTO checkpoints (system_id, tree_size, root_hash, ts, key_id, sig)
@@ -908,15 +986,16 @@ export class ReceiptStore {
           key_id: checkpoint.key_id,
           sig: checkpoint.sig,
         });
-
-      this.write.exec("COMMIT");
       return { id: Number(result.lastInsertRowid), checkpoint };
-    } catch (error) {
-      if (this.write.inTransaction) {
-        this.write.exec("ROLLBACK");
-      }
-      throw error;
+    });
+  }
+
+  /** The signer and its key, for a store that writes; a store opened without one cannot. */
+  private writer(): { signer: SigningService; verificationKey: KeyObject } {
+    if (this.signer === undefined || this.verificationKey === undefined) {
+      throw new StorageError("this store was opened for reading only: it has no signer");
     }
+    return { signer: this.signer, verificationKey: this.verificationKey };
   }
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -933,10 +1012,29 @@ export class ReceiptStore {
    * writers can never read the same tip and build the same `seq`. The signer is
    * called while that transaction is open: a signature that cannot be obtained
    * must not leave a gap in the chain.
+   *
+   * When the signer refuses the position — it has signed a receipt this
+   * database does not hold — the chain is reconciled with it, and the receipt
+   * is tried once more if that recovered the missing one. Any other
+   * disagreement is recorded, and the refusal stands.
    */
-  private async writeReceipt(event: ChainEvent, mode: "genesis" | "continuation"): Promise<Receipt> {
-    const written = await this.inTransaction(() => this.insertReceipt(event, mode));
-    return written.receipt;
+  private async writeReceipt(
+    event: ChainEvent,
+    mode: "genesis" | "continuation",
+  ): Promise<{ receipt: Receipt; duplicate: boolean }> {
+    try {
+      return await this.inTransaction(() => this.insertReceipt(event, mode));
+    } catch (error) {
+      if (!(error instanceof SignerRefusedError) || error.code !== "sequence") throw error;
+      const outcome = await this.reconcileNow(event.system_id);
+      if (outcome.status !== "recovered") {
+        throw new SignerRefusedError(
+          "sequence",
+          outcome.status === "diverged" ? `${error.message}; ${outcome.detail}` : error.message,
+        );
+      }
+      return this.inTransaction(() => this.insertReceipt(event, mode));
+    }
   }
 
   /** One IMMEDIATE transaction around `work`: committed if it succeeds, rolled back if it throws. */
@@ -955,6 +1053,67 @@ export class ReceiptStore {
   }
 
   /**
+   * The receipt an event becomes after `tip`. A receipt takes the lowest
+   * version that can hold what it carries: v1 for neither artifacts nor
+   * model, v3 only for a text fingerprint. A chain otherwise keeps writing
+   * what every existing reader expects.
+   *
+   * ts_received is never earlier than the receipt before it: the signer
+   * refuses one that is, so a server clock stepping back is absorbed here
+   * (the receipt says "received no earlier than the one before") instead of
+   * stopping the chain until the clock catches up.
+   */
+  private buildUnsigned(event: ChainEvent, tip: TipRow | undefined, keyId: string): UnsignedReceipt {
+    const isV3 = event.artifacts?.some((artifact) => artifact.text !== undefined) === true;
+    const isV2 = event.artifacts !== undefined || event.model !== undefined;
+    const tsReceived =
+      tip !== undefined && Date.parse(event.ts_received) < Date.parse(tip.ts_received) ? tip.ts_received : event.ts_received;
+    const unsigned = parseUnsignedReceipt({
+      v: isV3 ? RECEIPT_VERSION_3 : isV2 ? RECEIPT_VERSION_2 : RECEIPT_VERSION_1,
+      system_id: event.system_id,
+      seq: tip === undefined ? 0 : tip.seq + 1,
+      ts_event: event.ts_event,
+      ts_received: tsReceived,
+      actor: event.actor,
+      action: event.action,
+      input_hash: event.input_hash,
+      output_hash: event.output_hash,
+      outcome: event.outcome,
+      source: event.source,
+      prev_hash: tip === undefined ? GENESIS_PREV_HASH : tip.hash,
+      key_id: keyId,
+      ...(event.artifacts === undefined ? {} : { artifacts: event.artifacts }),
+      ...(event.model === undefined ? {} : { model: event.model }),
+    });
+
+    // RFC 8785 is defined over well-formed Unicode. A string holding half of
+    // a surrogate pair would be signed here and serialised somehow, but an
+    // independent implementation could not reproduce its hash, so it is
+    // refused before a signature is ever asked for.
+    const malformed = malformedStringIn(unsigned, "");
+    if (malformed !== null) {
+      throw new StorageError(
+        `receipt field ${malformed} is not well-formed Unicode (it holds half of a surrogate ` +
+          "pair), so it has no canonical form another implementation would agree on: nothing was signed or written",
+      );
+    }
+    if (canonicalReceiptBytes(unsigned).length > MAX_RECEIPT_BYTES) {
+      throw new StorageError(`a receipt is at most ${MAX_RECEIPT_BYTES} bytes in canonical form: nothing was signed or written`);
+    }
+    return unsigned;
+  }
+
+  /**
+   * Everything about an event that can be refused before its position is
+   * known, so that a batch with a bad event in it is refused before any of it
+   * is signed. The position used here is a stand-in; the real one is
+   * assigned in insertReceipt.
+   */
+  private checkEvent(event: ChainEvent): void {
+    this.buildUnsigned(event, { seq: 0, hash: GENESIS_PREV_HASH, ts_received: event.ts_received }, this.writer().signer.keyId);
+  }
+
+  /**
    * Builds, signs, checks and inserts one receipt. The caller holds the
    * transaction. `duplicate` is true when this span was already on the
    * chain — found by `trace_id`/`span_id`, not written again, and no
@@ -964,11 +1123,7 @@ export class ReceiptStore {
     event: ChainEvent,
     mode: "genesis" | "continuation",
   ): Promise<{ receipt: Receipt; duplicate: boolean }> {
-    const signer = this.signer;
-    const verificationKey = this.verificationKey;
-    if (signer === undefined || verificationKey === undefined) {
-      throw new StorageError("this store was opened for reading only: it has no signer");
-    }
+    const { signer, verificationKey } = this.writer();
 
     // An OTLP exporter resends a whole batch when it never sees the server's
     // response, even one the server did write; the span it names is found
@@ -985,76 +1140,47 @@ export class ReceiptStore {
       }
     }
 
-    const tip = this.tipStatement.get(event.system_id) as ChainTip | undefined;
+    const tip = this.tipStatement.get(event.system_id) as TipRow | undefined;
 
     if (mode === "genesis" && tip !== undefined) {
       throw new StorageError(`a chain for ${event.system_id} already exists`);
-    }
-    if (mode === "genesis") {
-      this.registerStatement.run({ system_id: event.system_id, created_at: event.ts_received });
     }
     if (mode === "continuation" && tip === undefined) {
       throw new StorageError(`unknown system ${event.system_id}: create its chain first`);
     }
 
-    // A receipt takes the lowest version that can hold what it carries: v1
-    // for neither artifacts nor model, v3 only for a text fingerprint. A
-    // chain otherwise keeps writing what every existing reader expects.
-    const isV3 = event.artifacts?.some((artifact) => artifact.text !== undefined) === true;
-    const isV2 = event.artifacts !== undefined || event.model !== undefined;
-    const unsigned = parseUnsignedReceipt({
-      v: isV3 ? RECEIPT_VERSION_3 : isV2 ? RECEIPT_VERSION_2 : RECEIPT_VERSION_1,
-      system_id: event.system_id,
-      seq: tip === undefined ? 0 : tip.seq + 1,
-      ts_event: event.ts_event,
-      ts_received: event.ts_received,
-      actor: event.actor,
-      action: event.action,
-      input_hash: event.input_hash,
-      output_hash: event.output_hash,
-      outcome: event.outcome,
-      source: event.source,
-      prev_hash: tip === undefined ? GENESIS_PREV_HASH : tip.hash,
-      key_id: signer.keyId,
-      ...(event.artifacts === undefined ? {} : { artifacts: event.artifacts }),
-      ...(event.model === undefined ? {} : { model: event.model }),
-    });
-
-    // RFC 8785 is defined over well-formed Unicode. A string holding half of
-    // a surrogate pair would be signed here and serialised somehow, but an
-    // independent implementation could not reproduce its hash, so it is
-    // refused before a signature is ever asked for.
-    const malformed = malformedStringIn(unsigned, "");
-    if (malformed !== null) {
-      throw new StorageError(
-        `receipt field ${malformed} is not well-formed Unicode (it holds half of a surrogate ` +
-          "pair), so it has no canonical form another implementation would agree on: nothing was signed or written",
-      );
-    }
-
-    // One set of bytes: the ones stored as `canonical`, whose hash is stored
-    // as `hash`, signed, and verified below.
-    const canonicalBytes = canonicalReceiptBytes(unsigned);
-    const canonical = new TextDecoder().decode(canonicalBytes);
-    const digest = sha256(canonicalBytes);
-    const sig = await signer.sign(digest);
+    const unsigned = this.buildUnsigned(event, tip, signer.keyId);
+    const digest = sha256(canonicalReceiptBytes(unsigned));
+    const sig = await signer.signReceipt(unsigned);
     // Validated again after signing: the signer is a separate process, and
     // what it returns is not taken on trust. The shape first, then the
     // signature itself: it must verify over exactly these bytes, under the
-    // signer's own key, or the transaction is rolled back and the position
-    // stays free. A signature over any other digest — another receipt's,
-    // say — is refused here whatever route it took to arrive.
+    // signer's own key, or the transaction is rolled back. A signature over
+    // any other digest — another receipt's, say — is refused here whatever
+    // route it took to arrive.
     const receipt = parseReceipt({ ...unsigned, sig });
     if (!verifyDigestSignature(digest, receipt.sig, verificationKey)) {
       throw refusedSignature("receipt", signer.keyId);
     }
 
+    if (mode === "genesis") {
+      this.registerStatement.run({ system_id: event.system_id, created_at: event.ts_received });
+    }
+    this.insertRow(receipt);
+    return { receipt, duplicate: false };
+  }
+
+  /** Writes a signed receipt, and its artifact rows. The caller holds the transaction. */
+  private insertRow(receipt: Receipt): void {
+    // One set of bytes: the ones stored as `canonical`, whose hash is stored
+    // as `hash`, and which the signature was checked over.
+    const canonicalBytes = canonicalReceiptBytes(receipt);
     this.insertStatement.run({
       system_id: receipt.system_id,
       seq: receipt.seq,
-      hash: Buffer.from(digest).toString("hex"),
+      hash: toHex(sha256(canonicalBytes)),
       prev_hash: receipt.prev_hash,
-      canonical,
+      canonical: new TextDecoder().decode(canonicalBytes),
       sig: receipt.sig,
       key_id: receipt.key_id,
       ts_event: receipt.ts_event,
@@ -1062,8 +1188,8 @@ export class ReceiptStore {
       action_kind: receipt.action.kind,
       action_name: receipt.action.name,
       outcome: receipt.outcome,
-      source_trace_id: event.source.trace_id ?? null,
-      source_span_id: event.source.span_id ?? null,
+      source_trace_id: receipt.source.trace_id ?? null,
+      source_span_id: receipt.source.span_id ?? null,
     });
 
     if (receipt.v !== 1 && receipt.artifacts !== undefined) {
@@ -1081,7 +1207,87 @@ export class ReceiptStore {
         });
       }
     }
+  }
 
-    return { receipt, duplicate: false };
+  /**
+   * One chain against the signer's head. Called on the write queue with no
+   * transaction open; whatever it writes, it commits itself, so a recovered
+   * receipt is never rolled back by a later failure.
+   */
+  private async reconcileNow(systemId: string): Promise<ReconcileOutcome> {
+    const { signer, verificationKey } = this.writer();
+    const head = await signer.head(systemId);
+
+    return this.inTransaction(async () => {
+      const tip = this.tipStatement.get(systemId) as TipRow | undefined;
+      const here = tip === undefined ? "this database holds no chain for it" : `this database is at seq ${tip.seq} (${tip.hash})`;
+      const diverged = (detail: string): ReconcileOutcome => {
+        this.recordDivergence(systemId, detail);
+        return { system_id: systemId, status: "diverged", detail };
+      };
+
+      if (head === null) {
+        if (tip === undefined) return { system_id: systemId, status: "in_sync" };
+        return diverged(
+          `the signer has signed nothing for ${systemId}, and ${here}: if this installation predates the ` +
+            "signer's own state, run `sigillo-signer init-from-db` once",
+        );
+      }
+
+      const headHash = receiptHashHex(head);
+      const key = this.publicKeyFor(head.key_id) ?? (head.key_id === signer.keyId ? verificationKey : undefined);
+      if (head.system_id !== systemId || key === undefined || !verifyReceiptSignature(head, key)) {
+        return diverged(`the head the signer returned for ${systemId} is not a receipt of it under a known key`);
+      }
+      const there = `the signer is at seq ${head.seq} (${headHash})`;
+
+      if (tip !== undefined && head.seq === tip.seq && headHash === tip.hash) {
+        return { system_id: systemId, status: "in_sync" };
+      }
+
+      const extendsTip = head.seq === (tip?.seq ?? -1) + 1 && head.prev_hash === (tip?.hash ?? GENESIS_PREV_HASH);
+      if (!extendsTip) return diverged(`${there}, and ${here}`);
+
+      // The one case with a safe answer: the signer signed the receipt that
+      // comes next, and the process that asked for it never stored it.
+      if (this.deletionOf(systemId, this.write) !== null) {
+        return diverged(`${there}, but ${systemId} was deleted here, so its receipt is not restored`);
+      }
+      const { trace_id, span_id } = head.source;
+      if (trace_id !== undefined && span_id !== undefined && this.duplicateStatement.get(systemId, trace_id, span_id) !== undefined) {
+        return diverged(`${there}, and its span ${trace_id}/${span_id} is already on the chain at another position`);
+      }
+      if (head.seq === 0) {
+        this.registerStatement.run({ system_id: systemId, created_at: head.ts_received });
+      }
+      this.insertRow(head);
+      this.logAdmin(
+        "signer.recovered",
+        systemId,
+        { actor: "server (reconciliation with the signer)", ts: new Date().toISOString() },
+        { seq: head.seq, hash: headHash, ...(trace_id === undefined ? {} : { trace_id }), ...(span_id === undefined ? {} : { span_id }) },
+      );
+      this.divergences.delete(systemId);
+      return { system_id: systemId, status: "recovered", seq: head.seq, hash: headHash };
+    });
+  }
+
+  /**
+   * Remembers a disagreement with the signer, and writes it to the
+   * administrative log the first time this process finds it. Nothing is
+   * corrected: which side is right is for a person to establish.
+   */
+  private recordDivergence(systemId: string, detail: string): void {
+    if (this.divergences.get(systemId) === detail) return;
+    this.divergences.set(systemId, detail);
+    const log = (): void =>
+      this.logAdmin(
+        "signer.divergence",
+        systemId,
+        { actor: "server (reconciliation with the signer)", ts: new Date().toISOString() },
+        { detail },
+      );
+    if (this.write.inTransaction) log();
+    else this.write.transaction(log)();
   }
 }

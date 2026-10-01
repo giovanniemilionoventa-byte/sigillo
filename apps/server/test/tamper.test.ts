@@ -51,6 +51,8 @@ const RECEIPTS = 12;
 let directory: string;
 let tsa: LocalTsa;
 let signer: TestSigner;
+/** The signer's clock: a checkpoint's time is the signer's, so the tests set it where they need it. */
+let signerClock = new Date("2026-03-29T15:00:00.000Z");
 let original: Map<string, Uint8Array>;
 let counter = 0;
 
@@ -74,7 +76,8 @@ async function produceArchive(withSigner: TestSigner, database: string): Promise
   try {
     await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
     for (let index = 1; index < RECEIPTS; index += 1) await store.append(event(index));
-    const checkpoint = await store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z");
+    signerClock = new Date("2026-03-29T15:00:00.000Z");
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint === null) throw new Error("no checkpoint");
     const token = tsa.stamp(checkpoint.checkpoint.root_hash);
     await store.recordTimestamp(checkpoint.id, "http://tsa.test/", token.toString("base64"), "2026-03-29T15:00:05.000Z");
@@ -98,7 +101,7 @@ async function produceArchive(withSigner: TestSigner, database: string): Promise
 beforeAll(async () => {
   directory = mkdtempSync(join(tmpdir(), "sigillo-tamper-"));
   tsa = createLocalTsa();
-  signer = createTestSigner();
+  signer = createTestSigner({ now: () => signerClock });
   original = new Map(readZip(await produceArchive(signer, join(directory, "real.db"))).map((e) => [e.name, e.data]));
 }, 60_000);
 
@@ -274,7 +277,7 @@ describe("the ten scenarios of phase 6", () => {
     if (entry === undefined) throw new Error("no checkpoint");
     const { sig: _sig, ...unsigned } = entry.checkpoint;
     const wrong = { ...unsigned, root_hash: `${"0".repeat(63)}1` };
-    entry.checkpoint = { ...wrong, sig: await signer.sign(checkpointHash(wrong)) };
+    entry.checkpoint = { ...wrong, sig: await signer.forge(checkpointHash(wrong)) };
     expectCaught(verify(doctor({ "checkpoints.jsonl": jsonl([entry]) })), "merkle-root", "checkpoints.jsonl:1");
   }, 30_000);
 
@@ -360,7 +363,7 @@ describe("beyond the ten", () => {
           ...(index === 3 ? { outcome: "blocked" as const } : {}),
           prev_hash: receiptHashHex(receipts[index - 1] as Receipt),
         };
-        receipts[index] = { ...rewritten, sig: await signer.sign(fromHex(receiptHashHex(rewritten))) } as Receipt;
+        receipts[index] = { ...rewritten, sig: await signer.forge(fromHex(receiptHashHex(rewritten))) } as Receipt;
       }
       const leaves = receipts.map((receipt) => fromHex(receiptHashHex(receipt)));
       const [entry] = linesOf<Entry>(original, "checkpoints.jsonl");
@@ -373,7 +376,7 @@ describe("beyond the ten", () => {
       const rewrittenArchive = doctor({
         "receipts.jsonl": jsonl(receipts),
         "checkpoints.jsonl": jsonl([
-          { checkpoint: { ...checkpoint, sig: await signer.sign(checkpointHash(checkpoint)) }, proofs: [], timestamps: [] },
+          { checkpoint: { ...checkpoint, sig: await signer.forge(checkpointHash(checkpoint)) }, proofs: [], timestamps: [] },
         ]),
         "manifest.json": bytesOf(JSON.stringify(manifest)),
         ...tokenFiles,
@@ -421,9 +424,11 @@ describe("the newest checkpoint and its token taken out (review point 3d)", () =
    * second checkpoint (`stale`) and once after it (`staged`).
    */
   async function produceStaged(database: string): Promise<{ stale: Map<string, Uint8Array>; staged: Map<string, Uint8Array> }> {
-    const store = ReceiptStore.open(database, signer);
+    // A second installation under the same key: its own database, and its own signer state.
+    const store = ReceiptStore.open(database, createTestSigner({ key: signer.key, now: () => signerClock }));
     const checkpointAndAnchor = async (at: string): Promise<void> => {
-      const written = await store.createCheckpoint(SYSTEM, at);
+      signerClock = new Date(at);
+      const written = await store.createCheckpoint(SYSTEM);
       if (written === null) throw new Error("no checkpoint");
       const token = tsa.stamp(written.checkpoint.root_hash);
       await store.recordTimestamp(written.id, "http://tsa.test/", token.toString("base64"), "2026-03-29T16:00:00.000Z");

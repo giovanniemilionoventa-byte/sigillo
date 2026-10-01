@@ -31,16 +31,19 @@ const FAKE_TOKEN = Buffer.from([0x30, 0x03, 0x02, 0x01, 0x00]).toString("base64"
 let directory: string;
 let signer: TestSigner;
 let store: ReceiptStore;
+/** The signer's clock: a checkpoint's time is the signer's, so the tests set it where they need it. */
+let signerClock = new Date("2026-03-29T15:00:00.000Z");
 
 beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), "sigillo-archive-"));
-  signer = createTestSigner();
+  signerClock = new Date("2026-03-29T15:00:00.000Z");
+  signer = createTestSigner({ now: () => signerClock });
   store = ReceiptStore.open(join(directory, "sigillo.db"), signer);
   await store.createSystem(SYSTEM, "2026-03-29T14:30:00.000Z");
   for (let index = 1; index < 12; index += 1) {
     await store.append(event(index));
   }
-  await store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z");
+  await store.createCheckpoint(SYSTEM);
 });
 
 /** Anchors the checkpoint with whatever token the test wants to study. */
@@ -276,7 +279,8 @@ describe("an export of a window of the chain", () => {
     for (let index = store.readChain(SYSTEM).length; index < count; index += 1) {
       await store.append(event(index));
     }
-    await store.createCheckpoint(SYSTEM, at);
+    signerClock = new Date(at);
+    await store.createCheckpoint(SYSTEM);
   }
 
   async function buildWindow(fromSeq: number, toSeq: number): Promise<Awaited<ReturnType<typeof buildArchive>>> {
