@@ -3,9 +3,10 @@
   "receipt_versions": [
     1,
     2,
-    3
+    3,
+    4
   ],
-  "note": "canonical is the RFC 8785 form of the receipt with the sig field removed; hash is the SHA-256 of those UTF-8 bytes, lowercase hex. The sig values are a fixed placeholder: these vectors pin the wire format, not signatures. Signature vectors arrive with the signer. Versions 1, 2 and 3 are all covered; a v1 vector has no artifacts or model member at all, and only a v3 artifact may carry text.",
+  "note": "canonical is the RFC 8785 form of the receipt with the sig field removed; hash is the SHA-256 of those UTF-8 bytes, lowercase hex. The sig values are a fixed placeholder: these vectors pin the wire format, not signatures. Signature vectors arrive with the signer. Versions 1 to 4 are all covered; a v1 vector has no artifacts or model member at all, only a v3 or v4 artifact may carry text, and only a v4 receipt carries hash schemes. salted_digests: SHA-256 of the nonce's 32 bytes followed by the value's RFC 8785 form.",
   "vectors": [
     {
       "name": "genesis",
@@ -777,6 +778,149 @@
       },
       "canonical": "{\"action\":{\"kind\":\"llm_call\",\"name\":\"chat.completions\"},\"actor\":{\"agent\":\"planner\",\"on_behalf_of\":\"urn:user:42\"},\"artifacts\":[{\"label\":\"riassunto\",\"media_type\":\"text/plain\",\"role\":\"output\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"text\":{\"canon\":\"sigillo-text/1\",\"sha256\":\"7930b9c8f62bf831bf5d051ffa3e25051329b7148e0b8ee22a13b2d8cd0cfb1e\"}}],\"input_hash\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"model\":{\"digest\":null,\"name\":\"qwen2.5:3b\",\"provider\":\"ollama\"},\"outcome\":\"ok\",\"output_hash\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":27,\"source\":{\"type\":\"sdk\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-03-29T14:31:20.000Z\",\"ts_received\":\"2026-03-29T14:31:20.001Z\",\"v\":3}",
       "hash": "ba9b92c28384e002e7a193ccebefc1147de22c3a083bef850ad726ee7823b26b"
+    },
+    {
+      "name": "v4-pseudonym-salted-input-plain-output",
+      "comment": "Version 4: on_behalf_of is a pseudonym token; the input was hashed by the server with a nonce, the output by the client.",
+      "receipt": {
+        "v": 4,
+        "system_id": "acme-support-bot",
+        "seq": 28,
+        "ts_event": "2026-10-01T09:00:00.000Z",
+        "ts_received": "2026-10-01T09:00:00.001Z",
+        "actor": {
+          "agent": "agente-cv",
+          "on_behalf_of": "psn_9f86d081884c7d659a2feaa0c55ad015"
+        },
+        "action": {
+          "kind": "tool_call",
+          "name": "valuta_candidato"
+        },
+        "input_hash": "0de84395a90cb98f917231a13f03446f21af13e0c18d18f073f32417d119e0ac",
+        "output_hash": "54bdd2b9a826bd73c13cbbff63dd33e9e4fbf34b2d28167204b271c33bbc3477",
+        "outcome": "ok",
+        "source": {
+          "type": "otlp",
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+          "span_id": "00f067aa0ba902b8"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ==",
+        "input_hash_scheme": "salted",
+        "output_hash_scheme": "plain"
+      },
+      "canonical": "{\"action\":{\"kind\":\"tool_call\",\"name\":\"valuta_candidato\"},\"actor\":{\"agent\":\"agente-cv\",\"on_behalf_of\":\"psn_9f86d081884c7d659a2feaa0c55ad015\"},\"input_hash\":\"0de84395a90cb98f917231a13f03446f21af13e0c18d18f073f32417d119e0ac\",\"input_hash_scheme\":\"salted\",\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":\"54bdd2b9a826bd73c13cbbff63dd33e9e4fbf34b2d28167204b271c33bbc3477\",\"output_hash_scheme\":\"plain\",\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":28,\"source\":{\"span_id\":\"00f067aa0ba902b8\",\"trace_id\":\"4bf92f3577b34da6a3ce929d0e0e4736\",\"type\":\"otlp\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-10-01T09:00:00.000Z\",\"ts_received\":\"2026-10-01T09:00:00.001Z\",\"v\":4}",
+      "hash": "ceb1df32324289fded985833299ad588b8cbd9357ace0fc913fd195f6675762b"
+    },
+    {
+      "name": "v4-no-digests-no-person",
+      "comment": "Version 4 with neither digest: both schemes are null, and there is no on_behalf_of at all.",
+      "receipt": {
+        "v": 4,
+        "system_id": "acme-support-bot",
+        "seq": 29,
+        "ts_event": "2026-10-01T09:00:01.000Z",
+        "ts_received": "2026-10-01T09:00:01.001Z",
+        "actor": {
+          "agent": "agente-cv"
+        },
+        "action": {
+          "kind": "agent_step",
+          "name": "tick"
+        },
+        "input_hash": null,
+        "output_hash": null,
+        "outcome": "ok",
+        "source": {
+          "type": "api"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ==",
+        "input_hash_scheme": null,
+        "output_hash_scheme": null
+      },
+      "canonical": "{\"action\":{\"kind\":\"agent_step\",\"name\":\"tick\"},\"actor\":{\"agent\":\"agente-cv\"},\"input_hash\":null,\"input_hash_scheme\":null,\"key_id\":\"3f2a1c9d8e7b6a5f\",\"outcome\":\"ok\",\"output_hash\":null,\"output_hash_scheme\":null,\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":29,\"source\":{\"type\":\"api\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-10-01T09:00:01.000Z\",\"ts_received\":\"2026-10-01T09:00:01.001Z\",\"v\":4}",
+      "hash": "db44aec82f9c0d6d901808f3f52df07390878deee55e020f93eb51625ae6b8f7"
+    },
+    {
+      "name": "v4-salted-both-with-text-artifact-and-model",
+      "comment": "Version 4 keeps version 3's artifacts unchanged: the exact digest and the sigillo-text/1 one are never salted.",
+      "receipt": {
+        "v": 4,
+        "system_id": "acme-support-bot",
+        "seq": 30,
+        "ts_event": "2026-10-01T09:00:02.000Z",
+        "ts_received": "2026-10-01T09:00:02.001Z",
+        "actor": {
+          "agent": "agente-cv",
+          "on_behalf_of": "psn_9f86d081884c7d659a2feaa0c55ad015"
+        },
+        "action": {
+          "kind": "llm_call",
+          "name": "chat.completions"
+        },
+        "input_hash": "0350a650ef8e8a1d0d69aaf0044de25f5069595f60d07e4ba6261cddd24eef0d",
+        "output_hash": "0fb3d23d0232e85dc5f169806ccace68a97d30ba9278b726ea764cb97236c1b7",
+        "outcome": "ok",
+        "source": {
+          "type": "sdk"
+        },
+        "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+        "key_id": "3f2a1c9d8e7b6a5f",
+        "sig": "cGxhY2Vob2xkZXItc2lnbmF0dXJlLW5vdC12ZXJpZmlhYmxlLW0xLXZlY3RvcnMtc2VlLUZPUk1BVC5tZC0wMQ==",
+        "input_hash_scheme": "salted",
+        "output_hash_scheme": "salted",
+        "artifacts": [
+          {
+            "role": "input",
+            "label": "curriculum",
+            "media_type": "text/plain",
+            "sha256": "fef8e3961a0d8b0aab3979406edacec21b767ac0e0c47fed7a0a6ad01f8ec615",
+            "text": {
+              "canon": "sigillo-text/1",
+              "sha256": "54a58d6fbf86b8113c5183a32142c3069884460d0ec47b4ee7e435dfd5b23319"
+            }
+          }
+        ],
+        "model": {
+          "name": "qwen2.5:3b",
+          "provider": "ollama",
+          "digest": null
+        }
+      },
+      "canonical": "{\"action\":{\"kind\":\"llm_call\",\"name\":\"chat.completions\"},\"actor\":{\"agent\":\"agente-cv\",\"on_behalf_of\":\"psn_9f86d081884c7d659a2feaa0c55ad015\"},\"artifacts\":[{\"label\":\"curriculum\",\"media_type\":\"text/plain\",\"role\":\"input\",\"sha256\":\"fef8e3961a0d8b0aab3979406edacec21b767ac0e0c47fed7a0a6ad01f8ec615\",\"text\":{\"canon\":\"sigillo-text/1\",\"sha256\":\"54a58d6fbf86b8113c5183a32142c3069884460d0ec47b4ee7e435dfd5b23319\"}}],\"input_hash\":\"0350a650ef8e8a1d0d69aaf0044de25f5069595f60d07e4ba6261cddd24eef0d\",\"input_hash_scheme\":\"salted\",\"key_id\":\"3f2a1c9d8e7b6a5f\",\"model\":{\"digest\":null,\"name\":\"qwen2.5:3b\",\"provider\":\"ollama\"},\"outcome\":\"ok\",\"output_hash\":\"0fb3d23d0232e85dc5f169806ccace68a97d30ba9278b726ea764cb97236c1b7\",\"output_hash_scheme\":\"salted\",\"prev_hash\":\"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543\",\"seq\":30,\"source\":{\"type\":\"sdk\"},\"system_id\":\"acme-support-bot\",\"ts_event\":\"2026-10-01T09:00:02.000Z\",\"ts_received\":\"2026-10-01T09:00:02.001Z\",\"v\":4}",
+      "hash": "42b65bf506116e722a4187c2a116655b0253eef1c9a36d52f6a1b3df6064798e"
+    }
+  ],
+  "salted_digests": [
+    {
+      "name": "short-text",
+      "nonce_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "value": "score: 7",
+      "digest": "0de84395a90cb98f917231a13f03446f21af13e0c18d18f073f32417d119e0ac"
+    },
+    {
+      "name": "object-keys-sorted",
+      "nonce_hex": "fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0",
+      "value": {
+        "punteggio": 7,
+        "esito": "idoneo"
+      },
+      "digest": "0350a650ef8e8a1d0d69aaf0044de25f5069595f60d07e4ba6261cddd24eef0d"
+    },
+    {
+      "name": "non-ascii-text",
+      "nonce_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "value": "è idoneo ✓",
+      "digest": "0fb3d23d0232e85dc5f169806ccace68a97d30ba9278b726ea764cb97236c1b7"
+    },
+    {
+      "name": "bare-number",
+      "nonce_hex": "fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0",
+      "value": 7,
+      "digest": "b6796fe5ac89f8dfdaf3eb80f4730835b754a2c80e58daa85cf573d0370ad4bd"
     }
   ]
 }

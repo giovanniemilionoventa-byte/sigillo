@@ -1,17 +1,19 @@
 import { z } from "zod";
 import { CANONICAL_BASE64_MESSAGE, isCanonicalBase64 } from "./base64.js";
 import { canonicalBytes, sha256, sha256Hex } from "./canonical.js";
+import { HASH_SCHEME_PLAIN, HASH_SCHEME_SALTED, isPseudonym } from "./privacy.js";
 import { TEXT_CANON_1 } from "./text.js";
 
 /**
  * The schema versions a receipt's `v` field may carry. `as const` keeps
- * their type the literal `1`/`2`/`3`, not `number`: `z.discriminatedUnion` needs a
+ * their type the literal `1`/`2`/`3`/`4`, not `number`: `z.discriminatedUnion` needs a
  * genuine literal on the tag to route to the right branch and to give
  * `Receipt` a type that actually narrows on `v`.
  */
 export const RECEIPT_VERSION_1 = 1 as const;
 export const RECEIPT_VERSION_2 = 2 as const;
 export const RECEIPT_VERSION_3 = 3 as const;
+export const RECEIPT_VERSION_4 = 4 as const;
 
 /** `prev_hash` of the first receipt in a chain. */
 export const GENESIS_PREV_HASH = "0".repeat(64);
@@ -65,6 +67,23 @@ export const actorSchema = z
     on_behalf_of: z.string().min(1).max(MAX_NAME).optional(),
   })
   .strict();
+
+/**
+ * Version 4: `on_behalf_of` is a pseudonym token, never an identifier. Who the
+ * token stands for is kept by the server outside the chain (FORMAT.md 2.2).
+ */
+export const actorV4Schema = z
+  .object({
+    agent: z.string().min(1).max(MAX_NAME),
+    on_behalf_of: z
+      .string()
+      .refine(isPseudonym, "must be a pseudonym token: psn_ followed by 32 lowercase hex characters")
+      .optional(),
+  })
+  .strict();
+
+/** Version 4: how `input_hash` / `output_hash` was computed (FORMAT.md 2.7). */
+export const hashSchemeSchema = z.enum([HASH_SCHEME_PLAIN, HASH_SCHEME_SALTED]);
 
 export const actionSchema = z
   .object({
@@ -188,23 +207,70 @@ export const unsignedReceiptV3Schema = z
   })
   .strict();
 
-export const unsignedReceiptSchema = z.discriminatedUnion("v", [
-  unsignedReceiptV1Schema,
-  unsignedReceiptV2Schema,
-  unsignedReceiptV3Schema,
-]);
+/**
+ * Version 3 with no personal data in the clear: `on_behalf_of` a pseudonym
+ * token, and each digest beside the scheme it was computed under. Artifacts
+ * and their digests are exactly version 3's.
+ */
+export const unsignedReceiptV4Schema = z
+  .object({
+    v: z.literal(RECEIPT_VERSION_4),
+    ...receiptCoreShape,
+    actor: actorV4Schema,
+    /** Null exactly when the digest beside it is null. */
+    input_hash_scheme: hashSchemeSchema.nullable(),
+    output_hash_scheme: hashSchemeSchema.nullable(),
+    artifacts: z.array(artifactV3Schema).min(1).optional(),
+    model: modelSchema.optional(),
+  })
+  .strict();
+
+/**
+ * The one rule a single version's object cannot state by itself: in version
+ * 4, a digest and its scheme are both present or both null. It sits on the
+ * union because zod routes on `v` only through plain objects.
+ */
+function schemesMatchDigests(
+  receipt: { v: number; input_hash: string | null; output_hash: string | null } & Record<string, unknown>,
+  context: z.RefinementCtx,
+): void {
+  if (receipt.v !== RECEIPT_VERSION_4) return;
+  for (const role of ["input", "output"] as const) {
+    if ((receipt[`${role}_hash`] === null) !== (receipt[`${role}_hash_scheme`] === null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [`${role}_hash_scheme`],
+        message: `must be null exactly when ${role}_hash is null`,
+      });
+    }
+  }
+}
+
+export const unsignedReceiptSchema = z
+  .discriminatedUnion("v", [
+    unsignedReceiptV1Schema,
+    unsignedReceiptV2Schema,
+    unsignedReceiptV3Schema,
+    unsignedReceiptV4Schema,
+  ])
+  .superRefine(schemesMatchDigests);
 
 export const receiptV1Schema = unsignedReceiptV1Schema.extend({ sig: signature }).strict();
 export const receiptV2Schema = unsignedReceiptV2Schema.extend({ sig: signature }).strict();
 
 export const receiptV3Schema = unsignedReceiptV3Schema.extend({ sig: signature }).strict();
+export const receiptV4Schema = unsignedReceiptV4Schema.extend({ sig: signature }).strict();
 
-export const receiptSchema = z.discriminatedUnion("v", [receiptV1Schema, receiptV2Schema, receiptV3Schema]);
+export const receiptSchema = z
+  .discriminatedUnion("v", [receiptV1Schema, receiptV2Schema, receiptV3Schema, receiptV4Schema])
+  .superRefine(schemesMatchDigests);
 
 export type ActionKind = z.infer<typeof actionKindSchema>;
 export type Outcome = z.infer<typeof outcomeSchema>;
 export type SourceType = z.infer<typeof sourceTypeSchema>;
 export type Actor = z.infer<typeof actorSchema>;
+export type ActorV4 = z.infer<typeof actorV4Schema>;
+export type HashScheme = z.infer<typeof hashSchemeSchema>;
 export type Action = z.infer<typeof actionSchema>;
 export type Source = z.infer<typeof sourceSchema>;
 export type ArtifactRole = z.infer<typeof artifactRoleSchema>;
@@ -215,10 +281,12 @@ export type ModelInfo = z.infer<typeof modelSchema>;
 export type UnsignedReceiptV1 = z.infer<typeof unsignedReceiptV1Schema>;
 export type UnsignedReceiptV2 = z.infer<typeof unsignedReceiptV2Schema>;
 export type UnsignedReceiptV3 = z.infer<typeof unsignedReceiptV3Schema>;
+export type UnsignedReceiptV4 = z.infer<typeof unsignedReceiptV4Schema>;
 export type UnsignedReceipt = z.infer<typeof unsignedReceiptSchema>;
 export type ReceiptV1 = z.infer<typeof receiptV1Schema>;
 export type ReceiptV2 = z.infer<typeof receiptV2Schema>;
 export type ReceiptV3 = z.infer<typeof receiptV3Schema>;
+export type ReceiptV4 = z.infer<typeof receiptV4Schema>;
 export type Receipt = z.infer<typeof receiptSchema>;
 
 export class ReceiptFormatError extends Error {

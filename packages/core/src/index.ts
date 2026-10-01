@@ -20,6 +20,18 @@ export type { DocumentFingerprints, FingerprintKind } from "./text.js";
 
 export { SIGILLO_VERSION } from "./version.js";
 
+export {
+  HASH_SCHEME_PLAIN,
+  HASH_SCHEME_SALTED,
+  isPseudonym,
+  openSaltedDigest,
+  PSEUDONYM_PREFIX,
+  PSEUDONYM_RANDOM_BYTES,
+  pseudonymFromRandom,
+  SALT_NONCE_BYTES,
+  saltedDigest,
+} from "./privacy.js";
+
 export { CANONICAL_BASE64_MESSAGE, isCanonicalBase64 } from "./base64.js";
 
 export {
@@ -80,12 +92,14 @@ export {
   actionKindSchema,
   actionSchema,
   actorSchema,
+  actorV4Schema,
   artifactRoleSchema,
   artifactSchema,
   artifactTextSchema,
   artifactV3Schema,
   canonicalReceiptBytes,
   GENESIS_PREV_HASH,
+  hashSchemeSchema,
   modelSchema,
   outcomeSchema,
   parseReceipt,
@@ -95,11 +109,13 @@ export {
   RECEIPT_VERSION_1,
   RECEIPT_VERSION_2,
   RECEIPT_VERSION_3,
+  RECEIPT_VERSION_4,
   ReceiptFormatError,
   receiptSchema,
   receiptV1Schema,
   receiptV2Schema,
   receiptV3Schema,
+  receiptV4Schema,
   safeParseReceipt,
   safeParseUnsignedReceipt,
   sourceSchema,
@@ -108,6 +124,7 @@ export {
   unsignedReceiptV1Schema,
   unsignedReceiptV2Schema,
   unsignedReceiptV3Schema,
+  unsignedReceiptV4Schema,
 } from "./receipt.js";
 
 export type {
@@ -118,6 +135,8 @@ export type {
   ArtifactRole,
   ArtifactText,
   Actor,
+  ActorV4,
+  HashScheme,
   ModelInfo,
   Outcome,
   Receipt,
@@ -125,6 +144,7 @@ export type {
   ReceiptV1,
   ReceiptV2,
   ReceiptV3,
+  ReceiptV4,
   Source,
   SourceType,
   UnsignedReceipt,
@@ -132,4 +152,5 @@ export type {
   UnsignedReceiptV1,
   UnsignedReceiptV2,
   UnsignedReceiptV3,
+  UnsignedReceiptV4,
 } from "./receipt.js";

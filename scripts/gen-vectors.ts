@@ -12,11 +12,15 @@ import { fileURLToPath } from "node:url";
 import {
   canonicalReceiptBytes,
   GENESIS_PREV_HASH,
+  HASH_SCHEME_PLAIN,
+  HASH_SCHEME_SALTED,
   parseReceipt,
   receiptHashHex,
   RECEIPT_VERSION_1,
   RECEIPT_VERSION_2,
   RECEIPT_VERSION_3,
+  RECEIPT_VERSION_4,
+  saltedDigest,
   sha256Hex,
   TEXT_CANON_1,
   textSha256,
@@ -456,6 +460,98 @@ const inputs: VectorInput[] = [
   },
 ];
 
+// Version 4: a pseudonym token instead of an identifier, and each digest
+// beside its scheme. The salted digests are real ones, over the nonces and
+// values listed in `salted_digests` below.
+const NONCE_A = Uint8Array.from({ length: 32 }, (_, index) => index);
+const NONCE_B = Uint8Array.from({ length: 32 }, (_, index) => 255 - index);
+const TOKEN = "psn_9f86d081884c7d659a2feaa0c55ad015";
+
+inputs.push(
+  {
+    name: "v4-pseudonym-salted-input-plain-output",
+    comment:
+      "Version 4: on_behalf_of is a pseudonym token; the input was hashed by the server with a nonce, the output by the client.",
+    receipt: {
+      ...genesis,
+      v: RECEIPT_VERSION_4,
+      seq: 28,
+      ts_event: "2026-10-01T09:00:00.000Z",
+      ts_received: "2026-10-01T09:00:00.001Z",
+      actor: { agent: "agente-cv", on_behalf_of: TOKEN },
+      action: { kind: "tool_call", name: "valuta_candidato" },
+      input_hash: saltedDigest(NONCE_A, "score: 7"),
+      input_hash_scheme: HASH_SCHEME_SALTED,
+      output_hash: sha256Hex(new TextEncoder().encode('"idoneo"')),
+      output_hash_scheme: HASH_SCHEME_PLAIN,
+      source: { type: "otlp", trace_id: "4bf92f3577b34da6a3ce929d0e0e4736", span_id: "00f067aa0ba902b8" },
+      prev_hash: genesisHash,
+    },
+  },
+  {
+    name: "v4-no-digests-no-person",
+    comment: "Version 4 with neither digest: both schemes are null, and there is no on_behalf_of at all.",
+    receipt: {
+      ...genesis,
+      v: RECEIPT_VERSION_4,
+      seq: 29,
+      ts_event: "2026-10-01T09:00:01.000Z",
+      ts_received: "2026-10-01T09:00:01.001Z",
+      actor: { agent: "agente-cv" },
+      action: { kind: "agent_step", name: "tick" },
+      input_hash_scheme: null,
+      output_hash_scheme: null,
+      source: { type: "api" },
+      prev_hash: genesisHash,
+    },
+  },
+  {
+    name: "v4-salted-both-with-text-artifact-and-model",
+    comment:
+      "Version 4 keeps version 3's artifacts unchanged: the exact digest and the sigillo-text/1 one are never salted.",
+    receipt: {
+      ...genesis,
+      v: RECEIPT_VERSION_4,
+      seq: 30,
+      ts_event: "2026-10-01T09:00:02.000Z",
+      ts_received: "2026-10-01T09:00:02.001Z",
+      actor: { agent: "agente-cv", on_behalf_of: TOKEN },
+      action: { kind: "llm_call", name: "chat.completions" },
+      input_hash: saltedDigest(NONCE_B, { punteggio: 7, esito: "idoneo" }),
+      input_hash_scheme: HASH_SCHEME_SALTED,
+      output_hash: saltedDigest(NONCE_A, "è idoneo ✓"),
+      output_hash_scheme: HASH_SCHEME_SALTED,
+      source: { type: "sdk" },
+      prev_hash: genesisHash,
+      artifacts: [
+        {
+          role: "input",
+          label: "curriculum",
+          media_type: "text/plain",
+          sha256: SHA_LETTER,
+          text: { canon: TEXT_CANON_1, sha256: TEXT_LETTER },
+        },
+      ],
+      model: { name: "qwen2.5:3b", provider: "ollama", digest: null },
+    },
+  },
+);
+
+/** Salted digests (FORMAT.md 2.7), re-derived by the Python cross-check from nonce and value alone. */
+const saltedDigests = (
+  [
+    ["short-text", NONCE_A, "score: 7"],
+    ["object-keys-sorted", NONCE_B, { punteggio: 7, esito: "idoneo" }],
+    ["non-ascii-text", NONCE_A, "è idoneo ✓"],
+    ["bare-number", NONCE_B, 7],
+  ] as const
+).map(([name, nonce, value]) => ({
+  name,
+  nonce_hex: Buffer.from(nonce).toString("hex"),
+  value,
+  digest: saltedDigest(nonce, value),
+}));
+
 const vectors = inputs.map((input) => {
   parseReceipt(input.receipt);
   return {
@@ -482,11 +578,13 @@ const output = {
     "canonical is the RFC 8785 form of the receipt with the sig field removed;",
     "hash is the SHA-256 of those UTF-8 bytes, lowercase hex.",
     "The sig values are a fixed placeholder: these vectors pin the wire format,",
-    "not signatures. Signature vectors arrive with the signer. Versions 1, 2 and 3",
-    "are all covered; a v1 vector has no artifacts or model member at all, and only",
-    "a v3 artifact may carry text.",
+    "not signatures. Signature vectors arrive with the signer. Versions 1 to 4",
+    "are all covered; a v1 vector has no artifacts or model member at all, only",
+    "a v3 or v4 artifact may carry text, and only a v4 receipt carries hash schemes.",
+    "salted_digests: SHA-256 of the nonce's 32 bytes followed by the value's RFC 8785 form.",
   ].join(" "),
   vectors,
+  salted_digests: saltedDigests,
 };
 
 const target = fileURLToPath(new URL("../packages/core/test/vectors.json", import.meta.url));
