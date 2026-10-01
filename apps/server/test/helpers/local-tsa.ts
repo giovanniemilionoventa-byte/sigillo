@@ -10,6 +10,13 @@ import { join } from "node:path";
  * `openssl ts -reply` to answer requests. Nothing is mocked: its tokens are
  * genuine RFC 3161 responses that `openssl ts -verify` checks against the CA,
  * exactly as it checks FreeTSA's. It only saves the tests the network.
+ *
+ * `stampAt` issues a token dated whenever the test says, which an authority
+ * never would: it is how the tests show a verifier what a late, early or
+ * backdated anchor looks like. The token is still genuine RFC 3161, signed by
+ * this authority's key and accepted by `openssl ts -verify`; only its TSTInfo
+ * is written here instead of by `openssl ts -reply`, which always uses the
+ * current time.
  */
 
 const CONFIG = `
@@ -48,12 +55,40 @@ export interface LocalTsa {
   caFile: string;
   /** A DER TimeStampResp over the 32-byte digest given in hex, as a TSA returns it. */
   stamp(digestHex: string): Buffer;
+  /** The same, but dated `genTime` (whole seconds or milliseconds) rather than now. */
+  stampAt(digestHex: string, genTime: Date | string): Buffer;
   /**
    * Serves RFC 3161 over HTTP on 127.0.0.1, as an authority does: a POST of a
-   * TimeStampReq, answered with a TimeStampResp. Resolves to its URL.
+   * TimeStampReq, answered with a TimeStampResp. Resolves to its URL. With a
+   * clock, the tokens are dated by it (stampAt), so that a test whose server
+   * runs on an injected clock gets an authority that agrees with it.
    */
-  listen(): Promise<string>;
+  listen(clock?: () => Date): Promise<string>;
   close(): void;
+}
+
+/** DER, just enough of it to write a TSTInfo and wrap a TimeStampResp. */
+function der(tag: number, ...body: Uint8Array[]): Buffer {
+  const content = Buffer.concat(body);
+  const n = content.length;
+  const length = n < 0x80 ? [n] : n < 0x100 ? [0x81, n] : n < 0x10000 ? [0x82, n >> 8, n & 0xff] : [0x83, n >> 16, (n >> 8) & 0xff, n & 0xff];
+  return Buffer.concat([Buffer.from([tag, ...length]), content]);
+}
+function oid(dotted: string): Buffer {
+  const [first = 0, second = 0, ...rest] = dotted.split(".").map(Number);
+  const bytes = [40 * first + second];
+  for (const value of rest) {
+    const groups = [value & 0x7f];
+    for (let left = value >> 7; left > 0; left >>= 7) groups.unshift((left & 0x7f) | 0x80);
+    bytes.push(...groups);
+  }
+  return der(0x06, Buffer.from(bytes));
+}
+function generalizedTime(when: Date): Buffer {
+  const iso = when.toISOString(); // 2026-03-29T15:00:05.250Z
+  const whole = iso.slice(0, 19).replace(/[-T:]/g, "");
+  const millis = iso.slice(20, 23).replace(/0+$/, "");
+  return der(0x18, Buffer.from(`${whole}${millis === "" ? "" : `.${millis}`}Z`, "ascii"));
 }
 
 export function createLocalTsa(): LocalTsa {
@@ -84,7 +119,17 @@ export function createLocalTsa(): LocalTsa {
   );
 
   let requests = 0;
+  let clock: (() => Date) | undefined;
   const reply = (query: Buffer): Buffer => {
+    if (clock !== undefined) {
+      const queryFile = path(`clocked${requests + 1}.tsq`);
+      writeFileSync(queryFile, query);
+      const text = execFileSync("openssl", ["ts", "-query", "-in", queryFile, "-text"], { encoding: "utf8" });
+      const digest = [...text.matchAll(/^\s+[0-9a-f]{4} - ([0-9a-f -]+?)\s{2,}/gm)]
+        .map((line) => (line[1] ?? "").replace(/[^0-9a-f]/g, ""))
+        .join("");
+      return stampAt(digest, clock());
+    }
     requests += 1;
     const queryFile = path(`http${requests}.tsq`);
     const replyFile = path(`http${requests}.tsr`);
@@ -97,6 +142,32 @@ export function createLocalTsa(): LocalTsa {
     );
     return readFileSync(replyFile);
   };
+  function stampAt(digestHex: string, genTime: Date | string): Buffer {
+    requests += 1;
+    const tstInfo = der(
+      0x30,
+      der(0x02, Buffer.from([1])), // version
+      oid("1.2.3.4.1"), // policy, as the configuration above
+      der(0x30, der(0x30, oid("2.16.840.1.101.3.4.2.1"), Buffer.from([0x05, 0x00])), der(0x04, Buffer.from(digestHex, "hex"))),
+      der(0x02, Buffer.from([0x40, requests & 0xff])), // serialNumber, positive and unique enough here
+      generalizedTime(new Date(genTime)),
+    );
+    const infoFile = path(`at${requests}.der`);
+    const tokenFile = path(`at${requests}.tok`);
+    writeFileSync(infoFile, tstInfo);
+    // id-smime-ct-TSTInfo as the content type; -cades adds the
+    // signingCertificateV2 attribute that RFC 3161 (via RFC 5816) requires.
+    execFileSync(
+      "openssl",
+      ["cms", "-sign", "-binary", "-nodetach", "-outform", "DER", "-in", infoFile,
+        "-econtent_type", "1.2.840.113549.1.9.16.1.4", "-signer", path("tsa.crt"), "-inkey", path("tsa.key"),
+        "-md", "sha256", "-cades", "-nosmimecap", "-out", tokenFile],
+      quiet,
+    );
+    // TimeStampResp ::= SEQUENCE { status PKIStatusInfo (granted), timeStampToken }
+    return der(0x30, der(0x30, der(0x02, Buffer.from([0]))), readFileSync(tokenFile));
+  }
+
   const server = createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -114,8 +185,9 @@ export function createLocalTsa(): LocalTsa {
     });
   });
   return {
-    listen: () =>
+    listen: (withClock?: () => Date) =>
       new Promise((resolve) => {
+        clock = withClock;
         server.listen(0, "127.0.0.1", () => {
           const address = server.address();
           resolve(`http://127.0.0.1:${typeof address === "object" && address !== null ? address.port : 0}/tsr`);
@@ -135,6 +207,7 @@ export function createLocalTsa(): LocalTsa {
       );
       return readFileSync(reply);
     },
+    stampAt,
     close(): void {
       server.close();
       rmSync(directory, { recursive: true, force: true });

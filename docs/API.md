@@ -314,6 +314,8 @@ it, with the variable's name in the message.
 | `SIGILLO_ADMIN_PASSWORD` or `SIGILLO_ADMIN_PASSWORD_FILE` | unset: no web view | the web view's password, at least 12 characters; the `_FILE` form names a file holding it |
 | `SIGILLO_CHECKPOINT_MINUTES` | 60 | how often each chain is checkpointed |
 | `SIGILLO_STALE_AFTER_MINUTES` | 1440 | inactivity before a system's light turns yellow |
+| `SIGILLO_TSA_RETRY_MINUTES` | 5 | how soon a timestamp the authority did not give is asked for again |
+| `SIGILLO_MAX_ANCHOR_DELAY_MINUTES` | 60 | how long a checkpoint may wait for its timestamp, or how late the authority may date it, before the light turns yellow; match it to the `--max-anchor-delay` auditors use with `sigillo-verify` |
 | `SIGILLO_LOGIN_MAX_FAILURES` | 5 | wrong passwords allowed per address within the window |
 | `SIGILLO_LOGIN_WINDOW_MINUTES` | 15 | that window |
 | `SIGILLO_LOGIN_LOCKOUT_MINUTES` | 5 | the first lockout; each further one doubles |

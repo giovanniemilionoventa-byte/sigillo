@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { genTimeFrom } from "@sigillo/verifier";
-import { genTimeOfToken } from "../src/timestamp/gentime.js";
+import { genTimeOfToken } from "@sigillo/core";
 import { createLocalTsa, type LocalTsa } from "./helpers/local-tsa.js";
 
 /**
@@ -42,6 +42,18 @@ describe("the time a token attests", () => {
       expect(fromDer).toBe(fromOpenssl);
       // And it is the time it was made, to the second.
       expect(Math.abs(Date.parse(fromDer ?? "") - before)).toBeLessThan(5000);
+    }
+  }, 30_000);
+
+  it("is the time chosen by the test, on a token from stampAt that openssl verifies", () => {
+    const digest = "5a".repeat(32);
+    for (const when of ["2026-03-29T15:00:05.000Z", "2025-12-31T23:59:59.250Z"]) {
+      const token = tsa.stampAt(digest, when);
+      expect(genTimeOfToken(new Uint8Array(token))).toBe(when);
+      expect(genTimeFrom(opensslText(token))).toBe(when);
+      const path = join(directory, "at.tsr");
+      writeFileSync(path, token);
+      execFileSync("openssl", ["ts", "-verify", "-digest", digest, "-in", path, "-CAfile", tsa.caFile], { stdio: "pipe" });
     }
   }, 30_000);
 

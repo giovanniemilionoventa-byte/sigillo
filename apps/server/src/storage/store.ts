@@ -17,6 +17,7 @@ import {
   RECEIPT_VERSION_1,
   RECEIPT_VERSION_2,
   RECEIPT_VERSION_3,
+  genTimeOfToken,
   sha256,
   toHex,
   verifyDigestSignature,
@@ -32,7 +33,6 @@ import {
   type UnsignedReceipt,
 } from "@sigillo/core";
 import { SignerRefusedError } from "../signer/errors.js";
-import { genTimeOfToken } from "../timestamp/gentime.js";
 import { applySchema } from "./schema.js";
 
 /**

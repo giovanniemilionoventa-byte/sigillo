@@ -1,7 +1,10 @@
 import {
   canonicalJson,
   createZip,
+  DEFAULT_CLOCK_TOLERANCE_MS,
+  DEFAULT_MAX_ANCHOR_DELAY_MS,
   fromHex,
+  genTimeOfToken,
   inclusionProof,
   receiptHashHex,
   SIGILLO_VERSION,
@@ -12,10 +15,9 @@ import {
   type Receipt,
   type ZipEntry,
 } from "@sigillo/core";
-import { verifyBundle, type Verification } from "@sigillo/verifier";
+import { anchorTimesOf, verifyBundle, type Verification } from "@sigillo/verifier";
 import type { StoredCheckpoint, StoredTimestamp } from "../storage/store.js";
 import { buildReportPdf } from "./report.js";
-import { genTimeOfToken } from "../timestamp/gentime.js";
 import { verifyInstructions } from "./verify-instructions.js";
 
 /**
@@ -219,6 +221,15 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     if (attested !== undefined) genTimes.set(token.name, attested);
   }
 
+  // When each checkpoint, and so each receipt, is proven to have existed, by
+  // the same rules and the same defaults as sigillo-verify.
+  const provenTimes = verification.ok
+    ? anchorTimesOf(verification, genTimes, {
+        clockToleranceMs: DEFAULT_CLOCK_TOLERANCE_MS,
+        maxAnchorDelayMs: DEFAULT_MAX_ANCHOR_DELAY_MS,
+      })
+    : undefined;
+
   const displayName = input.displayName ?? undefined;
   const report = await buildReportPdf({
     manifest,
@@ -226,6 +237,7 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     verification,
     actionCounts,
     genTimes,
+    ...(provenTimes === undefined ? {} : { provenTimes }),
     ...(displayName === undefined ? {} : { displayName }),
   });
 
@@ -236,7 +248,7 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     { name: "artifacts-index.jsonl", data: encode(artifactsIndexJsonl) },
     ...tokens,
     { name: "report.pdf", data: report },
-    { name: "VERIFY.md", data: encode(verifyInstructions(manifest, entries, genTimes, displayName)) },
+    { name: "VERIFY.md", data: encode(verifyInstructions(manifest, entries, genTimes, displayName, provenTimes)) },
   ];
 
   return { zip: createZip(archiveEntries), entries: archiveEntries, manifest, verification };

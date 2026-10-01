@@ -1,4 +1,41 @@
-import type { CheckpointEntry, Manifest } from "@sigillo/core";
+import {
+  DEFAULT_CLOCK_TOLERANCE_MS,
+  DEFAULT_MAX_ANCHOR_DELAY_MS,
+  formatDuration,
+  type AnchorTimes,
+  type CheckpointEntry,
+  type Manifest,
+} from "@sigillo/core";
+
+/** The "when" section: what the timestamps prove, as sigillo-verify prints it. */
+function provenTimesMarkdown(proven: AnchorTimes | undefined): string {
+  if (proven === undefined) {
+    return "Not established here: the export failed the exporter's own verification. Run `sigillo-verify` to see where.";
+  }
+  const timestamped = proven.checkpoints.filter((entry) => entry.provenAt !== undefined).length;
+  const gap = proven.longestGap;
+  const tail = proven.unproven;
+  const lines = [
+    `- ${timestamped} checkpoint(s) proven by a timestamp, ${proven.late} checkpoint(s) timestamped late ` +
+      `(more than ${DEFAULT_MAX_ANCHOR_DELAY_MS / 60_000} min after their own time)`,
+    `- longest gap between two timestamps: ${gap === null ? "none, fewer than two timestamps" : `${formatDuration(gap.ms)} (${gap.from} to ${gap.to})`}`,
+    `- receipts at the end not yet timestamped: ${tail === null ? "none" : `${tail.count} (seq ${tail.from_seq}..${tail.to_seq})`}`,
+    "",
+    ...proven.checkpoints.map(
+      (entry) =>
+        `- checkpoint over ${entry.tree_size} receipts: ` +
+        `${entry.provenAt === undefined ? "not timestamped" : `proven ${entry.provenAt}`} (declared ${entry.ts})` +
+        `${entry.late ? ", **timestamped late**" : ""}`,
+    ),
+    "",
+    ...proven.ranges.map((range) => `- seq ${range.from_seq}..${range.to_seq}: existed no later than ${range.existedBy}`),
+    ...(tail === null ? [] : [`- seq ${tail.from_seq}..${tail.to_seq}: not yet timestamped`]),
+    ...[...proven.errors, ...proven.warnings].map(
+      (problem) => `\n**${proven.errors.includes(problem) ? "Error" : "Warning"}**, \`${problem.check}\` at ${problem.location}: ${problem.detail}`,
+    ),
+  ];
+  return lines.join("\n");
+}
 
 /**
  * VERIFY.md, written into every archive.
@@ -14,6 +51,8 @@ export function verifyInstructions(
   genTimes: ReadonlyMap<string, string> = new Map(),
   /** The system's label in the web view at export time, if it had one: see ArchiveInput. */
   displayName?: string,
+  /** When each checkpoint and receipt is proven to have existed; absent when verification failed. */
+  provenTimes?: AnchorTimes,
 ): string {
   const key = manifest.keys[0];
   const anchored = checkpoints.filter((entry) => entry.timestamps.length > 0);
@@ -70,7 +109,8 @@ has the identifier it is published under; every line is a valid receipt;
 positions run without gap, repeat or reordering; every \`prev_hash\` is the
 recomputed hash of the receipt before it; every signature verifies under a
 published key; every checkpoint is signed; every Merkle root is rebuilt from
-these receipts; every inclusion proof rebuilds its checkpoint's root.
+these receipts; every inclusion proof rebuilds its checkpoint's root; and then
+the times, below.
 
 To check the timestamp tokens' signatures as well, give it the authority's
 certificate:
@@ -100,6 +140,28 @@ in no other.
 \`\`\`sh
 sigillo-verify <this archive> --previous <the earlier archive>
 \`\`\`
+
+## When each receipt is proven to have existed
+
+The times the server writes into receipts and checkpoints are its own clock,
+and whoever controls the server controls them. What it cannot control is the
+time an RFC 3161 authority attests inside a token (\`genTime\`). So a checkpoint
+is proven to have existed at its token's \`genTime\`, and a receipt no later than
+the first timestamped checkpoint whose tree includes it. \`sigillo-verify\` holds
+the archive to that:
+
+- a receipt the server says it received after a timestamp that already
+  includes it is an **error** (beyond \`--clock-tolerance\`, by default
+  ${DEFAULT_CLOCK_TOLERANCE_MS / 60_000} minutes, for the two clocks);
+- timestamps that go backwards as the tree grows are an **error**;
+- a checkpoint timestamped more than \`--max-anchor-delay\` (by default
+  ${DEFAULT_MAX_ANCHOR_DELAY_MS / 60_000} minutes) after its own time is a **warning**: until then only the server
+  vouched for it, and a chain rewritten and timestamped afresh looks exactly
+  like this. With \`--strict\`, every warning is an error.
+
+As the exporter read the tokens in this archive:
+
+${provenTimesMarkdown(provenTimes)}
 
 ## Checking whether a specific document was used
 
@@ -222,6 +284,12 @@ It does not prove, on its own:
 - **that receipts after the last timestamp are untouched.** Until a checkpoint
   over them is timestamped, whoever controls the server can rewrite them, and
   have them signed.
+- **that a chain rewritten and timestamped afresh is not one.** Whoever
+  controls the server and its key can rebuild the whole chain and have it
+  timestamped today. The new timestamps then lie long after the checkpoints'
+  own times, which \`sigillo-verify\` reports as \`anchor-delay\`; if the forger
+  moves the checkpoints' times forward as well, every receipt is proven to
+  exist only from today, which the times above show.
 - **that everything the system did was recorded.** That depends on the
   instrumentation of the system itself, which is outside what any log format
   can attest. If a record is missing, this file cannot tell you.

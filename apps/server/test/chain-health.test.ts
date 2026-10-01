@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
+import { createLocalTsa } from "./helpers/local-tsa.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
 
 const SYSTEM = "acme-support-bot";
@@ -19,7 +20,8 @@ let store: ReceiptStore;
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "sigillo-health-"));
   databasePath = join(directory, "sigillo.db");
-  signer = createTestSigner();
+  // The signer dates checkpoints by its own clock: here, the test's NOW.
+  signer = createTestSigner({ now: () => new Date(NOW) });
   store = ReceiptStore.open(databasePath, signer);
 });
 
@@ -64,12 +66,43 @@ describe("a freshly created system", () => {
     expect(health.message).toContain("marca temporale");
   });
 
-  it("is yellow when a checkpoint exists but has no timestamp yet", async () => {
+  it("stays green while a checkpoint's timestamp is late by less than the tolerance", async () => {
+    // The authority may be down for a while: the checkpointer retries, and
+    // within the tolerance that is not yet something to look at.
     await store.createCheckpoint(SYSTEM);
-    const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS);
+    const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS, 60 * 60_000);
     monitor.check();
-    expect(monitor.statusFor(SYSTEM, new Date(NOW)).status).toBe("yellow");
+    const health = monitor.statusFor(SYSTEM, new Date(Date.parse(NOW) + 60 * 60_000));
+    expect(health.status).toBe("green");
+    expect(health.message).toContain("marca temporale in arrivo");
   });
+
+  it("turns yellow once a checkpoint has waited for its timestamp beyond the tolerance", async () => {
+    await store.createCheckpoint(SYSTEM);
+    const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS, 60 * 60_000);
+    monitor.check();
+    const health = monitor.statusFor(SYSTEM, new Date(Date.parse(NOW) + 61 * 60_000));
+    expect(health.status).toBe("yellow");
+    expect(health.message).toContain("manca la marca temporale da oltre 60 minuti");
+  });
+
+  it("turns yellow when the newest checkpoint was timestamped beyond the tolerance", async () => {
+    // What sigillo-verify will warn about in the next export (anchor-delay).
+    const checkpoint = await store.createCheckpoint(SYSTEM);
+    if (checkpoint === null) throw new Error("no checkpoint");
+    const tsa = createLocalTsa();
+    try {
+      const late = tsa.stampAt(checkpoint.checkpoint.root_hash, new Date(Date.parse(NOW) + 90 * 60_000));
+      await store.recordTimestamp(checkpoint.id, "http://tsa.test/", late.toString("base64"), NOW);
+    } finally {
+      tsa.close();
+    }
+    const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS, 60 * 60_000);
+    monitor.check();
+    const health = monitor.statusFor(SYSTEM, new Date(Date.parse(NOW) + 91 * 60_000));
+    expect(health.status).toBe("yellow");
+    expect(health.message).toContain("marca temporale è arrivata 90 minuti dopo il sigillo");
+  }, 30_000);
 
   it("is green once anchored and recently active", async () => {
     const checkpoint = await store.createCheckpoint(SYSTEM);

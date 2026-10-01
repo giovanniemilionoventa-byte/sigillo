@@ -20,6 +20,21 @@ export type { DocumentFingerprints, FingerprintKind } from "./text.js";
 
 export { SIGILLO_VERSION } from "./version.js";
 
+export { genTimeOfToken } from "./gentime.js";
+export {
+  anchorTimes,
+  DEFAULT_CLOCK_TOLERANCE_MS,
+  DEFAULT_MAX_ANCHOR_DELAY_MS,
+  formatDuration,
+} from "./anchoring.js";
+export type {
+  AnchoredCheckpoint,
+  AnchorTimeOptions,
+  AnchorTimeProblem,
+  AnchorTimes,
+  CheckpointProof,
+} from "./anchoring.js";
+
 export { CANONICAL_BASE64_MESSAGE, isCanonicalBase64 } from "./base64.js";
 
 export {

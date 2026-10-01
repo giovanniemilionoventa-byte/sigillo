@@ -3,7 +3,7 @@ import { statSync, writeFileSync } from "node:fs";
 import { hostname, userInfo } from "node:os";
 import Database from "better-sqlite3";
 import { Command } from "commander";
-import { publicKeyFromRaw } from "@sigillo/core";
+import { DEFAULT_MAX_ANCHOR_DELAY_MS, publicKeyFromRaw } from "@sigillo/core";
 import { ApiKeyStore } from "./auth/api-keys.js";
 import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
@@ -119,6 +119,16 @@ program
     "how long without activity before the web view's traffic light turns yellow",
     process.env["SIGILLO_STALE_AFTER_MINUTES"] ?? "1440",
   )
+  .option(
+    "--max-anchor-delay-minutes <minutes>",
+    "how long a checkpoint may wait for its timestamp before the traffic light turns yellow (as sigillo-verify --max-anchor-delay)",
+    process.env["SIGILLO_MAX_ANCHOR_DELAY_MINUTES"] ?? String(DEFAULT_MAX_ANCHOR_DELAY_MS / 60_000),
+  )
+  .option(
+    "--tsa-retry-minutes <minutes>",
+    "how soon to ask the authority again for a timestamp it did not give",
+    process.env["SIGILLO_TSA_RETRY_MINUTES"] ?? "5",
+  )
   .action(async (options: DatabaseOption & {
     signerSocket: string;
     host: string;
@@ -126,6 +136,8 @@ program
     tsaUrl?: string;
     checkpointMinutes: string;
     staleAfterMinutes: string;
+    maxAnchorDelayMinutes: string;
+    tsaRetryMinutes: string;
   }) => {
     // Every setting is checked before anything is opened or connected: a bad
     // value stops the server here, with the variable's name, rather than
@@ -142,6 +154,18 @@ program
       options.staleAfterMinutes,
       1440,
       10 * 365 * 24 * 60,
+    );
+    const maxAnchorDelayMinutes = positiveInteger(
+      "SIGILLO_MAX_ANCHOR_DELAY_MINUTES (--max-anchor-delay-minutes)",
+      options.maxAnchorDelayMinutes,
+      DEFAULT_MAX_ANCHOR_DELAY_MS / 60_000,
+      10 * 365 * 24 * 60,
+    );
+    const tsaRetryMinutes = positiveInteger(
+      "SIGILLO_TSA_RETRY_MINUTES (--tsa-retry-minutes)",
+      options.tsaRetryMinutes,
+      5,
+      24 * 60,
     );
     const loginLimits = parseThrottleSettings(process.env);
     const ingestLimits = parseIngestThrottleSettings(process.env);
@@ -179,6 +203,7 @@ program
           store,
           publicKeyFromRaw(new Uint8Array(Buffer.from(signer.publicKeyBase64, "base64"))),
           staleAfterMinutes * 60 * 1000,
+          maxAnchorDelayMinutes * 60 * 1000,
         )
       : undefined;
 
@@ -187,6 +212,7 @@ program
       now: () => new Date(),
       ...(tsa === undefined ? {} : { tsa }),
       intervalMinutes: checkpointMinutes,
+      retryMinutes: tsaRetryMinutes,
       onError: (message) => process.stderr.write(`${message}\n`),
     });
 

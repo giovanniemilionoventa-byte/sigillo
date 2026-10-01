@@ -23,6 +23,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | N6 | Documentazione non tecnica | fatto | `ISPEZIONE.md` e `VIDEO.md` (in N5), `PROVA-LOCALE.md` corretto ed esteso alla fase 2 |
 | D1 | Veste grafica "Registro" | fatto | Solo aspetto: token, font incorporati, componenti, Panoramica/Cronologia/Sistemi; 914 test Node (sessione 13) |
 | S1 | Il signer custode della catena | fatto | Protocollo 2: il signer firma solo la ricevuta successiva di ogni catena, calcola da sé radice e ora dei checkpoint, tiene il proprio stato (con frontiera di Merkle) nel suo volume; riconciliazione all'avvio, `init-from-db`; 950 test Node, 49 SDK Python, 22 demo (sessione 14) |
+| A1 | Ora provata delle marche (genTime) | fatto | genTime = ora provata di ogni checkpoint: errori `anchor-time`/`anchor-order`, avviso `anchor-delay`, `--strict`; report e PDF con "provato il"/"esistente al più tardi il"; ritentativi e semaforo giallo oltre la tolleranza; scenario di manomissione 18; dopo il merge con S1: 997 test Node, 49 SDK Python, 22 demo (sessione 15) |
 
 ## Decisioni prese dal committente — 2026-09-21
 
@@ -2692,6 +2693,100 @@ false e aprire catene nuove; il verificatore non consulta il signer, quindi un e
 scopre ancora con `--previous`; `init-from-db` si fida del database una volta, all'aggiornamento:
 ciò che fosse stato riscritto col vecchio socket prima resta firmato; chi legge il volume del
 signer ha anche la chiave.
+
+### Sessione 15 — 2026-10-01 — il genTime diventa l'ora provata di ogni checkpoint
+
+Il buco: le marche RFC 3161 erano controllate solo con `openssl ts -verify`, e il loro genTime non
+veniva confrontato con nulla. Chi controlla server e chiave poteva riscrivere tutta la catena,
+rifirmarla con le date vecchie, farla marcare oggi e passare ogni controllo. Formato delle ricevute
+**invariato**: le regole nuove leggono solo campi che il formato ha già, e un export prodotto prima
+viene verificato da esse così com'è. Lavoro test-first: ogni test qui sotto è stato scritto e visto
+fallire prima del codice. Nei test, una TSA locale (`LocalTsa.stampAt`) emette token RFC 3161
+veri, firmati dalla sua chiave e accettati da `openssl ts -verify`, con il genTime scelto dal test
+(TSTInfo scritto in DER dal test, firmato con `openssl cms -sign -cades`). Nessun uso di FreeTSA.
+
+1. **genTime in `packages/core`** (`gentime.ts`, spostato da `apps/server/src/timestamp/`). Parsing
+   DER puro, niente disco, rete o orologio. Più severo di prima: rifiuta byte dopo la fine del token
+   e date che non esistono (30 febbraio). Server (PDF, VERIFY.md, pagina web) e verificatore usano
+   ora lo stesso codice. Il verificatore legge il genTime anche da openssl e **fallisce** un token su
+   cui le due letture non coincidono.
+2. **`anchorTimes` in `packages/core`** (`anchoring.ts`): l'ora provata di un checkpoint è il genTime
+   più antico dei suoi token; una ricevuta è esistita al più tardi all'ora provata del primo
+   checkpoint marcato che la include. Solo checkpoint legati alle ricevute (radice ricostruita o
+   prove di inclusione).
+   - **ERRORE `anchor-time`**: `ts_received` successivo a quell'ora oltre `--clock-tolerance`
+     (default 5 minuti). Una riga per checkpoint, la prima ricevuta fuori tempo.
+   - **ERRORE `anchor-order`**: ordinando per `tree_size`, un genTime che torna indietro.
+   - **AVVISO `anchor-delay`**: genTime oltre `--max-anchor-delay` (default 60 minuti) dopo l'ora
+     dichiarata del checkpoint. Esito `OK, with a warning`, uscita 0.
+   - **`--strict`**: ogni avviso diventa errore (uscita 1), compreso quello delle ricevute dopo
+     l'ultimo checkpoint. Senza `--strict` l'uscita è ≠ 0 solo sugli errori.
+3. **Report del verificatore**: in testa, subito dopo il verdetto, numero di checkpoint provati e di
+   quelli marcati in ritardo, buco più lungo tra due marche, ricevute finali non ancora marcate. Poi,
+   per ogni checkpoint, "proven <genTime>" ("attested …, signature not checked" senza `--tsa-ca`), e
+   per ogni intervallo di ricevute "existed no later than <genTime>". Le ricevute sono raggruppate
+   per intervalli di `seq` provati dalla stessa marca: ogni ricevuta è coperta, senza stampare
+   migliaia di righe identiche. **PDF del fascicolo e VERIFY.md**: stessa sezione, in testa al
+   PDF, calcolata dalla stessa funzione (`anchorTimesOf` nel verificatore) con gli stessi default.
+4. **Server**: una marca non ottenuta viene richiesta di nuovo ogni `SIGILLO_TSA_RETRY_MINUTES`
+   (default 5), non più solo al giro successivo (60 minuti). Il semaforo resta **verde** con
+   "marca temporale in arrivo" finché l'attesa è entro `SIGILLO_MAX_ANCHOR_DELAY_MINUTES` (default 60,
+   come il verificatore); oltre, o se l'ultima marca è arrivata oltre quella soglia, diventa
+   **giallo** con il motivo. Cambiato di conseguenza il test che voleva giallo un checkpoint appena
+   creato e non ancora marcato. Variabili in compose, `.env.example`, `docs/API.md`.
+5. **Scenario di manomissione 18** (`tamper.test.ts`): la catena intera riscritta, rifirmata con la
+   chiave vera attraverso il firmatario, ricertificata con l'ora dichiarata originale e marcata di
+   nuovo oggi da un'autorità vera. Tutto valido tranne il genTime: `OK, with a warning` con
+   `anchor-delay`, e `FAILED anchor-delay … (--strict)` con `--strict`. **18b**: se il falsario sposta
+   in avanti anche l'ora dichiarata del checkpoint, l'avviso sparisce, ma ogni ricevuta risulta
+   esistente solo da oggi, ed è quello che il report stampa. Documentato in `SECURITY.md`.
+
+Cambiati per la regola nuova due test esistenti che usavano date di marzo con marche di oggi: il
+fascicolo dei test di manomissione ora è marcato 5 secondi dopo il checkpoint (prima lo era "adesso"),
+e in `export-e2e.test.ts` la TSA HTTP locale segue lo stesso orologio iniettato del server.
+
+**Test**: Node 955 (prima 914, +41), 1 saltato. `pnpm lint`, `typecheck`, `build`,
+`smoke-dist` verdi. Durante una delle esecuzioni complete un test del browser
+(`verify-document-browser`, pagina non toccata) è andato in timeout a 5 s; rieseguito da solo e
+nell'esecuzione completa successiva è verde.
+
+**Dimensione del verificatore** (regola 5): verificatore più core da 2726 a **3195 righe (+469)**,
+da 2099 a **2437 di solo codice (+338)**. Sopra la soglia, quindi lo annoto. Cosa comprano:
+`gentime.ts` (106, non è codice nuovo: era nel server, ora è in core e quindi conta);
+`anchoring.ts` (205, la regola dei tempi, la metà commenti e tipi); nel verificatore +143 (opzioni,
+`--strict`, la sezione del report, il confronto genTime DER/openssl). Nessuna astrazione nuova oltre
+`anchorTimesOf`, che evita di scrivere due volte lo stesso adattamento in CLI ed esportatore.
+
+**Merge con `main` dopo S1 (signer custode della catena, sessione 14).** I due rami sono stati
+sviluppati in parallelo; merge di `origin/main` nel ramo (nessun rebase). Conflitti risolti tenendo
+entrambe le parti:
+- `store.ts`: import di `SignerRefusedError` (S1) tenuto; l'import di `genTimeOfToken` dal vecchio
+  `timestamp/gentime.ts` tolto, perché ora viene da `@sigillo/core` (già nell'import di core).
+- `chain-health.test.ts`, `export-e2e.test.ts`: S1 ha tolto l'ora dal `createCheckpoint` (il checkpoint
+  lo data il signer con il proprio orologio). I test di questo ramo ora muovono l'orologio del signer
+  (`now`) invece di passare l'ora al server; in `export-e2e` signer e TSA seguono lo stesso orologio
+  iniettato del server, con lo `stateDir` e la tolleranza di S1.
+- `SECURITY.md`: tenuto l'elenco di S1 ("what a compromised server can do"); la voce "replace
+  everything" di questo ramo è stata riscritta per chi ha la chiave stessa o firme di prima del
+  protocollo 2, e la voce sull'orologio unisce il controllo del signer e quello `anchor-time`.
+- `PROGRESS.md`: entrambe le righe di tabella (S1, A1) e entrambe le sessioni; questa rinumerata 15.
+- Lo scenario 18 firma con `forge` (la chiave stessa), come S1 ha fatto per 7b e 13: il socket del
+  signer, da protocollo 2, rifiuta quelle firme.
+Nessuna collisione di numeri: S1 non ha aggiunto scenari numerati in `tamper.test.ts` (i suoi sono in
+`signer-guard.test.ts`), né migrazioni di schema; versioni di ricevute e protocollo invariate.
+Effetto utile dell'incrocio: l'ora dichiarata di un checkpoint ora è quella del signer, non del
+server, e `anchor-delay` la confronta con il genTime. Nuovo test d'incrocio
+`signer-anchor-crossing.test.ts`: catena v1→v2→v3 firmata dal daemon del signer sul socket vero
+(controllo d'orologio attivo), checkpoint del signer marcati dalla TSA locale, export verificato da
+`sigillo-verify` (anche `--strict`), errori `anchor-time` su una ricevuta v2 e su una v3, avviso di
+ritardo su ricevute v3, e PDF/VERIFY.md con le ore provate accanto alle impronte dei documenti.
+Dopo il merge: Node 997 verdi (950 di main + 41 di questo ramo + 6 d'incrocio), 1 saltato (FreeTSA
+in rete); SDK Python 49, demo 22, cross-check dei vettori Python, smoke della dist: tutti verdi.
+
+**Da decidere** (non bloccante): i default 5 minuti di tolleranza e 60 di ritardo massimo sono quelli
+della richiesta. Con un `SIGILLO_CHECKPOINT_MINUTES` più lungo di 60 il ritardo resta misurato
+dall'ora del checkpoint, quindi non cambia; con FreeTSA giù per più di un'ora, l'export successivo
+avrà l'avviso, che è il comportamento voluto.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

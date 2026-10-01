@@ -174,8 +174,16 @@ beforeAll(async () => {
   databasePath = join(directory, "sigillo.db");
   socketPath = join(directory, "signer.sock");
   tsa = createLocalTsa();
-  const tsaUrl = await tsa.listen();
-  daemon = await startSignerDaemon({ socketPath, stateDir: join(directory, "signer-state"), clockToleranceMs: ANY_CLOCK, key: generateKeyFile(join(directory, "signer.key")) });
+  // The authority and the signer keep the same (injected) time as the server:
+  // the checkpoint's own time is the signer's, the genTime the authority's.
+  const tsaUrl = await tsa.listen(() => new Date(clock));
+  daemon = await startSignerDaemon({
+    socketPath,
+    stateDir: join(directory, "signer-state"),
+    now: () => new Date(clock),
+    clockToleranceMs: ANY_CLOCK,
+    key: generateKeyFile(join(directory, "signer.key")),
+  });
   signer = await SignerClient.connect(socketPath);
   store = ReceiptStore.open(databasePath, signer);
   keys = ApiKeyStore.open(databasePath);

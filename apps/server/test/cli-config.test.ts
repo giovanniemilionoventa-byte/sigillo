@@ -92,6 +92,8 @@ describe("numeric settings", () => {
     ["SIGILLO_CHECKPOINT_MINUTES", "abc"],
     ["SIGILLO_CHECKPOINT_MINUTES", "0"],
     ["SIGILLO_STALE_AFTER_MINUTES", "-5"],
+    ["SIGILLO_MAX_ANCHOR_DELAY_MINUTES", "1h"],
+    ["SIGILLO_TSA_RETRY_MINUTES", "0"],
     ["SIGILLO_PORT", "99999"],
     ["SIGILLO_PORT", "80a"],
     ["SIGILLO_LOGIN_MAX_FAILURES", "0"],
