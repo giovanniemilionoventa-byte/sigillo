@@ -168,7 +168,8 @@ query deleting evidence by mistake or on request.
 sigillo stores **no content**. Not a prompt, not a tool argument, not a model
 output, not a document. Where content existed, the receipt carries its SHA-256
 digest and nothing else. This is enforced in three places: the ingest adapter
-reduces `input.value` and `output.value` to digests as it reads them; the
+hands `input.value` and `output.value` only to the store, which reduces them to
+salted digests before anything is written; the
 receipt schema has no field that could hold a payload; and a test greps a
 finished export for the strings an example agent actually handled and requires
 them to be absent.
@@ -194,14 +195,18 @@ whether their agents are actually sending only digests.
 What an operator **can** see:
 
 - which system acted, and when the server received the event;
-- the name of the agent, and the person or system it acted for, where the
-  instrumentation supplied one;
+- the name of the agent, and the pseudonym token of the person or system it
+  acted for, where the instrumentation supplied one — and, through the
+  `subjects` table, who that token stands for, until that person is erased;
 - the kind and the name of each action — `tool_call payments.charge` — and
   whether it succeeded, failed, was blocked, or reported nothing;
 - the trace and span identifiers, which link a receipt back to whatever
   observability system produced it;
 - digests of inputs and outputs, which are useful only to someone who already
-  has the original values and wants to prove they match.
+  has the original values and wants to prove they match. A salted digest
+  (receipt version 4) also needs its nonce, which the server keeps until it is
+  erased; a plain one, computed by the client, can be checked by anyone who
+  can guess the value.
 
 Names are metadata, but a name can be abused to carry content. Every
 free-text field is capped: 128 characters for a system, 256 for an agent, an
@@ -214,6 +219,48 @@ it is set out field by field in [DATA-INVENTORY.md](DATA-INVENTORY.md).
 
 What an operator **cannot** see: anything the instrumented system did not put in
 a span, and anything that was only ever a digest.
+
+## Erasing a person
+
+Receipts cannot be changed, so a person cannot be erased from them. Since
+receipt version 4 they do not need to be: nothing in a receipt names anyone or
+holds anything that can be guessed back into content. What links a receipt to
+a person lives outside the chain, in two tables that are not evidence and can
+be deleted from:
+
+- `subjects`: identifier ↔ `psn_` token. **Erasing a person** deletes their
+  row (web view: "persone"; command line: `sigillo-server subject erase`). The
+  administrative log records the erasure by the token alone. Their receipts
+  stay valid, verifiable and in every export; nothing links the token to them
+  any more, and if they come back they get a new, unrelated token.
+- `openings`: the nonce of each salted digest. **Cutting receipts off from
+  their content** deletes their nonces (`sigillo-server openings erase`, by
+  position, or with `--document <file>`: every receipt naming that document by
+  its fingerprint, and every receipt sharing a trace with one of those). The
+  log records the positions and the count, never a nonce. Afterwards nobody can
+  show what those digests were computed over, and an export can no longer
+  disclose their nonces.
+
+For a candidate who asks to be forgotten, the order is: find their receipts
+from their CV's fingerprint and its trace, erase those nonces, then delete the
+CV itself where the operator keeps it (sigillo never had it). What remains is
+the CV's exact digest in an artifact, which nobody can reverse without the CV.
+
+What the erasure reaches, and what it does not:
+
+- the database file and its write-ahead log: the server deletes with SQLite's
+  `secure_delete` on, which overwrites the deleted bytes, and then empties the
+  write-ahead log. The test `privacy-store.test.ts` searches the file's bytes
+  for the identifier and the nonce after an erasure and finds neither;
+- **backups and copies made before**, `deploy/backup.sh`'s included: they keep
+  the row until they are rotated away (14 days by default). Any other copy of
+  the database file is the operator's to account for;
+- **exports made before**: one that disclosed the identifier (`subjects.jsonl`)
+  or the nonces (`openings.jsonl`) still holds them. By default an export holds
+  neither;
+- **a plain digest** (computed by the client): it was never salted, so there is
+  no nonce to erase, and a short value stays guessable from it;
+- **the content itself**, wherever the operator's own systems keep it.
 
 ## What a document match means
 

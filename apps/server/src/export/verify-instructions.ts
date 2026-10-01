@@ -149,7 +149,7 @@ which kind of match it found:
 - **exactly the one used**: the file's SHA-256 is the artifact's \`sha256\`,
   byte for byte;
 - **the same text**: for a text recorded with a \`text\` member (receipt
-  version 3), the file's text under \`sigillo-text/1\` matches it — the same
+  version 3 or later), the file's text under \`sigillo-text/1\` matches it — the same
   characters, with at most different spacing, line breaks and invisible
   formatting characters. It is not the same bytes, and it says nothing about
   layout;

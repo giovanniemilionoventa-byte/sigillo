@@ -403,7 +403,7 @@ program
       process.stdout.write(
         "If you have a different version of it, changing even one character changes the result. " +
           "A copy that differs only in spacing or line breaks is found only if the document was " +
-          "recorded with a text fingerprint (receipt version 3).\n",
+          "recorded with a text fingerprint (receipt version 3 or later).\n",
       );
       process.exit(1);
     }

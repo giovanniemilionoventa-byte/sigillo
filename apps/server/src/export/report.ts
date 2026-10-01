@@ -197,7 +197,7 @@ export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
     document.text(
       "It verifies the archive first, then computes the file's fingerprints and says which kind " +
         "of match it found: exactly the same bytes; for a text, the same text with at most " +
-        "different spacing and line breaks (sigillo-text/1, receipt version 3), or, for a text " +
+        "different spacing and line breaks (sigillo-text/1, receipt version 3 or later), or, for a text " +
         "recorded earlier, the same bytes except for line endings; or the whole input or output " +
         "of an action. Any other difference, one letter or one digit, is no match at all.",
     );

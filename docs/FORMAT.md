@@ -4,7 +4,7 @@ This document defines the receipt: the unit of evidence sigillo produces. It is
 written so that a second implementation can verify a sigillo log without reading
 the sigillo source. Everything a verifier must check is stated here.
 
-Status: three schema versions are current, `1`, `2` and `3`. Version 1 was
+Status: four schema versions are current, `1`, `2`, `3` and `4`. Version 1 was
 **confirmed as final by the project owner on 2026-09-21**: no receipt it
 accepts is ever rejected by a later version of this document. Version 2 was
 added on 2026-09-22 (phase 2) to carry document fingerprints and model
@@ -12,9 +12,15 @@ identity; it is purely additive, described in section 2.5 and 2.6. Version 3
 was added on 2026-09-27, by decision of the project owner, to let a text
 document carry a second fingerprint that survives spacing and line breaks
 (section 2.5.1); it is version 2 plus one optional member inside an artifact,
-and the meaning of every existing member, `sha256` included, is unchanged. A
-verifier applies the rules of the version each receipt actually declares, so
-one chain, and one export, may freely mix `v: 1`, `v: 2` and `v: 3` receipts.
+and the meaning of every existing member, `sha256` included, is unchanged.
+Version 4 was added on 2026-10-01, by decision of the project owner, so that a
+receipt holds no personal data in the clear and a person can be erased from the
+record without breaking it: `actor.on_behalf_of` is a pseudonym token (2.2),
+and each input and output digest names the scheme it was computed under, one
+of which is salted (2.7). Artifacts are version 3's, unchanged. The sigillo
+server writes only version 4 from then on. A verifier applies the rules of the
+version each receipt actually declares, so one chain, and one export, may
+freely mix receipts of every version.
 
 The canonical-base64 rule of section 5 was added after version 1 was already in
 use, and the version was deliberately not incremented: the rule only rejects
@@ -26,6 +32,9 @@ valid under version 1 is affected by version 2 existing. Version 3 is a new
 version, not a widening of version 2, precisely because of that test: a
 version 2 verifier rejects an artifact with an unknown member, so a receipt
 carrying `text` must say `v: 3`, and a `v: 2` receipt carrying it is invalid.
+Version 4 is a new version for the same reason, twice over: it adds two
+members, and it narrows `on_behalf_of`, which a version 1 to 3 receipt may
+hold as any string.
 
 ## 1. What a receipt is
 
@@ -43,12 +52,14 @@ to be shown to an auditor.
 A receipt is a JSON object with exactly these members for the version it
 declares. There are no other members: a receipt carrying an unknown member is
 invalid and MUST be rejected — including a version 1 receipt that carries
-`artifacts` or `model`, which are version 2 and 3 members only, and a version 2
-receipt whose artifact carries `text`, which is a version 3 member only.
+`artifacts` or `model`, which are members of version 2 and later only, a version 2
+receipt whose artifact carries `text`, which is a member of version 3 and later
+only, and a receipt before version 4 that carries `input_hash_scheme` or
+`output_hash_scheme`.
 
 | member | type | constraint |
 |---|---|---|
-| `v` | integer | `1`, `2` or `3` |
+| `v` | integer | `1`, `2`, `3` or `4` |
 | `system_id` | string | 1 to 128 characters; identifies the AI system, and therefore the chain |
 | `seq` | integer | `>= 0`; position in the chain, no gaps, no repeats |
 | `ts_event` | string | time declared by the source; see 2.1. Not trusted |
@@ -62,8 +73,10 @@ receipt whose artifact carries `text`, which is a version 3 member only.
 | `prev_hash` | string | 64 lowercase hex characters; digest of the previous receipt, or 64 `0` characters for the first |
 | `key_id` | string | 16 lowercase hex characters; identifies the signing key, see 5 |
 | `sig` | string | 88 characters of standard base64; the signature, see 5 |
-| `artifacts` | array, optional | versions 2 and 3; see 2.5 |
-| `model` | object, optional | versions 2 and 3; see 2.6 |
+| `artifacts` | array, optional | versions 2 to 4; see 2.5 |
+| `model` | object, optional | versions 2 to 4; see 2.6 |
+| `input_hash_scheme` | string or null | version 4 only, and required there; see 2.7 |
+| `output_hash_scheme` | string or null | version 4 only, and required there; see 2.7 |
 
 ### 2.1 Timestamps
 
@@ -97,6 +110,17 @@ timestamp token that anchors the checkpoint covering the receipt.
   where they are named. Omit the member entirely when there is none; it is never
   present with a `null` or empty value.
 
+In version 4, `on_behalf_of` is a **pseudonym token**: `psn_` followed by 32
+lowercase hex characters, 128 random bits, matching `^psn_[0-9a-f]{32}$`.
+Anything else is invalid. The token says nothing about the person; which
+identifier it stands for is kept by the operator in a separate table that is
+not evidence and can be deleted. Once that row is deleted, the receipts carrying
+the token stay valid and verifiable, and nothing in them leads to the person.
+The sigillo server makes the token itself, on the first receipt that names a
+person, and gives the same token to every spelling of the same identifier that
+normalises alike (Unicode NFC, no space at either end, lower case); a value
+that already is a token is taken as it is.
+
 ### 2.3 `action`
 
 ```json
@@ -122,7 +146,7 @@ from smuggling a prompt into the chain in the clear.
 
 Both identifiers are omitted when absent, never null.
 
-### 2.5 `artifacts` (versions 2 and 3)
+### 2.5 `artifacts` (versions 2 to 4)
 
 ```json
 [
@@ -224,7 +248,7 @@ different text found.
 `packages/core/test/text-vectors.json` holds 46 inputs, as hex bytes, with
 the canonical text and fingerprint written by hand from this section.
 
-### 2.6 `model` (versions 2 and 3)
+### 2.6 `model` (versions 2 to 4)
 
 ```json
 { "name": "qwen2.5:3b", "provider": "ollama", "digest": "sha256:…" }
@@ -243,6 +267,45 @@ member is always there, and is `null` when unknown, because unlike
   fingerprint where the runtime exposes one (for instance, an Ollama model's
   digest from `GET /api/tags`); its exact form is whatever that runtime
   publishes, so this format does not constrain it to hex.
+
+### 2.7 `input_hash_scheme` and `output_hash_scheme` (version 4)
+
+How the digest beside each was computed. Each is required in a version 4
+receipt, and is `null` exactly when its digest is `null`.
+
+- `plain`: SHA-256 of the RFC 8785 form (section 3) of the value, as UTF-8.
+  This is the only scheme of versions 1 to 3, where it is implicit, and it is
+  what a client that computes the digest itself sends. Short content (a score,
+  an outcome, a yes or no) can be found from a plain digest by hashing likely
+  candidates, and the same content gives the same digest everywhere.
+- `salted`: SHA-256 of a **nonce of exactly 32 bytes** followed by the same
+  bytes as for `plain`:
+
+  ```
+  digest = SHA-256( nonce[32] || UTF-8( RFC8785(value) ) )
+  ```
+
+  The nonce is random and drawn afresh for every digest, so short content cannot
+  be found by trying candidates, and the same content gives a different digest
+  in every receipt. The sigillo server uses it for every input and output it
+  receives in the clear. It keeps the nonce in a separate table, not evidence
+  and deletable; whoever holds the nonce and the content can show the digest is
+  of that content ("opening" it), and once the nonce is deleted nobody can.
+
+With the nonce `000102…1e1f` (the bytes 0 to 31) and the value `"score: 7"`,
+whose RFC 8785 form is the 10 bytes `"score: 7"` with the quotes, the salted
+digest is
+
+```
+0de84395a90cb98f917231a13f03446f21af13e0c18d18f073f32417d119e0ac
+```
+
+while the plain digest of the same value is
+`ee57ba52c06d0f98e05f7685c4993b57a3290eacc5432af9c8fcf18924c12764`.
+
+Artifact digests (2.5) are never salted, in any version: a document is long
+enough not to be guessed, and its exact digest is what lets a copy of it be
+recognised.
 
 ## 3. Canonical form
 
@@ -469,6 +532,45 @@ and its hash is
 4eefc8e96a7603760d82a8eb9c07db16dd8a7ee9c9e5949a5a8e9275cf21e408
 ```
 
+### 7.3 Worked example, version 4
+
+A step that read a score the server received in the clear, and produced an
+outcome the client had already hashed, on behalf of a person:
+
+```json
+{
+  "v": 4,
+  "system_id": "acme-support-bot",
+  "seq": 28,
+  "ts_event": "2026-10-01T09:00:00.000Z",
+  "ts_received": "2026-10-01T09:00:00.001Z",
+  "actor": { "agent": "agente-cv", "on_behalf_of": "psn_9f86d081884c7d659a2feaa0c55ad015" },
+  "action": { "kind": "tool_call", "name": "valuta_candidato" },
+  "input_hash": "0de84395a90cb98f917231a13f03446f21af13e0c18d18f073f32417d119e0ac",
+  "input_hash_scheme": "salted",
+  "output_hash": "54bdd2b9a826bd73c13cbbff63dd33e9e4fbf34b2d28167204b271c33bbc3477",
+  "output_hash_scheme": "plain",
+  "outcome": "ok",
+  "source": { "type": "otlp", "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "span_id": "00f067aa0ba902b8" },
+  "prev_hash": "f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543",
+  "key_id": "3f2a1c9d8e7b6a5f",
+  "sig": "..."
+}
+```
+
+The input is the salted digest of section 2.7's example. Its canonical form,
+707 bytes on one line:
+
+```
+{"action":{"kind":"tool_call","name":"valuta_candidato"},"actor":{"agent":"agente-cv","on_behalf_of":"psn_9f86d081884c7d659a2feaa0c55ad015"},"input_hash":"0de84395a90cb98f917231a13f03446f21af13e0c18d18f073f32417d119e0ac","input_hash_scheme":"salted","key_id":"3f2a1c9d8e7b6a5f","outcome":"ok","output_hash":"54bdd2b9a826bd73c13cbbff63dd33e9e4fbf34b2d28167204b271c33bbc3477","output_hash_scheme":"plain","prev_hash":"f8d9fb0d22e9e140620df37dd742cfe798417d077aaa6a591eb4680356ec9543","seq":28,"source":{"span_id":"00f067aa0ba902b8","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","type":"otlp"},"system_id":"acme-support-bot","ts_event":"2026-10-01T09:00:00.000Z","ts_received":"2026-10-01T09:00:00.001Z","v":4}
+```
+
+and its hash is
+
+```
+ceb1df32324289fded985833299ad588b8cbd9357ace0fc913fd195f6675762b
+```
+
 ## 8. Checkpoints and the Merkle tree
 
 A chain proves its own order. A checkpoint proves its own size, at a moment
@@ -612,6 +714,8 @@ checkpoints.jsonl      one checkpoint per line, with its proofs and its tokens
 artifacts-index.jsonl  one line per document fingerprint a receipt names
 timestamps/            the RFC 3161 tokens, in DER, exactly as the authority sent
 manifest.json          the public keys, the range, the counts
+openings.jsonl         optional: nonces of chosen salted digests (10.6)
+subjects.jsonl         optional: who chosen pseudonym tokens stand for (10.6)
 report.pdf             the same facts for a reader
 VERIFY.md              how to check all of it without this software
 ```
@@ -719,10 +823,10 @@ server's clock stepped back) is included, not skipped: a gap in `seq` would be
 indistinguishable from a removal.
 
 `receipt_version` is **not** "the version of this export": a chain may upgrade
-from `v: 1` to `v: 2` or `v: 3` partway through, and one export can hold all
-three. It is the **highest** version among the receipts the export actually
-contains — `1` for an export that is entirely version 1, `3` as soon as any
-version 3 receipt is present. Like `counts`, it is a claim a verifier checks against the receipts
+from one version to a later one partway through, and one export can hold
+every version. It is the **highest** version among the receipts the export
+actually contains — `1` for an export that is entirely version 1, `4` as soon
+as any version 4 receipt is present. Like `counts`, it is a claim a verifier checks against the receipts
 themselves, not a value it trusts (section 10.5, check 12).
 
 The manifest is not trusted. It is a claim about what the export contains, and
@@ -746,6 +850,11 @@ published under an identifier that is not its own `key_id` is rejected, because
    it is a member of the receipt like any other, so changing it already fails
    check 6 or check 7 — this check is what makes the *index* trustworthy for a
    document lookup, on top of that.
+8b. Every line of `openings.jsonl`, if present, names a receipt in the export
+    whose `role` digest is `salted`, once; every line of `subjects.jsonl`, if
+    present, names a token that is the `on_behalf_of` of a receipt in the
+    export, once. Whether a nonce opens its digest needs the content, which the
+    archive does not hold: `sigillo-verify open` checks that, given it.
 9. Every checkpoint names a published key, and its signature verifies.
 10. Every checkpoint's Merkle root is rebuilt from the receipts present, where
     the export holds them all, and must match.
@@ -789,7 +898,17 @@ artifact's `sha256`, which is how a record made before version 3 is still
 found ("except for its line endings"); its text as a JSON string, as is or in
 one of those variants, is a receipt's `input_hash` or `output_hash` ("the whole
 input" or "output"). The web view's "verifica un documento" page applies the
-same rules, with the same code (`packages/core/src/text.ts`).
+same rules, with the same code (`packages/core/src/text.ts`). A `salted`
+digest is never matched this way, by design: without its nonce it is not
+connected to any content.
+
+`sigillo-verify open <archive> <seq> <input|output> --text <content>` (or
+`--file <path>`, and `--json` to read the content as a JSON value rather than
+a text) also runs all of the above first, then opens that digest: a `salted`
+one under the nonce given with `--nonce`, or else the one in the archive's
+`openings.jsonl`; a `plain` one, or any digest of versions 1 to 3, without a
+nonce. It prints `MATCH` and exits 0, or `NO MATCH` with the reason and
+exits 1.
 
 Four of these deserve a note, because they catch what the others miss:
 
@@ -817,11 +936,30 @@ Four of these deserve a note, because they catch what the others miss:
 - Step 13 failing is a verification failure, not a warning. A sound chain with
   a token that is not a token is an archive whose anchor does not hold.
 
+### 10.6 `openings.jsonl` and `subjects.jsonl`, by choice only
+
+By default an export names nobody and opens no salted digest. Two optional
+files disclose more, each only for what the operator chose when exporting:
+
+```json
+{"seq":28,"role":"input","nonce":"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"}
+{"token":"psn_9f86d081884c7d659a2feaa0c55ad015","identifier":"elena.rizzo"}
+```
+
+A line of `openings.jsonl` is the 32-byte nonce, as 64 lowercase hex
+characters, of the `role` digest of receipt `seq`; with it, and the content,
+anyone can open that digest (`sigillo-verify open`), and anyone holding the
+archive can also test guesses of the content, which is why it is opt-in. A line
+of `subjects.jsonl` says which identifier a token stood for when the export was
+made: a statement by the operator, signed by nothing. Both are checked against
+the receipts (10.5, check 8b) and neither is covered by any count in the
+manifest.
+
 ## 11. Test vectors
 
 `packages/core/test/vectors.json` carries a set of receipts with their canonical
 form and digest recorded alongside. Its `receipt_versions` member lists every
-schema version the file covers — `[1, 2, 3]` — derived from the vectors
+schema version the file covers — `[1, 2, 3, 4]` — derived from the vectors
 themselves rather than asserted separately. They cover the genesis receipt,
 every action kind and outcome, present and absent optional members, JSON
 escaping, non-ASCII and astral-plane text, control characters, calendar edge
@@ -830,7 +968,11 @@ cases, the field length caps, the largest exactly representable integer as a
 two artifacts in a fixed order, a model with a provider and digest, a model
 with both null, and an artifact and a model together; for version 3, a text
 artifact, a text artifact next to a binary one without `text`, and a text
-artifact with a model.
+artifact with a model; for version 4, a pseudonym with a salted input and a
+plain output, neither digest nor person, and both digests salted beside a text
+artifact and a model. Its `salted_digests` member lists four salted digests
+(2.7) with their nonce and value, over a short text, an object whose keys
+canonicalisation sorts, a non-ASCII text and a bare number.
 
 `packages/core/test/text-vectors.json` carries the `sigillo-text/1` vectors of
 section 2.5.1: 46 inputs as hex bytes, from plain text and every whitespace

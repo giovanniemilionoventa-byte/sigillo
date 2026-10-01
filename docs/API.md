@@ -214,20 +214,22 @@ curl -X POST https://sigillo.example/api/v1/receipts \
 | field | required | notes |
 |---|---|---|
 | `actor.agent` | yes | 1 to 256 characters |
-| `actor.on_behalf_of` | no | the person the agent acted for |
+| `actor.on_behalf_of` | no | the person the agent acted for. Recorded as a `psn_` pseudonym token; a value that already is one is kept as it is |
 | `action.kind` | yes | `tool_call`, `llm_call`, `agent_step` or `decision`. Not `genesis` |
 | `action.name` | yes | 1 to 256 characters |
 | `outcome` | yes | `ok`, `error`, `blocked`, `unknown` |
 | `ts_event` | no | ISO-8601 UTC with milliseconds. Defaults to the time of receipt |
 | `source` | no | `{ type: "sdk" \| "api", trace_id?, span_id? }`, defaults to `api` |
-| `input` / `output` | no | any JSON value. Hashed on arrival and discarded |
-| `input_hash` / `output_hash` | no | a digest you computed yourself, 64 lowercase hex |
+| `input` / `output` | no | any JSON value. Digested on arrival with a fresh 32-byte nonce (`salted`), and discarded |
+| `input_hash` / `output_hash` | no | a digest you computed yourself, 64 lowercase hex, recorded as `plain` |
 | `system_id` | no | if present, must be the system the key writes to |
 
 Send either the value or its digest for a given field, never both. A caller that
 would rather the server never see the value at all can compute the digest itself:
 it is the SHA-256 of the RFC 8785 canonical JSON of the value, as FORMAT.md
-section 3 defines it.
+section 3 defines it. It is then recorded as `plain`, and a short value can be
+guessed back from it; a value the server receives is digested `salted`, under
+a nonce the server keeps (FORMAT.md 2.7, SECURITY.md "Erasing a person").
 
 `ts_received` is always stamped by the server. A caller cannot choose where in
 the chain its receipt lands, nor when the server says it arrived. Response
@@ -273,6 +275,13 @@ sigillo-server system delete test-bot --confirm test-bot --db /var/lib/sigillo/s
 # who renamed, archived or deleted what, and when
 sigillo-server admin-log --db /var/lib/sigillo/sigillo.db
 
+# a person's pseudonym token, and their erasure (the log keeps only the token)
+sigillo-server subject find elena.rizzo --db /var/lib/sigillo/sigillo.db
+sigillo-server subject erase --identifier elena.rizzo --db /var/lib/sigillo/sigillo.db
+# cut receipts off from their content: by position, or by a candidate's CV
+sigillo-server openings erase acme-support-bot --seq 4 --seq 7-9 --confirm acme-support-bot --db /var/lib/sigillo/sigillo.db
+sigillo-server openings erase --document cv.pdf --confirm selezione-cv --db /var/lib/sigillo/sigillo.db
+
 sigillo-server serve --db /var/lib/sigillo/sigillo.db \
   --signer-socket /run/sigillo/signer.sock --port 8080
 
@@ -280,6 +289,10 @@ sigillo-server serve --db /var/lib/sigillo/sigillo.db \
 sigillo-server export acme-support-bot --db /var/lib/sigillo/sigillo.db \
   --signer-socket /run/sigillo/signer.sock --out ./fascicolo
 sigillo-verify ./fascicolo
+# by choice only: name the person behind a token, and disclose some nonces
+sigillo-server export acme-support-bot --subject psn_<32 hex> --open 4 --open 7-9 ...
+# open a digest, given its content (the nonce from --nonce or openings.jsonl)
+sigillo-verify open ./fascicolo 4 input --text 'score: 7'
 ```
 
 `system list` prints one line per system: the `system_id`, the number of

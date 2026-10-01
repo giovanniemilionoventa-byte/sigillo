@@ -278,7 +278,7 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
     }
   }
 
-  // 9. Every artifact a v2 or v3 receipt declares is indexed exactly once,
+  // 9. Every artifact a v2, v3 or v4 receipt declares is indexed exactly once,
   //    text fingerprint included, and the index claims nothing the receipts do
   //    not. This is what makes a document lookup trustworthy: it is checked
   //    against the receipts, not taken as given.
@@ -541,7 +541,7 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
     );
   }
 
-  // A chain may upgrade from v1 to v2 or v3 mid-flight, so this is not "the export's
+  // A chain may upgrade from one receipt version to a later one mid-flight, so this is not "the export's
   // version": it is a claim, like the counts above, checked against what the
   // receipts actually declare rather than trusted.
   const highestReceiptVersion = receipts.reduce<number>(
