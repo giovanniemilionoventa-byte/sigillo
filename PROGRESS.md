@@ -22,7 +22,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | N5 | Demo selezione CV | fatto | 20 curriculum, modello fittizio (Ollama scritto ma non eseguibile qui), ispezione simulata, e2e reale; bug corretto in `sigillo.artifact()` |
 | N6 | Documentazione non tecnica | fatto | `ISPEZIONE.md` e `VIDEO.md` (in N5), `PROVA-LOCALE.md` corretto ed esteso alla fase 2 |
 | D1 | Veste grafica "Registro" | fatto | Solo aspetto: token, font incorporati, componenti, Panoramica/Cronologia/Sistemi; 914 test Node (sessione 13) |
-| P1 | Ricevute senza dati personali (formato v4) | fatto | Pseudonimi `psn_` in una tabella `subjects` cancellabile, impronte con sale per input/output ricevuti in chiaro con i nonce in `openings`, cancellazione di interessati e di nonce, export senza identificativi per default, `sigillo-verify open`; v1–v3 restano valide; 988 test Node (sessione 14) |
+| P1 | Ricevute senza dati personali (formato v4) | fatto | Pseudonimi `psn_` in una tabella `subjects` cancellabile, impronte con sale per input/output ricevuti in chiaro con i nonce in `openings`, cancellazione di interessati e di nonce, export senza identificativi per default, `sigillo-verify open`; v1–v3 restano valide; 989 test Node (sessione 14) |
 
 ## Decisioni prese dal committente — 2026-09-21
 
@@ -2649,7 +2649,7 @@ degli artifacts e la verifica documento non sono cambiati di un byte.
 **Corretto strada facendo**: la cronologia e le frasi della vista web mostravano artifacts e modello
 solo per `v === 2`, quindi non per le ricevute v3 (e non le avrebbero mostrate per le v4).
 
-**Test**: Node da 914 a **988** (1 saltato, come prima); SDK Python 50 (erano 49), demo 22, tutti
+**Test**: Node da 914 a **989** (1 saltato, come prima); SDK Python 50 (erano 49), demo 22, tutti
 verdi; lint, typecheck, build, `smoke-dist`, cross-check Python verdi. Quattro test vecchi
 descrivevano la semantica superata (impronta semplice calcolata dal server, versione minima
 possibile, `on_behalf_of` in chiaro nella demo): aggiornati, non tolti.
