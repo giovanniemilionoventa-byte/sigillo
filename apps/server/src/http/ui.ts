@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { DOCUMENT_TEXT_SOURCE, receiptHashHex, type DocumentFingerprints, type Receipt } from "@sigillo/core";
+import { DOCUMENT_TEXT_SOURCE, type DocumentFingerprints, type Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
 import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
@@ -16,23 +16,32 @@ import {
   type SystemRecord,
 } from "../storage/store.js";
 import {
-  actionKindLabel,
   describeAdminEntry,
-  describeArtifact,
   describeDocumentMatch,
   describeReceipt,
   formatTs,
-  outcomeWord,
   systemTitle,
   UI,
 } from "./strings.js";
 import { registerFonts } from "./fonts.js";
 import {
+  anchoredSize,
+  discloseFields,
+  exportSheet,
+  HISTORY_LIMIT,
+  historyPage,
+  historyQuery,
+  selectedSeq,
+  storeRange,
+  systemHeader,
+  timestampStatus,
+  type SystemTab,
+} from "./history.js";
+import {
   archivedButShown,
   escape,
   homeRows,
   loginPage,
-  OUTCOME_STATE,
   page,
   pageHead,
   semaphore,
@@ -200,16 +209,6 @@ function fingerprintsFromQuery(query: Record<string, unknown>): DocumentFingerpr
   };
 }
 
-function timestampStatus(store: ReceiptStore, systemId: string, seq: number): string {
-  const covering = store.readCheckpoints(systemId).find((entry) => entry.checkpoint.tree_size > seq);
-  if (covering === undefined) return "non ancora coperto da un checkpoint";
-  const tokens = store.readTimestamps(covering.id);
-  const token = tokens[0];
-  if (token === undefined) return "checkpoint scritto, marca temporale in attesa";
-  return token.genTime === undefined
-    ? "con marca temporale (ora attestata non leggibile dal token)"
-    : `con marca temporale del ${formatTs(token.genTime)}`;
-}
 
 function verifyDocumentResult(
   store: ReceiptStore,
@@ -547,13 +546,18 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       404,
     );
 
-  /** The heading of every page about one system: its name, its system_id, and whether it is archived. */
-  const systemHead = (record: SystemRecord, eyebrow: string): NonNullable<RenderOptions["head"]> => ({
-    eyebrow,
-    h1: systemTitle(record),
-    sid: record.system_id,
-    badges: record.archived_at === null ? [] : [UI.systemsPage.archivedBadge],
-  });
+  /** A page about one system that is not its history: header and tabs, the page, the evidence sheet. */
+  const systemPage = (record: SystemRecord, tab: SystemTab, title: string, body: string): string =>
+    render({
+      title,
+      current: `system:${record.system_id}`,
+      mainClass: "system-page",
+      body: `${systemHeader(record, options.healthMonitor.statusFor(record.system_id, options.now()), tab)}
+<div class="system-body">
+${body}
+</div>
+${exportSheet(record)}`,
+    });
 
   app.get("/ui/systems/:systemId", async (request, reply) => {
     if (!requireSession(request, reply)) return reply;
@@ -562,23 +566,36 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const record = store.systemRecord(systemId);
     if (record === null) return notFound(reply, systemId);
 
-    const query = request.query as Record<string, string | undefined>;
+    const query = historyQuery(request.query as Record<string, unknown>);
+    const filters = { systemId, ...storeRange(query), ...(query.name === undefined ? {} : { name: query.name }) };
     const receipts = store.searchReceipts({
-      systemId,
-      ...(query["from"] === undefined ? {} : { from: query["from"] }),
-      ...(query["to"] === undefined ? {} : { to: query["to"] }),
-      ...(query["kind"] === undefined ? {} : { kind: query["kind"] }),
-      ...(query["name"] === undefined ? {} : { name: query["name"] }),
-      limit: 200,
+      ...filters,
+      ...(query.kind === undefined ? {} : { kind: query.kind }),
+      limit: HISTORY_LIMIT,
     });
+    // The receipt the address asks for, shown even when the filters leave it
+    // out of the list; without one, the most recent of those shown.
+    const wanted = selectedSeq(query);
+    const asked = wanted === null ? null : (receipts.find((receipt) => receipt.seq === wanted) ?? store.receiptAt(systemId, wanted));
+    const selected = asked ?? receipts[0] ?? null;
 
     return html(
       reply,
       render({
-        title: systemTitle(record),
+        title: asked === null ? systemTitle(record) : `${UI.inspector.receiptNo(asked.seq)} — ${systemTitle(record)}`,
         current: `system:${systemId}`,
-        head: systemHead(record, UI.history.eyebrow),
-        body: historyPage(systemId, receipts, query, anchoredSize(store, systemId)),
+        mainClass: `studio${asked === null ? "" : " has-selection"}`,
+        body: historyPage({
+          store,
+          record,
+          health: options.healthMonitor.statusFor(systemId, options.now()),
+          query,
+          receipts,
+          counts: store.countReceiptsByKind(filters),
+          selected,
+          explicit: asked !== null,
+          anchoredBelow: anchoredSize(store, systemId),
+        }),
       }),
     );
   });
@@ -613,15 +630,13 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       })
       .join("\n");
 
-    const link = escape(encodeURIComponent(systemId));
     return html(
       reply,
-      render({
-        title: `${systemTitle(record)} — ${UI.checkpoints.title}`,
-        current: `system:${systemId}`,
-        head: systemHead(record, UI.checkpoints.title),
-        body: `<p class="small"><a href="/ui/systems/${link}">← ${escape(UI.systemsPage.history)}</a></p>
-<p class="hint">${escape(UI.checkpoints.explain)}</p>
+      systemPage(
+        record,
+        "checkpoints",
+        `${systemTitle(record)} — ${UI.checkpoints.title}`,
+        `<p class="hint">${escape(UI.checkpoints.explain)}</p>
 ${
   checkpoints.length === 0
     ? `<p class="empty">${escape(UI.checkpoints.none)}</p>`
@@ -630,7 +645,7 @@ ${
 ${rows}
 </table></div>`
 }`,
-      }),
+      ),
     );
   });
 
@@ -638,12 +653,7 @@ ${rows}
   // chain that never recorded anything — deleting it.
 
   const renderManage = (record: SystemRecord, extra: { notice?: string; error?: string } = {}): string =>
-    render({
-      title: `${systemTitle(record)} — ${UI.systemsPage.manage}`,
-      current: `system:${record.system_id}`,
-      head: systemHead(record, UI.manage.eyebrow),
-      body: managePage(record, extra),
-    });
+    systemPage(record, "manage", `${systemTitle(record)} — ${UI.systemsPage.manage}`, managePage(record, extra));
 
   const DONE: Record<string, string> = {
     nome: UI.manage.renamed,
@@ -802,7 +812,10 @@ ${rows}
     if (!store.hasSystem(systemId)) {
       return reply.code(404).send({ error: `no system called ${systemId}` });
     }
-    return sendArchive(reply, systemId, {}, request.body as { subjects?: unknown; openings?: unknown } | undefined);
+    // The sheet on the system's pages sends a period too; a form without one
+    // exports the whole chain, as this route always did.
+    const body = request.body as { from?: unknown; to?: unknown; subjects?: unknown; openings?: unknown } | undefined;
+    return sendArchive(reply, systemId, dayBounds(body?.from, body?.to), body);
   });
 }
 
@@ -1147,74 +1160,6 @@ function systemCreatedPage(systemId: string, token: string): string {
 <p><a href="/ui/systems/${escape(encodeURIComponent(systemId))}/manage">${escape(t.manage)}</a> · <a href="/ui/sistemi">${escape(UI.nav.sistemi)}</a></p>`;
 }
 
-/**
- * How many receipts, from the start of the chain, a checkpoint with a
- * timestamp token covers: those are anchored, the rest are waiting.
- */
-function anchoredSize(store: ReceiptStore, systemId: string): number {
-  return store
-    .readCheckpoints(systemId)
-    .filter((stored) => store.readTimestamps(stored.id).length > 0)
-    .reduce((size, stored) => Math.max(size, stored.checkpoint.tree_size), 0);
-}
-
-/** One receipt as a row of the history; it opens on the technical details. */
-function receiptListItem(receipt: Receipt, anchoredBelow: number): string {
-  const t = UI.history;
-  const artifacts =
-    receipt.v !== 1 && receipt.artifacts !== undefined
-      ? receipt.artifacts
-          .map((a) => `<span class="tag">${escape(describeArtifact(a.role, a.label))}</span>`)
-          .join(" ")
-      : "";
-  const hash = receiptHashHex(receipt);
-
-  const rows: string[] = [
-    `<tr><th>impronta</th><td class="hash">${escape(hash)}</td></tr>`,
-    `<tr><th>seq</th><td>${receipt.seq}</td></tr>`,
-    `<tr><th>ricevuto</th><td>${escape(receipt.ts_received)}</td></tr>`,
-    `<tr><th>tipo</th><td>${escape(receipt.action.kind)}</td></tr>`,
-    `<tr><th>impronta precedente</th><td class="hash">${escape(receipt.prev_hash)}</td></tr>`,
-    `<tr><th>firma</th><td class="hash">${escape(receipt.sig)}</td></tr>`,
-    `<tr><th>chiave</th><td class="hash">${escape(receipt.key_id)}</td></tr>`,
-  ];
-  if (receipt.input_hash !== null) {
-    rows.push(`<tr><th>impronta input</th><td class="hash">${escape(receipt.input_hash)}</td></tr>`);
-  }
-  if (receipt.output_hash !== null) {
-    rows.push(`<tr><th>impronta output</th><td class="hash">${escape(receipt.output_hash)}</td></tr>`);
-  }
-
-  const [day, time] = formatTs(receipt.ts_received).split(", ");
-  const outcome = OUTCOME_STATE[receipt.outcome];
-  const anchored = receipt.seq < anchoredBelow;
-  const cell = (name: keyof typeof t.columns, content: string): string =>
-    `<span class="cell ${name}"><span class="sr">${escape(t.columns[name])}: </span>${content}</span>`;
-
-  return `<li><details><summary class="history-row">
-${cell("no", String(receipt.seq))}
-${cell("time", `<span class="day">${escape(day ?? "")}</span> <span class="hour">${escape(time ?? "")}</span>`)}
-${cell("action", `${escape(describeReceipt(receipt))}${artifacts === "" ? "" : ` ${artifacts}`}`)}
-${cell("outcome", `<span class="stamp ${outcome.css}"><span class="dot" aria-hidden="true">${outcome.icon}</span>${escape(outcomeWord(receipt.outcome))}</span>`)}
-${cell("anchor", anchored ? `<span class="muted">${escape(t.anchored)}</span>` : `<span class="pending">${escape(t.anchorPending)}</span>`)}
-${cell("fingerprint", `${escape(hash.slice(0, 12))}…`)}
-<span class="sr">${escape(t.technicalDetails)}</span>
-</summary>
-<div class="panel"><div class="table-scroll"><table>${rows.join("\n")}</table></div></div>
-</details></li>`;
-}
-
-/** The two optional disclosures of an export, folded away: by default an export names nobody and opens nothing. */
-function discloseFields(): string {
-  const t = UI.home.disclose;
-  return `<details class="search"><summary>${escape(t.summary)}</summary>
-<p class="hint">${escape(t.hint)}</p>
-<label>${escape(t.subjectsLabel)}<input type="text" name="subjects" autocomplete="off" spellcheck="false"></label>
-<label>${escape(t.openingsLabel)}<input type="text" name="openings" autocomplete="off" inputmode="numeric"></label>
-<p class="hint">${escape(t.openingsHint)}</p>
-</details>`;
-}
-
 /** The people page: search by identifier, through the subjects table, and the erasure of what it finds. */
 function peoplePage(
   store: ReceiptStore,
@@ -1266,51 +1211,4 @@ ${extra.error === undefined ? "" : `<p class="notice bad warn" role="alert">${es
 ${result}`;
 }
 
-function historyPage(
-  systemId: string,
-  receipts: Receipt[],
-  query: Record<string, string | undefined>,
-  anchoredBelow: number,
-): string {
-  const t = UI.history;
-  const kinds = ["", "tool_call", "llm_call", "agent_step", "decision", "genesis"];
-  const selected = query["kind"] ?? "";
-  const link = escape(encodeURIComponent(systemId));
-  const filtered = ["from", "to", "kind", "name"].some((field) => (query[field] ?? "").length > 0);
-
-  return `<p class="system-links"><a href="/ui/systems/${link}/checkpoints">${escape(UI.checkpoints.title)}</a> <a href="/ui/systems/${link}/manage">${escape(UI.systemsPage.manage)}</a></p>
-
-<div class="sheet formal">
-<form method="post" action="/ui/systems/${link}/export" class="fields">
-  ${discloseFields()}
-  <button type="submit" class="primary">${escape(UI.home.generate)}</button>
-</form>
-<p class="hint">${escape(UI.home.generateHint)}</p>
-</div>
-
-<details class="search"${filtered ? " open" : ""}><summary>${escape(t.searchTitle)}</summary>
-<form class="fields" method="get">
-  <label>${escape(t.fromLabel)}<input type="text" name="from" placeholder="2026-03-29T00:00:00.000Z" value="${escape(query["from"] ?? "")}"></label>
-  <label>${escape(t.toLabel)}<input type="text" name="to" placeholder="2026-03-30T00:00:00.000Z" value="${escape(query["to"] ?? "")}"></label>
-  <label>${escape(t.kindLabel)}<select name="kind">${kinds
-    .map(
-      (kind) =>
-        `<option value="${escape(kind)}"${kind === selected ? " selected" : ""}>${escape(kind === "" ? t.kindAny : actionKindLabel(kind as Receipt["action"]["kind"]))}</option>`,
-    )
-    .join("")}</select></label>
-  <label>${escape(t.nameLabel)}<input type="text" name="name" value="${escape(query["name"] ?? "")}"></label>
-  <button type="submit">${escape(t.searchButton)}</button>
-</form>
-</details>
-
-<h2>${receipts.length} ricevut${receipts.length === 1 ? "a" : "e"}${receipts.length === 200 ? " (le 200 più recenti)" : ""}</h2>
-${
-  receipts.length === 0
-    ? `<p class="empty">${escape(t.noMatches)}</p>`
-    : `<div class="history-head" aria-hidden="true">${(["no", "time", "action", "outcome", "anchor", "fingerprint"] as const)
-        .map((name) => `<span class="cell ${name}">${escape(t.columns[name])}</span>`)
-        .join("")}</div>
-<ol class="history" reversed>${receipts.map((receipt) => receiptListItem(receipt, anchoredBelow)).join("\n")}</ol>`
-}`;
-}
 

@@ -172,6 +172,17 @@ export class SystemNotDeletableError extends StorageError {
   }
 }
 
+/** The filters of the operator's history, except the kind. */
+export interface ReceiptFilter {
+  systemId: string;
+  /** Received at or after this ISO time. */
+  from?: string;
+  /** Received at or before this ISO time. */
+  to?: string;
+  /** Part of the action's name. */
+  name?: string;
+}
+
 /** A system as the operator's view and the CLI list it. */
 export interface SystemRecord {
   system_id: string;
@@ -847,15 +858,12 @@ export class ReceiptStore {
     }));
   }
 
-  /** Receipts matching a filter, newest first, for the operator's view. */
-  searchReceipts(query: {
-    systemId: string;
-    from?: string;
-    to?: string;
-    kind?: string;
-    name?: string;
-    limit?: number;
-  }): Receipt[] {
+  /**
+   * The WHERE clause of the operator's history filters, shared by the search
+   * and the counts so that the two can never disagree about what a filter
+   * lets through.
+   */
+  private historyFilter(query: ReceiptFilter & { kind?: string }): { where: string; parameters: Record<string, string | number> } {
     const clauses = ["system_id = @system_id"];
     const parameters: Record<string, string | number> = { system_id: query.systemId };
 
@@ -875,16 +883,43 @@ export class ReceiptStore {
       clauses.push("action_name LIKE @name");
       parameters["name"] = `%${query.name}%`;
     }
+    return { where: clauses.join(" AND "), parameters };
+  }
+
+  /** Receipts matching a filter, newest first, for the operator's view. */
+  searchReceipts(query: ReceiptFilter & { kind?: string; limit?: number }): Receipt[] {
+    const { where, parameters } = this.historyFilter(query);
     parameters["limit"] = Math.min(Math.max(query.limit ?? 100, 1), 1000);
 
     const rows = this.read
       .prepare(
         `SELECT canonical, sig FROM receipts
-         WHERE ${clauses.join(" AND ")}
+         WHERE ${where}
          ORDER BY seq DESC LIMIT @limit`,
       )
       .all(parameters) as StoredRow[];
     return rows.map(rowToReceipt);
+  }
+
+  /**
+   * How many receipts of each action kind the same filters let through, for
+   * the history's filter by kind. A kind with none is absent. A read: nothing
+   * is written, and nothing new is stored to answer it.
+   */
+  countReceiptsByKind(query: ReceiptFilter): Record<string, number> {
+    const { where, parameters } = this.historyFilter(query);
+    const rows = this.read
+      .prepare(`SELECT action_kind AS kind, COUNT(*) AS count FROM receipts WHERE ${where} GROUP BY action_kind`)
+      .all(parameters) as { kind: string; count: number }[];
+    return Object.fromEntries(rows.map((row) => [row.kind, row.count]));
+  }
+
+  /** One receipt by its position in its chain, or null: the receipt the history's inspector shows. */
+  receiptAt(systemId: string, seq: number): Receipt | null {
+    const row = this.read
+      .prepare("SELECT canonical, sig FROM receipts WHERE system_id = ? AND seq = ?")
+      .get(systemId, seq) as StoredRow | undefined;
+    return row === undefined ? null : rowToReceipt(row);
   }
 
   /**

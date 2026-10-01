@@ -250,6 +250,70 @@ export const UI = {
     kindLabel: "tipo",
     kindAny: "qualsiasi",
     nameLabel: "nome azione",
+    // The filter by kind, one segment each, with "Tutte" first.
+    filterLabel: "Filtra per tipo",
+    allKinds: "Tutte",
+    kinds: {
+      tool_call: "Strumenti",
+      llm_call: "Modelli",
+      agent_step: "Passi",
+      decision: "Decisioni",
+      genesis: "Apertura",
+    },
+    shown: (count: number, capped: boolean): string =>
+      `${count} ricevut${count === 1 ? "a" : "e"}${capped ? " (le 200 più recenti)" : ""}`,
+    listLabel: "Ricevute",
+    clearFilters: "Togli i filtri",
+    noMatchesHint: "Prova un altro tipo o togli il periodo.",
+    dayUtc: (day: string): string => `${day} · ore UTC`,
+    back: "Torna all'elenco",
+  },
+  // The inspector: the receipt chosen in the history, in full.
+  inspector: {
+    label: "Dettaglio della ricevuta",
+    receiptNo: (seq: number): string => `Ricevuta n. ${seq}`,
+    genesisNote:
+      "È la prima ricevuta del registro: da qui parte la catena. Non c'è una ricevuta precedente, quindi l'impronta precedente è tutta a zeri.",
+    whoWhen: "Chi e quando",
+    kind: "Tipo",
+    agent: "Agente",
+    onBehalfOf: "Per conto di",
+    model: "Modello",
+    received: "Ricevuta il",
+    source: "Arrivata da",
+    sources: {
+      sdk: "SDK",
+      otlp: "OpenTelemetry (OTLP)",
+      api: "API nativa",
+      genesis: "sigillo, alla creazione del sistema",
+    },
+    files: "File",
+    verifyFile: "Verifica",
+    chain: "Catena",
+    fingerprint: "Impronta",
+    linkedTo: "Collegata a",
+    first: "Nessuna: è la prima",
+    anchoring: "Ancoraggio",
+    anchoredNote: "Sigillata in un checkpoint con marca temporale.",
+    seeCheckpoints: "Vedi checkpoint",
+    showTechnical: "Mostra firma, chiave e impronte complete",
+    hideTechnical: "Nascondi i dettagli tecnici",
+    signature: "Firma",
+    key: "Chiave",
+    inputHash: "Impronta input",
+    outputHash: "Impronta output",
+    promptHash: "Impronta del prompt",
+    replyHash: "Impronta della risposta",
+    receivedIso: "Ricevuto (ISO)",
+    eventIso: "Avvenuto (ISO, dichiarato dall'agente)",
+    version: "Versione del formato",
+  },
+  // Where a receipt stands with its anchoring, in words (also on the verify page).
+  anchoring: {
+    notCovered: "non ancora coperto da un checkpoint",
+    waiting: "checkpoint scritto, marca temporale in attesa",
+    unreadable: "con marca temporale (ora attestata non leggibile dal token)",
+    at: (when: string): string => `con marca temporale del ${when}`,
   },
   checkpoints: {
     title: "checkpoint",
@@ -463,9 +527,78 @@ export function describeReceipt(receipt: Receipt): string {
   return `${sentence} — ${OUTCOME_WORDS[outcome]}.`;
 }
 
+/** What a document was to the action: "usato in input" or "prodotto in output". */
+export function artifactRoleWords(role: "input" | "output"): string {
+  return role === "input" ? "usato in input" : "prodotto in output";
+}
+
 /** A readable label for an artifact, e.g. "curriculum (usato in input)". */
 export function describeArtifact(role: "input" | "output", label: string): string {
-  return `${label} (${role === "input" ? "usato in input" : "prodotto in output"})`;
+  return `${label} (${artifactRoleWords(role)})`;
+}
+
+/** Where a model ran, for the history: "in locale, con ollama", or its provider; null when unknown. */
+export function modelWhere(provider: string | null): string | null {
+  if (provider === null) return null;
+  return LOCAL_PROVIDERS.has(provider.toLowerCase()) ? `in locale, con ${provider}` : provider;
+}
+
+/**
+ * The short title of a receipt in the history's list ("Ha usato «cerca_ordine»").
+ * The full sentence is describeReceipt's, in the inspector; the outcome is
+ * shown beside the title whenever it is not "completato".
+ */
+export function receiptTitle(receipt: Receipt): string {
+  const { action } = receipt;
+  const model = receipt.v !== 1 ? receipt.model : undefined;
+  switch (action.kind) {
+    case "genesis":
+      return "Registro aperto";
+    case "tool_call":
+      return `${receipt.outcome === "ok" ? "Ha usato" : "Ha tentato"} «${action.name}»`;
+    case "llm_call":
+      return model !== undefined ? `Risposta da «${model.name}»` : `Chiamata a «${action.name}»`;
+    case "decision":
+      return `Decisione «${action.name}»`;
+    default:
+      return `Passo «${action.name}»`;
+  }
+}
+
+/** The line under a receipt's title: the agent, where its model ran, on whose behalf, which files. */
+export function receiptSubtitle(receipt: Receipt): string {
+  if (receipt.action.kind === "genesis") return `Apertura del registro di ${receipt.action.name}`;
+  const parts = [receipt.actor.agent];
+  const model = receipt.v !== 1 ? receipt.model : undefined;
+  const where = model === undefined ? null : modelWhere(model.provider);
+  if (where !== null) parts.push(`modello ${where}`);
+  if (receipt.actor.on_behalf_of !== undefined) parts.push(`per conto di ${receipt.actor.on_behalf_of}`);
+  if (receipt.v !== 1) for (const artifact of receipt.artifacts ?? []) parts.push(artifact.label);
+  return parts.join(" · ");
+}
+
+const WEEKDAYS = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
+const MONTH_NAMES = [
+  "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+  "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
+];
+
+/** The day of a server timestamp, in UTC, as a heading of the history: "martedì 29 settembre 2026". */
+export function formatDay(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T/.exec(iso);
+  if (match === null) return iso;
+  const [, year, month, day] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  const weekday = WEEKDAYS[date.getUTCDay()];
+  const monthName = MONTH_NAMES[Number(month) - 1];
+  if (weekday === undefined || monthName === undefined) return iso;
+  return `${weekday} ${Number(day)} ${monthName} ${year}`;
+}
+
+/** The time of a server timestamp, in UTC, to the second: "12:40:13". */
+export function formatTime(iso: string): string {
+  const match = /T(\d{2}:\d{2}:\d{2})/.exec(iso);
+  return match?.[1] ?? iso;
 }
 
 /** The one word for an outcome, as the receipt sentences already use it. */

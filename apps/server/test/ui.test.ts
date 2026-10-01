@@ -221,16 +221,16 @@ describe("the main page: È tutto a posto?", () => {
   it("marks each receipt in the history as anchored or waiting, with its outcome and fingerprint", async () => {
     const cookie = await signIn();
     const history = async (): Promise<string> =>
-      (await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}`, headers: { cookie } })).body;
+      (await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}?ricevuta=1`, headers: { cookie } })).body;
     const before = await history();
-    expect(before).toContain(`<span class="pending">${UI.history.anchorPending}</span>`);
+    expect(before).toMatch(new RegExp(`<span class="stamp yellow"><svg[^]*?</svg>${UI.history.anchorPending}</span>`));
     expect(before).not.toContain(UI.history.anchored);
     const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint !== null) {
       await store.recordTimestamp(checkpoint.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), "2026-03-29T15:00:05.000Z");
     }
     const after = await history();
-    expect(after).toContain(UI.history.anchored);
+    expect(after).toMatch(new RegExp(`<span class="stamp green"><svg[^]*?</svg>${UI.history.anchored}</span>`));
     expect(after).not.toContain(UI.history.anchorPending);
     const receipt = store.readChain(SYSTEM)[1];
     expect(receipt).toBeDefined();
@@ -531,27 +531,30 @@ describe("the receipts page: Cosa ha fatto l'AI? for one system", () => {
     expect(response.body).toContain("&lt;script&gt;");
   });
 
-  it("keeps every fingerprint inside the technical details, never loose in the sentence", async () => {
+  it("keeps every fingerprint out of the list: they are in the inspector, beside the sentence, never in it", async () => {
+    await store.append(event(9, { input_hash: "a".repeat(64), output_hash: "b".repeat(64) }));
     const cookie = await signIn();
-    const response = await app.inject({
-      method: "GET",
-      url: `/ui/systems/${SYSTEM}`,
-      headers: { cookie },
-    });
-    const body = response.body;
-    const detailsStart = body.indexOf("<details>");
-    expect(detailsStart).toBeGreaterThan(-1);
-
-    // Every occurrence of a 64-character hex string (a hash) is inside some
-    // <details>...</details> block, never in the sentence text before it.
+    const body = (await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}`, headers: { cookie } })).body;
+    const start = body.indexOf('<aside class="inspector"');
+    const end = body.indexOf("</aside>", start);
+    expect(start).toBeGreaterThan(-1);
     const hexHash = /\b[0-9a-f]{64}\b/g;
     let match: RegExpExecArray | null;
+    let found = 0;
     while ((match = hexHash.exec(body)) !== null) {
-      const before = body.slice(0, match.index);
-      const opens = (before.match(/<details\b[^>]*>/g) ?? []).length;
-      const closes = (before.match(/<\/details>/g) ?? []).length;
-      expect(opens).toBeGreaterThan(closes);
+      found += 1;
+      expect(match.index).toBeGreaterThan(start);
+      expect(match.index).toBeLessThan(end);
     }
+    // Its own fingerprint, the previous one, and input and output.
+    expect(found).toBe(4);
+    const sentence = /<h2 class="insp-sentence">([^<]*)<\/h2>/.exec(body)?.[1] ?? "";
+    expect(sentence).toContain("ha usato lo strumento");
+    expect(sentence).not.toMatch(/[0-9a-f]{16}/);
+    // Input and output only once the technical details are opened.
+    const details = body.slice(body.indexOf('<details class="tech">'), end);
+    expect(details).toContain("a".repeat(64));
+    expect(details).toContain("b".repeat(64));
   });
 
   it("shows an artifact as a readable label alongside the sentence", async () => {
@@ -567,7 +570,9 @@ describe("the receipts page: Cosa ha fatto l'AI? for one system", () => {
       url: `/ui/systems/${SYSTEM}`,
       headers: { cookie },
     });
-    expect(response.body).toContain("curriculum (usato in input)");
+    // In the list, the file's label after the agent; in the inspector, the file and what it was to the action.
+    expect(response.body).toContain('<span class="row-sub">planner · curriculum</span>');
+    expect(response.body).toContain('<code>curriculum</code><span class="sub">usato in input</span>');
   });
 });
 

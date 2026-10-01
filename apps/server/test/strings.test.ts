@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Receipt } from "@sigillo/core";
-import { describeArtifact, describeReceipt } from "../src/http/strings.js";
+import {
+  artifactRoleWords,
+  describeArtifact,
+  describeReceipt,
+  formatDay,
+  formatTime,
+  modelWhere,
+  receiptSubtitle,
+  receiptTitle,
+  UI,
+} from "../src/http/strings.js";
 
 const BASE = {
   v: 1 as const,
@@ -145,5 +155,112 @@ describe("describeArtifact", () => {
   it("labels an input and an output differently", () => {
     expect(describeArtifact("input", "curriculum")).toBe("curriculum (usato in input)");
     expect(describeArtifact("output", "email di risposta")).toBe("email di risposta (prodotto in output)");
+  });
+});
+
+describe("receiptTitle: the short title of a row in the history (Interfaccia B)", () => {
+  it("gives every kind its own title, and a tool's verb follows the outcome", () => {
+    expect(receiptTitle(receipt({ action: { kind: "tool_call", name: "cerca_ordine" } }))).toBe("Ha usato «cerca_ordine»");
+    expect(receiptTitle(receipt({ action: { kind: "tool_call", name: "rimborsa" }, outcome: "blocked" }))).toBe("Ha tentato «rimborsa»");
+    expect(receiptTitle(receipt({ action: { kind: "decision", name: "escalation" } }))).toBe("Decisione «escalation»");
+    expect(receiptTitle(receipt({ action: { kind: "agent_step", name: "saluto" } }))).toBe("Passo «saluto»");
+    expect(receiptTitle(receipt({ action: { kind: "genesis", name: "acme" } }))).toBe("Registro aperto");
+    expect(receiptTitle(receipt({ action: { kind: "llm_call", name: "chat" } }))).toBe("Chiamata a «chat»");
+  });
+
+  it("names the model when the receipt names one", () => {
+    const withModel = { ...receipt({ action: { kind: "llm_call", name: "chat" } }), v: 2, model: { name: "llama3.1:8b", provider: "ollama", digest: null } } as Receipt;
+    expect(receiptTitle(withModel)).toBe("Risposta da «llama3.1:8b»");
+  });
+
+  it("is never empty and never leaks a field name, for every kind and outcome", () => {
+    for (const kind of KINDS) {
+      for (const outcome of OUTCOMES) {
+        const title = receiptTitle(receipt({ action: { kind, name: "x" }, outcome }));
+        expect(title.length).toBeGreaterThan(0);
+        expect(title).not.toContain("undefined");
+      }
+    }
+  });
+});
+
+describe("receiptSubtitle: the line under a row's title", () => {
+  it("lists the agent, where the model ran, on whose behalf, and the files", () => {
+    const v3 = {
+      ...receipt({ actor: { agent: "screener", on_behalf_of: "m.rossi" }, action: { kind: "llm_call", name: "chat" } }),
+      v: 3,
+      model: { name: "gpt-4o", provider: "openai", digest: null },
+      artifacts: [{ role: "input", label: "candidato-01.txt", media_type: "text/plain", sha256: "c".repeat(64) }],
+    } as Receipt;
+    expect(receiptSubtitle(v3)).toBe("screener · modello openai · per conto di m.rossi · candidato-01.txt");
+    expect(receiptSubtitle(receipt())).toBe("planner");
+  });
+
+  it("says whose register an opening is", () => {
+    expect(receiptSubtitle(receipt({ action: { kind: "genesis", name: "acme" } }))).toBe("Apertura del registro di acme");
+  });
+});
+
+describe("modelWhere", () => {
+  it("says a local model runs locally, names any other provider, and says nothing when unknown", () => {
+    expect(modelWhere("ollama")).toBe("in locale, con ollama");
+    expect(modelWhere("vLLM")).toBe("in locale, con vLLM");
+    expect(modelWhere("openai")).toBe("openai");
+    expect(modelWhere(null)).toBeNull();
+  });
+});
+
+describe("artifactRoleWords", () => {
+  it("is the words describeArtifact puts in brackets", () => {
+    expect(artifactRoleWords("input")).toBe("usato in input");
+    expect(describeArtifact("output", "x")).toBe(`x (${artifactRoleWords("output")})`);
+  });
+});
+
+describe("formatDay and formatTime: the history's day headings and times, in UTC", () => {
+  it("names the weekday and the month in full", () => {
+    expect(formatDay("2026-09-29T12:40:13.790Z")).toBe("martedì 29 settembre 2026");
+    expect(formatDay("2026-03-01T23:59:59.000Z")).toBe("domenica 1 marzo 2026");
+    expect(UI.history.dayUtc(formatDay("2026-10-01T00:00:00.000Z"))).toBe("giovedì 1 ottobre 2026 · ore UTC");
+  });
+
+  it("gives the time to the second, and leaves what does not parse as it is", () => {
+    expect(formatTime("2026-09-29T12:40:13.790Z")).toBe("12:40:13");
+    expect(formatDay("not a date")).toBe("not a date");
+    expect(formatTime("not a date")).toBe("not a date");
+  });
+});
+
+describe("the history's count", () => {
+  it("agrees in number, and says when the list stops at the 200 most recent", () => {
+    expect(UI.history.shown(1, false)).toBe("1 ricevuta");
+    expect(UI.history.shown(0, false)).toBe("0 ricevute");
+    expect(UI.history.shown(200, true)).toBe("200 ricevute (le 200 più recenti)");
+  });
+});
+
+describe("the new texts of direction B", () => {
+  it("have the three chain states, the export sheet, and the not-found page", () => {
+    expect(UI.chain).toEqual({ green: "Registro integro", yellow: "Da controllare", red: "Verifica fallita" });
+    expect(UI.exportSheet.title("Assistente clienti")).toBe("Genera il fascicolo di Assistente clienti");
+    expect(UI.notFound.system("x")).toBe("Nessun sistema chiamato x.");
+    expect(UI.system.receipts(1)).toBe("1 ricevuta");
+    expect(UI.inspector.receiptNo(4)).toBe("Ricevuta n. 4");
+    expect(UI.anchoring.at("1 ott 2026, 10:00:00 UTC")).toBe("con marca temporale del 1 ott 2026, 10:00:00 UTC");
+  });
+
+  it("use no exclamation marks and no emoji", () => {
+    const texts: string[] = [];
+    const walk = (value: unknown): void => {
+      if (typeof value === "string") texts.push(value);
+      else if (typeof value === "function") texts.push(String((value as (...args: never[]) => string)(...([1, true] as never[]))));
+      else if (value !== null && typeof value === "object") Object.values(value).forEach(walk);
+    };
+    walk(UI);
+    expect(texts.length).toBeGreaterThan(150);
+    for (const text of texts) {
+      expect(text, text).not.toContain("!");
+      expect(text, text).not.toMatch(/\p{Extended_Pictographic}/u);
+    }
   });
 });

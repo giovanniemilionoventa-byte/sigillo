@@ -184,6 +184,7 @@ p.warn { margin: 0 0 16px; padding: 10px 14px; border-radius: 10px; background: 
 .stamp.red, .dot.red { color: var(--bad); }
 .stamp.archived, .dot.archived { color: var(--secondary); }
 .dot { display: inline-flex; flex: none; }
+.stamp > svg { width: 14px; height: 14px; }
 .dot svg { width: 15px; height: 15px; }
 .pill { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 2px 8px; border-radius: 999px;
   font-size: 11px; font-weight: 600; white-space: nowrap; }
@@ -330,11 +331,13 @@ details.search form { display: grid; grid-template-columns: minmax(0, 2fr) minma
 .row-title { font-size: 14px; font-weight: 600; }
 .row-sub { font-size: 12px; color: var(--secondary); }
 .row-seq { flex: none; min-width: 38px; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--secondary); white-space: nowrap; }
-.row[aria-current="true"] { background: var(--selection); color: var(--on-action); }
-.row[aria-current="true"] .row-time, .row[aria-current="true"] .row-sub, .row[aria-current="true"] .row-seq { color: var(--on-action); }
-.row[aria-current="true"] .kind { background: rgba(255,255,255,0.2); color: var(--on-action); }
-.row[aria-current="true"] .pill { background: var(--surface); }
-.row[aria-current="true"]:focus-visible { outline-color: var(--focus); }
+/* the selected row, where the inspector beside it shows it (on a phone the list is not shown with it) */
+@media (min-width: 900px) {
+  .row[aria-current="true"] { background: var(--selection); color: var(--on-action); }
+  .row[aria-current="true"] .row-time, .row[aria-current="true"] .row-sub, .row[aria-current="true"] .row-seq { color: var(--on-action); }
+  .row[aria-current="true"] .kind { background: rgba(255,255,255,0.2); color: var(--on-action); }
+  .row[aria-current="true"] .pill { background: var(--surface); }
+}
 .empty-state { padding: 44px 20px; text-align: center; color: var(--secondary); }
 .empty-state strong { display: block; color: var(--text); font-size: 15px; }
 .empty-state p { margin: 6px 0 0; }
@@ -357,6 +360,7 @@ details.search form { display: grid; grid-template-columns: minmax(0, 2fr) minma
 .facts .stack dd { margin-top: 3px; text-align: left; }
 .facts .sub { display: block; font-size: 11px; color: var(--secondary); }
 .facts .note-row { color: var(--secondary); font-size: 12px; }
+.facts .note-row a { white-space: nowrap; }
 .hash-full { display: block; font-family: var(--mono); font-size: 11px; line-height: 1.5; word-break: break-all; color: var(--label); }
 .file-row { display: flex; align-items: center; gap: 10px; }
 .file-row > svg { width: 18px; height: 18px; color: var(--link); }
@@ -531,8 +535,8 @@ pre.code { margin: 8px 0 0; padding: 14px 16px; border-radius: 10px; background:
   .rows-scroll { overflow: visible; padding: 8px 8px 24px; }
   .row { min-height: 64px; gap: 10px; padding: 10px; }
   .row-time { width: auto; min-width: 44px; font-size: 12px; }
-  .row-title { font-size: 15px; white-space: normal; }
-  .row-sub { font-size: 13px; white-space: normal; }
+  .row-title { font-size: 15px; white-space: normal; overflow-wrap: anywhere; }
+  .row-sub { font-size: 13px; white-space: normal; overflow-wrap: anywhere; }
   .inspector { display: none; }
   .studio.has-selection .studio-list { display: none; }
   .studio.has-selection .inspector { display: block; border: 0; padding: 16px 16px 40px; overflow: visible; }
