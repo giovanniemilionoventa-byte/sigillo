@@ -99,6 +99,34 @@ def root_from_path(leaf: bytes, index: int, size: int, path: list[bytes]) -> byt
     return node
 
 
+def frontier(entries: list[bytes]) -> list[bytes]:
+    """The roots of the perfect subtrees a tree of n entries splits into, one
+    per set bit of n, the largest (leftmost) first: what the signer keeps of a
+    chain instead of the chain. Computed by decomposition, slicing the entries
+    at each set bit and hashing each slice with merkle_root, not by the
+    append-and-carry algorithm packages/core uses.
+    """
+    nodes = []
+    start = 0
+    for bit in reversed(range(len(entries).bit_length())):
+        width = 1 << bit
+        if len(entries) & width:
+            nodes.append(merkle_root(entries[start:start + width]))
+            start += width
+    return nodes
+
+
+def root_from_frontier(nodes: list[bytes]) -> bytes:
+    """Folds the subtree roots from the right: RFC 6962's split at the largest
+    power of two below n puts the largest perfect subtree on the left."""
+    if not nodes:
+        return sha256(b"")
+    root = nodes[-1]
+    for node in reversed(nodes[:-1]):
+        root = node_hash(node, root)
+    return root
+
+
 def entry(index: int) -> bytes:
     """A stand-in for a receipt hash: 32 bytes, reproducible from the index."""
     return sha256(f"entry-{index}".encode("utf-8"))
@@ -124,12 +152,17 @@ def main() -> None:
                 raise SystemExit(f"size {size}, index {index}: the audit path does not rebuild the root")
             proofs.append([step.hex() for step in path])
 
+        nodes = frontier(entries)
+        if len(nodes) != bin(size).count("1") or root_from_frontier(nodes) != recursive:
+            raise SystemExit(f"size {size}: the frontier does not fold back into the root")
+
         sizes.append(
             {
                 "size": size,
                 "root": recursive.hex(),
                 "leaf_hashes": [leaf_hash(e).hex() for e in entries],
                 "proofs": proofs,
+                "frontier": [node.hex() for node in nodes],
             }
         )
 
@@ -140,7 +173,9 @@ def main() -> None:
             "leaf = SHA-256(0x00 || entry), internal node = SHA-256(0x01 || left || right), "
             "and a tree of n entries splits at the largest power of two below n. "
             "proofs[i] is the RFC 6962 audit path for entry i: sibling hashes from the leaf "
-            "upwards, with no side markers, because the sides follow from the index and the size."
+            "upwards, with no side markers, because the sides follow from the index and the size. "
+            "frontier is the roots of the perfect subtrees the tree splits into, one per set bit "
+            "of the size, largest first: the signer's state of a chain."
         ),
         "entries": [entry(index).hex() for index in range(MAX_SIZE)],
         "sizes": sizes,

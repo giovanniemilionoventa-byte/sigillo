@@ -1,0 +1,61 @@
+{
+  "format": "sigillo invalid receipt vectors",
+  "note": "Each case is a valid vector of vectors.json (base) with some members replaced (set) or removed (remove). Every case must be refused by every implementation: packages/core (invalid-vectors.test.ts) and the independent Python reading of docs/FORMAT.md (scripts/crosscheck_vectors.py). Written by hand from FORMAT.md 2.2 and 2.7.",
+  "cases": [
+    {
+      "name": "v4-on-behalf-of-in-the-clear",
+      "base": "v4-pseudonym-salted-input-plain-output",
+      "set": { "actor": { "agent": "agente-cv", "on_behalf_of": "mario.rossi.TEST" } }
+    },
+    {
+      "name": "v4-on-behalf-of-token-too-short",
+      "base": "v4-pseudonym-salted-input-plain-output",
+      "set": { "actor": { "agent": "agente-cv", "on_behalf_of": "psn_9f86d081884c7d659a2feaa0c55ad01" } }
+    },
+    {
+      "name": "v4-on-behalf-of-token-uppercase",
+      "base": "v4-pseudonym-salted-input-plain-output",
+      "set": { "actor": { "agent": "agente-cv", "on_behalf_of": "psn_9F86D081884C7D659A2FEAA0C55AD015" } }
+    },
+    {
+      "name": "v4-on-behalf-of-urn-as-v3-allowed",
+      "base": "v4-salted-both-with-text-artifact-and-model",
+      "set": { "actor": { "agent": "agente-cv", "on_behalf_of": "urn:user:42" } }
+    },
+    {
+      "name": "v4-input-scheme-missing",
+      "base": "v4-pseudonym-salted-input-plain-output",
+      "remove": ["input_hash_scheme"]
+    },
+    {
+      "name": "v4-output-scheme-missing",
+      "base": "v4-no-digests-no-person",
+      "remove": ["output_hash_scheme"]
+    },
+    {
+      "name": "v4-scheme-without-digest",
+      "base": "v4-no-digests-no-person",
+      "set": { "input_hash_scheme": "salted" }
+    },
+    {
+      "name": "v4-digest-without-scheme",
+      "base": "v4-pseudonym-salted-input-plain-output",
+      "set": { "output_hash_scheme": null }
+    },
+    {
+      "name": "v4-unknown-scheme",
+      "base": "v4-salted-both-with-text-artifact-and-model",
+      "set": { "output_hash_scheme": "peppered" }
+    },
+    {
+      "name": "v3-carrying-a-v4-scheme",
+      "base": "v3-text-artifact",
+      "set": { "input_hash_scheme": null, "output_hash_scheme": null }
+    },
+    {
+      "name": "v5-unknown-version",
+      "base": "v4-no-digests-no-person",
+      "set": { "v": 5 }
+    }
+  ]
+}
