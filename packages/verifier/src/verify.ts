@@ -1,6 +1,9 @@
 import {
   fromHex,
   GENESIS_PREV_HASH,
+  hashCanonicalJson,
+  HASH_SCHEME_SALTED,
+  openSaltedDigest,
   keyIdFromRawPublicKey,
   merkleRoot,
   publicKeyFromRaw,
@@ -9,7 +12,9 @@ import {
   safeParseArtifactsIndexEntry,
   safeParseCheckpointEntry,
   safeParseManifest,
+  safeParseOpeningEntry,
   safeParseReceipt,
+  safeParseSubjectEntry,
   toHex,
   verifyCheckpointSignature,
   verifyReceiptSignature,
@@ -34,6 +39,10 @@ export interface Bundle {
   checkpointsJsonl?: string;
   /** Present in a full export; absent in the minimal one, or where no v2 receipt names a document. */
   artifactsIndexJsonl?: string;
+  /** Only when the export was asked to disclose the nonces of some salted digests. */
+  openingsJsonl?: string;
+  /** Only when the export was asked to name the people behind some pseudonym tokens. */
+  subjectsJsonl?: string;
 }
 
 export type VerificationCheck =
@@ -53,6 +62,8 @@ export type VerificationCheck =
   | "merkle-root"
   | "inclusion-proof"
   | "artifacts-index"
+  | "openings"
+  | "subjects"
   | "previous-export";
 
 export interface VerifyOptions {
@@ -89,6 +100,10 @@ export interface VerificationSummary {
    * the receipts at all; the "no checkpoint" and "not linked" notes say that.
    */
   unanchored_receipts: number;
+  /** Nonces disclosed in openings.jsonl, each confirmed to belong to a salted digest here. */
+  openings_disclosed: number;
+  /** Identifiers disclosed in subjects.jsonl, each for a token a receipt here uses. */
+  subjects_disclosed: number;
 }
 
 export type Verification =
@@ -309,6 +324,54 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
     );
   }
 
+  // 9b. A disclosed nonce belongs to a salted digest this export holds, once.
+  //     Whether it opens that digest depends on content this file does not
+  //     have: `sigillo-verify open` checks that, given the content.
+  const openingKeys = new Set<string>();
+  for (const [index, line] of jsonLines(bundle.openingsJsonl ?? "").entries()) {
+    const where = `openings.jsonl:${index + 1}`;
+    let value: unknown;
+    try {
+      value = JSON.parse(line);
+    } catch (error) {
+      return fail("openings", where, `is not valid JSON: ${String(error)}`);
+    }
+    const parsed = safeParseOpeningEntry(value);
+    if (!parsed.ok) return fail("openings", where, parsed.error);
+    const { seq, role } = parsed.entry;
+    const receipt = receipts.find((candidate) => candidate.seq === seq);
+    if (receipt === undefined) {
+      return fail("openings", where, `the nonce is for seq ${seq}, which this export does not contain`);
+    }
+    if (receipt.v !== 4 || receipt[`${role}_hash_scheme`] !== HASH_SCHEME_SALTED) {
+      return fail("openings", where, `the ${role} of seq ${seq} is not a salted digest, so it has no nonce`);
+    }
+    const key = `${seq}:${role}`;
+    if (openingKeys.has(key)) return fail("openings", where, `the nonce for the ${role} of seq ${seq} appears twice`);
+    openingKeys.add(key);
+  }
+
+  // 9c. A disclosed identifier is for a token these receipts use, once.
+  const tokensUsed = new Set(
+    receipts.flatMap((receipt) => (receipt.actor.on_behalf_of === undefined ? [] : [receipt.actor.on_behalf_of])),
+  );
+  const subjectTokens = new Set<string>();
+  for (const [index, line] of jsonLines(bundle.subjectsJsonl ?? "").entries()) {
+    const where = `subjects.jsonl:${index + 1}`;
+    let value: unknown;
+    try {
+      value = JSON.parse(line);
+    } catch (error) {
+      return fail("subjects", where, `is not valid JSON: ${String(error)}`);
+    }
+    const parsed = safeParseSubjectEntry(value);
+    if (!parsed.ok) return fail("subjects", where, parsed.error);
+    const { token } = parsed.entry;
+    if (!tokensUsed.has(token)) return fail("subjects", where, `${token} is the on_behalf_of of no receipt in this export`);
+    if (subjectTokens.has(token)) return fail("subjects", where, `${token} appears twice`);
+    subjectTokens.add(token);
+  }
+
   // 10. Every checkpoint is a signed statement about a tree these receipts build.
   const checkpoints: CheckpointEntry[] = [];
   let rootsRecomputed = 0;
@@ -510,9 +573,46 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
         anchoredThrough === null
           ? 0
           : receipts.filter((receipt) => receipt.seq >= (anchoredThrough as number)).length,
+      openings_disclosed: openingKeys.size,
+      subjects_disclosed: subjectTokens.size,
     },
     receipts,
   };
+}
+
+export type Opening =
+  | { ok: true; scheme: "plain" | "salted" }
+  | { ok: false; reason: string };
+
+/**
+ * Whether `value` is what the `role` digest of receipt `seq` was computed
+ * over (FORMAT.md 2.7): under the nonce for a salted digest, without one for
+ * a plain digest, which every version before 4 carries. `receipts` must come
+ * from a bundle that verified.
+ */
+export function openDigest(
+  receipts: readonly Receipt[],
+  seq: number,
+  role: "input" | "output",
+  nonce: Uint8Array | null,
+  value: unknown,
+): Opening {
+  const receipt = receipts.find((candidate) => candidate.seq === seq);
+  if (receipt === undefined) return { ok: false, reason: `this export does not contain seq ${seq}` };
+  const digest = receipt[`${role}_hash`];
+  if (digest === null) return { ok: false, reason: `seq ${seq} recorded no ${role}` };
+
+  if (receipt.v === 4 && receipt[`${role}_hash_scheme`] === HASH_SCHEME_SALTED) {
+    if (nonce === null) {
+      return { ok: false, reason: `the ${role} of seq ${seq} is a salted digest: it opens only with its nonce` };
+    }
+    return openSaltedDigest(digest, nonce, value)
+      ? { ok: true, scheme: "salted" }
+      : { ok: false, reason: `the ${role} of seq ${seq} is not this content under this nonce` };
+  }
+  return hashCanonicalJson(value) === digest
+    ? { ok: true, scheme: "plain" }
+    : { ok: false, reason: `the ${role} of seq ${seq} is not the digest of this content` };
 }
 
 /**

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { checkpointSchema } from "./checkpoint.js";
+import { isPseudonym } from "./privacy.js";
 import { artifactRoleSchema, artifactTextSchema, isoUtcTimestampSchema } from "./receipt.js";
 
 /**
@@ -90,4 +91,51 @@ export function safeParseArtifactsIndexEntry(value: unknown): ArtifactsIndexEntr
     .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "<artifacts index entry>"}: ${issue.message}`)
     .join("; ");
   return { ok: false, error };
+}
+
+function issuesText(issues: readonly z.ZodIssue[], what: string): string {
+  return issues.map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : what}: ${issue.message}`).join("; ");
+}
+
+/**
+ * A line of `openings.jsonl`, present only when whoever made the export chose
+ * to disclose it: the nonce under which a version 4 receipt's salted digest
+ * was computed (FORMAT.md 2.7). With it, and the content, anyone can show the
+ * digest is of that content; without the content it says nothing — but it
+ * does let its holder test guesses, which is why exports leave it out unless
+ * asked.
+ */
+export const openingEntrySchema = z
+  .object({
+    seq: z.number().int().nonnegative(),
+    role: artifactRoleSchema,
+    nonce: hexDigest,
+  })
+  .strict();
+
+export type OpeningEntry = z.infer<typeof openingEntrySchema>;
+
+export function safeParseOpeningEntry(value: unknown): { ok: true; entry: OpeningEntry } | { ok: false; error: string } {
+  const parsed = openingEntrySchema.safeParse(value);
+  return parsed.success ? { ok: true, entry: parsed.data } : { ok: false, error: issuesText(parsed.error.issues, "<opening>") };
+}
+
+/**
+ * A line of `subjects.jsonl`, present only for the tokens whoever made the
+ * export chose to name: which identifier a pseudonym token stood for when the
+ * export was made. A statement by the operator, not signed and not part of
+ * any chain.
+ */
+export const subjectEntrySchema = z
+  .object({
+    token: z.string().refine(isPseudonym, "must be a pseudonym token: psn_ followed by 32 lowercase hex characters"),
+    identifier: z.string().min(1).max(256),
+  })
+  .strict();
+
+export type SubjectEntry = z.infer<typeof subjectEntrySchema>;
+
+export function safeParseSubjectEntry(value: unknown): { ok: true; entry: SubjectEntry } | { ok: false; error: string } {
+  const parsed = subjectEntrySchema.safeParse(value);
+  return parsed.success ? { ok: true, entry: parsed.data } : { ok: false, error: issuesText(parsed.error.issues, "<subject>") };
 }

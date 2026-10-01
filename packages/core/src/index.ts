@@ -39,8 +39,12 @@ export {
   checkpointEntrySchema,
   exportTimestampSchema,
   inclusionProofSchema,
+  openingEntrySchema,
   safeParseArtifactsIndexEntry,
   safeParseCheckpointEntry,
+  safeParseOpeningEntry,
+  safeParseSubjectEntry,
+  subjectEntrySchema,
 } from "./export.js";
 export type {
   ArtifactsIndexEntry,
@@ -49,6 +53,8 @@ export type {
   CheckpointEntryParseResult,
   ExportTimestamp,
   InclusionProofEntry,
+  OpeningEntry,
+  SubjectEntry,
 } from "./export.js";
 
 export { createZip, crc32, readZip, ZipError } from "./zip.js";

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import {
   documentFingerprints,
+  fromHex,
   readZip,
   safeParseCheckpointEntry,
   type ArtifactEntryV3,
@@ -14,6 +15,7 @@ import { verifyTimestamps } from "./timestamps.js";
 import {
   compareAnchorsWithPrevious,
   compareWithPrevious,
+  openDigest,
   verifyBundle,
   type Bundle,
   type VerifyOptions,
@@ -29,6 +31,7 @@ const CHECKS = [
   "every receipt's prev_hash is the recomputed hash of the receipt before it",
   "every receipt is signed by a key the manifest publishes",
   "every artifact a v2 receipt names is indexed once, and the index claims nothing more",
+  "every disclosed nonce or identifier belongs to a salted digest or a token of these receipts",
   "every checkpoint is signed by a key the manifest publishes",
   "every Merkle root is rebuilt from the receipts present",
   "every inclusion proof rebuilds its checkpoint's root",
@@ -57,6 +60,8 @@ function readArchiveFile(target: string): Archive {
 
   const checkpoints = files.get("checkpoints.jsonl");
   const artifactsIndex = files.get("artifacts-index.jsonl");
+  const openings = files.get("openings.jsonl");
+  const subjects = files.get("subjects.jsonl");
   const tokens = new Map<string, Uint8Array>();
   for (const [name, data] of files) {
     if (name.startsWith("timestamps/")) tokens.set(name, data);
@@ -68,6 +73,8 @@ function readArchiveFile(target: string): Archive {
       receiptsJsonl: decode(receipts),
       ...(checkpoints === undefined ? {} : { checkpointsJsonl: decode(checkpoints) }),
       ...(artifactsIndex === undefined ? {} : { artifactsIndexJsonl: decode(artifactsIndex) }),
+      ...(openings === undefined ? {} : { openingsJsonl: decode(openings) }),
+      ...(subjects === undefined ? {} : { subjectsJsonl: decode(subjects) }),
     },
     tokens,
   };
@@ -89,6 +96,8 @@ function readDirectory(target: string): Archive {
   }
   const checkpointsJsonl = read("checkpoints.jsonl");
   const artifactsIndexJsonl = read("artifacts-index.jsonl");
+  const openingsJsonl = read("openings.jsonl");
+  const subjectsJsonl = read("subjects.jsonl");
 
   const tokens = new Map<string, Uint8Array>();
   try {
@@ -105,6 +114,8 @@ function readDirectory(target: string): Archive {
       receiptsJsonl,
       ...(checkpointsJsonl === undefined ? {} : { checkpointsJsonl }),
       ...(artifactsIndexJsonl === undefined ? {} : { artifactsIndexJsonl }),
+      ...(openingsJsonl === undefined ? {} : { openingsJsonl }),
+      ...(subjectsJsonl === undefined ? {} : { subjectsJsonl }),
     },
     tokens,
   };
@@ -239,6 +250,18 @@ program
     }
     if (summary.artifacts_indexed > 0) {
       process.stdout.write(`    ${summary.artifacts_indexed} document fingerprint(s) indexed\n`);
+    }
+    if (summary.openings_disclosed > 0) {
+      process.stdout.write(
+        `    note: ${summary.openings_disclosed} nonce(s) disclosed in openings.jsonl: whoever holds this archive ` +
+          "can test guesses of those inputs or outputs, and open them with sigillo-verify open\n",
+      );
+    }
+    if (summary.subjects_disclosed > 0) {
+      process.stdout.write(
+        `    note: subjects.jsonl names the person behind ${summary.subjects_disclosed} pseudonym token(s); ` +
+          "this is the operator's statement, not signed by any receipt\n",
+      );
     }
     for (const check of timestamps.checks) {
       process.stdout.write(
@@ -386,5 +409,77 @@ program
     }
     for (const line of found) process.stdout.write(`${line}\n`);
   });
+
+program
+  .command("open <archive> <seq> <role>")
+  .description(
+    "check that the input or output digest of receipt <seq> is of the given content: under its nonce for a " +
+      "salted digest (from --nonce or the archive's openings.jsonl), without one for a plain digest",
+  )
+  .option("--text <text>", "the content, a text (what an OTLP span's input.value or output.value held)")
+  .option("--file <path>", "the content, a text read from a UTF-8 file, exactly")
+  .option("--json", "read the content as a JSON value rather than a text (what the native API's input or output held)")
+  .option("--nonce <hex>", "the 32-byte nonce, 64 hex characters; taken from openings.jsonl when absent")
+  .action(
+    (
+      archivePath: string,
+      seqText: string,
+      role: string,
+      options: { text?: string; file?: string; json?: boolean; nonce?: string },
+    ) => {
+      const stop = (message: string): never => {
+        process.stderr.write(`${message}\n`);
+        process.exit(2);
+      };
+      const seq = /^[0-9]+$/.test(seqText) ? Number(seqText) : stop(`<seq> must be a whole number, not ${seqText}`);
+      if (role !== "input" && role !== "output") stop(`<role> must be input or output, not ${role}`);
+      if ((options.text === undefined) === (options.file === undefined)) stop("give the content with exactly one of --text or --file");
+      if (options.nonce !== undefined && !/^[0-9a-f]{64}$/.test(options.nonce)) stop("--nonce must be 64 lowercase hex characters");
+
+      let archive: Archive;
+      let text: string;
+      try {
+        archive = readArchive(archivePath);
+        text = options.text ?? readFileSync(options.file ?? "", "utf8");
+      } catch (error) {
+        return stop(`cannot read: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      let value: unknown = text;
+      if (options.json === true) {
+        try {
+          value = JSON.parse(text);
+        } catch (error) {
+          return stop(`the content is not JSON: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      // As for doc: nothing is reported from an archive that does not verify.
+      const result = verifyBundle(archive.bundle);
+      if (!result.ok) {
+        process.stderr.write(`FAILED  ${result.check} at ${result.location}\n`);
+        process.stderr.write(`        ${result.detail}\n`);
+        process.exit(1);
+      }
+
+      let nonce = options.nonce;
+      if (nonce === undefined) {
+        for (const line of (archive.bundle.openingsJsonl ?? "").split("\n")) {
+          if (line.trim().length === 0) continue;
+          const entry = JSON.parse(line) as { seq: number; role: string; nonce: string };
+          if (entry.seq === seq && entry.role === role) nonce = entry.nonce;
+        }
+      }
+
+      const opened = openDigest(result.receipts, seq, role as "input" | "output", nonce === undefined ? null : fromHex(nonce), value);
+      if (!opened.ok) {
+        process.stdout.write(`NO MATCH  ${opened.reason}\n`);
+        process.exit(1);
+      }
+      process.stdout.write(
+        `MATCH  the ${role} of seq ${seq} is the digest of this content` +
+          `${opened.scheme === "salted" ? ", under this nonce" : " (a plain digest: anyone can check it, or guess it)"}\n`,
+      );
+    },
+  );
 
 await program.parseAsync(process.argv);
