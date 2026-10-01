@@ -96,13 +96,15 @@ to `value`. See its docstring for the exact construction.
 
 ## Documents and model identity
 
-`sigillo.artifact(data, role, label, media_type=None)` fingerprints a document
+`sigillo.artifact(data, role, label=None, media_type=None)` fingerprints a document
 your agent used or produced, and attaches the fingerprint to the action being
 recorded right now — call it while the tool call or step it belongs to is
 still the active span. `data` is `bytes`, a `str` of exact text (hashed as its
 UTF-8 bytes), or a path to read from; `role` is `"input"` or `"output"`;
 `label` is a category you choose, such as `"curriculum"` — **never a
-filename**, which can carry a person's name. Hashing happens in this process;
+filename**, which can carry a person's name. Leave it out and the label is the
+role and the media type, such as `"input application/pdf"`: the file's name is
+never used. Hashing happens in this process;
 only the digests leave it.
 
 A plain text (a `str`, a `.txt` path, or any `media_type="text/plain"`) gets

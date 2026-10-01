@@ -81,8 +81,11 @@ and never the candidate's name).
 
 Every action in a run acts for the same fictional recruiter
 (`elena.rizzo` by default, `SIGILLO_RECRUITER_ID` to change it), attached to
-every span by a small `SpanProcessor` in `agent.py`. This is what the web
-interface's "per conto di «elena.rizzo»" comes from.
+every span by a small `SpanProcessor` in `agent.py`. The server never writes
+the name into a receipt (receipt version 4): it records a pseudonym token
+instead, which is what the web interface's "per conto di «psn_…»" shows, and
+the "persone" page finds `elena.rizzo`'s receipts through the server's
+separate, erasable table of who each token stands for.
 
 ## A note on `sigillo.artifact()` and LangChain
 
