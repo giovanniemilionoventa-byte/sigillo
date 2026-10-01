@@ -409,6 +409,44 @@ describe("the checkpoint timer", () => {
     }
   });
 
+  it("retries a failed timestamp after a few minutes, not only at the next interval", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    await writeChain(3);
+    let calls = 0;
+    const checkpointer = new Checkpointer({
+      store,
+      now,
+      intervalMinutes: 60,
+      retryMinutes: 5,
+      tsa: {
+        url: TSA_URL,
+        fetchImpl: fakeTsa(() => {
+          calls += 1;
+          // Down for the first run and the first retry, back for the second.
+          return calls <= 2 ? new Response("unavailable", { status: 503 }) : tokenResponse();
+        }),
+      },
+      retry: { attempts: 1, sleep: async () => undefined },
+    });
+
+    checkpointer.start();
+    try {
+      await vi.waitFor(() => expect(calls).toBe(1));
+      const checkpoint = store.latestCheckpoint(SYSTEM);
+      if (checkpoint === null) throw new Error("no checkpoint");
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      await vi.waitFor(() => expect(calls).toBe(2));
+      expect(store.readTimestamps(checkpoint.id)).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      await vi.waitFor(() => expect(store.readTimestamps(checkpoint.id)).toHaveLength(1));
+      // Anchored: nothing more to retry until the next interval.
+      await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+      expect(calls).toBe(3);
+    } finally {
+      checkpointer.stop();
+    }
+  });
+
   it("does not start a second run while one is still going", async () => {
     await writeChain(2);
     let calls = 0;

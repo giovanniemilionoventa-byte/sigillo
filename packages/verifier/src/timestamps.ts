@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { CheckpointEntry } from "@sigillo/core";
+import { genTimeOfToken, type CheckpointEntry } from "@sigillo/core";
 
 /**
  * Checks the RFC 3161 tokens, which is the one part of verification that needs
@@ -35,8 +35,8 @@ export interface TimestampCheck {
   detail: string;
   /**
    * The time the authority attests, from inside the token (genTime), as ISO
-   * 8601, where openssl could read it. This, not the server's own clock, is
-   * the evidence of when the checkpoint existed.
+   * 8601. This, not the server's own clock, is the evidence of when the
+   * checkpoint existed: see anchorTimes in @sigillo/core.
    */
   genTime?: string;
 }
@@ -83,7 +83,11 @@ export function genTimeFrom(reply: string): string | undefined {
   ).toISOString();
 }
 
-/** How far genTime may lie from the checkpoint's own time before it is pointed out. */
+/**
+ * How far before the checkpoint's own time genTime may lie before it is
+ * pointed out. The other way, a token long after the checkpoint, is the
+ * anchor-delay warning in @sigillo/core.
+ */
 const SKEW_NOTE_MS = 60 * 60 * 1000;
 
 /** Pulls the message imprint out of `openssl ts -reply -text`. */
@@ -196,19 +200,27 @@ export async function verifyTimestamps(
         continue;
       }
 
-      const genTime = genTimeFrom(reply);
-      const dated = genTime === undefined ? {} : { genTime };
-      if (genTime !== undefined) {
-        const skew = Date.parse(genTime) - Date.parse(entry.checkpoint.ts);
-        if (skew < -SKEW_NOTE_MS) {
-          warnings.push(
-            `${timestamp.file}: the authority dates it ${genTime}, before the checkpoint's own time ${entry.checkpoint.ts}: the server's clock was ahead`,
-          );
-        } else if (skew > SKEW_NOTE_MS) {
-          warnings.push(
-            `${timestamp.file}: the authority dates it ${genTime}, ${Math.round(skew / 3_600_000)} hour(s) after the checkpoint's own time ${entry.checkpoint.ts}: until then, only the server's clock vouched for it`,
-          );
-        }
+      // genTime is read from the token's DER by the code the server uses too,
+      // and through openssl, which is what verifies the signature over it. A
+      // token the two read differently is one whose time cannot be trusted.
+      const genTime = genTimeOfToken(token);
+      const fromOpenssl = genTimeFrom(reply);
+      if (genTime === undefined || genTime !== fromOpenssl) {
+        checks.push({
+          ...base,
+          status: "failed",
+          detail:
+            genTime === undefined
+              ? "the time the token attests (genTime) cannot be read from it"
+              : `the token's genTime reads ${genTime}, but openssl reads ${fromOpenssl ?? "no time"}`,
+        });
+        continue;
+      }
+      const dated = { genTime };
+      if (Date.parse(genTime) - Date.parse(entry.checkpoint.ts) < -SKEW_NOTE_MS) {
+        warnings.push(
+          `${timestamp.file}: the authority dates it ${genTime}, before the checkpoint's own time ${entry.checkpoint.ts}: the server's clock was ahead`,
+        );
       }
 
       if (options.caFile === undefined) {

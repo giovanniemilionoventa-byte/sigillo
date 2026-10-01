@@ -439,7 +439,7 @@ rotation to whatever runs it (systemd's journal rotates on its own).
 ## What sigillo cannot detect
 
 This list matters as much as the tamper tests that pass
-(`apps/server/test/tamper.test.ts`, 17 scenarios run through the real
+(`apps/server/test/tamper.test.ts`, 18 scenarios run through the real
 verifier). A verifier that says OK has checked what is below it on this page,
 and nothing else.
 
@@ -492,11 +492,22 @@ and nothing else.
   through the signer's socket. Nothing in the chain shows it.
 - **Replace everything, if nothing was ever handed out.** A database replaced
   wholesale with a consistent forged history, signed through the same signer and
-  anchored afresh, verifies. What gives it away is outside it: an export given
-  to someone earlier (`--previous`), or the authority's attested times, which
-  would all be later than the period they claim to cover.
-- **Move the clock.** `ts_received` is the server's own clock. Between two
-  timestamps, only that clock vouches for when something happened.
+  anchored afresh, has every hash, signature, root and token valid. What gives
+  it away is the time the authority attests (`genTime`), which `sigillo-verify`
+  takes as the proven time of each checkpoint: the fresh tokens lie long after
+  the checkpoints' own times, and that is an `anchor-delay` warning (verdict
+  `OK, with a warning`; an error, exit 1, with `--strict`). Tamper scenario 18.
+  A forger who also moves the checkpoints' own times forward avoids the
+  warning, but then every receipt is proven to exist only from the day of the
+  forgery, which the report prints for each range of receipts ("existed no
+  later than …"); an auditor who expects the records to be older sees it
+  there. An export given to someone earlier (`--previous`) catches either.
+- **Move the clock, within limits.** `ts_received` is the server's own clock.
+  It cannot be set after a timestamp that already includes the receipt
+  (`anchor-time`, an error beyond `--clock-tolerance`, 5 minutes by default),
+  and the timestamps must run forward as the tree grows (`anchor-order`). But
+  between two timestamps, only the server's clock vouches for when something
+  happened.
 
 **What a single archive cannot show about itself.**
 - **That the key is the operator's.** A wholly fabricated archive, signed with

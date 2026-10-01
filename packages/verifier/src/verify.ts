@@ -1,4 +1,5 @@
 import {
+  anchorTimes,
   fromHex,
   GENESIS_PREV_HASH,
   keyIdFromRawPublicKey,
@@ -13,6 +14,7 @@ import {
   toHex,
   verifyCheckpointSignature,
   verifyReceiptSignature,
+  type AnchorTimes,
   type ArtifactsIndexEntry,
   type CheckpointEntry,
   type Manifest,
@@ -91,8 +93,14 @@ export interface VerificationSummary {
   unanchored_receipts: number;
 }
 
+/** A checkpoint tied to the export's receipts, and its line in checkpoints.jsonl. */
+export interface LinkedCheckpoint {
+  line: number;
+  entry: CheckpointEntry;
+}
+
 export type Verification =
-  | { ok: true; summary: VerificationSummary; receipts: Receipt[] }
+  | { ok: true; summary: VerificationSummary; receipts: Receipt[]; linkedCheckpoints: LinkedCheckpoint[] }
   | { ok: false; check: VerificationCheck; location: string; detail: string };
 
 function fail(check: VerificationCheck, location: string, detail: string): Verification {
@@ -311,6 +319,7 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
 
   // 10. Every checkpoint is a signed statement about a tree these receipts build.
   const checkpoints: CheckpointEntry[] = [];
+  const linkedCheckpoints: LinkedCheckpoint[] = [];
   let rootsRecomputed = 0;
   let proofsChecked = 0;
   let unlinked = 0;
@@ -431,6 +440,7 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
     }
 
     checkpoints.push(parsed.entry);
+    if (rebuildable || proofs.length > 0) linkedCheckpoints.push({ line: index + 1, entry: parsed.entry });
   }
 
   // 13. The manifest describes the receipts and checkpoints that are actually here.
@@ -512,7 +522,31 @@ export function verifyBundle(bundle: Bundle, options: VerifyOptions = {}): Verif
           : receipts.filter((receipt) => receipt.seq >= (anchoredThrough as number)).length,
     },
     receipts,
+    linkedCheckpoints,
   };
+}
+
+/**
+ * When each checkpoint of a verified export, and so each of its receipts, is
+ * proven to have existed: anchorTimes (@sigillo/core) over the checkpoints tied
+ * to these receipts, with the time each token attests, by its file name.
+ * sigillo-verify and the exporter's own report both call this.
+ */
+export function anchorTimesOf(
+  verified: Extract<Verification, { ok: true }>,
+  genTimes: ReadonlyMap<string, string>,
+  limits: { clockToleranceMs: number; maxAnchorDelayMs: number },
+): AnchorTimes {
+  return anchorTimes({
+    receipts: verified.receipts,
+    checkpoints: verified.linkedCheckpoints.map(({ line, entry }) => ({
+      line,
+      tree_size: entry.checkpoint.tree_size,
+      ts: entry.checkpoint.ts,
+      genTimes: entry.timestamps.flatMap((stamp) => genTimes.get(stamp.file) ?? []),
+    })),
+    ...limits,
+  });
 }
 
 /**

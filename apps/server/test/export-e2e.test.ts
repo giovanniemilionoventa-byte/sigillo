@@ -171,7 +171,8 @@ beforeAll(async () => {
   databasePath = join(directory, "sigillo.db");
   socketPath = join(directory, "signer.sock");
   tsa = createLocalTsa();
-  const tsaUrl = await tsa.listen();
+  // The authority keeps the same (injected) time as the server.
+  const tsaUrl = await tsa.listen(() => new Date(clock));
   daemon = await startSignerDaemon({ socketPath, key: generateKeyFile(join(directory, "signer.key")) });
   signer = await SignerClient.connect(socketPath);
   store = ReceiptStore.open(databasePath, signer);

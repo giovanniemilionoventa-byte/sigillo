@@ -103,6 +103,8 @@ services:
       SIGILLO_PORT: 8080
       SIGILLO_CHECKPOINT_MINUTES: ${SIGILLO_CHECKPOINT_MINUTES:-60}
       SIGILLO_STALE_AFTER_MINUTES: ${SIGILLO_STALE_AFTER_MINUTES:-1440}
+      SIGILLO_MAX_ANCHOR_DELAY_MINUTES: ${SIGILLO_MAX_ANCHOR_DELAY_MINUTES:-60}
+      SIGILLO_TSA_RETRY_MINUTES: ${SIGILLO_TSA_RETRY_MINUTES:-5}
       # The web view's password, from a file. Without it the view is not served.
       SIGILLO_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
       # Attempts at the password: after this many failures in the window, the

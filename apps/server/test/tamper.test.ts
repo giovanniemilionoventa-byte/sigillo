@@ -76,7 +76,9 @@ async function produceArchive(withSigner: TestSigner, database: string): Promise
     for (let index = 1; index < RECEIPTS; index += 1) await store.append(event(index));
     const checkpoint = await store.createCheckpoint(SYSTEM, "2026-03-29T15:00:00.000Z");
     if (checkpoint === null) throw new Error("no checkpoint");
-    const token = tsa.stamp(checkpoint.checkpoint.root_hash);
+    // Dated by the authority five seconds after the checkpoint, as on a server
+    // whose authority answered at once.
+    const token = tsa.stampAt(checkpoint.checkpoint.root_hash, "2026-03-29T15:00:05.000Z");
     await store.recordTimestamp(checkpoint.id, "http://tsa.test/", token.toString("base64"), "2026-03-29T15:00:05.000Z");
 
     const archive = await buildArchive({
@@ -176,7 +178,10 @@ describe("the untouched evidence file", () => {
     const run = verify(original);
     expect(run.code, run.stderr).toBe(0);
     expect(run.stdout).toContain(`OK  ${SYSTEM}: ${RECEIPTS} receipts`);
-    expect(run.stdout).toMatch(/timestamp timestamps\/\S+: verified \(http:\/\/tsa\.test\/\), attested time 20\d\d-/);
+    expect(run.stdout).toMatch(/timestamp timestamps\/\S+: verified \(http:\/\/tsa\.test\/\), attested time 2026-03-29T15:00:05\.000Z/);
+    expect(run.stdout).toContain(`seq 0..${RECEIPTS - 1}: existed no later than 2026-03-29T15:00:05.000Z`);
+    // Nothing to warn about, so --strict passes it too.
+    expect(verify(original, "--strict").code).toBe(0);
     // VERIFY.md gives the same attested time, read by the server from the token.
     const attested = /attested time (\S+)\n/.exec(run.stdout)?.[1];
     expect(attested).toBeDefined();
@@ -414,6 +419,63 @@ describe("beyond the ten", () => {
   }, 30_000);
 });
 
+describe("rewritten by whoever holds the server and its key", () => {
+  /**
+   * The whole chain rebuilt from seq 1 with one outcome changed, re-signed
+   * through the real signer, checkpointed under the original checkpoint's
+   * time and timestamped afresh by a genuine authority. Every hash, signature,
+   * root and token is valid: only the time the authority attests betrays it.
+   */
+  async function rewrite(checkpointTs?: string): Promise<Map<string, Uint8Array>> {
+    const receipts = receiptsOf(original);
+    for (let index = 1; index < receipts.length; index += 1) {
+      const { sig: _sig, ...unsigned } = receipts[index] as Receipt;
+      const rewritten = {
+        ...unsigned,
+        ...(index === 3 ? { outcome: "blocked" as const } : {}),
+        prev_hash: receiptHashHex(receipts[index - 1] as Receipt),
+      };
+      receipts[index] = { ...rewritten, sig: await signer.sign(fromHex(receiptHashHex(rewritten))) } as Receipt;
+    }
+    const [entry] = linesOf<Entry>(original, "checkpoints.jsonl");
+    if (entry === undefined) throw new Error("no checkpoint");
+    const { sig: _sig, ...unsigned } = entry.checkpoint;
+    const root = toHex(merkleRoot(receipts.map((receipt) => fromHex(receiptHashHex(receipt)))));
+    const checkpoint = { ...unsigned, root_hash: root, ...(checkpointTs === undefined ? {} : { ts: checkpointTs }) };
+    const file = (entry.timestamps[0] as { file: string }).file;
+    return doctor({
+      "receipts.jsonl": jsonl(receipts),
+      "checkpoints.jsonl": jsonl([
+        { ...entry, checkpoint: { ...checkpoint, sig: await signer.sign(checkpointHash(checkpoint)) }, proofs: [] },
+      ]),
+      // A new token, from the real authority, today.
+      [file]: new Uint8Array(tsa.stamp(root)),
+    });
+  }
+
+  it("18. the whole chain rewritten and timestamped afresh: a warning, and an error with --strict", async () => {
+    const forged = await rewrite();
+    const run = verify(forged);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toMatch(/^OK, with a warning {2}/);
+    expect(run.stdout).toContain("1 timestamped late");
+    expect(run.stdout).toMatch(
+      /warning: anchor-delay at checkpoints\.jsonl:1: the checkpoint over 12 receipts declares 2026-03-29T15:00:00\.000Z, but the authority dates it 20\d\d-/,
+    );
+    expectCaught(verify(forged, "--strict"), "anchor-delay", "checkpoints.jsonl:1 (--strict)");
+  }, 30_000);
+
+  it("18b. ...and with the checkpoint's own time moved forward too, every receipt is proven only from today", async () => {
+    // No warning is left to give, but nothing proves the receipts older than
+    // the new token: the report dates all of them to it.
+    const now = new Date().toISOString();
+    const run = verify(await rewrite(now));
+    expect(run.code, run.stderr).toBe(0);
+    const proven = /seq 0\.\.11: existed no later than (\S+)\n/.exec(run.stdout)?.[1];
+    expect(Date.parse(proven ?? "")).toBeGreaterThanOrEqual(Date.parse(now) - 1000);
+  }, 30_000);
+});
+
 describe("the newest checkpoint and its token taken out (review point 3d)", () => {
   /**
    * One chain of 13 receipts, checkpointed and anchored after the 9th and again
@@ -425,8 +487,9 @@ describe("the newest checkpoint and its token taken out (review point 3d)", () =
     const checkpointAndAnchor = async (at: string): Promise<void> => {
       const written = await store.createCheckpoint(SYSTEM, at);
       if (written === null) throw new Error("no checkpoint");
-      const token = tsa.stamp(written.checkpoint.root_hash);
-      await store.recordTimestamp(written.id, "http://tsa.test/", token.toString("base64"), "2026-03-29T16:00:00.000Z");
+      const stampedAt = new Date(Date.parse(at) + 5000).toISOString();
+      const token = tsa.stampAt(written.checkpoint.root_hash, stampedAt);
+      await store.recordTimestamp(written.id, "http://tsa.test/", token.toString("base64"), stampedAt);
     };
     const exported = async (): Promise<Map<string, Uint8Array>> => {
       const archive = await buildArchive({

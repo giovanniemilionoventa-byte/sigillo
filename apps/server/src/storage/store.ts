@@ -15,6 +15,7 @@ import {
   RECEIPT_VERSION_1,
   RECEIPT_VERSION_2,
   RECEIPT_VERSION_3,
+  genTimeOfToken,
   sha256,
   toHex,
   verifyDigestSignature,
@@ -28,7 +29,6 @@ import {
   type Receipt,
   type Source,
 } from "@sigillo/core";
-import { genTimeOfToken } from "../timestamp/gentime.js";
 import { applySchema } from "./schema.js";
 
 /** Whatever holds the private key. In production this is the separate signer process. */
