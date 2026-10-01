@@ -26,6 +26,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | A1 | Ora provata delle marche (genTime) | fatto | genTime = ora provata di ogni checkpoint: errori `anchor-time`/`anchor-order`, avviso `anchor-delay`, `--strict`; report e PDF con "provato il"/"esistente al più tardi il"; ritentativi e semaforo giallo oltre la tolleranza; scenario di manomissione 18; dopo il merge con S1: 997 test Node, 49 SDK Python, 22 demo (sessione 15) |
 | P1 | Ricevute senza dati personali (formato v4) | fatto | Pseudonimi `psn_` in una tabella `subjects` cancellabile, impronte con sale per input/output ricevuti in chiaro con i nonce in `openings`, cancellazione di interessati e di nonce, export senza identificativi per default, `sigillo-verify open`; v1–v3 restano valide; 989 test Node (sessione 16) |
 | V1 | Verifica prima del deploy (sola verifica) | fatto | `docs/RAPPORTO-VERIFICA-2026-10-01.md`: PRONTO CON RISERVE, 15 problemi (1 alto, 6 medi, 8 bassi), nessuna correzione al codice. Prova completa in Docker con il compose di produzione, migrazione da un database creato con la versione `30b5e9a`, crash del server e del signer, ripristino e ritorno indietro. Procedura per il VPS in `DEPLOY.md`. Cross-check Python esteso (frontiera di Merkle, ricevute v4 da rifiutare) nella branch `chore/crosscheck-v4`, non unita. 1079 test Node, 50 SDK, 22 demo (sessione 17) |
+| B | Interfaccia B | fatto | Direzione di design "B" a tre colonne (barra laterale, contenuto, dettaglio), solo aspetto e navigazione; milestone B1–B4 nella sezione "Interfaccia B"; 1161 test Node (sessione 18) |
 
 ## Interfaccia B — fase (dal 2026-10-01)
 
@@ -46,7 +47,7 @@ dal controllo reale della catena; WCAG 2.2 AA in chiaro e in scuro.
 | B1 | Fondamenta | fatto | `design/DESIGN.md` e `design/tokens.json` descrivono la direzione B con token chiaro/scuro e tabella dei contrasti ricalcolata (testo 4,5:1, bordi dei controlli 3:1); `style.ts` usa solo quei token; guscio comune con barra laterale (marchio, Registro, Sistemi con stato reale e numero di ricevute, Archiviati, Tutti i sistemi, "+", Strumenti, chiave di firma, Esci in POST); pagina di accesso divisa in due con lo stato di errore; test aggiornati e nuovi verdi. **Esito**: `DESIGN.md` e `tokens.json` della direzione B (40 token chiaro/scuro; quattro correzioni ai valori dei mockup per il contrasto), `style.ts` nuovo con font di sistema, `layout.ts` con guscio e accesso; nuovo `style.test.ts` (CSS = token, contrasti ricalcolati); 1108 test. |
 | B2 | Cronologia | fatto | Intestazione del sistema (nome, identificativo, ricevute, stato della catena, "Genera fascicolo"); schede Cronologia/Checkpoint/Gestisci; filtro per tipo `?kind=` con conteggi (nuova query di sola lettura nello store, con test); ricerca per nome e periodo in un `<details>`; `?ricevuta=<seq>` riempie il pannello di dettaglio (default: la più recente mostrata); `from`, `to`, `kind`, `name` conservati nei link; pannello del fascicolo senza JavaScript con lo stesso form; test per `?ricevuta=`, conteggi, pannello (esito bloccato, ricevuta di modello, apertura) e conservazione dei parametri. **Esito**: Nuovo `history.ts`; nuove query di sola lettura `countReceiptsByKind` e `receiptAt` nello store (stesso filtro di `searchReceipts`, condiviso), con 4 test; `?ricevuta=` mostra anche una ricevuta esclusa dai filtri, un valore non valido torna alla più recente; date sole = giorno intero UTC, ISO completi ancora validi; il form del fascicolo per sistema (`POST /ui/systems/:id/export`, stessi campi) legge ora anche `from`/`to`, che il pannello mostra; nuovi `history-ui.test.ts` (21 test) e test delle stringhe; 1145 test |
 | B3 | Altre pagine | fatto | Registro (`/ui`), Sistemi, Checkpoint, Gestisci, Verifica documento, Persone nello stile dei mockup con le stringhe esistenti; rifatte anche le pagine senza mockup (sistema creato, 404, conferme ed errori); `verify-document-browser.test.ts` verde senza toccare l'hash della CSP. **Esito**: Nuovo `pages.ts` (Registro, Sistemi, sistema creato, Gestisci, Checkpoint, Persone, risultato di verifica, 404 nel guscio); "vedi la ricevuta" (verifica) e le ricevute di una persona e del Registro aprono ora la ricevuta (`?ricevuta=`); testi italiani rimasti in `ui.ts` (intestazioni dei checkpoint, 404, stato dell'ancoraggio) spostati in `strings.ts`, nove stringhe rimaste inutilizzate tolte; nuovo `pages-ui.test.ts` (16 test) con l'inventario di tutti i form (azione, metodo, campi) e la prova che nessuna pagina ha script tranne "verifica documento"; `verify-document-browser.test.ts` verde senza toccare la CSP; 1161 test |
-| B4 | Rifinitura | todo | Sotto ~900 px barra laterale come menu e dettaglio come pagina della ricevuta, nessuno scroll orizzontale; tema scuro verificato; screenshot chiaro, scuro e telefono di ogni pagina in `design/screenshots/proposta-b/` e `docs/screenshots/`; `pnpm check` verde; ogni pagina funziona senza JavaScript (salvo il calcolo dell'impronta in "verifica documento") |
+| B4 | Rifinitura | fatto | Sotto ~900 px barra laterale come menu e dettaglio come pagina della ricevuta, nessuno scroll orizzontale; tema scuro verificato; screenshot chiaro, scuro e telefono di ogni pagina in `design/screenshots/proposta-b/` e `docs/screenshots/`; `pnpm check` verde; ogni pagina funziona senza JavaScript (salvo il calcolo dell'impronta in "verifica documento"). **Esito**: Telefono e finestre strette come descritto in `DESIGN.md` (menu con `:target`, ricevuta come pagina propria); verificato con Chromium su 15 pagine a 390, 700 e 1280 px e a 390 px senza JavaScript: nessuno scroll orizzontale, nessun bersaglio sotto i 44 px su telefono, menu e fascicolo che si aprono senza script; contrasti chiaro/scuro ricalcolati da `style.test.ts`; 58 screenshot (chiaro, scuro, telefono di 17 pagine, più accesso con errore e menu su telefono) in `docs/screenshots/` e `design/screenshots/proposta-b/`; istantanee HTML rigenerate |
 
 ## Decisioni prese dal committente — 2026-09-21
 
@@ -2964,6 +2965,58 @@ ricevute v1, v2 e v3, che lo store ora non scrive più. Il test conserva il suo 
 vecchie le firma il signer vero e le inserisce un helper (`helpers/legacy-receipt.ts`), come faceva il
 server di prima; in più c'è una ricevuta v4 (pseudonimo, impronta con sale). Nuovo caso: una v4
 ricevuta dopo la marca che la include fa fallire `anchor-time`, nominando la ricevuta.
+
+### Sessione 18 — 2026-10-01 — Interfaccia B (direzione di design "B")
+
+Fase "Interfaccia B" (tabella in alto), milestone B1–B4 in ordine, una per commit. Solo aspetto e
+navigazione: nessuna route tolta, nessun dato memorizzato in più, formato delle ricevute e
+dell'export invariato, nessuna dipendenza e nessuno script nuovi, CSP di `deploy/Caddyfile`
+invariata (l'hash dello script di "verifica documento" è lo stesso).
+
+**Struttura del codice.** `ui.ts` tiene le rotte, l'accesso e lo script di "verifica documento";
+`layout.ts` il guscio (barra laterale, accesso) e i pezzi comuni; `history.ts` intestazione del
+sistema, schede, cronologia, pannello di dettaglio e foglio del fascicolo; `pages.ts` tutte le
+altre pagine. Lo store ha due letture nuove, `countReceiptsByKind` e `receiptAt`.
+
+**Dove mi sono discostato dai mockup, e perché.**
+1. *Colori*: quattro valori corretti per il contrasto WCAG (testo secondario `#6E6E73` → `#636366`,
+   fondo della voce corrente, bordi dei campi `#C7C7CC` → `#8A8A8E`, blu delle azioni in scuro);
+   dettagli e calcoli in `design/DESIGN.md`.
+2. *Fascicolo*: le divulgazioni facoltative restano chiuse in un `<details>` (nel mockup sono aperte):
+   per default un fascicolo non nomina nessuno, e il form resta quello di prima. Il form per sistema
+   (`POST /ui/systems/:id/export`) ora legge anche `from`/`to`, che il pannello mostra; senza, esporta
+   l'intera catena come prima.
+3. *Impronte*: nel pannello mostro le impronte intere (i 12 caratteri del mockup erano segnaposto);
+   restano fuori dall'elenco e fuori dalla frase.
+4. *Pulsante "Copia"* e campo di ricerca sempre visibile: richiederebbero JavaScript. La ricerca per
+   nome e periodo è in un `<details>` "Cerca e filtra", con un link "Togli i filtri".
+5. *Testi*: riusate le stringhe esistenti alla lettera (per esempio la colonna "Gestisci" invece di
+   "Azioni", i suggerimenti lunghi di "Come collegare", "attivi/archiviati/tutti" maiuscoli via CSS);
+   nuove solo dove la nuova impaginazione le chiede, tutte in `strings.ts` con test.
+6. *Stato nella barra laterale*: icona di forma diversa a vista, parola letta dai lettori di schermo
+   (non c'è spazio per la parola accanto a ogni nome); altrove sempre icona e parola visibili.
+7. *Verifica documento*: il campo file nativo resta visibile dentro l'area "Trascina qui un file"
+   (senza script il nome del file scelto si vede solo così); il trascinamento sul campo funziona.
+
+**Pagine senza mockup** (sistema creato, 404, conferme ed errori, telefono): nello stesso stile; le
+conferme sono `role="status"`, gli errori `role="alert"`, sempre con icona.
+
+**Font.** La direzione B usa i font di sistema: il foglio di stile non nomina più Newsreader, Public
+Sans e IBM Plex Mono. `fonts.ts` e i file in `apps/server/assets/fonts` restano e sono ancora
+serviti da `/fonts/`, ma nessuna pagina li usa più: da decidere se toglierli (e con loro
+`font-src 'self'` dalla CSP).
+
+**Test**: 1161 Node (erano 1093), 1 saltato; file nuovi `style.test.ts`, `history-ui.test.ts`,
+`pages-ui.test.ts`; test aggiornati (non cancellati) dove controllavano il vecchio markup.
+Verificatore non toccato.
+
+**Aperto.**
+- Togliere o tenere i font della direzione "Registro" (sopra).
+- Su un desktop, dopo aver scelto una riga, il focus visibile resta sulla riga scelta: aiuta chi usa la
+  tastiera, ma è un anello blu anche dopo un clic. Senza script non si distingue.
+- Il pannello del fascicolo si apre con `:target`: non intrappola il focus e non si chiude con Esc
+  (servirebbe JavaScript); "Annulla" lo chiude.
+- `pip-audit` come strumento solo-CI resta da confermare (fase 3), come prima.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

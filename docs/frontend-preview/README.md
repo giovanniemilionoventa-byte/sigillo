@@ -5,7 +5,7 @@ server ha restituito in un dato momento per ciascuna pagina, con dati di
 esempio realistici (un sistema `acme-support-bot` e uno `selezione-cv`, come
 la demo di selezione CV). Ogni file è completo e autosufficiente: tutto il
 CSS è inline (nessun foglio esterno, coerente con la CSP dell'app), non ci
-sono immagini o font esterni — solo un sigillo disegnato in SVG, anch'esso
+sono immagini o font esterni (la direzione B usa i font di sistema) — solo il sigillo e le icone disegnati in SVG, anch'essi
 inline. Si aprono **direttamente in un browser**, senza server acceso, con
 un doppio clic o `file://…/00-login.html`.
 
@@ -36,7 +36,7 @@ apps/server/src/http/style.ts
 ```
 
 Quel file esporta la costante `STYLE`, il CSS che ogni pagina inserisce
-inline in un `<style>` (vedi `apps/server/src/http/ui.ts`, funzione `page()`).
+inline in un `<style>` (vedi `apps/server/src/http/layout.ts`, funzione `page()`).
 Per rendere permanente una modifica provata qui, riportala a mano in
 `style.ts`, poi rigenera queste istantanee (comando sotto) per controllare il
 risultato con dati veri, e infine avvia il server vero (o `pnpm test`, che

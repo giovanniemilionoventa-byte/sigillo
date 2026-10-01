@@ -244,6 +244,7 @@ input, select, textarea { width: 100%; min-height: 34px; padding: 0 10px; border
 textarea { padding: 10px 12px; min-height: 8rem; resize: vertical; line-height: 1.5; }
 input[type="file"] { padding: 6px; }
 input[aria-invalid="true"] { border-color: var(--bad); }
+input[aria-invalid="true"]:focus-visible { outline-color: var(--bad); }
 ::placeholder { color: var(--secondary); opacity: 1; }
 .fields { display: flex; flex-direction: column; gap: 12px; margin: 0; }
 .fields-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -571,6 +572,7 @@ pre.code { margin: 8px 0 0; padding: 14px 16px; border-radius: 10px; background:
   .login-main { align-items: flex-start; padding: 24px 16px 40px; }
   .login-form { width: 100%; }
   .person-receipt a, .sys-row, .activity { min-height: 44px; }
+  .facts a, .match-links a, .side-head a.cap { display: inline-flex; align-items: center; min-height: 44px; }
 }
 `;
 
