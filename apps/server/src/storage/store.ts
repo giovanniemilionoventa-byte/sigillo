@@ -899,7 +899,7 @@ export class ReceiptStore {
         return removed > 0;
       }),
     );
-    if (erased) this.foldWriteAheadLog();
+    if (erased) await this.foldWriteAheadLog();
     return erased;
   }
 
@@ -935,7 +935,7 @@ export class ReceiptStore {
       this.logAdmin("openings.erase", systemId, request, { seqs: positions, erased: count });
       return count;
     });
-    this.foldWriteAheadLog();
+    await this.foldWriteAheadLog();
     return erased;
   }
 
@@ -969,11 +969,19 @@ export class ReceiptStore {
   /**
    * Moves everything in the write-ahead log into the database file and
    * empties the log, so that rows just overwritten by secure_delete do not
-   * survive in it. Best effort: a reader in another process can hold the log
-   * open, and then the next checkpoint does it.
+   * survive in it. On the write queue, so that no receipt transaction of
+   * this store is open meanwhile. Best effort: a reader in another process
+   * can hold the log open, and then SQLite's next automatic checkpoint does
+   * it; the erasure itself is already committed.
    */
-  private foldWriteAheadLog(): void {
-    this.write.pragma("wal_checkpoint(TRUNCATE)");
+  private async foldWriteAheadLog(): Promise<void> {
+    await this.enqueue(async () => {
+      try {
+        this.write.pragma("wal_checkpoint(TRUNCATE)");
+      } catch {
+        // Committed either way: see above.
+      }
+    });
   }
 
   /**

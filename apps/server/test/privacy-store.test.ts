@@ -189,6 +189,26 @@ describe("erasing a subject", () => {
     expect(bytes.includes("Elena.Rizzo")).toBe(false);
   });
 
+  it("takes its turn with receipts whose signatures are still on their way", async () => {
+    const token = v4(await store.append(event({ actor: { agent: "agente-cv", on_behalf_of: PERSON } }))).actor.on_behalf_of ?? "";
+    store.close();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow = { ...signer, sign: async (digest: Uint8Array) => (await gate, signer.sign(digest)) };
+    store = ReceiptStore.open(databasePath, slow);
+
+    const pending = store.append(event({ raw_input: { value: "score: 7" } }));
+    const erasing = store.eraseSubject(token, ADMIN);
+    const after = store.append(event({ raw_output: { value: "idoneo" } }));
+    release();
+    expect(signatureIsValid(await pending)).toBe(true);
+    expect(await erasing).toBe(true);
+    expect(signatureIsValid(await after)).toBe(true);
+    expect(databaseBytes().includes(PERSON)).toBe(false);
+  });
+
   it("says so when there is nothing to erase, and logs nothing", async () => {
     expect(await store.eraseSubject("psn_0123456789abcdef0123456789abcdef", ADMIN)).toBe(false);
     expect(store.adminLog(10).filter((entry) => entry.action === "subject.erase")).toEqual([]);
