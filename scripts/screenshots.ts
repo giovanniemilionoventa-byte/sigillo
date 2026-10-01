@@ -221,66 +221,98 @@ async function signedInPage(
   return { context, page };
 }
 
-type Action = (page: Awaited<ReturnType<typeof browser.newPage>>) => Promise<void>;
+type Page = Awaited<ReturnType<typeof browser.newPage>>;
+type Action = (page: Page) => Promise<void>;
+
+// Every page of the view, as design/proposta-b/README.md maps the mockups to
+// routes, plus the pages without a mockup. An action reaches a state a plain
+// address cannot: a form posted, a menu opened.
 const pages: [name: string, url: string, action?: Action][] = [
   ["01-registro", "/ui"],
-  ["02-cronologia", "/ui/systems/selezione-cv"],
+  ["02-cronologia", "/ui/systems/acme-support-bot"],
+  ["03-cronologia-strumenti-bloccato", "/ui/systems/acme-support-bot?kind=tool_call&ricevuta=3#r-3"],
+  ["04-cronologia-modelli", "/ui/systems/acme-support-bot?kind=llm_call&ricevuta=2#r-2"],
+  ["05-cronologia-selezione-cv", "/ui/systems/selezione-cv?ricevuta=2#r-2"],
+  ["06-cronologia-apertura", "/ui/systems/prova-per-errore?kind=genesis"],
   [
-    "03-cronologia-dettagli-tecnici",
-    "/ui/systems/acme-support-bot",
+    "07-cronologia-dettagli-tecnici",
+    "/ui/systems/acme-support-bot?ricevuta=4#r-4",
     async (page) => {
-      await page.locator("details summary").nth(1).click();
+      await page.locator("details.tech > summary").click();
     },
   ],
-  ["04-sistemi", "/ui/sistemi"],
-  ["05-sistemi-archiviati", "/ui/sistemi?vista=archiviati"],
-  ["06-gestisci-sistema-con-azioni", "/ui/systems/acme-support-bot/manage"],
-  ["07-gestisci-sistema-vuoto", "/ui/systems/prova-per-errore/manage"],
-  ["08-checkpoint", "/ui/systems/selezione-cv/checkpoints"],
-  ["09-verifica-documento", `/ui/verify-document?sha256=${pasted.bytes}&text=${pasted.text ?? ""}&from=text`],
+  ["08-fascicolo", "/ui/systems/acme-support-bot#fascicolo"],
+  ["09-checkpoint", "/ui/systems/selezione-cv/checkpoints"],
+  ["10-gestisci-sistema-con-azioni", "/ui/systems/acme-support-bot/manage"],
+  ["11-gestisci-sistema-vuoto", "/ui/systems/prova-per-errore/manage"],
+  ["12-sistemi", "/ui/sistemi"],
+  ["13-sistemi-archiviati", "/ui/sistemi?vista=archiviati"],
+  ["14-verifica-documento", `/ui/verify-document?sha256=${pasted.bytes}&text=${pasted.text ?? ""}&from=text`],
+  [
+    "15-persone",
+    "/ui/persone",
+    async (page) => {
+      await page.fill('input[name="identifier"]', "cliente-4821");
+      await Promise.all([page.waitForNavigation(), page.click('form[action="/ui/persone"] button[type="submit"]')]);
+    },
+  ],
+  ["16-non-trovato", "/ui/systems/sistema-inesistente"],
 ];
 
 // Full-page screenshots at 2x would quadruple the pixels of every phone
 // shot for no reason a reader of the documentation needs; 1x is plenty
 // crisp on screen and keeps the repository small.
-const variants: [name: string, options: Parameters<typeof browser.newContext>[0], dark: boolean][] = [
-  ["desktop", { viewport: { width: 1280, height: 900 }, colorScheme: "light" }, true],
-  ["telefono", { ...devices["iPhone 13"], deviceScaleFactor: 1, colorScheme: "light" }, true],
+const variants: [name: string, options: Parameters<typeof browser.newContext>[0]][] = [
+  ["desktop", { viewport: { width: 1280, height: 860 }, colorScheme: "light" }],
+  ["desktop-scuro", { viewport: { width: 1280, height: 860 }, colorScheme: "dark" }],
+  ["telefono", { ...devices["iPhone 13"], deviceScaleFactor: 1, colorScheme: "light" }],
 ];
 
-// Dark variants only for the pages that matter most: enough to show the
-// theme works everywhere, without doubling every screenshot.
-const DARK_PAGES = new Set(["01-registro", "04-sistemi", "07-gestisci-sistema-vuoto"]);
-
 let written = 0;
-for (const [variantName, contextOptions, includeDark] of variants) {
-  for (const scheme of ["light", "dark"] as const) {
-    if (scheme === "dark" && !includeDark) continue;
-    const { context, page } = await signedInPage({ ...contextOptions, colorScheme: scheme });
-    for (const [name, url, action] of pages) {
-      if (scheme === "dark" && !DARK_PAGES.has(name)) continue;
-      await page.goto(`${address}${url}`);
-      if (action) await action(page);
-      const fileName = `${name}-${variantName}${scheme === "dark" ? "-scuro" : ""}.png`;
-      const path = join(outputDirectory, fileName);
-      await page.screenshot({ path, fullPage: true });
-      compress(path);
-      written += 1;
-    }
-    await context.close();
-  }
-}
-
-// The login page, desktop only: it is the same page at every size and theme,
-// and it carries no data worth repeating.
-{
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.goto(`${address}/ui/login`);
-  const path = join(outputDirectory, "00-accesso-desktop.png");
-  await page.screenshot({ path });
+async function shoot(page: Page, name: string, fullPage = true): Promise<void> {
+  // Nothing under the pointer: a hover is not part of the page.
+  await page.mouse.move(0, 0);
+  const path = join(outputDirectory, `${name}.png`);
+  await page.screenshot({ path, fullPage });
   compress(path);
   written += 1;
-  await page.close();
+}
+
+for (const [variantName, contextOptions] of variants) {
+  // The sign-in page, before and after a wrong password.
+  {
+    const context = await browser.newContext(contextOptions);
+    const page = await context.newPage();
+    await page.goto(`${address}/ui/login`);
+    await shoot(page, `00-accesso-${variantName}`, false);
+    await page.fill('input[name="password"]', "password-sbagliata");
+    await Promise.all([page.waitForNavigation(), page.click('button[type="submit"]')]);
+    await shoot(page, `00-accesso-errore-${variantName}`, false);
+    await context.close();
+  }
+  const { context, page } = await signedInPage(contextOptions);
+  for (const [name, url, action] of pages) {
+    await page.goto(`${address}${url}`);
+    if (action) await action(page);
+    await shoot(page, `${name}-${variantName}`);
+  }
+  if (variantName === "telefono") {
+    await page.goto(`${address}/ui/systems/acme-support-bot#menu`);
+    await shoot(page, "18-menu-telefono", false);
+  }
+  await context.close();
+}
+
+// Last, because it adds a system that every later page would list: the page
+// that shows a new system's key, the only time it is shown.
+for (const [variantName, contextOptions] of variants) {
+  const { context, page } = await signedInPage(contextOptions);
+  await page.goto(`${address}/ui/sistemi`);
+  await page.fill('input[name="system_id"]', `nuovo-sistema-${variantName}`);
+  await page.fill('input[name="display_name"]', "Nuovo assistente");
+  await Promise.all([page.waitForNavigation(), page.click('form[action="/ui/sistemi"] button[type="submit"]')]);
+  await shoot(page, `17-sistema-creato-${variantName}`);
+  await context.close();
 }
 
 await browser.close();

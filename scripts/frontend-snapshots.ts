@@ -4,7 +4,7 @@
  * without running the server or touching TypeScript.
  *
  * Every page's CSS is inline (apps/server/src/http/style.ts, injected as
- * <style>${STYLE}</style> by apps/server/src/http/ui.ts's page()), and the
+ * <style>${STYLE}</style> by apps/server/src/http/layout.ts's page()), and the
  * only image is an inline SVG: there is no external stylesheet, script or
  * image for the CSP to allow or a saved file to lose. So, unlike
  * scripts/screenshots.ts, this does not need a browser at all — it fetches

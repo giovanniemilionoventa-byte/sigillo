@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>B · Accesso</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased}
+a{color:#0066cc;text-decoration:none}a:hover{text-decoration:underline}
+</style>
+</helmet>
+<div style="width:1280px;height:800px;box-sizing:border-box;display:grid;grid-template-columns:480px minmax(0,1fr);background:#ffffff;color:#1d1d1f;font-family:-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Helvetica, sans-serif;font-size:13px;line-height:1.45">
+<aside style="background:#f0f0f3;border-right:1px solid #dcdce1;padding:52px 52px;display:flex;flex-direction:column">
+<div style="display:flex;align-items:center;gap:12px"><svg viewBox="0 0 48 48" width="40" height="40" aria-hidden="true"><circle cx="24" cy="24" r="22" fill="none" stroke="#8e2a24" stroke-width="2"></circle><circle cx="24" cy="24" r="16" fill="none" stroke="#8e2a24" stroke-width="1.25"></circle><polygon points="24,15 33,24 24,33 15,24" fill="#8e2a24"></polygon></svg><span style="display:flex;flex-direction:column"><span style="font-size:22px;font-weight:600;letter-spacing:-0.015em;line-height:1.15">sigillo</span><span style="font-size:12px;color:#6e6e73">registro probatorio per agenti AI</span></span></div>
+<h2 style="margin:auto 0 28px;font-size:27px;line-height:1.22;font-weight:700;letter-spacing:-0.02em">Tre domande, una risposta sola: il registro.</h2>
+<ul style="list-style:none;margin:0 0 auto;padding:0;display:flex;flex-direction:column;gap:20px;font-size:14px">
+<li style="display:flex;gap:14px;align-items:flex-start"><span style="width:34px;height:34px;flex:none;border-radius:9px;background:#e3f3e7;color:#1b6e30;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><circle cx="12" cy="12" r="9"></circle><path d="M12 7l5 5-5 5-5-5z"></path></svg></span><span><strong style="display:block;font-weight:600">È tutto a posto?</strong><span style="color:#6e6e73">Ogni registro viene verificato: integro, da controllare o non supera la verifica.</span></span></li>
+<li style="display:flex;gap:14px;align-items:flex-start"><span style="width:34px;height:34px;flex:none;border-radius:9px;background:#e5f0fc;color:#0066cc;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M8 6h12"></path><path d="M8 12h12"></path><path d="M8 18h12"></path><circle cx="4" cy="6" r="1"></circle><circle cx="4" cy="12" r="1"></circle><circle cx="4" cy="18" r="1"></circle></svg></span><span><strong style="display:block;font-weight:600">Cosa ha fatto l'AI?</strong><span style="color:#6e6e73">Strumenti, modelli, passi e decisioni, una ricevuta firmata per azione.</span></span></li>
+<li style="display:flex;gap:14px;align-items:flex-start"><span style="width:34px;height:34px;flex:none;border-radius:9px;background:#efe9fb;color:#6e3fc9;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><rect x="4" y="3" width="16" height="18" rx="2"></rect><path d="M12 3v2"></path><path d="M12 7v2"></path><path d="M12 11v2"></path><rect x="10.5" y="14" width="3" height="4" rx="1"></rect></svg></span><span><strong style="display:block;font-weight:600">Mi prepari le prove?</strong><span style="color:#6e6e73">Un fascicolo .zip con ricevute, checkpoint e marche temporali.</span></span></li>
+</ul>
+</aside>
+<main style="display:flex;align-items:center;justify-content:center;padding:48px">
+<form style="width:340px;margin:0">
+<h1 style="margin:0 0 6px;font-size:26px;font-weight:700;letter-spacing:-0.02em">Accedi</h1>
+<p style="margin:0 0 28px;color:#6e6e73;font-size:14px">Inserisci la password amministratore per aprire il registro.</p>
+<label for="pw" style="display:block;font-size:12px;font-weight:600;color:#3a3a3c;margin:0 0 5px">Password amministratore</label>
+<input id="pw" type="password" autocomplete="current-password" aria-invalid="false" style="display:block;width:100%;box-sizing:border-box;min-height:44px;padding:0 12px;border-radius:9px;border:1px solid #c7c7cc;background:#ffffff;font:inherit;font-size:15px;color:#1d1d1f;outline:3px solid rgba(0,113,227,0.25);outline-offset:0">
+
+<a href="B-Registro.dc.html" style="margin-top:16px;display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;border-radius:9px;background:#0071e3;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none">Accedi</a>
+<p style="margin:22px 0 0;font-size:12px;color:#6e6e73">Accesso riservato all'amministratore di questa installazione.</p>
+</form>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

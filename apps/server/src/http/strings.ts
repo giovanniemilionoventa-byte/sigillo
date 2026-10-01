@@ -12,7 +12,18 @@ import type { Receipt } from "@sigillo/core";
  */
 
 export const UI = {
-  nav: { registro: "registro", sistemi: "sistemi", persone: "persone", verificaDocumento: "verifica documento", esci: "esci" },
+  nav: {
+    registro: "registro",
+    sistemi: "sistemi",
+    persone: "persone",
+    verificaDocumento: "verifica documento",
+    esci: "esci",
+    label: "sezioni",
+    allSystems: "Tutti i sistemi",
+    tools: "Strumenti",
+    menu: "Menu",
+    close: "Chiudi",
+  },
   brand: {
     tagline: "registro probatorio per agenti AI",
     skip: "Vai al contenuto",
@@ -25,11 +36,19 @@ export const UI = {
     // the login handler in ui.ts.
     wrong:
       "Accesso non riuscito. Controlla la password; dopo troppi tentativi sbagliati l'accesso resta sospeso per qualche minuto.",
+    lead: "Inserisci la password amministratore per aprire il registro.",
+    restricted: "Accesso riservato all'amministratore di questa installazione.",
+    pitch: "Tre domande, una risposta sola: il registro.",
+    // The three questions (UI.home.q1-q3) as the login page explains them.
+    points: {
+      q1: "Ogni registro viene verificato: integro, da controllare o non supera la verifica.",
+      q2: "Strumenti, modelli, passi e decisioni, una ricevuta firmata per azione.",
+      q3: "Un fascicolo .zip con ricevute, checkpoint e marche temporali.",
+    },
   },
   home: {
     title: "sigillo",
     heading: "Il registro",
-    eyebrow: "le tre domande",
     q1: "È tutto a posto?",
     q2: "Cosa ha fatto l'AI?",
     q3: "Mi prepari le prove?",
@@ -48,7 +67,6 @@ export const UI = {
     },
     systemsCount: (count: number): string => `${count} ${count === 1 ? "sistema" : "sistemi"}`,
     actionsCount: (count: number): string => `${count} ${count === 1 ? "azione" : "azioni"}`,
-    seeHistory: "vedi tutta la cronologia",
     chooseSystem: "Sistema",
     fromDate: "Dal",
     toDate: "Al",
@@ -83,6 +101,27 @@ export const UI = {
     yellow: "giallo",
     red: "rosso",
   },
+  // A system's chain, in the header of its pages: the same check as the
+  // traffic lights of the main page, in three words.
+  chain: {
+    green: "Registro integro",
+    yellow: "Da controllare",
+    red: "Verifica fallita",
+  },
+  system: {
+    tabsLabel: "Sezioni del sistema",
+    receipts: (count: number): string => `${count} ${count === 1 ? "ricevuta" : "ricevute"}`,
+  },
+  exportSheet: {
+    title: (name: string): string => `Genera il fascicolo di ${name}`,
+    period: "Periodo",
+    cancel: "Annulla",
+  },
+  notFound: {
+    title: "non trovato",
+    heading: "Non trovato",
+    system: (systemId: string): string => `Nessun sistema chiamato ${systemId}.`,
+  },
   systemsPage: {
     title: "sistemi",
     heading: "Sistemi",
@@ -110,6 +149,7 @@ export const UI = {
       none: "nessuna azione ancora",
     },
     createTitle: "Crea un nuovo sistema",
+    newSystem: "Nuovo sistema",
     nameLabel: "Identificativo del sistema",
     namePlaceholder: "acme-support-bot",
     displayNameLabel: "Nome mostrato (facoltativo)",
@@ -170,7 +210,6 @@ export const UI = {
     confirmMismatch: "Il testo scritto non corrisponde allo pseudonimo: niente è stato cancellato.",
   },
   manage: {
-    eyebrow: "gestisci il sistema",
     nameTitle: "Nome mostrato",
     nameLabel: "Nome",
     nameHint: (systemId: string): string =>
@@ -196,9 +235,6 @@ export const UI = {
       "Il testo scritto non corrisponde all'identificativo del sistema: niente è stato eliminato.",
   },
   history: {
-    eyebrow: "cronologia",
-    technicalDetails: "Dettagli tecnici",
-    columns: { no: "N.", time: "Ora", action: "Azione", outcome: "Esito", anchor: "Ancoraggio", fingerprint: "Impronta" },
     anchored: "Ancorata",
     anchorPending: "In attesa",
     noMatches: "Nessuna ricevuta corrisponde ai filtri scelti.",
@@ -206,9 +242,71 @@ export const UI = {
     searchTitle: "Cerca e filtra",
     fromLabel: "dal (ricevuto)",
     toLabel: "al",
-    kindLabel: "tipo",
-    kindAny: "qualsiasi",
     nameLabel: "nome azione",
+    // The filter by kind, one segment each, with "Tutte" first.
+    filterLabel: "Filtra per tipo",
+    allKinds: "Tutte",
+    kinds: {
+      tool_call: "Strumenti",
+      llm_call: "Modelli",
+      agent_step: "Passi",
+      decision: "Decisioni",
+      genesis: "Apertura",
+    },
+    shown: (count: number, capped: boolean): string =>
+      `${count} ricevut${count === 1 ? "a" : "e"}${capped ? " (le 200 più recenti)" : ""}`,
+    listLabel: "Ricevute",
+    clearFilters: "Togli i filtri",
+    noMatchesHint: "Prova un altro tipo o togli il periodo.",
+    dayUtc: (day: string): string => `${day} · ore UTC`,
+    back: "Torna all'elenco",
+  },
+  // The inspector: the receipt chosen in the history, in full.
+  inspector: {
+    label: "Dettaglio della ricevuta",
+    receiptNo: (seq: number): string => `Ricevuta n. ${seq}`,
+    genesisNote:
+      "È la prima ricevuta del registro: da qui parte la catena. Non c'è una ricevuta precedente, quindi l'impronta precedente è tutta a zeri.",
+    whoWhen: "Chi e quando",
+    kind: "Tipo",
+    agent: "Agente",
+    onBehalfOf: "Per conto di",
+    model: "Modello",
+    received: "Ricevuta il",
+    source: "Arrivata da",
+    sources: {
+      sdk: "SDK",
+      otlp: "OpenTelemetry (OTLP)",
+      api: "API nativa",
+      genesis: "sigillo, alla creazione del sistema",
+    },
+    files: "File",
+    verifyFile: "Verifica",
+    chain: "Catena",
+    fingerprint: "Impronta",
+    linkedTo: "Collegata a",
+    first: "Nessuna: è la prima",
+    anchoring: "Ancoraggio",
+    anchoredNote: "Sigillata in un checkpoint con marca temporale.",
+    seeCheckpoints: "Vedi checkpoint",
+    showTechnical: "Mostra firma, chiave e impronte complete",
+    hideTechnical: "Nascondi i dettagli tecnici",
+    signature: "Firma",
+    key: "Chiave",
+    inputHash: "Impronta input",
+    outputHash: "Impronta output",
+    promptHash: "Impronta del prompt",
+    replyHash: "Impronta della risposta",
+    receivedIso: "Ricevuto (ISO)",
+    eventIso: "Avvenuto (ISO, dichiarato dall'agente)",
+    version: "Versione del formato",
+  },
+  // Where a receipt stands with its anchoring, in words (also on the verify page).
+  anchoring: {
+    notCovered: "non ancora coperto da un checkpoint",
+    waiting: "checkpoint scritto, marca temporale in attesa",
+    unreadable: "con marca temporale (ora attestata non leggibile dal token)",
+    at: (when: string): string => `con marca temporale del ${when}`,
   },
   checkpoints: {
     title: "checkpoint",
@@ -218,13 +316,17 @@ export const UI = {
     waiting: "in attesa di marca temporale",
     genTimeUnreadable: "ora attestata non leggibile dal token",
     receivedAt: "ricevuta dal server il",
+    covered: "ricevute coperte",
+    written: "Scritto il",
+    root: "Radice Merkle",
+    stamped: "Marca temporale ricevuta",
+    attested: "Ora attestata dall'autorità",
   },
   verifyDocument: {
     title: "verifica un documento",
     heading: "Verifica un documento",
     eyebrow: "è quello che ha usato l'AI?",
     privacyNote: "Il documento non lascia il tuo computer: calcoliamo solo le sue impronte.",
-    fileLabel: "File",
     textLabel: "oppure incolla il testo",
     textNote:
       "Per un testo contano le parole, non l'impaginazione: spazi, a capo e caratteri invisibili in più o in meno non cambiano il risultato. Per un PDF o un'immagine carica il file: lì conta ogni byte.",
@@ -248,6 +350,11 @@ export const UI = {
     noMatchHint:
       "Un testo registrato prima di questa versione di sigillo si trova solo se coincide byte per byte, a meno del modo di andare a capo. Per un PDF o un'immagine conta ogni byte. Puoi confrontare l'impronta esatta qui sopra con quella del file: Get-FileHash su Windows, sha256sum su Linux, shasum -a 256 su Mac.",
     seeReceipt: "vedi la ricevuta",
+    found: "Trovato nel registro",
+    notFound: "Non trovato nel registro",
+    documentLabel: "Documento da verificare",
+    dropTitle: "Trascina qui un file",
+    dropHint: "oppure sceglilo dal computer",
     notModified: "Non è stato modificato",
   },
 } as const;
@@ -422,9 +529,78 @@ export function describeReceipt(receipt: Receipt): string {
   return `${sentence} — ${OUTCOME_WORDS[outcome]}.`;
 }
 
+/** What a document was to the action: "usato in input" or "prodotto in output". */
+export function artifactRoleWords(role: "input" | "output"): string {
+  return role === "input" ? "usato in input" : "prodotto in output";
+}
+
 /** A readable label for an artifact, e.g. "curriculum (usato in input)". */
 export function describeArtifact(role: "input" | "output", label: string): string {
-  return `${label} (${role === "input" ? "usato in input" : "prodotto in output"})`;
+  return `${label} (${artifactRoleWords(role)})`;
+}
+
+/** Where a model ran, for the history: "in locale, con ollama", or its provider; null when unknown. */
+export function modelWhere(provider: string | null): string | null {
+  if (provider === null) return null;
+  return LOCAL_PROVIDERS.has(provider.toLowerCase()) ? `in locale, con ${provider}` : provider;
+}
+
+/**
+ * The short title of a receipt in the history's list ("Ha usato «cerca_ordine»").
+ * The full sentence is describeReceipt's, in the inspector; the outcome is
+ * shown beside the title whenever it is not "completato".
+ */
+export function receiptTitle(receipt: Receipt): string {
+  const { action } = receipt;
+  const model = receipt.v !== 1 ? receipt.model : undefined;
+  switch (action.kind) {
+    case "genesis":
+      return "Registro aperto";
+    case "tool_call":
+      return `${receipt.outcome === "ok" ? "Ha usato" : "Ha tentato"} «${action.name}»`;
+    case "llm_call":
+      return model !== undefined ? `Risposta da «${model.name}»` : `Chiamata a «${action.name}»`;
+    case "decision":
+      return `Decisione «${action.name}»`;
+    default:
+      return `Passo «${action.name}»`;
+  }
+}
+
+/** The line under a receipt's title: the agent, where its model ran, on whose behalf, which files. */
+export function receiptSubtitle(receipt: Receipt): string {
+  if (receipt.action.kind === "genesis") return `Apertura del registro di ${receipt.action.name}`;
+  const parts = [receipt.actor.agent];
+  const model = receipt.v !== 1 ? receipt.model : undefined;
+  const where = model === undefined ? null : modelWhere(model.provider);
+  if (where !== null) parts.push(`modello ${where}`);
+  if (receipt.actor.on_behalf_of !== undefined) parts.push(`per conto di ${receipt.actor.on_behalf_of}`);
+  if (receipt.v !== 1) for (const artifact of receipt.artifacts ?? []) parts.push(artifact.label);
+  return parts.join(" · ");
+}
+
+const WEEKDAYS = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
+const MONTH_NAMES = [
+  "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+  "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
+];
+
+/** The day of a server timestamp, in UTC, as a heading of the history: "martedì 29 settembre 2026". */
+export function formatDay(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T/.exec(iso);
+  if (match === null) return iso;
+  const [, year, month, day] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  const weekday = WEEKDAYS[date.getUTCDay()];
+  const monthName = MONTH_NAMES[Number(month) - 1];
+  if (weekday === undefined || monthName === undefined) return iso;
+  return `${weekday} ${Number(day)} ${monthName} ${year}`;
+}
+
+/** The time of a server timestamp, in UTC, to the second: "12:40:13". */
+export function formatTime(iso: string): string {
+  const match = /T(\d{2}:\d{2}:\d{2})/.exec(iso);
+  return match?.[1] ?? iso;
 }
 
 /** The one word for an outcome, as the receipt sentences already use it. */

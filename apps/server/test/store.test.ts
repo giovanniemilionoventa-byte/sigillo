@@ -562,6 +562,69 @@ describe("reading a period by date", () => {
   });
 });
 
+describe("the history's counts and selection (Interfaccia B)", () => {
+  async function mixedChain(): Promise<void> {
+    await store.createSystem(SYSTEM, "2026-03-29T09:00:00.000Z");
+    await store.append(event({ ts_received: "2026-03-29T10:00:00.000Z", action: { kind: "tool_call", name: "cerca_ordine" } }));
+    await store.append(event({ ts_received: "2026-03-29T10:01:00.000Z", action: { kind: "tool_call", name: "rimborsa" } }));
+    await store.append(event({ ts_received: "2026-03-29T10:02:00.000Z", action: { kind: "llm_call", name: "chat" } }));
+    await store.append(event({ ts_received: "2026-03-30T10:03:00.000Z", action: { kind: "decision", name: "escalation" } }));
+    await store.append(event({ ts_received: "2026-03-30T10:04:00.000Z", action: { kind: "agent_step", name: "cerca_cliente" } }));
+    // Another system's receipts are never counted.
+    await store.createSystem(OTHER_SYSTEM, "2026-03-29T09:00:00.000Z");
+    await store.append(event({ system_id: OTHER_SYSTEM, action: { kind: "tool_call", name: "cerca_ordine" } }));
+  }
+
+  it("counts the receipts of each kind that the other filters let through", async () => {
+    await mixedChain();
+    expect(store.countReceiptsByKind({ systemId: SYSTEM })).toEqual({
+      genesis: 1,
+      tool_call: 2,
+      llm_call: 1,
+      decision: 1,
+      agent_step: 1,
+    });
+    expect(store.countReceiptsByKind({ systemId: SYSTEM, name: "cerca" })).toEqual({ tool_call: 1, agent_step: 1 });
+    expect(store.countReceiptsByKind({ systemId: SYSTEM, from: "2026-03-30T00:00:00.000Z" })).toEqual({
+      decision: 1,
+      agent_step: 1,
+    });
+    expect(store.countReceiptsByKind({ systemId: SYSTEM, to: "2026-03-29T10:00:30.000Z" })).toEqual({ genesis: 1, tool_call: 1 });
+    expect(store.countReceiptsByKind({ systemId: "nothing-here" })).toEqual({});
+  });
+
+  it("agrees with searchReceipts for every kind and filter", async () => {
+    await mixedChain();
+    for (const filter of [{}, { name: "cerca" }, { from: "2026-03-30T00:00:00.000Z" }, { name: "r", to: "2026-03-29T23:00:00.000Z" }]) {
+      const counts = store.countReceiptsByKind({ systemId: SYSTEM, ...filter });
+      for (const kind of ["genesis", "tool_call", "llm_call", "agent_step", "decision"]) {
+        expect(counts[kind] ?? 0, `${kind} ${JSON.stringify(filter)}`).toBe(
+          store.searchReceipts({ systemId: SYSTEM, ...filter, kind, limit: 1000 }).length,
+        );
+      }
+    }
+  });
+
+  it("reads one receipt by its position, or nothing", async () => {
+    await mixedChain();
+    const third = store.receiptAt(SYSTEM, 3);
+    expect(third?.action).toEqual({ kind: "llm_call", name: "chat" });
+    expect(third).toEqual(store.readChain(SYSTEM)[3]);
+    expect(store.receiptAt(SYSTEM, 0)?.action.kind).toBe("genesis");
+    expect(store.receiptAt(SYSTEM, 99)).toBeNull();
+    expect(store.receiptAt("nothing-here", 0)).toBeNull();
+  });
+
+  it("writes nothing: both are reads", async () => {
+    await mixedChain();
+    const before = store.readChain(SYSTEM);
+    store.countReceiptsByKind({ systemId: SYSTEM });
+    store.receiptAt(SYSTEM, 1);
+    expect(store.readChain(SYSTEM)).toEqual(before);
+    expect(store.adminLog()).toEqual([]);
+  });
+});
+
 describe("verifying every signature before it is stored", () => {
   // The signer is a separate process, and what it hands back is checked, not
   // trusted: a signature that does not verify over exactly the bytes about to
