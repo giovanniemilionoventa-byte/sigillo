@@ -27,6 +27,27 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | P1 | Ricevute senza dati personali (formato v4) | fatto | Pseudonimi `psn_` in una tabella `subjects` cancellabile, impronte con sale per input/output ricevuti in chiaro con i nonce in `openings`, cancellazione di interessati e di nonce, export senza identificativi per default, `sigillo-verify open`; v1–v3 restano valide; 989 test Node (sessione 16) |
 | V1 | Verifica prima del deploy (sola verifica) | fatto | `docs/RAPPORTO-VERIFICA-2026-10-01.md`: PRONTO CON RISERVE, 15 problemi (1 alto, 6 medi, 8 bassi), nessuna correzione al codice. Prova completa in Docker con il compose di produzione, migrazione da un database creato con la versione `30b5e9a`, crash del server e del signer, ripristino e ritorno indietro. Procedura per il VPS in `DEPLOY.md`. Cross-check Python esteso (frontiera di Merkle, ricevute v4 da rifiutare) nella branch `chore/crosscheck-v4`, non unita. 1079 test Node, 50 SDK, 22 demo (sessione 17) |
 
+## Interfaccia B — fase (dal 2026-10-01)
+
+Richiesta del committente: la direzione di design "B" (app a tre colonne in stile macOS: barra
+laterale, contenuto, pannello di dettaglio), più chiara e "client friendly". Cambiano l'aspetto e la
+navigazione, non quello che il prodotto fa. Mockup di riferimento in `design/proposta-b/` (formato
+spiegato nel suo `README.md`).
+
+Vincoli della fase, validi per tutte le milestone: nessuna route rimossa, nessun dato memorizzato in
+più, nessun cambio al formato delle ricevute o dell'export; tutti i form esistenti con gli stessi
+`action`, `method` e nomi dei campi; nessuna dipendenza nuova e nessun JavaScript nuovo (la CSP di
+`deploy/Caddyfile` ammette solo lo script di "verifica documento", byte e DOM invariati); testo
+italiano solo in `strings.ts`; stati sempre con icona di forma diversa più parola; "Registro integro"
+dal controllo reale della catena; WCAG 2.2 AA in chiaro e in scuro.
+
+| # | Nome | Stato | Criteri di accettazione |
+|---|------|-------|-------------------------|
+| B1 | Fondamenta | todo | `design/DESIGN.md` e `design/tokens.json` descrivono la direzione B con token chiaro/scuro e tabella dei contrasti ricalcolata (testo 4,5:1, bordi dei controlli 3:1); `style.ts` usa solo quei token; guscio comune con barra laterale (marchio, Registro, Sistemi con stato reale e numero di ricevute, Archiviati, Tutti i sistemi, "+", Strumenti, chiave di firma, Esci in POST); pagina di accesso divisa in due con lo stato di errore; test aggiornati e nuovi verdi |
+| B2 | Cronologia | todo | Intestazione del sistema (nome, identificativo, ricevute, stato della catena, "Genera fascicolo"); schede Cronologia/Checkpoint/Gestisci; filtro per tipo `?kind=` con conteggi (nuova query di sola lettura nello store, con test); ricerca per nome e periodo in un `<details>`; `?ricevuta=<seq>` riempie il pannello di dettaglio (default: la più recente mostrata); `from`, `to`, `kind`, `name` conservati nei link; pannello del fascicolo senza JavaScript con lo stesso form; test per `?ricevuta=`, conteggi, pannello (esito bloccato, ricevuta di modello, apertura) e conservazione dei parametri |
+| B3 | Altre pagine | todo | Registro (`/ui`), Sistemi, Checkpoint, Gestisci, Verifica documento, Persone nello stile dei mockup con le stringhe esistenti; rifatte anche le pagine senza mockup (sistema creato, 404, conferme ed errori); `verify-document-browser.test.ts` verde senza toccare l'hash della CSP |
+| B4 | Rifinitura | todo | Sotto ~900 px barra laterale come menu e dettaglio come pagina della ricevuta, nessuno scroll orizzontale; tema scuro verificato; screenshot chiaro, scuro e telefono di ogni pagina in `design/screenshots/proposta-b/` e `docs/screenshots/`; `pnpm check` verde; ogni pagina funziona senza JavaScript (salvo il calcolo dell'impronta in "verifica documento") |
+
 ## Decisioni prese dal committente — 2026-09-21
 
 Tutte e nove le milestone sono `fatto`. Le tre domande aperte sono state decise così:

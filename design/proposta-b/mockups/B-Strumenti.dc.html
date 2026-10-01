@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>B · Cronologia — vista Strumenti</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased}
+a{color:#0066cc;text-decoration:none}a:hover{text-decoration:underline}
+</style>
+</helmet>
+<div style="height:100vh;min-height:760px;display:grid;grid-template-columns:248px minmax(0,1fr) 360px;background:#ffffff;color:#1d1d1f;font-family:-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Helvetica, sans-serif;font-size:13px;line-height:1.4;overflow:hidden">
+<aside aria-label="Navigazione" style="background:#f0f0f3;border-right:1px solid #dcdce1;display:flex;flex-direction:column;gap:2px;padding:16px 10px 14px;min-height:0;overflow:auto">
+<a href="B-Registro.dc.html" style="display:flex;align-items:center;gap:10px;padding:2px 10px 14px;color:#1d1d1f;text-decoration:none"><svg viewBox="0 0 48 48" width="28" height="28" aria-hidden="true"><circle cx="24" cy="24" r="22" fill="none" stroke="#8e2a24" stroke-width="2"></circle><circle cx="24" cy="24" r="16" fill="none" stroke="#8e2a24" stroke-width="1.25"></circle><polygon points="24,15 33,24 24,33 15,24" fill="#8e2a24"></polygon></svg><span style="display:flex;flex-direction:column"><span style="font-size:16px;font-weight:600;letter-spacing:-0.01em;line-height:1.2">sigillo</span><span style="font-size:10.5px;color:#6e6e73;line-height:1.3">registro probatorio per agenti AI</span></span></a>
+<a href="B-Registro.dc.html" style="display:flex;align-items:center;gap:9px;min-height:34px;padding:0 10px;border-radius:8px;color:#1d1d1f;text-decoration:none;font:inherit;font-size:13px;border:0;background:transparent;text-align:left;cursor:pointer;width:100%;box-sizing:border-box"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:#6e6e73;flex:none"><path d="M4 11l8-7 8 7"></path><path d="M6 9.5V20h12V9.5"></path></svg><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Registro</span></a>
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 4px;padding:0 10px;font-size:11px;font-weight:600;color:#6e6e73;padding-right:2px"><span>Sistemi</span><a href="B-Sistemi.dc.html" aria-label="Crea un nuovo sistema" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:7px;color:#0066cc"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg></a></div>
+<sc-for list="{{systems}}" as="s" hint-placeholder-count="3">
+<button type="button" onClick="{{s.pick}}" aria-current="{{s.current}}" style="display:flex;align-items:center;gap:9px;min-height:34px;padding:0 10px;border-radius:8px;color:#1d1d1f;text-decoration:none;font:inherit;font-size:13px;border:0;background:transparent;text-align:left;cursor:pointer;width:100%;box-sizing:border-box;background:{{s.bg}};font-weight:{{s.weight}}"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:#1b6e30;flex:none"><circle cx="10" cy="10" r="8.25"></circle><path d="M6.25 10.25l2.5 2.5 5-5.25"></path></svg><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{s.title}}</span><span style="font-size:11px;color:#6e6e73;font-variant-numeric:tabular-nums">{{s.count}}</span></button>
+</sc-for>
+<a href="B-Sistemi.dc.html" style="display:flex;align-items:center;gap:9px;min-height:34px;padding:0 10px;border-radius:8px;color:#1d1d1f;text-decoration:none;font:inherit;font-size:13px;border:0;background:transparent;text-align:left;cursor:pointer;width:100%;box-sizing:border-box"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:#6e6e73;flex:none"><circle cx="10" cy="10" r="8.25"></circle><path d="M6.5 10h7"></path></svg><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Archiviati</span><span style="font-size:11px;color:#6e6e73;font-variant-numeric:tabular-nums">1</span></a>
+<a href="B-Sistemi.dc.html" style="display:flex;align-items:center;gap:9px;min-height:34px;padding:0 10px;border-radius:8px;color:#1d1d1f;text-decoration:none;font:inherit;font-size:13px;border:0;background:transparent;text-align:left;cursor:pointer;width:100%;box-sizing:border-box"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:#6e6e73;flex:none"><path d="M8 6h12"></path><path d="M8 12h12"></path><path d="M8 18h12"></path><circle cx="4" cy="6" r="1"></circle><circle cx="4" cy="12" r="1"></circle><circle cx="4" cy="18" r="1"></circle></svg><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Tutti i sistemi</span></a>
+
+<p style="margin:16px 0 4px;padding:0 10px;font-size:11px;font-weight:600;color:#6e6e73">Strumenti</p>
+<a href="B-Verifica.dc.html" style="display:flex;align-items:center;gap:9px;min-height:34px;padding:0 10px;border-radius:8px;color:#1d1d1f;text-decoration:none;font:inherit;font-size:13px;border:0;background:transparent;text-align:left;cursor:pointer;width:100%;box-sizing:border-box"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:#6e6e73;flex:none"><path d="M7 3h7l5 5v13H7z"></path><path d="M14 3v5h5"></path><path d="M10 14l2 2 4-4"></path></svg><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Verifica documento</span></a>
+<a href="B-Persone.dc.html" style="display:flex;align-items:center;gap:9px;min-height:34px;padding:0 10px;border-radius:8px;color:#1d1d1f;text-decoration:none;font:inherit;font-size:13px;border:0;background:transparent;text-align:left;cursor:pointer;width:100%;box-sizing:border-box"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:#6e6e73;flex:none"><circle cx="9" cy="9" r="3.2"></circle><path d="M3.5 19c.9-3 3-4.5 5.5-4.5s4.6 1.5 5.5 4.5"></path><circle cx="17" cy="8" r="2.4"></circle><path d="M16 13.2c2.3.1 3.9 1.6 4.5 4.3"></path></svg><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Persone</span></a>
+
+<div style="margin-top:auto;padding:12px 10px 0;border-top:1px solid #dcdce1;display:flex;flex-direction:column;gap:6px">
+<div style="display:flex;align-items:center;gap:8px;color:#6e6e73;font-size:11px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><circle cx="8" cy="15" r="4"></circle><path d="M11 12l9-9"></path><path d="M17 6l3 3"></path></svg><span>Firma con la chiave <code style="font-family:ui-monospace, 'SF Mono', Menlo, monospace">283fefa25fe2cf4e</code></span></div>
+<a href="B-Accesso.dc.html" style="display:flex;align-items:center;gap:8px;min-height:34px;color:#1d1d1f;font-size:13px;text-decoration:none"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:#6e6e73;flex:none"><path d="M15 4h4v16h-4"></path><path d="M10 8l-4 4 4 4"></path><path d="M6 12h10"></path></svg>Esci</a>
+</div>
+</aside>
+<section style="display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden">
+<div style="padding:16px 22px 0;border-bottom:1px solid #e5e5ea">
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+<div style="flex:1;min-width:200px">
+<h1 style="margin:0;font-size:19px;font-weight:700;letter-spacing:-0.015em">{{sys.title}}</h1>
+<p style="margin:3px 0 0;color:#6e6e73;font-size:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><code style="font-family:ui-monospace, 'SF Mono', Menlo, monospace">{{sys.id}}</code><span aria-hidden="true">·</span><span>{{sys.countLabel}}</span><span aria-hidden="true">·</span><span style="display:inline-flex;align-items:center;gap:4px;color:#1b6e30;font-weight:600"><svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><circle cx="10" cy="10" r="8.25"></circle><path d="M6.25 10.25l2.5 2.5 5-5.25"></path></svg>Registro integro</span></p>
+</div>
+<label style="display:flex;align-items:center;gap:7px;width:170px;min-height:34px;padding:0 10px;border-radius:8px;background:rgba(118,118,128,0.12)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:#6e6e73;flex:none"><circle cx="11" cy="11" r="6"></circle><path d="M20 20l-4.5-4.5"></path></svg><input type="search" aria-label="Cerca per nome azione" placeholder="Nome azione" style="border:0;outline:none;background:transparent;font:inherit;flex:1;min-width:0;color:#1d1d1f"></label>
+<button type="button" style="display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border-radius:8px;border:1px solid #d2d2d7;background:#ffffff;color:#1d1d1f;font:inherit;cursor:pointer"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:#6e6e73;flex:none"><rect x="4" y="5" width="16" height="15" rx="2"></rect><path d="M4 10h16"></path><path d="M9 3v4"></path><path d="M15 3v4"></path></svg>Periodo<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:#6e6e73;flex:none"><path d="M6 9l6 6 6-6"></path></svg></button>
+<a href="B-Fascicolo.dc.html" style="display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:0 14px;border-radius:8px;border:0;background:#0071e3;color:#ffffff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M12 4v11"></path><path d="M7 10l5 5 5-5"></path><path d="M5 20h14"></path></svg>Genera fascicolo</a>
+</div>
+<nav aria-label="Sezioni del sistema" style="display:flex;gap:22px;margin-top:10px">
+<a href="B-Studio.dc.html" aria-current="page" style="display:flex;align-items:center;min-height:40px;padding:0 2px;border-bottom:2px solid #0071e3;color:#1d1d1f;font-weight:600;text-decoration:none">Cronologia</a>
+<a href="B-Checkpoint.dc.html" style="display:flex;align-items:center;min-height:40px;padding:0 2px;border-bottom:2px solid transparent;color:#6e6e73;font-weight:500;text-decoration:none">Checkpoint</a>
+<a href="B-Gestisci.dc.html" style="display:flex;align-items:center;min-height:40px;padding:0 2px;border-bottom:2px solid transparent;color:#6e6e73;font-weight:500;text-decoration:none">Gestisci</a>
+</nav>
+</div>
+
+<div style="display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid #f0f0f3;flex-wrap:wrap">
+<div aria-label="Filtra per tipo" style="display:flex;flex-wrap:wrap;gap:2px;padding:2px;border-radius:9px;background:rgba(118,118,128,0.12)">
+<sc-for list="{{filters}}" as="f" hint-placeholder-count="6">
+<button type="button" onClick="{{f.pick}}" aria-pressed="{{f.pressed}}" style="display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:0 10px;border:0;border-radius:7px;font:inherit;font-size:12px;cursor:pointer;color:#1d1d1f;background:{{f.bg}};box-shadow:{{f.shadow}};font-weight:{{f.weight}}">{{f.label}}<span style="font-size:11px;color:#6e6e73;font-variant-numeric:tabular-nums">{{f.count}}</span></button>
+</sc-for>
+</div>
+<span style="margin-left:auto;color:#6e6e73;font-size:12px">{{countLabel}}</span>
+</div>
+
+<div style="flex:1;min-height:0;overflow:auto;padding:8px 12px 24px">
+<p style="margin:8px 10px 8px;font-size:12px;font-weight:600;color:#6e6e73">Martedì 29 settembre 2026</p>
+<sc-if value="{{isEmpty}}" hint-placeholder-val="{{ false }}">
+<div style="padding:44px 20px;text-align:center;color:#6e6e73">
+<p style="margin:0;font-size:15px;font-weight:600;color:#1d1d1f">Nessuna ricevuta corrisponde ai filtri scelti.</p>
+<p style="margin:6px 0 0">Prova un altro tipo o togli il periodo.</p>
+</div>
+</sc-if>
+<div style="display:flex;flex-direction:column;gap:2px">
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+<button type="button" onClick="{{r.pick}}" aria-current="{{r.current}}" style="display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:8px 12px;border:0;border-radius:10px;font:inherit;text-align:left;cursor:pointer;background:{{r.bg}};color:{{r.fg}}">
+<span style="width:58px;flex:none;font-size:12px;font-variant-numeric:tabular-nums;color:{{r.subColor}}">{{r.time}}</span>
+<span style="width:30px;height:30px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;background:{{r.iconBg}};color:{{r.iconColor}}"><sc-if value="{{r.isTool}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3.5 17.5l3 3 5.8-5.8a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"></path></svg></sc-if><sc-if value="{{r.isModel}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><rect x="7" y="7" width="10" height="10" rx="2"></rect><path d="M10 3v4"></path><path d="M14 3v4"></path><path d="M10 17v4"></path><path d="M14 17v4"></path><path d="M3 10h4"></path><path d="M3 14h4"></path><path d="M17 10h4"></path><path d="M17 14h4"></path></svg></sc-if><sc-if value="{{r.isStep}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><circle cx="12" cy="12" r="9"></circle><path d="M10.5 8l4 4-4 4"></path></svg></sc-if><sc-if value="{{r.isDecision}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><circle cx="6" cy="5" r="2"></circle><circle cx="6" cy="19" r="2"></circle><circle cx="18" cy="7" r="2"></circle><path d="M6 7v10"></path><path d="M18 9c0 5-6 4-11 8.5"></path></svg></sc-if><sc-if value="{{r.isGenesis}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M4 5h6a2 2 0 0 1 2 2v12a2 2 0 0 0-2-2H4z"></path><path d="M20 5h-6a2 2 0 0 0-2 2v12a2 2 0 0 1 2-2h6z"></path></svg></sc-if></span>
+<span style="flex:1;min-width:0">
+<span style="display:block;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{r.title}}</span>
+<span style="display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:{{r.subColor}}">{{r.sub}}</span>
+</span>
+<sc-if value="{{r.notOk}}" hint-placeholder-val="{{ false }}"><span style="flex:none;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:{{r.badgeBg}};color:{{r.badgeFg}}"><sc-if value="{{r.o_ok}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><circle cx="10" cy="10" r="8.25"></circle><path d="M6.25 10.25l2.5 2.5 5-5.25"></path></svg></sc-if><sc-if value="{{r.o_warn}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M10 2.25 18.5 17.25h-17z"></path><path d="M10 7.75v4"></path><circle cx="10" cy="14.4" r="0.6" fill="currentColor"></circle></svg></sc-if><sc-if value="{{r.o_bad}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M6.6 1.75h6.8l4.85 4.85v6.8l-4.85 4.85H6.6L1.75 13.4V6.6z"></path><path d="M7.5 7.5l5 5M12.5 7.5l-5 5"></path></svg></sc-if>{{r.word}}</span></sc-if>
+<span style="flex:none;width:38px;text-align:right;font-family:ui-monospace, 'SF Mono', Menlo, monospace;font-size:11px;color:{{r.subColor}}">n. {{r.seq}}</span>
+</button>
+</sc-for>
+</div>
+</div>
+</section>
+<aside aria-label="Dettaglio della ricevuta" style="border-left:1px solid #e5e5ea;background:#fafafc;overflow:auto;min-height:0;padding:22px 20px 28px">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<p style="margin:0;font-size:11px;font-weight:600;color:#6e6e73">Ricevuta n. {{sel.seq}}</p>
+<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px 3px 8px;border-radius:999px;font-size:12px;font-weight:600;background:{{sel.badgeBg}};color:{{sel.badgeFg}}"><sc-if value="{{sel.o_ok}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><circle cx="10" cy="10" r="8.25"></circle><path d="M6.25 10.25l2.5 2.5 5-5.25"></path></svg></sc-if><sc-if value="{{sel.o_warn}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M10 2.25 18.5 17.25h-17z"></path><path d="M10 7.75v4"></path><circle cx="10" cy="14.4" r="0.6" fill="currentColor"></circle></svg></sc-if><sc-if value="{{sel.o_bad}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M6.6 1.75h6.8l4.85 4.85v6.8l-4.85 4.85H6.6L1.75 13.4V6.6z"></path><path d="M7.5 7.5l5 5M12.5 7.5l-5 5"></path></svg></sc-if>{{sel.word}}</span>
+</div>
+<span style="margin-top:14px;width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:{{sel.kindBg}};color:{{sel.kindColor}}"><sc-if value="{{sel.isTool}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3.5 17.5l3 3 5.8-5.8a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"></path></svg></sc-if><sc-if value="{{sel.isModel}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><rect x="7" y="7" width="10" height="10" rx="2"></rect><path d="M10 3v4"></path><path d="M14 3v4"></path><path d="M10 17v4"></path><path d="M14 17v4"></path><path d="M3 10h4"></path><path d="M3 14h4"></path><path d="M17 10h4"></path><path d="M17 14h4"></path></svg></sc-if><sc-if value="{{sel.isStep}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><circle cx="12" cy="12" r="9"></circle><path d="M10.5 8l4 4-4 4"></path></svg></sc-if><sc-if value="{{sel.isDecision}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><circle cx="6" cy="5" r="2"></circle><circle cx="6" cy="19" r="2"></circle><circle cx="18" cy="7" r="2"></circle><path d="M6 7v10"></path><path d="M18 9c0 5-6 4-11 8.5"></path></svg></sc-if><sc-if value="{{sel.isGenesis}}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M4 5h6a2 2 0 0 1 2 2v12a2 2 0 0 0-2-2H4z"></path><path d="M20 5h-6a2 2 0 0 0-2 2v12a2 2 0 0 1 2-2h6z"></path></svg></sc-if></span>
+<h2 style="margin:12px 0 0;font-size:16px;line-height:1.35;font-weight:600;letter-spacing:-0.01em">{{sel.sentence}}</h2>
+
+<sc-if value="{{sel.isGenesis}}" hint-placeholder-val="{{ false }}">
+<p style="margin:12px 0 0;padding:11px 13px;border-radius:10px;background:#ffffff;border-radius:12px;box-shadow:0 0 0 1px rgba(0,0,0,0.06);color:#3a3a3c;line-height:1.5">È la prima ricevuta del registro: da qui parte la catena. Non c'è una ricevuta precedente, quindi l'impronta precedente è tutta a zeri.</p>
+</sc-if>
+
+<p style="margin:20px 0 6px 4px;font-size:11px;font-weight:600;color:#6e6e73">Chi e quando</p>
+<div style="background:#ffffff;border-radius:12px;box-shadow:0 0 0 1px rgba(0,0,0,0.06)">
+<div style="display:flex;justify-content:space-between;gap:14px;padding:10px 14px;border-top:1px solid #f0f0f3;border-top:0"><span style="color:#6e6e73">Tipo</span><span>{{sel.kindLabel}}</span></div>
+<sc-if value="{{sel.hasAgent}}" hint-placeholder-val="{{ true }}"><div style="display:flex;justify-content:space-between;gap:14px;padding:10px 14px;border-top:1px solid #f0f0f3"><span style="color:#6e6e73">Agente</span><span>{{sel.agent}}</span></div></sc-if>
+<sc-if value="{{sel.hasOnBehalf}}" hint-placeholder-val="{{ false }}"><div style="display:flex;justify-content:space-between;gap:14px;padding:10px 14px;border-top:1px solid #f0f0f3"><span style="color:#6e6e73">Per conto di</span><a href="B-Persone.dc.html">{{sel.onBehalf}}</a></div></sc-if>
+<sc-if value="{{sel.isModel}}" hint-placeholder-val="{{ false }}"><div style="display:flex;justify-content:space-between;gap:14px;padding:10px 14px;border-top:1px solid #f0f0f3"><span style="color:#6e6e73">Modello</span><span style="text-align:right"><code style="font-family:ui-monospace, 'SF Mono', Menlo, monospace;font-size:12px">{{sel.model}}</code><span style="display:block;font-size:11px;color:#6e6e73">{{sel.modelWhere}}</span></span></div></sc-if>
+<div style="display:flex;justify-content:space-between;gap:14px;padding:10px 14px;border-top:1px solid #f0f0f3"><span style="color:#6e6e73">Ricevuta il</span><span style="font-variant-numeric:tabular-nums">{{sel.when}}</span></div>
+<div style="display:flex;justify-content:space-between;gap:14px;padding:10px 14px;border-top:1px solid #f0f0f3"><span style="color:#6e6e73">Arrivata da</span><span>{{sel.source}}</span></div>
+</div>
+
+<sc-if value="{{sel.hasFile}}" hint-placeholder-val="{{ false }}">
+<p style="margin:20px 0 6px 4px;font-size:11px;font-weight:600;color:#6e6e73">File</p>
+<div style="background:#ffffff;border-radius:12px;box-shadow:0 0 0 1px rgba(0,0,0,0.06);padding:10px 14px;display:flex;align-items:center;gap:10px"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:#0066cc;flex:none"><path d="M7 3h7l5 5v13H7z"></path><path d="M14 3v5h5"></path></svg><span style="flex:1;min-width:0"><span style="display:block;font-family:ui-monospace, 'SF Mono', Menlo, monospace;font-size:12px">{{sel.file}}</span><span style="display:block;font-size:11px;color:#6e6e73">usato in input</span></span><a href="B-Verifica.dc.html" style="font-size:12px">Verifica</a></div>
+</sc-if>
+
+<p style="margin:20px 0 6px 4px;font-size:11px;font-weight:600;color:#6e6e73">Catena</p>
+<div style="background:#ffffff;border-radius:12px;box-shadow:0 0 0 1px rgba(0,0,0,0.06)">
+<div style="display:flex;justify-content:space-between;gap:14px;padding:10px 14px;border-top:1px solid #f0f0f3;border-top:0;align-items:center"><span style="color:#6e6e73">Impronta</span><span style="display:flex;align-items:center;gap:8px"><code style="font-family:ui-monospace, 'SF Mono', Menlo, monospace;font-size:12px">{{sel.hash}}</code><button type="button" aria-label="Copia l'impronta" style="min-height:26px;padding:0 6px;border:0;border-radius:6px;background:transparent;color:#0066cc;font:inherit;font-size:12px;cursor:pointer">Copia</button></span></div>
+<div style="display:flex;justify-content:space-between;gap:14px;padding:10px 14px;border-top:1px solid #f0f0f3;align-items:center"><span style="color:#6e6e73">Collegata a</span><span style="text-align:right">{{sel.prevLabel}}<code style="display:block;font-family:ui-monospace, 'SF Mono', Menlo, monospace;font-size:11px;color:#6e6e73">{{sel.prev}}</code></span></div>
+<div style="display:flex;justify-content:space-between;gap:14px;padding:10px 14px;border-top:1px solid #f0f0f3;align-items:center"><span style="color:#6e6e73">Ancoraggio</span><span style="display:inline-flex;align-items:center;gap:5px;font-weight:600;color:{{sel.anchorColor}}">{{sel.anchorWord}}</span></div>
+<sc-if value="{{sel.anchored}}" hint-placeholder-val="{{ true }}"><div style="display:flex;justify-content:space-between;gap:14px;padding:10px 14px;border-top:1px solid #f0f0f3;color:#6e6e73;font-size:12px">Sigillata in un checkpoint con marca temporale.<a href="B-Checkpoint.dc.html" style="font-size:12px;white-space:nowrap">Vedi checkpoint</a></div></sc-if>
+</div>
+
+<button type="button" onClick="{{toggleTech}}" aria-expanded="{{techExpanded}}" style="margin-top:16px;display:flex;align-items:center;gap:6px;min-height:34px;padding:0 4px;border:0;background:transparent;color:#0066cc;font:inherit;font-size:13px;cursor:pointer">{{techLabel}}</button>
+<sc-if value="{{tech}}" hint-placeholder-val="{{ false }}">
+<div style="background:#ffffff;border-radius:12px;box-shadow:0 0 0 1px rgba(0,0,0,0.06);margin-top:4px">
+<div style="padding:10px 14px"><span style="color:#6e6e73">Firma</span><code style="display:block;margin-top:3px;font-family:ui-monospace, 'SF Mono', Menlo, monospace;font-size:11px;line-height:1.5;word-break:break-all;color:#3a3a3c">{{sel.sig}}</code></div>
+<div style="display:flex;justify-content:space-between;gap:14px;padding:10px 14px;border-top:1px solid #f0f0f3"><span style="color:#6e6e73">Chiave</span><code style="font-family:ui-monospace, 'SF Mono', Menlo, monospace;font-size:12px">283fefa25fe2cf4e</code></div>
+<sc-if value="{{sel.hasIO}}" hint-placeholder-val="{{ true }}">
+<div style="padding:10px 14px;border-top:1px solid #f0f0f3"><span style="color:#6e6e73">{{sel.inLabel}}</span><code style="display:block;margin-top:3px;font-family:ui-monospace, 'SF Mono', Menlo, monospace;font-size:11px;line-height:1.5;word-break:break-all;color:#3a3a3c">{{sel.inHash}}</code></div>
+<div style="padding:10px 14px;border-top:1px solid #f0f0f3"><span style="color:#6e6e73">{{sel.outLabel}}</span><code style="display:block;margin-top:3px;font-family:ui-monospace, 'SF Mono', Menlo, monospace;font-size:11px;line-height:1.5;word-break:break-all;color:#3a3a3c">{{sel.outHash}}</code></div>
+</sc-if>
+<div style="display:flex;justify-content:space-between;gap:14px;padding:10px 14px;border-top:1px solid #f0f0f3"><span style="color:#6e6e73">Ricevuto (ISO)</span><code style="font-family:ui-monospace, 'SF Mono', Menlo, monospace;font-size:11px">{{sel.iso}}</code></div>
+</div>
+</sc-if>
+</aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+  constructor(...args) {
+    super(...args);
+    this.state = Object.assign({ tech: false }, this.initial());
+  }
+  initial() {
+    return { sys: 'acme', sel: 3, filter: 'tool_call' };
+  }
+  data() {
+    const A = 'a'.repeat(64), B = 'b'.repeat(64);
+    const r = (o) => Object.assign({ agent: '', onBehalf: '', model: '', provider: '', file: '', outcome: 'ok', anchored: true, source: 'SDK', inHash: A, outHash: B, sig: '[firma della ricevuta]' }, o);
+    return {
+      acme: { id: 'acme-support-bot', title: 'Assistente clienti', receipts: [
+        r({ seq: 4, kind: 'decision', name: 'escalation_operatore', agent: 'support-agent', time: '12:40:13', hash: '992996dd154d8f2e16a3c2ee3cc217f125eb1e93d49dbd1d8696f84a8ae472dd', prev: '0165f708198f7f122fbf67499d26583b43ab1484975410377f06da92683b2c53', iso: '2026-09-29T12:40:13.790Z', sig: 'RantwWkLunKg+v/jWzPS8wp+JT4p/Bm1VXVj/t0lAbIhRY5Vk1+jhHbVzRotD9wc5dLOW/k/5PJSKLQme2BhAA==' }),
+        r({ seq: 3, kind: 'tool_call', name: 'rimborsa_pagamento', agent: 'support-agent', outcome: 'blocked', time: '12:39:13', hash: '0165f708198f7f122fbf67499d26583b43ab1484975410377f06da92683b2c53', prev: '1ad0f52217cc', iso: '2026-09-29T12:39:13Z' }),
+        r({ seq: 2, kind: 'llm_call', name: 'chat', agent: 'support-agent', model: 'llama3.1:8b', provider: 'ollama', time: '12:37:13', hash: '1ad0f52217cc', prev: 'de0e5e75f082', iso: '2026-09-29T12:37:13Z' }),
+        r({ seq: 1, kind: 'tool_call', name: 'cerca_ordine', agent: 'support-agent', onBehalf: 'cliente-4821', time: '12:36:13', hash: 'de0e5e75f082', prev: 'e473e73054c6', iso: '2026-09-29T12:36:13Z' }),
+        r({ seq: 0, kind: 'genesis', name: 'acme-support-bot', time: '12:16:13', hash: 'e473e73054c6', prev: '0'.repeat(64), iso: '2026-09-29T12:16:13Z', source: 'sigillo, alla creazione del sistema' })
+      ] },
+      cv: { id: 'selezione-cv', title: 'Selezione CV — backend junior', receipts: [
+        r({ seq: 5, kind: 'tool_call', name: 'invia_email', agent: 'screener', outcome: 'error', time: '17:16:13', hash: '277a6461146b', prev: '295bf29c9194', iso: '2026-09-29T17:16:13Z' }),
+        r({ seq: 4, kind: 'decision', name: 'shortlist', agent: 'screener', time: '13:01:13', hash: '295bf29c9194', prev: 'd71df455b16f', iso: '2026-09-29T13:01:13Z' }),
+        r({ seq: 3, kind: 'tool_call', name: 'leggi_curriculum', agent: 'screener', file: 'candidato-03.txt', time: '12:55:13', hash: 'd71df455b16f', prev: 'e089eb04b563', iso: '2026-09-29T12:55:13Z' }),
+        r({ seq: 2, kind: 'tool_call', name: 'leggi_curriculum', agent: 'screener', file: 'candidato-02.txt', time: '12:52:13', hash: 'e089eb04b563', prev: 'cf83d0d9704a', iso: '2026-09-29T12:52:13Z' }),
+        r({ seq: 1, kind: 'tool_call', name: 'leggi_curriculum', agent: 'screener', file: 'candidato-01.txt', time: '12:49:13', hash: 'cf83d0d9704a', prev: 'd3f52d6dc932', iso: '2026-09-29T12:49:13Z' }),
+        r({ seq: 0, kind: 'genesis', name: 'selezione-cv', time: '12:46:13', hash: 'd3f52d6dc932', prev: '0'.repeat(64), iso: '2026-09-29T12:46:13Z', source: 'sigillo, alla creazione del sistema' })
+      ] },
+      prova: { id: 'prova-per-errore', title: 'prova-per-errore', receipts: [
+        r({ seq: 0, kind: 'genesis', name: 'prova-per-errore', time: '13:11:13', hash: '[impronta]', prev: '0'.repeat(64), iso: '2026-09-29T13:11:13Z', anchored: false, source: 'sigillo, alla creazione del sistema' })
+      ] }
+    };
+  }
+  kindStyle(kind) {
+    if (kind === 'decision') return { bg: '#efe9fb', color: '#6e3fc9', label: 'Decisione' };
+    if (kind === 'genesis') return { bg: '#ededf0', color: '#48484a', label: 'Apertura registro' };
+    if (kind === 'llm_call') return { bg: '#e2f4f4', color: '#0b6b6b', label: 'Modello' };
+    if (kind === 'agent_step') return { bg: '#ececf6', color: '#4a4a8c', label: 'Passo' };
+    return { bg: '#e5f0fc', color: '#0066cc', label: 'Strumento' };
+  }
+  outcomeStyle(o) {
+    if (o === 'blocked') return { word: 'bloccato', fg: '#8a5a00', bg: '#fbf0d9', k: 'warn' };
+    if (o === 'error') return { word: 'fallito', fg: '#b3261e', bg: '#fbe4e2', k: 'bad' };
+    if (o === 'unknown') return { word: 'esito sconosciuto', fg: '#8a5a00', bg: '#fbf0d9', k: 'warn' };
+    return { word: 'completato', fg: '#1b6e30', bg: '#e3f3e7', k: 'ok' };
+  }
+  where(provider) {
+    const local = ['ollama', 'vllm', 'llama.cpp', 'llamacpp'];
+    return local.indexOf((provider || '').toLowerCase()) >= 0 ? 'in locale, con ' + provider : provider;
+  }
+  sentence(r) {
+    if (r.kind === 'genesis') return 'Il sistema «' + r.name + '» ha aperto il registro.';
+    const ok = r.outcome === 'ok';
+    const ob = r.onBehalf ? ' per conto di «' + r.onBehalf + '»' : '';
+    let s;
+    if (r.kind === 'tool_call') s = 'L\'agente «' + r.agent + '» ' + (ok ? 'ha usato lo strumento' : 'ha tentato lo strumento') + ' «' + r.name + '»' + ob;
+    else if (r.kind === 'llm_call' && r.model) {
+      const local = ['ollama', 'vllm', 'llama.cpp', 'llamacpp'].indexOf(r.provider.toLowerCase()) >= 0 ? ' (locale)' : ' (' + r.provider + ')';
+      s = 'Il modello «' + r.model + '»' + local + ' ' + (ok ? 'ha generato una risposta' : 'non ha portato a termine la richiesta');
+    } else if (r.kind === 'decision') s = 'La decisione «' + r.name + '»' + ob + ' ' + (ok ? 'è stata presa' : 'è stata tentata');
+    else s = 'L\'agente «' + r.agent + '» ' + (ok ? 'ha eseguito il passo' : 'ha tentato il passo') + ' «' + r.name + '»' + ob;
+    return s + ' — ' + this.outcomeStyle(r.outcome).word + '.';
+  }
+  title(r) {
+    const ok = r.outcome === 'ok';
+    if (r.kind === 'genesis') return 'Registro aperto';
+    if (r.kind === 'tool_call') return (ok ? 'Ha usato «' : 'Ha tentato «') + r.name + '»';
+    if (r.kind === 'llm_call') return r.model ? 'Risposta da «' + r.model + '»' : 'Chiamata a «' + r.name + '»';
+    if (r.kind === 'decision') return 'Decisione «' + r.name + '»';
+    return 'Passo «' + r.name + '»';
+  }
+  sub(r) {
+    if (r.kind === 'genesis') return 'Apertura del registro di ' + r.name;
+    const parts = [r.agent];
+    if (r.kind === 'llm_call' && r.model) parts.push('modello ' + this.where(r.provider));
+    if (r.onBehalf) parts.push('per conto di ' + r.onBehalf);
+    if (r.file) parts.push(r.file);
+    return parts.join(' · ');
+  }
+  flags(r) {
+    const o = this.outcomeStyle(r.outcome);
+    return {
+      isTool: r.kind === 'tool_call', isModel: r.kind === 'llm_call', isStep: r.kind === 'agent_step',
+      isDecision: r.kind === 'decision', isGenesis: r.kind === 'genesis',
+      o_ok: o.k === 'ok', o_warn: o.k === 'warn', o_bad: o.k === 'bad', word: o.word, badgeFg: o.fg, badgeBg: o.bg
+    };
+  }
+  short(h) {
+    return h.length > 14 ? h.slice(0, 12) + '…' : (h.charAt(0) === '[' ? h : h + '…');
+  }
+  renderVals() {
+    const st = this.state || {};
+    const D = this.data();
+    const sysKey = D[st.sys] ? st.sys : 'acme';
+    const S = D[sysKey];
+    const all = S.receipts;
+    const selSeq = st.sel != null ? st.sel : all[0].seq;
+    const filter = st.filter || 'all';
+    const systems = ['acme', 'cv', 'prova'].map((k) => {
+      const on = k === sysKey;
+      return { title: D[k].title, count: D[k].receipts.length, current: on ? 'page' : 'false',
+        bg: on ? 'rgba(0,0,0,0.08)' : 'transparent', weight: on ? '600' : '400',
+        pick: () => this.setState({ sys: k, sel: D[k].receipts[0].seq, filter: 'all', tech: false }) };
+    });
+    const defs = [['all', 'Tutte'], ['tool_call', 'Strumenti'], ['llm_call', 'Modelli'], ['agent_step', 'Passi'], ['decision', 'Decisioni'], ['genesis', 'Apertura']];
+    const filters = defs.map((d) => {
+      const on = d[0] === filter;
+      const n = d[0] === 'all' ? all.length : all.filter((x) => x.kind === d[0]).length;
+      return { label: d[1], count: n, pressed: on ? 'true' : 'false', bg: on ? '#ffffff' : 'transparent',
+        shadow: on ? '0 1px 3px rgba(0,0,0,0.14)' : 'none', weight: on ? '600' : '500',
+        pick: () => this.setState({ filter: d[0] }) };
+    });
+    const visible = all.filter((x) => filter === 'all' || x.kind === filter);
+    const rows = visible.map((x) => {
+      const on = x.seq === selSeq;
+      const k = this.kindStyle(x.kind);
+      const f = this.flags(x);
+      return Object.assign(f, {
+        seq: x.seq, time: x.time, title: this.title(x), sub: this.sub(x), current: on ? 'true' : 'false',
+        notOk: x.outcome !== 'ok',
+        bg: on ? '#0a63d1' : 'transparent', fg: on ? '#ffffff' : '#1d1d1f',
+        subColor: on ? 'rgba(255,255,255,0.86)' : '#6e6e73',
+        iconBg: on ? 'rgba(255,255,255,0.2)' : k.bg, iconColor: on ? '#ffffff' : k.color,
+        badgeBg: on ? '#ffffff' : f.badgeBg,
+        pick: () => this.setState({ sel: x.seq })
+      });
+    });
+    const s = all.find((x) => x.seq === selSeq) || all[0];
+    const ks = this.kindStyle(s.kind);
+    const sel = Object.assign(this.flags(s), {
+      seq: s.seq, sentence: this.sentence(s), kindLabel: ks.label, kindBg: ks.bg, kindColor: ks.color,
+      hasAgent: !!s.agent, agent: s.agent, hasOnBehalf: !!s.onBehalf, onBehalf: s.onBehalf,
+      model: s.model, modelWhere: this.where(s.provider),
+      when: '29 set 2026, ' + s.time + ' UTC', source: s.source, iso: s.iso,
+      hasFile: !!s.file, file: s.file,
+      hash: this.short(s.hash),
+      prevLabel: s.seq === 0 ? 'Nessuna: è la prima' : 'Ricevuta n. ' + (s.seq - 1),
+      prev: s.seq === 0 ? '0000000000…' : this.short(s.prev),
+      anchored: s.anchored, anchorWord: s.anchored ? 'Ancorata' : 'In attesa',
+      anchorColor: s.anchored ? '#1b6e30' : '#8a5a00',
+      sig: s.sig, hasIO: s.kind !== 'genesis', inHash: s.inHash, outHash: s.outHash,
+      inLabel: s.kind === 'llm_call' ? 'Impronta del prompt' : 'Impronta input',
+      outLabel: s.kind === 'llm_call' ? 'Impronta della risposta' : 'Impronta output'
+    });
+    const n = all.length;
+    return {
+      systems: systems,
+      sys: { id: S.id, title: S.title, countLabel: n + (n === 1 ? ' ricevuta' : ' ricevute') },
+      filters: filters, rows: rows, isEmpty: rows.length === 0,
+      countLabel: rows.length + ' di ' + n,
+      sel: sel, tech: !!st.tech, techExpanded: st.tech ? 'true' : 'false',
+      techLabel: st.tech ? 'Nascondi i dettagli tecnici' : 'Mostra firma, chiave e impronte complete',
+      toggleTech: () => this.setState({ tech: !this.state.tech })
+    };
+  }
+}
+</script>
+</body>
+</html>
