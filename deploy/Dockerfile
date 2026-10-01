@@ -81,10 +81,15 @@ FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddf
 WORKDIR /app
 COPY --from=build /out/signer ./
 
-# The key lives on a volume mounted only here.
+# The key lives on a volume mounted only here, and so does the signer's state:
+# its record of every chain (state/), which the server can neither read nor
+# change. An installation from before that state existed builds it once with
+#   docker compose run --rm -v sigillo-data:/var/lib/sigillo signer \
+#     init-from-db --db /var/lib/sigillo/sigillo.db --state /var/lib/sigillo-key/state
+# (docs/DEPLOY-PRODUZIONE.md).
 RUN install -d -o node -g node /var/lib/sigillo-key /run/sigillo
 USER node
 ENV SIGILLO_KEY=/var/lib/sigillo-key/signer.key \
     SIGILLO_SIGNER_SOCKET=/run/sigillo/signer.sock
 ENTRYPOINT ["node", "dist/cli.js"]
-CMD ["serve", "--key", "/var/lib/sigillo-key/signer.key", "--socket", "/run/sigillo/signer.sock"]
+CMD ["serve", "--key", "/var/lib/sigillo-key/signer.key", "--socket", "/run/sigillo/signer.sock", "--state", "/var/lib/sigillo-key/state"]

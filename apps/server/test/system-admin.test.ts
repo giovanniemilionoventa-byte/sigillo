@@ -264,7 +264,7 @@ describe("M3: deleting", () => {
   });
 
   it("deletes an empty system with its checkpoint, token and API keys, and logs who and when", async () => {
-    const checkpoint = await store.createCheckpoint(EMPTY, "2026-09-26T09:00:00.000Z");
+    const checkpoint = await store.createCheckpoint(EMPTY);
     expect(checkpoint).not.toBeNull();
     await store.recordTimestamp(checkpoint?.id ?? 0, "https://freetsa.org/tsr", "MAM=", "2026-09-26T09:00:01.000Z");
     const keys = ApiKeyStore.open(databasePath);
@@ -357,7 +357,7 @@ describe("M3: the database itself enforces the rule, against any connection", ()
   });
 
   it("refuses to delete the checkpoints and tokens of a chain with real actions, log entry or not", async () => {
-    const checkpoint = await store.createCheckpoint(SYSTEM, "2026-09-26T09:30:00.000Z");
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     await store.recordTimestamp(checkpoint?.id ?? 0, "https://freetsa.org/tsr", "MAM=", "2026-09-26T09:30:01.000Z");
     const connection = raw();
     try {

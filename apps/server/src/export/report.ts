@@ -166,6 +166,31 @@ export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
     }
   }
 
+  heading("People and content");
+  document.text(
+    "No receipt holds a prompt, a tool argument or a result: only their SHA-256 digests. From " +
+      "receipt version 4 on, no receipt names a person either: whoever an action was for appears " +
+      "as a pseudonym token (psn_...), and the operator keeps who it stands for outside the record, " +
+      "where it can be erased. A digest computed by the server is salted: it cannot be traced back " +
+      "to short content by trying values, and it can be shown to match its content only with its nonce.",
+  );
+  document.moveDown(0.3);
+  const disclosed = verification.ok ? verification.summary : { subjects_disclosed: 0, openings_disclosed: 0 };
+  document.text(
+    disclosed.subjects_disclosed > 0
+      ? `On request, this file names the person behind ${disclosed.subjects_disclosed} pseudonym token(s), in ` +
+          "subjects.jsonl. That is the operator's statement when the file was exported, not part of the signed record."
+      : "This file names nobody: it carries no subjects.jsonl.",
+  );
+  document.moveDown(0.3);
+  document.text(
+    disclosed.openings_disclosed > 0
+      ? `On request, this file discloses the nonce of ${disclosed.openings_disclosed} salted digest(s), in ` +
+          "openings.jsonl: given the content, \"sigillo-verify open <this archive> <seq> <input|output> --text ...\" " +
+          "shows the digest is of it. Whoever holds this file can also test guesses of those contents."
+      : "This file discloses no nonce: none of its salted digests can be opened, or guessed, from it alone.",
+  );
+
   heading("How to verify this file yourself");
   document.text(
     "Do not take this report's word for anything. The archive contains everything needed to " +

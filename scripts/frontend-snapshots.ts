@@ -44,7 +44,8 @@ const PASSWORD = "password-di-prova";
 
 const directory = mkdtempSync(join(tmpdir(), "sigillo-frontend-preview-"));
 const databasePath = join(directory, "sigillo.db");
-const signer = createTestSigner();
+// The checkpoints' time is the signer's own: the same moment the checkpointer below used to give.
+const signer = createTestSigner({ now: () => new Date(at(40)) });
 const store = ReceiptStore.open(databasePath, signer);
 const keys = ApiKeyStore.open(databasePath);
 const tsa = createLocalTsa();

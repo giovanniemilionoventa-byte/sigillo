@@ -1,25 +1,49 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createHash, createPrivateKey, createPublicKey, type KeyObject, verify } from "node:crypto";
+import { createPrivateKey, createPublicKey, type KeyObject, verify } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  fromHex,
+  GENESIS_PREV_HASH,
   keyIdFromRawPublicKey,
   parseReceipt,
   publicKeyFromRaw,
   receiptHashHex,
+  receiptHash,
   verifyReceiptSignature,
+  type UnsignedReceipt,
 } from "@sigillo/core";
-import { SignerClient, SignerUnavailableError } from "../src/signer/client.js";
+import { SignerClient, SignerRefusedError, SignerUnavailableError } from "../src/signer/client.js";
 import { ReceiptStore } from "../src/storage/store.js";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const TSX = join(REPOSITORY_ROOT, "node_modules", ".bin", "tsx");
 const SIGNER_CLI = join(REPOSITORY_ROOT, "apps", "signer", "src", "cli.ts");
-const DIGEST = "74a67e081df5c321729640090e63ca95991f9657bfaab0af51e4504cc2056241";
+
+/** The real signer checks ts_received against its own clock, so these tests write at the time they run. */
+const now = (): string => new Date().toISOString();
+
+/** A genesis, which a signer accepts once for each system it has not seen. */
+function genesisOf(systemId: string): UnsignedReceipt {
+  const ts = now();
+  return {
+    v: 1,
+    system_id: systemId,
+    seq: 0,
+    ts_event: ts,
+    ts_received: ts,
+    actor: { agent: systemId },
+    action: { kind: "genesis", name: systemId },
+    input_hash: null,
+    output_hash: null,
+    outcome: "ok",
+    source: { type: "api" },
+    prev_hash: GENESIS_PREV_HASH,
+    key_id: "0000000000000000",
+  };
+}
 
 let directory: string;
 let keyPath: string;
@@ -77,7 +101,7 @@ beforeEach(async () => {
   const keygen = await runSignerCli(["keygen", "--key", keyPath], /public_key_base64/);
   killSigner(keygen);
   daemon = await runSignerCli(
-    ["serve", "--key", keyPath, "--socket", socketPath],
+    ["serve", "--key", keyPath, "--socket", socketPath, "--state", join(directory, "signer-state")],
     /listening on/,
   );
 }, 60_000);
@@ -106,15 +130,16 @@ describe("a server talking to a signer in another process", () => {
     }
   });
 
-  it("gets signatures that verify under the signer's public key", async () => {
+  it("gets signatures over the receipt hash that verify under the signer's public key", async () => {
     const client = await SignerClient.connect(socketPath);
     try {
-      const signature = await client.sign(fromHex(DIGEST));
+      const receipt = { ...genesisOf("acme-support-bot"), key_id: client.keyId };
+      const signature = await client.signReceipt(receipt);
       expect(signature).toMatch(/^[A-Za-z0-9+/]{86}==$/);
       const announced = publicKeyFromRaw(
         new Uint8Array(Buffer.from(client.publicKeyBase64, "base64")),
       );
-      expect(verify(null, fromHex(DIGEST), announced, Buffer.from(signature, "base64"))).toBe(true);
+      expect(verify(null, receiptHash(receipt), announced, Buffer.from(signature, "base64"))).toBe(true);
       // The key the signer announced really is the key in its key file.
       expect(announced.export({ format: "der", type: "spki" })).toEqual(
         publicKeyFromKeyFile().export({ format: "der", type: "spki" }),
@@ -124,11 +149,14 @@ describe("a server talking to a signer in another process", () => {
     }
   });
 
-  it("refuses to ask for a signature over anything but a 32-byte hash", async () => {
+  it("gets a refusal, not a signature, for a receipt that is not the next of its chain", async () => {
     const client = await SignerClient.connect(socketPath);
     try {
-      await expect(client.sign(new Uint8Array(31))).rejects.toThrow(/32 bytes/);
-      await expect(client.sign(new Uint8Array(64))).rejects.toThrow(/32 bytes/);
+      const receipt = { ...genesisOf("acme-support-bot"), key_id: client.keyId };
+      await client.signReceipt(receipt);
+      const refusal = client.signReceipt({ ...receipt, action: { kind: "genesis", name: "a second genesis" } });
+      await expect(refusal).rejects.toBeInstanceOf(SignerRefusedError);
+      await expect(refusal).rejects.toMatchObject({ code: "sequence" });
     } finally {
       client.close();
     }
@@ -138,12 +166,12 @@ describe("a server talking to a signer in another process", () => {
     const client = await SignerClient.connect(socketPath);
     const store = ReceiptStore.open(join(directory, "sigillo.db"), client);
     try {
-      await store.createSystem("acme-support-bot", "2026-03-29T14:30:00.000Z");
+      await store.createSystem("acme-support-bot", now());
       for (let index = 0; index < 5; index += 1) {
         await store.append({
           system_id: "acme-support-bot",
-          ts_event: "2026-03-29T14:30:01.000Z",
-          ts_received: "2026-03-29T14:30:01.005Z",
+          ts_event: now(),
+          ts_received: now(),
           actor: { agent: "planner" },
           action: { kind: "tool_call", name: `call-${index}` },
           input_hash: null,
@@ -182,15 +210,15 @@ describe("a server talking to a signer in another process", () => {
     const client = await SignerClient.connect(socketPath);
     const store = ReceiptStore.open(join(directory, "broken.db"), client);
     try {
-      await store.createSystem("acme-support-bot", "2026-03-29T14:30:00.000Z");
+      await store.createSystem("acme-support-bot", now());
       killSigner(daemon);
       daemon = undefined;
 
       await expect(
         store.append({
           system_id: "acme-support-bot",
-          ts_event: "2026-03-29T14:30:01.000Z",
-          ts_received: "2026-03-29T14:30:01.005Z",
+          ts_event: now(),
+          ts_received: now(),
           actor: { agent: "planner" },
           action: { kind: "tool_call", name: "after-the-signer-died" },
           input_hash: null,
@@ -215,21 +243,25 @@ describe("a signer that restarts under a running server", () => {
   // the same key file, the same socket path.
   const restartSigner = async (key = keyPath): Promise<void> => {
     killSigner(daemon);
-    daemon = await runSignerCli(["serve", "--key", key, "--socket", socketPath], /listening on/);
+    daemon = await runSignerCli(
+      ["serve", "--key", key, "--socket", socketPath, "--state", join(directory, "signer-state")],
+      /listening on/,
+    );
   };
 
   it("reconnects on the next request, and signs again with the same key", async () => {
     const client = await SignerClient.connect(socketPath);
     try {
-      await client.sign(fromHex(DIGEST));
+      await client.signReceipt({ ...genesisOf("first"), key_id: client.keyId });
       killSigner(daemon);
       daemon = undefined;
-      await expect(client.sign(fromHex(DIGEST))).rejects.toBeInstanceOf(SignerUnavailableError);
+      const second = { ...genesisOf("second"), key_id: client.keyId };
+      await expect(client.signReceipt(second)).rejects.toBeInstanceOf(SignerUnavailableError);
       expect(await client.healthy()).toBe(false);
 
       await restartSigner();
-      const signature = await client.sign(fromHex(DIGEST));
-      expect(verify(null, fromHex(DIGEST), publicKeyFromKeyFile(), Buffer.from(signature, "base64"))).toBe(true);
+      const signature = await client.signReceipt(second);
+      expect(verify(null, receiptHash(second), publicKeyFromKeyFile(), Buffer.from(signature, "base64"))).toBe(true);
       expect(await client.healthy()).toBe(true);
     } finally {
       client.close();
@@ -246,7 +278,7 @@ describe("a signer that restarts under a running server", () => {
 
       // Signatures under a key the server never announced would be refused by
       // the store anyway; the client says why, and does not adopt the new key.
-      await expect(client.sign(fromHex(DIGEST))).rejects.toThrow(/different key/);
+      await expect(client.head("acme-support-bot")).rejects.toThrow(/different key/);
       expect(client.keyId).toBe(originalKeyId);
       expect(await client.healthy()).toBe(false);
     } finally {
@@ -257,7 +289,7 @@ describe("a signer that restarts under a running server", () => {
   it("stays closed once its owner has closed it", async () => {
     const client = await SignerClient.connect(socketPath);
     client.close();
-    await expect(client.sign(fromHex(DIGEST))).rejects.toBeInstanceOf(SignerUnavailableError);
+    await expect(client.head("acme-support-bot")).rejects.toBeInstanceOf(SignerUnavailableError);
     expect(await client.healthy()).toBe(false);
   }, 30_000);
 });
@@ -274,8 +306,6 @@ describe("a signer that stalls past the timeout", () => {
   const thaw = (): void => {
     if (daemon?.pid !== undefined) process.kill(-daemon.pid, "SIGCONT");
   };
-  const digestOf = (text: string): Uint8Array =>
-    new Uint8Array(createHash("sha256").update(text).digest());
   const announcedKey = (client: SignerClient): KeyObject =>
     publicKeyFromRaw(new Uint8Array(Buffer.from(client.publicKeyBase64, "base64")));
   const settle = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -283,41 +313,42 @@ describe("a signer that stalls past the timeout", () => {
   it("never hands a reply that arrived too late to the request after it", async () => {
     const client = await SignerClient.connect(socketPath, { timeoutMs: 1000 });
     const key = announcedKey(client);
-    const first = digestOf("receipt A");
-    const second = digestOf("receipt B");
-    const third = digestOf("receipt C");
+    const [first, second, third] = ["system-a", "system-b", "system-c"].map((id) => ({
+      ...genesisOf(id),
+      key_id: client.keyId,
+    })) as [UnsignedReceipt, UnsignedReceipt, UnsignedReceipt];
     try {
       freeze();
       const started = Date.now();
-      await expect(client.sign(first)).rejects.toBeInstanceOf(SignerUnavailableError);
+      await expect(client.signReceipt(first)).rejects.toBeInstanceOf(SignerUnavailableError);
       // It fails within its own deadline, not whenever the signer wakes up.
       expect(Date.now() - started).toBeLessThan(3000);
 
-      const pending = client.sign(second);
+      const pending = client.signReceipt(second);
       await settle(100);
       thaw();
       // The signer now answers A (late) and then B. B must get B's signature.
       const signature = await pending;
-      expect(verify(null, second, key, Buffer.from(signature, "base64"))).toBe(true);
-      expect(verify(null, first, key, Buffer.from(signature, "base64"))).toBe(false);
+      expect(verify(null, receiptHash(second), key, Buffer.from(signature, "base64"))).toBe(true);
+      expect(verify(null, receiptHash(first), key, Buffer.from(signature, "base64"))).toBe(false);
 
       // And the client is still usable: nothing from A lingers to meet C.
-      const after = await client.sign(third);
-      expect(verify(null, third, key, Buffer.from(after, "base64"))).toBe(true);
+      const after = await client.signReceipt(third);
+      expect(verify(null, receiptHash(third), key, Buffer.from(after, "base64"))).toBe(true);
     } finally {
       thaw();
       client.close();
     }
   }, 30_000);
 
-  it("stores no receipt with a wrong signature when a write times out and the next one succeeds", async () => {
+  it("stores no receipt with a wrong signature when a write times out, and recovers the one the signer did sign", async () => {
     const client = await SignerClient.connect(socketPath, { timeoutMs: 1000 });
     const store = ReceiptStore.open(join(directory, "stalled.db"), client);
     const write = (name: string) =>
       store.append({
         system_id: "acme-support-bot",
-        ts_event: "2026-03-29T14:30:01.000Z",
-        ts_received: "2026-03-29T14:30:01.005Z",
+        ts_event: now(),
+        ts_received: now(),
         actor: { agent: "planner" },
         action: { kind: "tool_call", name },
         input_hash: null,
@@ -326,7 +357,7 @@ describe("a signer that stalls past the timeout", () => {
         source: { type: "sdk" },
       });
     try {
-      await store.createSystem("acme-support-bot", "2026-03-29T14:30:00.000Z");
+      await store.createSystem("acme-support-bot", now());
 
       freeze();
       await expect(write("timed-out")).rejects.toBeInstanceOf(SignerUnavailableError);
@@ -335,12 +366,17 @@ describe("a signer that stalls past the timeout", () => {
       thaw();
       await next;
 
+      // The signer did sign "timed-out" once it woke, and remembers it; the
+      // next write was refused its position, the server compared heads, and
+      // stored that receipt before writing the next one after it.
       const key = announcedKey(client);
       const chain = store.readChain("acme-support-bot");
       expect(chain.map((receipt) => [receipt.seq, receipt.action.name])).toEqual([
         [0, "acme-support-bot"],
-        [1, "written-after"],
+        [1, "timed-out"],
+        [2, "written-after"],
       ]);
+      expect(store.adminLog().map((entry) => entry.action)).toEqual(["signer.recovered"]);
       for (const receipt of chain) {
         expect(verifyReceiptSignature(receipt, key), `seq ${receipt.seq}`).toBe(true);
       }

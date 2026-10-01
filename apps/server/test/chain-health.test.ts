@@ -65,14 +65,14 @@ describe("a freshly created system", () => {
   });
 
   it("is yellow when a checkpoint exists but has no timestamp yet", async () => {
-    await store.createCheckpoint(SYSTEM, NOW);
+    await store.createCheckpoint(SYSTEM);
     const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS);
     monitor.check();
     expect(monitor.statusFor(SYSTEM, new Date(NOW)).status).toBe("yellow");
   });
 
   it("is green once anchored and recently active", async () => {
-    const checkpoint = await store.createCheckpoint(SYSTEM, NOW);
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint !== null) {
       await store.recordTimestamp(checkpoint.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), NOW);
     }
@@ -84,7 +84,7 @@ describe("a freshly created system", () => {
   });
 
   it("turns yellow again once anchored but stale for too long", async () => {
-    const checkpoint = await store.createCheckpoint(SYSTEM, NOW);
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint !== null) {
       await store.recordTimestamp(checkpoint.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), NOW);
     }
@@ -121,7 +121,7 @@ describe("a freshly created system", () => {
     await store.append(event({ action: { kind: "tool_call", name: "call-2" } }));
     monitor.check();
 
-    const checkpoint = await store.createCheckpoint(SYSTEM, NOW);
+    const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint !== null) {
       await store.recordTimestamp(checkpoint.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), NOW);
     }

@@ -68,7 +68,8 @@ class EndToEndTest(unittest.TestCase):
         self.assertEqual(oct(self.key_path.stat().st_mode & 0o777), "0o600")
 
         self._spawn(["node", str(SIGNER_CLI), "serve", "--key", str(self.key_path),
-                     "--socket", str(self.socket_path)])
+                     "--socket", str(self.socket_path),
+                     "--state", str(self.work / "signer-state")])
         self._wait_for(lambda: self.socket_path.exists(), "the signer's socket")
 
         self._run(["node", str(SERVER_CLI), "system", "create", SYSTEM,

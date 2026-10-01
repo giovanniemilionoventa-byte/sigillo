@@ -375,14 +375,17 @@ describe("a candidate who asks to be forgotten", () => {
 describe("a chain started before version 4", () => {
   it("keeps its v2 receipts valid, with v4 receipts after them, in the same export", async () => {
     // A v2 receipt as the previous server wrote it, with an identifier in the
-    // clear and a plain digest, signed by the same key and put in the table directly.
+    // clear and a plain digest: signed by the signer itself (which accepts
+    // every receipt version and now remembers it as the chain's head), and put
+    // in the table directly, as the earlier server version would have.
     const genesis = chain()[0] as Receipt;
     const unsigned: UnsignedReceiptV2 = {
       v: RECEIPT_VERSION_2,
       system_id: SYSTEM,
       seq: 1,
-      ts_event: "2026-09-30T10:00:00.000Z",
-      ts_received: "2026-09-30T10:00:00.000Z",
+      // After the genesis: the signer refuses a ts_received earlier than its head's.
+      ts_event: new Date(clock).toISOString(),
+      ts_received: new Date(clock).toISOString(),
       actor: { agent: "agente-cv", on_behalf_of: "mario.bianchi" },
       action: { kind: "tool_call", name: "leggi_curriculum" },
       input_hash: hashCanonicalJson("score: 5"),
@@ -394,7 +397,7 @@ describe("a chain started before version 4", () => {
       artifacts: [{ role: "input", label: "curriculum", media_type: "text/plain", sha256: "e".repeat(64) }],
     };
     const bytes = canonicalReceiptBytes(unsigned);
-    const sig = await signer.sign(sha256(bytes));
+    const sig = await signer.signReceipt(unsigned);
     const raw = new (await import("better-sqlite3")).default(databasePath);
     raw
       .prepare(

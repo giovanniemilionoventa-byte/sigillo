@@ -14,6 +14,7 @@ import {
   receiptHash,
   type Receipt,
   type ReceiptV4,
+  type UnsignedReceipt,
 } from "@sigillo/core";
 import { normaliseSubjectIdentifier, ReceiptStore, type ChainEvent } from "../src/storage/store.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
@@ -196,7 +197,7 @@ describe("erasing a subject", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const slow = { ...signer, sign: async (digest: Uint8Array) => (await gate, signer.sign(digest)) };
+    const slow = { ...signer, signReceipt: async (receipt: UnsignedReceipt) => (await gate, signer.signReceipt(receipt)) };
     store = ReceiptStore.open(databasePath, slow);
 
     const pending = store.append(event({ raw_input: { value: "score: 7" } }));

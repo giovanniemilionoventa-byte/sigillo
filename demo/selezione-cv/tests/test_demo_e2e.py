@@ -69,7 +69,8 @@ class DemoEndToEndTest(unittest.TestCase):
 
         self._run(["node", str(SIGNER_CLI), "keygen", "--key", str(self.key_path)])
         self._spawn(["node", str(SIGNER_CLI), "serve", "--key", str(self.key_path),
-                     "--socket", str(self.socket_path)])
+                     "--socket", str(self.socket_path),
+                     "--state", str(self.work / "signer-state")])
         self._wait_for(lambda: self.socket_path.exists(), "the signer's socket")
 
         self._run(["node", str(SERVER_CLI), "system", "create", SYSTEM,

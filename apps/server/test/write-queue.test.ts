@@ -40,8 +40,10 @@ beforeEach(async () => {
   const slow: SigningService = {
     keyId: real.keyId,
     publicKeyBase64: real.publicKeyBase64,
-    sign: async (digest) => {
-      const signature = await real.sign(digest);
+    checkpoint: (systemId) => real.checkpoint(systemId),
+    head: (systemId) => real.head(systemId),
+    signReceipt: async (receipt) => {
+      const signature = await real.signReceipt(receipt);
       if (!holding) return signature;
       return new Promise<string>((resolve, reject) => {
         held.push({ release: () => resolve(signature), fail: () => reject(new Error("the signer gave up")) });
@@ -51,7 +53,7 @@ beforeEach(async () => {
   store = ReceiptStore.open(databasePath, slow);
   await store.createSystem(SYSTEM, "2026-03-29T14:00:00.000Z");
   await store.append(event(1));
-  await store.createCheckpoint(SYSTEM, "2026-03-29T14:10:00.000Z");
+  await store.createCheckpoint(SYSTEM);
 });
 
 afterEach(() => {

@@ -56,8 +56,12 @@ the server has already accepted keeps working, so an agent sharing that
 address carries on.
 
 A request the server cannot complete because the signer is not reachable gets
-`503`, which OTLP exporters retry. Any other failure inside the server gets
-`500` with `{"error":"internal error"}` and nothing more.
+`503`, which OTLP exporters retry. So does one the signer refused to sign: a
+receipt time too far from the signer's clock, or a chain on which the signer
+and the database disagree (the system is then red in the web view, and the
+detail is in the administrative log; see SECURITY.md, "The signer's own record
+of every chain"). Any other failure inside the server gets `500` with
+`{"error":"internal error"}` and nothing more.
 
 ## `POST /v1/traces` — OpenTelemetry ingest
 
@@ -254,7 +258,12 @@ that ever touches a key.
 ```sh
 # once, where the key will live
 sigillo-signer keygen --key /var/lib/sigillo/signer.key
-sigillo-signer serve  --key /var/lib/sigillo/signer.key --socket /run/sigillo/signer.sock
+sigillo-signer serve  --key /var/lib/sigillo/signer.key --socket /run/sigillo/signer.sock \
+  --state /var/lib/sigillo/signer-state [--clock-tolerance-seconds 300]
+
+# once only, to upgrade a database whose chains predate the signer's own state,
+# with the server and the signer stopped
+sigillo-signer init-from-db --db /var/lib/sigillo/sigillo.db --state /var/lib/sigillo/signer-state
 
 # register a system and open its chain, then issue a key for it
 sigillo-server system create acme-support-bot --db /var/lib/sigillo/sigillo.db \

@@ -18,6 +18,7 @@ import {
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { buildServer } from "../src/http/server.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
+import { initFromDatabase } from "../../signer/src/index.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
 
 /**
@@ -237,7 +238,15 @@ describe("a database created before fase 9", () => {
     );
     old.close();
 
-    const migrated = ReceiptStore.open(databasePath, createTestSigner());
+    // The schema migration happens on the first open with the same key; the
+    // signer then learns the chain once, from the database, the way an
+    // installation from before the signer kept its own state is upgraded.
+    const key = { privateKey, publicKey, keyId, publicKeyBase64: Buffer.from(raw).toString("base64") };
+    const stateDir = join(directory, "signer-state");
+    ReceiptStore.open(databasePath, createTestSigner({ key, stateDir })).close();
+    initFromDatabase({ databasePath, stateDir, actor: "test", now: () => new Date("2020-01-02T00:00:00.000Z") });
+
+    const migrated = ReceiptStore.open(databasePath, createTestSigner({ key, stateDir }));
     try {
       // Opened without throwing, and the row from before the migration is
       // exactly as it was.
