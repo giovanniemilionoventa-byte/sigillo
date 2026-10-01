@@ -23,6 +23,8 @@ import unicodedata
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 VECTORS = ROOT / "packages" / "core" / "test" / "vectors.json"
 TEXT_VECTORS = ROOT / "packages" / "core" / "test" / "text-vectors.json"
+MERKLE_VECTORS = ROOT / "packages" / "core" / "test" / "merkle-vectors.json"
+INVALID_VECTORS = ROOT / "packages" / "core" / "test" / "invalid-vectors.json"
 
 GENESIS_PREV_HASH = "0" * 64
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -190,6 +192,66 @@ def check_shape(name, receipt):
         check(receipt.get("prev_hash") == GENESIS_PREV_HASH, where + "seq 0 must carry 64 zeros as prev_hash")
 
 
+# RFC 6962 section 2.1, written again here rather than imported from
+# gen_merkle_vectors.py, so that the file it wrote is checked by other code.
+def merkle_root(leaves):
+    if not leaves:
+        return hashlib.sha256(b"").digest()
+    if len(leaves) == 1:
+        return hashlib.sha256(b"\x00" + leaves[0]).digest()
+    k = 1
+    while k * 2 < len(leaves):
+        k *= 2
+    return hashlib.sha256(b"\x01" + merkle_root(leaves[:k]) + merkle_root(leaves[k:])).digest()
+
+
+def check_merkle_vectors():
+    """Every root, and every frontier the signer would keep: one subtree root
+    per set bit of the size, largest first, folding back into the root."""
+    document = json.loads(MERKLE_VECTORS.read_text(encoding="utf-8"))
+    entries = [bytes.fromhex(entry) for entry in document["entries"]]
+    for item in document["sizes"]:
+        size = item["size"]
+        leaves = entries[:size]
+        root = merkle_root(leaves)
+        check(root.hex() == item["root"], f"merkle size {size}: root {root.hex()} differs from {item['root']}")
+        nodes, start = [], 0
+        for bit in reversed(range(size.bit_length())):
+            if size & (1 << bit):
+                nodes.append(merkle_root(leaves[start:start + (1 << bit)]))
+                start += 1 << bit
+        check(
+            [node.hex() for node in nodes] == item.get("frontier"),
+            f"merkle size {size}: frontier differs from the recorded one",
+        )
+        folded = nodes[-1] if nodes else hashlib.sha256(b"").digest()
+        for node in reversed(nodes[:-1]):
+            folded = hashlib.sha256(b"\x01" + node + folded).digest()
+        check(folded == root, f"merkle size {size}: the frontier does not fold back into the root")
+    return len(document["sizes"])
+
+
+def check_invalid_vectors(vectors):
+    """Each case must be refused by check_shape: the same rules, read from
+    FORMAT.md, that accept every valid vector."""
+    document = json.loads(INVALID_VECTORS.read_text(encoding="utf-8"))
+    by_name = {vector["name"]: vector["receipt"] for vector in vectors}
+    for case in document["cases"]:
+        base = by_name.get(case["base"])
+        check(base is not None, f"invalid {case['name']}: no vector named {case['base']}")
+        if base is None:
+            continue
+        receipt = {**base, **case.get("set", {})}
+        for key in case.get("remove", []):
+            receipt.pop(key, None)
+        before = len(failures)
+        check_shape(case["name"], receipt)
+        refused = len(failures) > before
+        del failures[before:]
+        check(refused, f"invalid {case['name']}: accepted, but every implementation must refuse it")
+    return len(document["cases"])
+
+
 def main():
     document = json.loads(VECTORS.read_text(encoding="utf-8"))
     vectors = document["vectors"]
@@ -227,6 +289,8 @@ def main():
         seen_hashes[digest] = name
 
     text_vectors = check_text_vectors()
+    merkle_sizes = check_merkle_vectors()
+    invalid = check_invalid_vectors(vectors)
 
     if failures:
         print(f"crosscheck: {len(failures)} problem(s)", file=sys.stderr)
@@ -234,9 +298,9 @@ def main():
             print(f"  {failure}", file=sys.stderr)
         return 1
     print(
-        f"crosscheck: ok, {len(vectors)} receipt vectors, {len(salted)} salted digests and "
-        f"{text_vectors} sigillo-text/1 vectors "
-        "re-derived independently in Python"
+        f"crosscheck: ok, {len(vectors)} receipt vectors, {len(salted)} salted digests, "
+        f"{text_vectors} sigillo-text/1 vectors and {merkle_sizes} Merkle roots and frontiers "
+        f"re-derived, and {invalid} invalid receipts refused, independently in Python"
     )
     return 0
 

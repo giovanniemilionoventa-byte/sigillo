@@ -24,7 +24,7 @@ import {
 
 interface VectorFile {
   entries: string[];
-  sizes: { size: number; root: string }[];
+  sizes: { size: number; root: string; frontier: string[] }[];
 }
 
 const vectors = JSON.parse(
@@ -56,6 +56,16 @@ describe("a Merkle frontier", () => {
     for (const { size, root } of vectors.sizes) {
       const entries = vectors.entries.slice(0, size).map((hex) => fromHex(hex));
       expect(toHex(frontierRoot(frontierOf(entries))), `size ${size}`).toBe(root);
+    }
+  });
+
+  it("holds the subtree roots derived independently in Python, sizes 0 to 17", () => {
+    // scripts/gen_merkle_vectors.py slices the entries at each set bit of the
+    // size and hashes each slice whole; this builds the same nodes by
+    // appending one entry at a time.
+    for (const { size, frontier } of vectors.sizes) {
+      const entries = vectors.entries.slice(0, size).map((hex) => fromHex(hex));
+      expect(serializeFrontier(frontierOf(entries)), `size ${size}`).toEqual({ size, nodes: frontier });
     }
   });
 

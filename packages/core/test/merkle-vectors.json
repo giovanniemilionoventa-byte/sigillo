@@ -1,6 +1,6 @@
 {
   "format": "sigillo Merkle test vectors, RFC 6962",
-  "note": "entry(i) = SHA-256('entry-<i>'), standing in for a receipt hash. leaf = SHA-256(0x00 || entry), internal node = SHA-256(0x01 || left || right), and a tree of n entries splits at the largest power of two below n. proofs[i] is the RFC 6962 audit path for entry i: sibling hashes from the leaf upwards, with no side markers, because the sides follow from the index and the size.",
+  "note": "entry(i) = SHA-256('entry-<i>'), standing in for a receipt hash. leaf = SHA-256(0x00 || entry), internal node = SHA-256(0x01 || left || right), and a tree of n entries splits at the largest power of two below n. proofs[i] is the RFC 6962 audit path for entry i: sibling hashes from the leaf upwards, with no side markers, because the sides follow from the index and the size. frontier is the roots of the perfect subtrees the tree splits into, one per set bit of the size, largest first: the signer's state of a chain.",
   "entries": [
     "f12f4ca1e8e6c6e3605fc3d380966849c0ea48d6fb9e0b8b136069814c73dc32",
     "5e2d5d1e58e94d7607e0745cd3e612c4a358fc93f37fc5ab1fed8d04bbf7ce77",
@@ -25,7 +25,8 @@
       "size": 0,
       "root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "leaf_hashes": [],
-      "proofs": []
+      "proofs": [],
+      "frontier": []
     },
     {
       "size": 1,
@@ -35,6 +36,9 @@
       ],
       "proofs": [
         []
+      ],
+      "frontier": [
+        "8fc4565a030e7b984be355c138ed6411034ee100844784d733671db6048942cc"
       ]
     },
     {
@@ -51,6 +55,9 @@
         [
           "8fc4565a030e7b984be355c138ed6411034ee100844784d733671db6048942cc"
         ]
+      ],
+      "frontier": [
+        "ec41137f68d8e549730e6534038dd1a592e2886d9baf6fe5c7cfdecc8091a4b1"
       ]
     },
     {
@@ -73,6 +80,10 @@
         [
           "ec41137f68d8e549730e6534038dd1a592e2886d9baf6fe5c7cfdecc8091a4b1"
         ]
+      ],
+      "frontier": [
+        "ec41137f68d8e549730e6534038dd1a592e2886d9baf6fe5c7cfdecc8091a4b1",
+        "5ee80a55110ef9ca07c485651efdc161dd039f3ddc513cefb12063697255ff1f"
       ]
     },
     {
@@ -101,6 +112,9 @@
           "5ee80a55110ef9ca07c485651efdc161dd039f3ddc513cefb12063697255ff1f",
           "ec41137f68d8e549730e6534038dd1a592e2886d9baf6fe5c7cfdecc8091a4b1"
         ]
+      ],
+      "frontier": [
+        "83a15238d38b2c8c40b9e0648e563a7333ed0bc031152d2dfaf08cd6b4b68a8c"
       ]
     },
     {
@@ -137,6 +151,10 @@
         [
           "83a15238d38b2c8c40b9e0648e563a7333ed0bc031152d2dfaf08cd6b4b68a8c"
         ]
+      ],
+      "frontier": [
+        "83a15238d38b2c8c40b9e0648e563a7333ed0bc031152d2dfaf08cd6b4b68a8c",
+        "9a33cea529849e5a505fc891db51d4396851878c954107309a87b64f4f877983"
       ]
     },
     {
@@ -179,6 +197,10 @@
           "9a33cea529849e5a505fc891db51d4396851878c954107309a87b64f4f877983",
           "83a15238d38b2c8c40b9e0648e563a7333ed0bc031152d2dfaf08cd6b4b68a8c"
         ]
+      ],
+      "frontier": [
+        "83a15238d38b2c8c40b9e0648e563a7333ed0bc031152d2dfaf08cd6b4b68a8c",
+        "0cdad8efd51645dd06a359ddcc59df37897d34afbd77f487eb13ffd2ba579fe8"
       ]
     },
     {
@@ -228,6 +250,11 @@
           "0cdad8efd51645dd06a359ddcc59df37897d34afbd77f487eb13ffd2ba579fe8",
           "83a15238d38b2c8c40b9e0648e563a7333ed0bc031152d2dfaf08cd6b4b68a8c"
         ]
+      ],
+      "frontier": [
+        "83a15238d38b2c8c40b9e0648e563a7333ed0bc031152d2dfaf08cd6b4b68a8c",
+        "0cdad8efd51645dd06a359ddcc59df37897d34afbd77f487eb13ffd2ba579fe8",
+        "af37d92ec6580b6174f2d58d0774f8877079bfb134f722c136428d6e34b35c96"
       ]
     },
     {
@@ -284,6 +311,9 @@
           "0cdad8efd51645dd06a359ddcc59df37897d34afbd77f487eb13ffd2ba579fe8",
           "83a15238d38b2c8c40b9e0648e563a7333ed0bc031152d2dfaf08cd6b4b68a8c"
         ]
+      ],
+      "frontier": [
+        "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c"
       ]
     },
     {
@@ -352,6 +382,10 @@
         [
           "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c"
         ]
+      ],
+      "frontier": [
+        "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c",
+        "c29e56a7373b4afb867f0ce5667cd13ee530e71a7c6fba4617696e56b56e2355"
       ]
     },
     {
@@ -426,6 +460,10 @@
           "c29e56a7373b4afb867f0ce5667cd13ee530e71a7c6fba4617696e56b56e2355",
           "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c"
         ]
+      ],
+      "frontier": [
+        "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c",
+        "00a6cd1ae81c196b837fb48af010b741d5521b760e96415aeecbe479e5baa4ed"
       ]
     },
     {
@@ -507,6 +545,11 @@
           "00a6cd1ae81c196b837fb48af010b741d5521b760e96415aeecbe479e5baa4ed",
           "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c"
         ]
+      ],
+      "frontier": [
+        "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c",
+        "00a6cd1ae81c196b837fb48af010b741d5521b760e96415aeecbe479e5baa4ed",
+        "e3863815abd66d79914271e41c029556d481d3b0e37e8dc8f14897fbb1dbffdf"
       ]
     },
     {
@@ -595,6 +638,10 @@
           "00a6cd1ae81c196b837fb48af010b741d5521b760e96415aeecbe479e5baa4ed",
           "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c"
         ]
+      ],
+      "frontier": [
+        "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c",
+        "ed46ddee3b00e7905ccb3842d9746254d2e9d6ffd49e447c39bef506f2a8aca1"
       ]
     },
     {
@@ -692,6 +739,11 @@
           "ed46ddee3b00e7905ccb3842d9746254d2e9d6ffd49e447c39bef506f2a8aca1",
           "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c"
         ]
+      ],
+      "frontier": [
+        "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c",
+        "ed46ddee3b00e7905ccb3842d9746254d2e9d6ffd49e447c39bef506f2a8aca1",
+        "a68e824ace71c01ab154f04c5734d6709dffd7d64387a31af01507c47857e7c9"
       ]
     },
     {
@@ -796,6 +848,11 @@
           "ed46ddee3b00e7905ccb3842d9746254d2e9d6ffd49e447c39bef506f2a8aca1",
           "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c"
         ]
+      ],
+      "frontier": [
+        "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c",
+        "ed46ddee3b00e7905ccb3842d9746254d2e9d6ffd49e447c39bef506f2a8aca1",
+        "977273ef10f577f1471016306ce5997bd0f48fa934b026a9fd7fb95ca881b72f"
       ]
     },
     {
@@ -908,6 +965,12 @@
           "ed46ddee3b00e7905ccb3842d9746254d2e9d6ffd49e447c39bef506f2a8aca1",
           "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c"
         ]
+      ],
+      "frontier": [
+        "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c",
+        "ed46ddee3b00e7905ccb3842d9746254d2e9d6ffd49e447c39bef506f2a8aca1",
+        "977273ef10f577f1471016306ce5997bd0f48fa934b026a9fd7fb95ca881b72f",
+        "36f731975128a54ccd63f9ba0fc6b35c74d3849a47d9e4030c81fb68b4ca937a"
       ]
     },
     {
@@ -1028,6 +1091,9 @@
           "ed46ddee3b00e7905ccb3842d9746254d2e9d6ffd49e447c39bef506f2a8aca1",
           "e7455cb4779d9c297b0c7a39ef44e19030561bbde40ea7167575bb9fcc7a232c"
         ]
+      ],
+      "frontier": [
+        "f19e19847361c36e96fd3992da79d9b291610f9ab3e3513d3c97da810ecb5203"
       ]
     },
     {
@@ -1168,6 +1234,10 @@
         [
           "f19e19847361c36e96fd3992da79d9b291610f9ab3e3513d3c97da810ecb5203"
         ]
+      ],
+      "frontier": [
+        "f19e19847361c36e96fd3992da79d9b291610f9ab3e3513d3c97da810ecb5203",
+        "b00574f2f4fcdcf31b753876754dd74ad856499f0609e96e5ca0e8a2772e518e"
       ]
     }
   ]
