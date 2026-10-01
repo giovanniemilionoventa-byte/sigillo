@@ -49,7 +49,6 @@ export const UI = {
   home: {
     title: "sigillo",
     heading: "Il registro",
-    eyebrow: "le tre domande",
     q1: "È tutto a posto?",
     q2: "Cosa ha fatto l'AI?",
     q3: "Mi prepari le prove?",
@@ -68,7 +67,6 @@ export const UI = {
     },
     systemsCount: (count: number): string => `${count} ${count === 1 ? "sistema" : "sistemi"}`,
     actionsCount: (count: number): string => `${count} ${count === 1 ? "azione" : "azioni"}`,
-    seeHistory: "vedi tutta la cronologia",
     chooseSystem: "Sistema",
     fromDate: "Dal",
     toDate: "Al",
@@ -151,6 +149,7 @@ export const UI = {
       none: "nessuna azione ancora",
     },
     createTitle: "Crea un nuovo sistema",
+    newSystem: "Nuovo sistema",
     nameLabel: "Identificativo del sistema",
     namePlaceholder: "acme-support-bot",
     displayNameLabel: "Nome mostrato (facoltativo)",
@@ -211,7 +210,6 @@ export const UI = {
     confirmMismatch: "Il testo scritto non corrisponde allo pseudonimo: niente è stato cancellato.",
   },
   manage: {
-    eyebrow: "gestisci il sistema",
     nameTitle: "Nome mostrato",
     nameLabel: "Nome",
     nameHint: (systemId: string): string =>
@@ -237,9 +235,6 @@ export const UI = {
       "Il testo scritto non corrisponde all'identificativo del sistema: niente è stato eliminato.",
   },
   history: {
-    eyebrow: "cronologia",
-    technicalDetails: "Dettagli tecnici",
-    columns: { no: "N.", time: "Ora", action: "Azione", outcome: "Esito", anchor: "Ancoraggio", fingerprint: "Impronta" },
     anchored: "Ancorata",
     anchorPending: "In attesa",
     noMatches: "Nessuna ricevuta corrisponde ai filtri scelti.",
@@ -247,8 +242,6 @@ export const UI = {
     searchTitle: "Cerca e filtra",
     fromLabel: "dal (ricevuto)",
     toLabel: "al",
-    kindLabel: "tipo",
-    kindAny: "qualsiasi",
     nameLabel: "nome azione",
     // The filter by kind, one segment each, with "Tutte" first.
     filterLabel: "Filtra per tipo",
@@ -323,13 +316,17 @@ export const UI = {
     waiting: "in attesa di marca temporale",
     genTimeUnreadable: "ora attestata non leggibile dal token",
     receivedAt: "ricevuta dal server il",
+    covered: "ricevute coperte",
+    written: "Scritto il",
+    root: "Radice Merkle",
+    stamped: "Marca temporale ricevuta",
+    attested: "Ora attestata dall'autorità",
   },
   verifyDocument: {
     title: "verifica un documento",
     heading: "Verifica un documento",
     eyebrow: "è quello che ha usato l'AI?",
     privacyNote: "Il documento non lascia il tuo computer: calcoliamo solo le sue impronte.",
-    fileLabel: "File",
     textLabel: "oppure incolla il testo",
     textNote:
       "Per un testo contano le parole, non l'impaginazione: spazi, a capo e caratteri invisibili in più o in meno non cambiano il risultato. Per un PDF o un'immagine carica il file: lì conta ogni byte.",
@@ -353,6 +350,11 @@ export const UI = {
     noMatchHint:
       "Un testo registrato prima di questa versione di sigillo si trova solo se coincide byte per byte, a meno del modo di andare a capo. Per un PDF o un'immagine conta ogni byte. Puoi confrontare l'impronta esatta qui sopra con quella del file: Get-FileHash su Windows, sha256sum su Linux, shasum -a 256 su Mac.",
     seeReceipt: "vedi la ricevuta",
+    found: "Trovato nel registro",
+    notFound: "Non trovato nel registro",
+    documentLabel: "Documento da verificare",
+    dropTitle: "Trascina qui un file",
+    dropHint: "oppure sceglilo dal computer",
     notModified: "Non è stato modificato",
   },
 } as const;

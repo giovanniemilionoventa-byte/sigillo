@@ -394,6 +394,7 @@ details.tech .facts { margin-top: 4px; }
 .activity-what { display: block; font-size: 13px; overflow-wrap: anywhere; }
 
 /* the systems page */
+.systems-card { margin-top: 12px; overflow: hidden; }
 .systems-grid { display: grid; grid-template-columns: minmax(0, 2.2fr) 1fr 0.7fr 1.5fr minmax(150px, auto); gap: 12px; align-items: center; }
 .systems-head { padding: 10px 16px; border-bottom: 1px solid var(--separator); font-size: 11px; font-weight: 600; color: var(--secondary); }
 .systems-list { list-style: none; margin: 0; padding: 0; }
@@ -445,6 +446,7 @@ pre.code { margin: 8px 0 0; padding: 14px 16px; border-radius: 10px; background:
 .cp-tsa { display: block; margin-top: 6px; font-size: 12px; color: var(--secondary); overflow-wrap: anywhere; }
 
 /* verify a document */
+.verify { margin-top: 22px; }
 .drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 22px 16px; border: 1.5px dashed var(--control);
   border-radius: 12px; background: var(--canvas); text-align: center; color: var(--text); font-size: 13px; font-weight: 400; }
 .drop > svg { width: 28px; height: 28px; color: var(--link); }
@@ -464,6 +466,11 @@ pre.code { margin: 8px 0 0; padding: 14px 16px; border-radius: 10px; background:
 .result-prints .hash { display: block; color: var(--text); font-family: var(--mono); font-size: 11px; word-break: break-all; }
 
 /* people */
+.person-search { margin-top: 18px; max-width: 680px; }
+.person-result { margin-top: 22px; }
+.state-disc.neutral { background: var(--fill); color: var(--secondary); }
+.token-head h2 { font-size: 15px; font-weight: 700; }
+.erase-hint { margin: 10px 0 12px; line-height: 1.5; }
 .token-head { display: flex; align-items: center; gap: 12px; }
 .token-head code { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .person-receipts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

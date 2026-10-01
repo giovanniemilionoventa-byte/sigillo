@@ -12,7 +12,7 @@ import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { buildServer } from "../src/http/server.js";
 import { UI } from "../src/http/strings.js";
-import { FONT_FILES, STYLE } from "../src/http/style.js";
+import { FONT_FILES, STATE_ICONS, STYLE } from "../src/http/style.js";
 import { VERIFY_DOCUMENT_SCRIPT } from "../src/http/ui.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
@@ -213,7 +213,9 @@ describe("the main page: È tutto a posto?", () => {
     const cookie = await signIn();
     const body = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
     expect(body).toContain(`<h1>${UI.home.summary.yellow(1)}</h1>`);
-    expect(body).toContain(`key_id <code>${signer.keyId}</code> · 6 ricevute`);
+    // The headline's disc carries the worst state's own icon too.
+    expect(body).toContain(`<span class="state-disc yellow" aria-hidden="true">${STATE_ICONS.warn}</span><h1>`);
+    expect(body).toContain(`${UI.brand.signingKey} <code>${signer.keyId}</code>`);
     // The yellow icon is the triangle: its path starts at the apex.
     expect(body).toMatch(/class="dot yellow" aria-hidden="true"><svg[^>]*><path d="M10 2\.25/);
   });
@@ -366,8 +368,9 @@ describe("the main page: Cosa ha fatto l'AI?", () => {
     const cookie = await signIn();
     const body = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
     expect(body).toContain("ha usato lo strumento");
-    expect(body).toContain(`/ui/systems/${SYSTEM}`);
-    expect(body).toContain(UI.home.seeHistory);
+    // Each action opens its receipt in the system's history.
+    expect(body).toContain(`<a href="/ui/systems/${SYSTEM}?ricevuta=5#r-5" class="activity">`);
+    expect(body).toContain(`<span class="activity-who">${SYSTEM} · n. 5</span>`);
   });
 });
 
@@ -631,7 +634,8 @@ describe("keyboard accessibility", () => {
         if (/type="hidden"/.test(tag)) continue;
         // Every one of them is written inside a <label>...<input>...</label> in this view.
         const before = body.slice(0, body.indexOf(tag));
-        expect(before.lastIndexOf("<label>")).toBeGreaterThan(before.lastIndexOf("</label>"));
+        const opened = Math.max(before.lastIndexOf("<label>"), before.lastIndexOf("<label "));
+        expect(opened, `${url}: ${tag}`).toBeGreaterThan(before.lastIndexOf("</label>"));
       }
     }
   });
@@ -943,14 +947,14 @@ describe("managing a system: archiving (M2)", () => {
     expect(store.systemRecord(SYSTEM)?.archived_at).toBe(NOW);
 
     const home = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-    expect(home).not.toContain(`<a href="/ui/systems/${SYSTEM}">`);
+    expect(home).not.toContain(`href="/ui/systems/${SYSTEM}"`);
     expect(home).toContain("Un sistema archiviato non è mostrato");
     // Still offered for an evidence file.
     expect(home).toContain(`<optgroup label="archiviati"><option value="${SYSTEM}">`);
 
     const active = (await app.inject({ method: "GET", url: "/ui/sistemi", headers: { cookie } })).body;
-    expect(active).not.toContain(`<a href="/ui/systems/${SYSTEM}">`);
-    expect(active).toContain("archiviati (1)");
+    expect(active).not.toContain(`href="/ui/systems/${SYSTEM}"`);
+    expect(active).toContain('<a href="/ui/sistemi?vista=archiviati"><span class="cap">archiviati</span><span class="count">1</span></a>');
     for (const view of ["archiviati", "tutti"]) {
       const body = (await app.inject({ method: "GET", url: `/ui/sistemi?vista=${view}`, headers: { cookie } })).body;
       expect(body, view).toContain(`<a href="/ui/systems/${SYSTEM}">`);
@@ -959,7 +963,7 @@ describe("managing a system: archiving (M2)", () => {
     const unarchived = await app.inject({ method: "POST", url: `/ui/systems/${SYSTEM}/unarchive`, headers: { cookie } });
     expect(unarchived.statusCode).toBe(303);
     const back = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-    expect(back).toContain(`<a href="/ui/systems/${SYSTEM}">`);
+    expect(back).toContain(`<a href="/ui/systems/${SYSTEM}" class="sys-row">`);
     expect(store.adminLog().map((entry) => entry.action)).toEqual(["system.unarchive", "system.archive"]);
   });
 
@@ -980,7 +984,7 @@ describe("managing a system: archiving (M2)", () => {
     await store.append(event(1, { ts_received: "2026-03-29T15:30:00.000Z" }));
     const cookie = await signIn();
     const home = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-    expect(home).toContain(`<a href="/ui/systems/${SYSTEM}">`);
+    expect(home).toContain(`<a href="/ui/systems/${SYSTEM}" class="sys-row">`);
     expect(home).toContain(UI.home.archivedActive.replace(/'/g, "&#39;"));
   });
 });
@@ -1016,7 +1020,7 @@ describe("managing a system: archiving never hides a broken chain", () => {
     try {
       const cookie = await signIn(freshApp);
       const home = (await freshApp.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-      expect(home).toContain(`<a href="/ui/systems/${SYSTEM}">`);
+      expect(home).toContain(`<a href="/ui/systems/${SYSTEM}" class="sys-row">`);
       expect(home).toContain('class="status-word red">rosso<');
       expect(home).toContain(UI.home.archivedRed);
     } finally {
