@@ -34,7 +34,7 @@ SOCK="$WORK/signer.sock"
 DB="$WORK/sigillo.db"
 
 node "$SIGNER" keygen --key "$KEY"
-( node "$SIGNER" serve --key "$KEY" --socket "$SOCK" > "$WORK/signer.log" 2>&1 & echo $! > "$WORK/signer.pid" )
+( node "$SIGNER" serve --key "$KEY" --socket "$SOCK" --state "$WORK/signer-state" > "$WORK/signer.log" 2>&1 & echo $! > "$WORK/signer.pid" )
 for _ in $(seq 1 50); do [ -S "$SOCK" ] && break; sleep 0.1; done
 if [ ! -S "$SOCK" ]; then
   echo "il firmatario non si è avviato entro 5 secondi; log:" >&2

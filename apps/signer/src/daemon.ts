@@ -113,7 +113,7 @@ export function handleLine(line: string, signer: Signer): Reply {
   }
 }
 
-function serve(socket: Socket, signer: Signer): void {
+function serve(socket: Socket, signer: Signer, fail: (error: unknown) => void): void {
   let buffer = Buffer.alloc(0);
 
   const send = (reply: Reply): void => {
@@ -129,7 +129,17 @@ function serve(socket: Socket, signer: Signer): void {
       const line = buffer.subarray(0, index).toString("utf8").trim();
       buffer = buffer.subarray(index + 1);
       if (line.length > 0) {
-        send(handleLine(line, signer));
+        let reply: Reply;
+        try {
+          reply = handleLine(line, signer);
+        } catch (error) {
+          // Not a refusal: something the signer could not do, such as making
+          // its new state durable. What it holds in memory may no longer be
+          // what is on disk, so it answers nothing more, to anyone.
+          fail(error);
+          return;
+        }
+        send(reply);
       }
       index = buffer.indexOf(NEWLINE);
     }
@@ -181,6 +191,11 @@ export interface SignerDaemonOptions {
   now?: () => Date;
   /** How far a receipt's ts_received may be from that clock. Default 5 minutes. */
   clockToleranceMs?: number;
+  /**
+   * Called once if the signer has to stop: it has closed its socket and
+   * dropped every connection by then. The command line exits on it.
+   */
+  onFatal?: (error: unknown) => void;
 }
 
 export async function startSignerDaemon(options: SignerDaemonOptions): Promise<SignerDaemon> {
@@ -196,10 +211,23 @@ export async function startSignerDaemon(options: SignerDaemonOptions): Promise<S
   await clearStaleSocket(socketPath);
 
   const open = new Set<Socket>();
+  let failed = false;
+  const fail = (error: unknown): void => {
+    if (failed) return;
+    failed = true;
+    server.close();
+    for (const socket of open) socket.destroy();
+    open.clear();
+    options.onFatal?.(error);
+  };
   const server: Server = createServer((socket) => {
+    if (failed) {
+      socket.destroy();
+      return;
+    }
     open.add(socket);
     socket.on("close", () => open.delete(socket));
-    serve(socket, signer);
+    serve(socket, signer, fail);
   });
   server.maxConnections = MAX_CONNECTIONS;
 
@@ -219,6 +247,10 @@ export async function startSignerDaemon(options: SignerDaemonOptions): Promise<S
     socketPath,
     close: () =>
       new Promise<void>((resolve, reject) => {
+        if (failed) {
+          resolve();
+          return;
+        }
         server.close((error) => (error ? reject(error) : resolve()));
         // An idle client must not be able to hold shutdown open.
         for (const socket of open) {

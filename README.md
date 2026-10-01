@@ -42,7 +42,7 @@ Start the signer, which is the only process that ever sees the key:
 ```sh
 node apps/signer/dist/cli.js keygen --key /tmp/sigillo/signer.key
 node apps/signer/dist/cli.js serve --key /tmp/sigillo/signer.key \
-     --socket /tmp/sigillo/signer.sock &
+     --socket /tmp/sigillo/signer.sock --state /tmp/sigillo/signer-state &
 ```
 
 Register a system, issue a key for it, and start the server:

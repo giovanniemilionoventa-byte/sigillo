@@ -48,7 +48,16 @@ program
   .action(async (options: { key: string; socket: string; state: string; clockToleranceSeconds?: string }) => {
     const clockToleranceMs = clockTolerance(options.clockToleranceSeconds);
     const key = loadKeyFile(options.key);
-    const daemon = await startSignerDaemon({ socketPath: options.socket, key, stateDir: options.state, clockToleranceMs });
+    const daemon = await startSignerDaemon({
+      socketPath: options.socket,
+      key,
+      stateDir: options.state,
+      clockToleranceMs,
+      onFatal: (error) => {
+        process.stderr.write(`the signer stopped: ${error instanceof Error ? error.message : String(error)}\n`);
+        process.exit(1);
+      },
+    });
     process.stdout.write(`listening on ${daemon.socketPath} with key ${key.keyId}\n`);
 
     const shutdown = (): void => {

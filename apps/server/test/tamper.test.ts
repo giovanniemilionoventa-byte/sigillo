@@ -270,9 +270,11 @@ describe("the ten scenarios of phase 6", () => {
   }, 30_000);
 
   it("7b. ...even signed by the real key, as an attacker holding the server could have it signed", async () => {
-    // SECURITY.md: with the server, an attacker can use the signer's socket.
-    // A checkpoint over a wrong root, properly signed, still does not match
-    // the receipts it claims to cover.
+    // Since protocol 2 the signer's socket builds every checkpoint's root
+    // itself (signer-guard.test.ts), so this takes the key itself, or a
+    // signature obtained through the socket before the upgrade. A checkpoint
+    // over a wrong root, properly signed, still does not match the receipts
+    // it claims to cover.
     const [entry] = linesOf<Entry>(original, "checkpoints.jsonl");
     if (entry === undefined) throw new Error("no checkpoint");
     const { sig: _sig, ...unsigned } = entry.checkpoint;
@@ -353,8 +355,11 @@ describe("beyond the ten", () => {
 
   it("13. history rewritten after an export was handed over", async () => {
     const receipts = receiptsOf(original);
-    // Re-signed with the real key through the signer, and relinked: the
-    // archive alone verifies, the earlier export does not agree with it.
+    // Re-signed with the real key, and relinked: the archive alone verifies,
+    // the earlier export does not agree with it. Since protocol 2 the
+    // signer's socket refuses every one of these signatures
+    // (signer-guard.test.ts); what is left is an attacker with the key itself,
+    // or with signatures obtained through the socket before the upgrade.
     {
       for (let index = 3; index < receipts.length; index += 1) {
         const { sig: _sig, ...unsigned } = receipts[index] as Receipt;

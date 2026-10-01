@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -373,3 +374,26 @@ describe("request ids", () => {
     }
   });
 });
+
+describe("a failure to keep its state", () => {
+  it("stops the signer: no reply with a signature, and nothing served afterwards", async () => {
+    await chain(0);
+    await daemon?.close();
+    const fatal: unknown[] = [];
+    daemon = await startSignerDaemon({ socketPath, key, stateDir, now: clock.now, onFatal: (error) => fatal.push(error) });
+    // The next state cannot be written (a directory stands where its
+    // temporary file would go), so no signature may leave the signer.
+    mkdirSync(join(stateDir, `${createHash("sha256").update(SYSTEM).digest("hex")}.json.tmp`));
+    {
+      const head = (await call(socketPath, "GET_HEAD", { system_id: SYSTEM }))["head"] as { sig: string } & UnsignedReceipt;
+      const lines = await exchange(
+        socketPath,
+        `${JSON.stringify({ v: 2, id: "n", method: "SIGN_RECEIPT", receipt: action(SYSTEM, key.keyId, 1, receiptHashHex(head)) })}\n`,
+      );
+      expect(lines.join("")).not.toContain('"sig"');
+      expect(fatal).toHaveLength(1);
+      await expect(call(socketPath, "PUBKEY")).rejects.toThrow();
+    }
+  });
+});
+
