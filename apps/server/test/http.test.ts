@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { hashCanonicalJson, verifyReceiptSignature } from "@sigillo/core";
+import { fromHex, hashCanonicalJson, openSaltedDigest, verifyReceiptSignature } from "@sigillo/core";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { buildServer } from "../src/http/server.js";
 import { ReceiptStore } from "../src/storage/store.js";
@@ -179,7 +179,9 @@ describe("POST /v1/traces", () => {
 
     const chain = store.readChain(SYSTEM);
     const tool = chain.find((receipt) => receipt.action.name === "search_orders");
-    expect(tool?.input_hash).toBe(hashCanonicalJson('{"order_id":"A-1099"}'));
+    expect(tool?.v === 4 && tool.input_hash_scheme).toBe("salted");
+    const nonce = store.opening(SYSTEM, tool?.seq ?? -1, "input") ?? "";
+    expect(openSaltedDigest(tool?.input_hash ?? "", fromHex(nonce), '{"order_id":"A-1099"}')).toBe(true);
 
     const everything = JSON.stringify(chain);
     expect(everything).not.toContain("A-1099");
@@ -264,7 +266,7 @@ describe("POST /api/v1/receipts", () => {
     expect(receipt && verifyReceiptSignature(receipt, signer.publicKey)).toBe(true);
   });
 
-  it("hashes a value the caller sends and stores no trace of it", async () => {
+  it("digests a value the caller sends with a salt, and stores no trace of it", async () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/receipts",
@@ -274,8 +276,12 @@ describe("POST /api/v1/receipts", () => {
     expect(response.statusCode).toBe(201);
 
     const receipt = store.readChain(SYSTEM)[1];
-    expect(receipt?.input_hash).toBe(hashCanonicalJson({ order_id: "A-1099" }));
-    expect(receipt?.output_hash).toBe(hashCanonicalJson("shipped"));
+    expect(receipt?.v === 4 && [receipt.input_hash_scheme, receipt.output_hash_scheme]).toEqual(["salted", "salted"]);
+    expect(receipt?.input_hash).not.toBe(hashCanonicalJson({ order_id: "A-1099" }));
+    const opens = (role: "input" | "output", value: unknown): boolean =>
+      openSaltedDigest(receipt?.[`${role}_hash`] ?? "", fromHex(store.opening(SYSTEM, 1, role) ?? ""), value);
+    expect(opens("input", { order_id: "A-1099" })).toBe(true);
+    expect(opens("output", "shipped")).toBe(true);
     expect(JSON.stringify(receipt)).not.toContain("A-1099");
   });
 
