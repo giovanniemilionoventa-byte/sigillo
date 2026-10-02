@@ -181,6 +181,58 @@ Stampa qualcosa come `caddy@sha256:…`. In `docker-compose.yml` cambia la riga
 `image: caddy:2.11.4-alpine` in `image: caddy:2.11.4-alpine@sha256:…` (con
 l'impronta appena letta).
 
+### 2.6 (Facoltativo) L'accesso dei clienti con Google ed email
+
+Senza questo passo la pagina web ha solo la password dell'amministratore. Con
+questo passo i clienti entrano con Google o con email e password, gestiti da
+Firebase Authentication (gratuito fino a 50.000 utenti attivi al mese). Nessuno
+script di Firebase gira nel browser: il server parla con Firebase da sé, e la
+politica di sicurezza dei contenuti di Caddy resta quella di prima.
+
+1. Nella [console di Firebase](https://console.firebase.google.com), nel tuo
+   progetto: **Authentication → Sign-in method**, abilita **Email/Password** e
+   **Google**.
+2. **Authentication → Settings → Authorized domains**: aggiungi
+   `sigillo.tuaazienda.it` (il tuo `SIGILLO_DOMAIN`).
+3. Nella [console di Google Cloud](https://console.cloud.google.com/apis/credentials),
+   stesso progetto: **API e servizi → Credenziali**, apri il client OAuth
+   **"Web client (auto created by Google Service)"** e in **URI di
+   reindirizzamento autorizzati** aggiungi, esattamente:
+
+   ```
+   https://sigillo.tuaazienda.it/ui/login/google/back
+   ```
+
+   Salva. Senza questo Google risponde `redirect_uri_mismatch`.
+4. In `.env`, i due valori di **Impostazioni progetto → Generali** (la "chiave
+   API web" e l'"ID progetto"). La chiave non è un segreto: identifica il
+   progetto e non dà accesso a niente.
+
+   ```
+   SIGILLO_FIREBASE_API_KEY=AIza...
+   SIGILLO_FIREBASE_PROJECT_ID=il-tuo-progetto
+   ```
+
+5. (Facoltativo) il limite mensile per cliente, `SIGILLO_ORG_MONTHLY_RECEIPTS`
+   (100.000 se non lo cambi). Oltre il limite i sistemi di quel cliente
+   ricevono `429` fino al primo del mese dopo; i sistemi dell'operatore non
+   hanno limite.
+
+Come funziona per il cliente: entra con Google, oppure crea un account con
+email e password e conferma l'indirizzo dal link che riceve. Al primo accesso
+scrive il nome della sua azienda, e vede "In attesa di approvazione". Tu lo
+approvi dalla pagina **Clienti** (solo con la password dell'amministratore),
+oppure dal server:
+
+```sh
+$ docker compose exec server node dist/cli.js org list
+$ docker compose exec server node dist/cli.js org approve <id>
+$ docker compose exec server node dist/cli.js org members <id>
+```
+
+Da quel momento vede solo i sistemi della sua azienda; quelli che crea si
+chiamano `<id-azienda>.<nome>`.
+
 ---
 
 ## Parte 3 — La chiave e l'avvio
@@ -523,7 +575,7 @@ Un backup mai provato non è un backup. Sul portatile, nella cartella `sigillo`:
 
 ```sh
 portatile$ tar -xf sigillo-backup.tar
-portatile$ node apps/server/dist/cli.js system list --all --db sigillo-*.db
+portatile$ node dist/cli.js system list --all --db sigillo-*.db
 ```
 
 Deve elencare `acme-support-bot` con lo stesso numero di ricevute che mostra la
@@ -715,7 +767,7 @@ non dà il risultato atteso, fermati lì.
 | 30 | server | `docker compose exec -T server /app/backup.sh` | `wrote … bytes`, `backups in …: 1` |
 | 31 | server | `crontab -l` | la riga `0 * * * *` del backup orario |
 | 32 | portatile | copia dell'ultimo backup (6.1) e `tar -tvf sigillo-backup.tar` | un file `sigillo-….db` |
-| 33 | portatile | `node apps/server/dist/cli.js system list --all --db sigillo-*.db` | `acme-support-bot	N receipts	active	…` |
+| 33 | portatile | `node dist/cli.js system list --all --db sigillo-*.db` | `acme-support-bot	N receipts	active	…` |
 
 Quando tutte le righe sono spuntate, sigillo è in produzione. Restano le scelte
 della checklist "Before going to production" di `SECURITY.md`: chi custodisce la

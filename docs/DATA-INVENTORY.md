@@ -68,6 +68,13 @@ covered by the property above.
   should not be kept therefore should not be given to a system, not even for
   a moment.
 
+Where customers sign in (SECURITY.md, "Customers' accounts"), a third thing:
+the **`users`** table holds, for each person who signed in, Firebase's uid for
+the account, the email address, the organization and when they joined. The
+administrative log records each sign-up with the email and the company name
+given, and each approval. No password, and no Google profile beyond the email,
+reaches this server's storage.
+
 `trace_id` and `span_id` are random, but they are designed to be looked up: in
 whatever observability system produced the trace, they lead back to the full
 span, payloads included if that system kept them.

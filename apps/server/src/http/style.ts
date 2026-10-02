@@ -510,6 +510,10 @@ pre.code { margin: 8px 0 0; padding: 14px 16px; border-radius: 10px; background:
 .field-error { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0 0; color: var(--bad); font-size: 13px; line-height: 1.45; }
 .field-error svg { width: 16px; height: 16px; margin-top: 1px; }
 .login-note { margin: 22px 0 0; font-size: 12px; color: var(--secondary); }
+.login-form .fields { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+.login-form details { margin-top: 28px; border-top: 1px solid var(--separator); padding-top: 14px; }
+.login-form summary { cursor: pointer; font-size: 13px; color: var(--secondary); }
+.login-form .button.wide { display: flex; justify-content: center; align-items: center; min-height: 44px; border-radius: 9px; }
 
 /* narrow windows and phones: the sidebar becomes a menu, the inspector a page */
 @media (max-width: 899px) {

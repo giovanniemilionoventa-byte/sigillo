@@ -538,6 +538,49 @@ match means"), the script tells the server only whether they were computed on
 a chosen file or on pasted text (`from=file|text`), never the file's name or
 anything else about the document.
 
+### Customers' accounts
+
+Where `SIGILLO_FIREBASE_API_KEY` and `SIGILLO_FIREBASE_PROJECT_ID` are set,
+customers sign in with Google or with an email and a password, through
+Firebase Authentication (`apps/server/src/auth/firebase.ts`,
+`apps/server/src/http/accounts.ts`). The operator's password is unchanged
+beside it and remains the only way to the operator's pages.
+
+- **No Firebase code runs in the browser.** The forms post to this server,
+  which calls Firebase's REST API itself; Google is reached by an ordinary
+  redirect, in the authorization-code flow, so its answer comes back in the
+  query string to `/ui/login/google/back`. The content security policy is the
+  one above, unchanged.
+- **An identity is believed only from an ID token this server has checked**:
+  RS256 under one of Google's published `securetoken` certificates (cached as
+  long as their `Cache-Control` says, at most a day), `aud` this project, `iss`
+  `https://securetoken.google.com/<project>`, `exp`, `iat` and `auth_time`
+  within five minutes of this server's clock, a subject and an email. The
+  tests sign tokens with a real RSA key and a certificate made by openssl.
+- **Passwords are Firebase's.** This server passes them through once and keeps
+  nothing but the account's uid and email (`users`). It requires at least ten
+  characters on sign-up; wrong passwords count toward the same per-address
+  lockout as the operator's. Sign-ups and reset requests, each of which sends
+  an email, are limited to 5 per address in 15 minutes. The reset page gives
+  the same answer whether or not the address has an account.
+- **An unverified email is not let in**: the link is sent again instead.
+- **Between steps**, two short-lived values are HMAC-sealed with the session
+  secret, each under its own purpose so neither can stand in for the other or
+  for a session: the Google flow's session id (10 minutes, `Path=/ui/login/google`,
+  `SameSite=Lax` because Google's redirect back is a cross-site navigation, and
+  checked by Firebase against the code), and who signed in until they name
+  their company (30 minutes, `Path=/ui/registrazione`).
+- **A newcomer cannot see anything until the operator approves them.** The
+  first sign-in creates an organization waiting for approval, with that person
+  as its member, in one transaction; approval is on the operator's "Clienti"
+  page or `sigillo-server org approve`, and both are in the administrative log.
+  A member's session names their uid and is checked against `users` on every
+  request, so one moved or removed is out at once.
+- **Monthly quota.** Each organization may write `SIGILLO_ORG_MONTHLY_RECEIPTS`
+  receipts per calendar month (UTC, genesis receipts not counted); past it, its
+  systems get `429` with `Retry-After` until the month ends. A batch that starts
+  below the limit is written whole. The operator's systems have no limit.
+
 ## Secrets and logs
 
 **Secrets never appear in `docker compose config`.** The administrator

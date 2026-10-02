@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { DOCUMENT_TEXT_SOURCE, type DocumentFingerprints } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
+import type { FirebaseAuth } from "../auth/firebase.js";
 import { UiSessions } from "../auth/sessions.js";
 import { OPERATOR, storeFor, type Viewer } from "../auth/tenancy.js";
 import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
@@ -16,6 +17,7 @@ import {
   type ReceiptStore,
   type SystemRecord,
 } from "../storage/store.js";
+import { registerAccounts } from "./accounts.js";
 import { registerFonts } from "./fonts.js";
 import {
   anchoredSize,
@@ -32,6 +34,7 @@ import { escape, homeRows, loginPage, page, pageHead, shellFor, type PageOptions
 import {
   checkpointsPage,
   homePage,
+  organizationsPage,
   managePage,
   notFoundPage,
   peoplePage,
@@ -88,7 +91,27 @@ export interface UiOptions {
    * identity login is attached to the same sessions. Default: a fresh set.
    */
   sessions?: UiSessions;
+  /**
+   * Customers' accounts (auth/firebase.ts, http/accounts.ts): Google and
+   * email sign-in, sign-up, and the organizations they ask for. Without it
+   * the view has the operator's password and nothing else.
+   */
+  accounts?: {
+    firebase: FirebaseAuth;
+    /** This installation's address as browsers reach it, e.g. https://sigillo.example.com. */
+    publicUrl: string;
+    /** Accounts created and reset links asked for, per client address. Default: 5 in 15 minutes. */
+    requestLimits?: ThrottleSettings;
+  };
 }
+
+/** Sign-ups and password resets per client address: each one sends an email. */
+export const DEFAULT_REQUEST_LIMITS: ThrottleSettings = {
+  maxFailures: 5,
+  windowMs: 15 * 60_000,
+  lockoutMs: 15 * 60_000,
+  maxLockoutMs: 60 * 60_000,
+};
 
 export const DEFAULT_LOGIN_LIMITS: ThrottleSettings = {
   maxFailures: 5,
@@ -249,7 +272,12 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const viewer = sessions.read(cookieFrom(request), options.now().getTime());
     if (viewer === null || viewer.kind === "operator") return viewer;
     const organization = allSystems.organization(viewer.organizationId);
-    return organization !== null && organization.approved_at !== null ? viewer : null;
+    if (organization === null || organization.approved_at === null) return null;
+    // A member must still be one: someone moved or removed is out at once.
+    if (viewer.userId !== undefined && allSystems.userByUid(viewer.userId)?.organization_id !== viewer.organizationId) {
+      return null;
+    }
+    return viewer;
   };
 
   /**
@@ -266,6 +294,17 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     reply.callNotFound();
     return null;
   };
+
+  /** Signs `viewer` in: a fresh session cookie, and the register. */
+  const startSession = (request: FastifyRequest, reply: FastifyReply, viewer: Viewer): FastifyReply => {
+    const session = sessions.issue(viewer, options.now().getTime());
+    return reply
+      .header("set-cookie", `${COOKIE}=${session.value}; ${cookieAttributes(request)}; Max-Age=${session.maxAgeSeconds}`)
+      .redirect("/ui", viewer.kind === "operator" ? 302 : 303);
+  };
+
+  /** The sign-in page shows the customers' way in when there is one. */
+  const accountsPage = options.accounts === undefined ? undefined : {};
 
   /** The viewer and the store as they may see it, or null after redirecting to the sign-in page. */
   const requireSession = (request: FastifyRequest, reply: FastifyReply): Session | null => {
@@ -331,7 +370,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   app.get("/ui/login", async (request, reply) =>
     viewerOf(request) !== null
       ? reply.redirect("/ui", 302)
-      : html(reply, loginPage()),
+      : html(reply, loginPage(undefined, accountsPage)),
   );
 
   app.post("/ui/login", async (request, reply) => {
@@ -343,7 +382,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     // apart from a guess that was wrong, and no guess made during one can be
     // learned to be right.
     if (loginThrottle.isLocked(client, now)) {
-      return html(reply, loginPage(UI.login.wrong), 401);
+      return html(reply, loginPage(UI.login.wrong, accountsPage), 401);
     }
 
     const body = request.body as { password?: unknown } | undefined;
@@ -357,15 +396,27 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
 
     if (!correct) {
       loginThrottle.recordFailure(client, now);
-      return html(reply, loginPage(UI.login.wrong), 401);
+      return html(reply, loginPage(UI.login.wrong, accountsPage), 401);
     }
 
     loginThrottle.recordSuccess(client);
-    const session = sessions.issue(OPERATOR, now);
-    return reply
-      .header("set-cookie", `${COOKIE}=${session.value}; ${cookieAttributes(request)}; Max-Age=${session.maxAgeSeconds}`)
-      .redirect("/ui", 302);
+    return startSession(request, reply, OPERATOR);
   });
+
+  if (options.accounts !== undefined) {
+    registerAccounts(app, {
+      store: allSystems,
+      firebase: options.accounts.firebase,
+      sessions,
+      publicUrl: options.accounts.publicUrl.replace(/\/+$/, ""),
+      now: options.now,
+      loginThrottle,
+      requestThrottle: new AttemptThrottle(options.accounts.requestLimits ?? DEFAULT_REQUEST_LIMITS),
+      html,
+      cookieAttributes,
+      startSession,
+    });
+  }
 
   app.post("/ui/logout", async (request, reply) => {
     const viewer = viewerOf(request);
@@ -383,11 +434,17 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       shellFor(session.store, options.healthMonitor, options.now(), keyId, session.viewer.kind === "operator"),
     );
 
-  /** Who is acting, for the administrative log: this view has one password, so an address is what there is. */
-  const adminRequest = (request: FastifyRequest): AdminRequest => ({
-    actor: `web ${request.ip}`,
-    ts: options.now().toISOString(),
-  });
+  /**
+   * Who is acting, for the administrative log: the operator by address (one
+   * password, so an address is what there is), a member by account.
+   */
+  const adminRequest = (request: FastifyRequest, viewer: Viewer = OPERATOR): AdminRequest => {
+    const member = viewer.kind === "organization" && viewer.userId !== undefined ? allSystems.userByUid(viewer.userId) : null;
+    return {
+      actor: member === null ? `web ${request.ip}` : `web ${member.email} (${viewer.kind === "organization" ? viewer.organizationId : ""})`,
+      ts: options.now().toISOString(),
+    };
+  };
 
   app.get("/ui", async (request, reply) => {
     const session = requireSession(request, reply);
@@ -475,7 +532,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       normaliseDisplayName(displayName);
       await store.createSystem(systemId, options.now().toISOString());
       if (displayName.trim().length > 0) {
-        await store.renameSystem(systemId, displayName, adminRequest(request));
+        await store.renameSystem(systemId, displayName, adminRequest(request, session.viewer));
       }
       // On the write queue: see ReceiptStore.exclusive.
       const issued = await store.exclusive(() => keys.issue(systemId, options.now().toISOString()));
@@ -633,7 +690,7 @@ ${exportSheet(record)}`,
     const body = request.body as { display_name?: unknown } | undefined;
     const displayName = typeof body?.display_name === "string" ? body.display_name : "";
     try {
-      await store.renameSystem(systemId, displayName, adminRequest(request));
+      await store.renameSystem(systemId, displayName, adminRequest(request, session.viewer));
     } catch (error) {
       if (!(error instanceof StorageError)) throw error;
       return html(reply, renderManage(session, record, { error: error.message }), 400);
@@ -647,7 +704,7 @@ ${exportSheet(record)}`,
     const { store } = session;
     const { systemId } = request.params as { systemId: string };
     if (!store.hasSystem(systemId)) return notFound(session, reply, systemId);
-    await store.archiveSystem(systemId, adminRequest(request));
+    await store.archiveSystem(systemId, adminRequest(request, session.viewer));
     return reply.redirect(manageUrl(systemId, "archiviato"), 303);
   });
 
@@ -657,7 +714,7 @@ ${exportSheet(record)}`,
     const { store } = session;
     const { systemId } = request.params as { systemId: string };
     if (!store.hasSystem(systemId)) return notFound(session, reply, systemId);
-    await store.unarchiveSystem(systemId, adminRequest(request));
+    await store.unarchiveSystem(systemId, adminRequest(request, session.viewer));
     return reply.redirect(manageUrl(systemId, "riattivato"), 303);
   });
 
@@ -679,7 +736,7 @@ ${exportSheet(record)}`,
       // Whether the chain is empty is decided here, inside the store's own
       // transaction, from what the database holds now — not from the page
       // the button was on, which may be minutes old.
-      await store.deleteEmptySystem(systemId, adminRequest(request));
+      await store.deleteEmptySystem(systemId, adminRequest(request, session.viewer));
     } catch (error) {
       if (!(error instanceof SystemNotDeletableError)) throw error;
       const now = store.systemRecord(systemId) ?? record;
@@ -688,6 +745,34 @@ ${exportSheet(record)}`,
     options.healthMonitor.forget(systemId);
     request.log.info({ system: systemId, action: "system.delete" }, "an empty system was deleted");
     return reply.redirect(`/ui/sistemi?eliminato=${encodeURIComponent(systemId)}`, 303);
+  });
+
+  // The customers: the operator's alone.
+
+  app.get("/ui/clienti", async (request, reply) => {
+    const session = requireOperator(request, reply);
+    if (session === null) return reply;
+    const approved = (request.query as { approvato?: string }).approvato;
+    const organization = typeof approved === "string" ? allSystems.organization(approved) : null;
+    const notice = organization?.approved_at === null || organization === null ? undefined : UI.organizations.approved(organization.name);
+    return html(
+      reply,
+      render(session, {
+        title: UI.organizations.title,
+        current: "clienti",
+        body: organizationsPage(allSystems, notice === undefined ? {} : { notice }),
+      }),
+    );
+  });
+
+  app.post("/ui/clienti/:organizationId/approva", async (request, reply) => {
+    const session = requireOperator(request, reply);
+    if (session === null) return reply;
+    const { organizationId } = request.params as { organizationId: string };
+    if (allSystems.organization(organizationId) === null) return reply.callNotFound();
+    await allSystems.approveOrganization(organizationId, adminRequest(request, session.viewer));
+    request.log.info({ action: "organization.approve", organization: organizationId }, "an organization was approved");
+    return reply.redirect(`/ui/clienti?approvato=${encodeURIComponent(organizationId)}`, 303);
   });
 
   // People: who the pseudonym tokens stand for. The identifier is posted,
@@ -736,7 +821,7 @@ ${exportSheet(record)}`,
     if (body?.confirm !== token || token === "") {
       return html(reply, renderPeople(session, null, { error: UI.people.confirmMismatch }), 400);
     }
-    if (!(await store.eraseSubject(token, adminRequest(request)))) {
+    if (!(await store.eraseSubject(token, adminRequest(request, session.viewer)))) {
       return html(reply, renderPeople(session, null, { error: UI.people.notFound }), 404);
     }
     request.log.info({ action: "subject.erase", token }, "a subject was erased");

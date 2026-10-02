@@ -8,7 +8,8 @@ import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw, receiptHash
 import { ApiKeyStore } from "./auth/api-keys.js";
 import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
-import { cookieSecure, ingestPause, port, positiveInteger, readSecret, trustProxy } from "./config.js";
+import { cookieSecure, firebaseAccounts, ingestPause, port, positiveInteger, readSecret, trustProxy } from "./config.js";
+import { FirebaseAuth } from "./auth/firebase.js";
 import { archiveFromStore, positionsIn, tokensIn } from "./export/from-store.js";
 import { ChainHealthMonitor } from "./health/chain-health.js";
 import { buildServer } from "./http/server.js";
@@ -174,6 +175,12 @@ program
     const proxies = trustProxy(process.env["SIGILLO_TRUST_PROXY"]);
     const secureCookie = cookieSecure(process.env["SIGILLO_COOKIE_SECURE"]);
     const pause = ingestPause(process.env);
+    const accounts = firebaseAccounts(process.env);
+    const organizationMonthlyReceipts = positiveInteger(
+      "SIGILLO_ORG_MONTHLY_RECEIPTS",
+      process.env["SIGILLO_ORG_MONTHLY_RECEIPTS"],
+      100_000,
+    );
     const tsa = tsaFromOptions(options.tsaUrl);
 
     // The operator's view is mounted only when a password is set. An audit log
@@ -233,6 +240,7 @@ program
       signerHealthy: () => signer.healthy(),
       chainsIntact: () => store.divergentSystems().length === 0 && (healthMonitor?.failedSystems().length ?? 0) === 0,
       ...(pause === null ? {} : { ingestPause: pause }),
+      organizationMonthlyReceipts,
       ...(!uiMounted || healthMonitor === undefined
         ? {}
         : {
@@ -246,6 +254,14 @@ program
               checkpointer,
               loginLimits,
               cookieSecure: secureCookie,
+              ...(accounts === null
+                ? {}
+                : {
+                    accounts: {
+                      firebase: new FirebaseAuth(accounts, () => new Date()),
+                      publicUrl: accounts.publicUrl,
+                    },
+                  }),
             },
           }),
     });
@@ -433,6 +449,32 @@ org
       await store.createOrganization(organizationId, name, cliRequest(), { approved: true });
       process.stdout.write(`created organization ${organizationId}\n`);
     });
+  });
+
+org
+  .command("approve")
+  .description("Let an organization that signed itself up in: its members can sign in from now on")
+  .argument("<organization_id>")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action(async (organizationId: string, options: DatabaseOption) => {
+    await withStore(options.db, async (store) => {
+      const organization = await store.approveOrganization(organizationId, cliRequest());
+      process.stdout.write(`approved ${organization.organization_id} (${organization.name})\n`);
+    });
+  });
+
+org
+  .command("members")
+  .description("List the people who sign in for an organization: email, since when")
+  .argument("<organization_id>")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action((organizationId: string, options: DatabaseOption) => {
+    const store = ReceiptStore.openReadOnly(options.db);
+    try {
+      for (const user of store.usersOf(organizationId)) process.stdout.write(`${user.email}\t${user.created_at}\n`);
+    } finally {
+      store.close();
+    }
   });
 
 org

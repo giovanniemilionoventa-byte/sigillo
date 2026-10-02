@@ -8,7 +8,10 @@ import { StorageError, type ReceiptStore, type SystemRecord } from "../storage/s
  * that organization's systems and nothing else: not another organization's,
  * and not the operator's own (a system whose organization_id is NULL).
  */
-export type Viewer = { kind: "operator" } | { kind: "organization"; organizationId: string };
+export type Viewer =
+  | { kind: "operator" }
+  /** userId: the member's Firebase uid; absent only in tests that stand for no one in particular. */
+  | { kind: "organization"; organizationId: string; userId?: string };
 
 export const OPERATOR: Viewer = { kind: "operator" };
 
