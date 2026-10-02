@@ -304,6 +304,21 @@ function jsonSpan(options: {
   return span;
 }
 
+describe("an unset status with an error.type", () => {
+  it("reads error.type as a failure, since the conventions set it only then", () => {
+    const span = jsonSpan({
+      attributes: { "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": "scrivi_file", "error.type": "PermissionError" },
+    });
+    expect(span.status).toBe("unset");
+    expect(adaptSpans([span]).actions[0]?.outcome).toBe("error");
+  });
+
+  it("still reads an unset status alone as unknown, not as success", () => {
+    const span = jsonSpan({ attributes: { "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": "scrivi_file" } });
+    expect(adaptSpans([span]).actions[0]?.outcome).toBe("unknown");
+  });
+});
+
 const SHA_A = "a".repeat(64);
 const SHA_B = "b".repeat(64);
 

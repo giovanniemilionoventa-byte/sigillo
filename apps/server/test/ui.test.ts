@@ -205,7 +205,7 @@ describe("the main page: È tutto a posto?", () => {
     // Not anchored yet: yellow, and the reason is spelled out in words.
     expect(body).toContain('class="dot yellow"');
     expect(body).toContain('class="status-word yellow">giallo<');
-    expect(body).toContain("la marca temporale è in attesa");
+    expect(body).toContain("non è ancora stato sigillato");
   });
 
   it("states the situation in one sentence, and pairs each state with an icon of its own shape", async () => {

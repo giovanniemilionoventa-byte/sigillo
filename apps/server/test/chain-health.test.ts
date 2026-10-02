@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ChainHealthMonitor } from "../src/health/chain-health.js";
+import { ChainHealthMonitor, durationWords } from "../src/health/chain-health.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
 import { createLocalTsa } from "./helpers/local-tsa.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
@@ -58,12 +58,22 @@ describe("a freshly created system", () => {
     await store.createSystem(SYSTEM, NOW);
   });
 
-  it("is yellow before any checkpoint anchors it", () => {
-    const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS);
+  it("is green while it waits for its first checkpoint, within the tolerance", () => {
+    // The checkpointer seals on its own timer: a system opened a minute ago
+    // that has not met it yet has nothing to look at.
+    const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS, 60 * 60_000);
     monitor.check();
-    const health = monitor.statusFor(SYSTEM, new Date(NOW));
+    const health = monitor.statusFor(SYSTEM, new Date(Date.parse(NOW) + 60 * 60_000));
+    expect(health.status).toBe("green");
+    expect(health.message).toContain("primo sigillo in arrivo entro 1 ora");
+  });
+
+  it("is yellow once it has waited for its first checkpoint beyond the tolerance", () => {
+    const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS, 60 * 60_000);
+    monitor.check();
+    const health = monitor.statusFor(SYSTEM, new Date(Date.parse(NOW) + 61 * 60_000));
     expect(health.status).toBe("yellow");
-    expect(health.message).toContain("marca temporale");
+    expect(health.message).toContain("non è ancora stato sigillato, da oltre 1 ora");
   });
 
   it("stays green while a checkpoint's timestamp is late by less than the tolerance", async () => {
@@ -83,7 +93,7 @@ describe("a freshly created system", () => {
     monitor.check();
     const health = monitor.statusFor(SYSTEM, new Date(Date.parse(NOW) + 61 * 60_000));
     expect(health.status).toBe("yellow");
-    expect(health.message).toContain("manca la marca temporale da oltre 60 minuti");
+    expect(health.message).toContain("manca la marca temporale da oltre 1 ora");
   });
 
   it("turns yellow when the newest checkpoint was timestamped beyond the tolerance", async () => {
@@ -126,7 +136,7 @@ describe("a freshly created system", () => {
     const muchLater = new Date(Date.parse(NOW) + ONE_DAY_MS);
     const health = monitor.statusFor(SYSTEM, muchLater);
     expect(health.status).toBe("yellow");
-    expect(health.message).toContain("nessuna attività");
+    expect(health.message).toContain("nessuna nuova azione da oltre 1 minuto");
   });
 
   it("checks incrementally: a second call does not re-read what the first already verified", async () => {
@@ -262,5 +272,15 @@ describe("failedSystems", () => {
     const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS);
     monitor.check();
     expect(monitor.failedSystems()).toEqual([SYSTEM]);
+  });
+});
+
+describe("durationWords", () => {
+  it("says minutes, hours or days as a person would", () => {
+    expect(durationWords(1)).toBe("1 minuto");
+    expect(durationWords(90)).toBe("90 minuti");
+    expect(durationWords(60)).toBe("1 ora");
+    expect(durationWords(1440)).toBe("24 ore");
+    expect(durationWords(2880)).toBe("2 giorni");
   });
 });

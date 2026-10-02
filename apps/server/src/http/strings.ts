@@ -156,8 +156,9 @@ export const UI = {
     archivedActive: "ha ricevuto azioni dopo l'archiviazione",
     archivedGroup: "archiviati",
     checkpointDone:
-      "Fatto: ogni sistema con azioni nuove è stato sigillato. Se uno resta giallo, il sigillo " +
-      "è scritto ma la marca temporale non è ancora arrivata — riprova tra poco.",
+      "Fatto: ogni sistema con azioni nuove è stato sigillato. Se uno resta giallo, il motivo è scritto " +
+      "accanto: la marca temporale non ancora arrivata (riprova tra poco), oppure nessuna nuova azione " +
+      "da tempo, che sigillare non cambia.",
   },
   status: {
     green: "verde",
@@ -323,7 +324,7 @@ export const UI = {
     listLabel: "Ricevute",
     clearFilters: "Togli i filtri",
     noMatchesHint: "Prova un altro tipo o togli il periodo.",
-    dayUtc: (day: string): string => `${day} · ore UTC`,
+    dayLocal: (day: string): string => `${day} · ora italiana`,
     back: "Torna all'elenco",
   },
   // The inspector: the receipt chosen in the history, in full.
@@ -465,17 +466,98 @@ export function describeDocumentMatch(match: {
 const MONTHS = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
 
 /**
- * A server timestamp as a person reads it, still in UTC and to the second:
- * "29 mar 2026, 14:35:01 UTC". The exact ISO form stays in the technical
- * details. Anything that does not parse is shown as it is.
+ * The time zone every time on the web view is shown in. The server stores and
+ * signs UTC, and the receipts, the exports and the technical details keep it;
+ * only what a person reads on the page is turned into Italian time, so that a
+ * receipt written at 19:55 in Rome does not read 17:55.
+ */
+export const DISPLAY_TIME_ZONE = "Europe/Rome";
+
+const LOCAL_PARTS = new Intl.DateTimeFormat("it-IT", {
+  timeZone: DISPLAY_TIME_ZONE,
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+  timeZoneName: "short",
+});
+
+interface LocalTime {
+  year: number;
+  /** 1 to 12. */
+  month: number;
+  day: number;
+  /** 0 (Sunday) to 6, as Date.getUTCDay counts. */
+  weekday: number;
+  time: string;
+  /** "CEST" or "CET". */
+  zone: string;
+}
+
+/** A server timestamp in DISPLAY_TIME_ZONE, or null for one that is not a full ISO time. */
+function localTime(iso: string): LocalTime | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(iso)) return null;
+  const instant = Date.parse(iso);
+  if (Number.isNaN(instant)) return null;
+  const parts = new Map(LOCAL_PARTS.formatToParts(instant).map((part) => [part.type, part.value]));
+  const year = Number(parts.get("year"));
+  const month = Number(parts.get("month"));
+  const day = Number(parts.get("day"));
+  return {
+    year,
+    month,
+    day,
+    weekday: new Date(Date.UTC(year, month - 1, day)).getUTCDay(),
+    time: `${parts.get("hour")}:${parts.get("minute")}:${parts.get("second")}`,
+    zone: parts.get("timeZoneName") ?? DISPLAY_TIME_ZONE,
+  };
+}
+
+/**
+ * A server timestamp as a person reads it, in Italian time and to the second,
+ * the zone named: "2 ott 2026, 19:54:37 CEST". The exact ISO form, in UTC,
+ * stays in the technical details. Anything that does not parse is shown as it is.
  */
 export function formatTs(iso: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/.exec(iso);
-  if (match === null) return iso;
-  const [, year, month, day, hours, minutes, seconds] = match;
-  const monthName = MONTHS[Number(month) - 1];
-  if (monthName === undefined) return iso;
-  return `${Number(day)} ${monthName} ${year}, ${hours}:${minutes}:${seconds} UTC`;
+  const local = localTime(iso);
+  if (local === null) return iso;
+  return `${local.day} ${MONTHS[local.month - 1]} ${local.year}, ${local.time} ${local.zone}`;
+}
+
+/**
+ * The instants a calendar day ("2026-10-02") spans in DISPLAY_TIME_ZONE, as
+ * the store compares them: from its local midnight to the last millisecond
+ * before the next one, so a day the clocks change on is 23 or 25 hours long.
+ */
+export function localDayRange(date: string): { from: string; to: string } {
+  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+  return {
+    from: new Date(localMidnight(year, month, day)).toISOString(),
+    to: new Date(localMidnight(year, month, day + 1) - 1).toISOString(),
+  };
+}
+
+/** The instant of local midnight on a day; Date.UTC carries a day past the month's end. */
+function localMidnight(year: number, month: number, day: number): number {
+  const utcMidnight = Date.UTC(year, month - 1, day);
+  // The zone's offset is read at the guess, then again at the result, so a
+  // change of clock between the two is still caught. Italy changes at 02:00
+  // or 03:00, never at midnight, so two reads settle it.
+  let instant = utcMidnight - offsetAt(utcMidnight);
+  instant = utcMidnight - offsetAt(instant);
+  return instant;
+}
+
+/** How far DISPLAY_TIME_ZONE is ahead of UTC at an instant, in milliseconds. */
+function offsetAt(instant: number): number {
+  const local = localTime(new Date(instant).toISOString());
+  if (local === null) return 0;
+  const [hours, minutes, seconds] = local.time.split(":").map(Number) as [number, number, number];
+  const asIfUtc = Date.UTC(local.year, local.month - 1, local.day, hours, minutes, seconds);
+  return asIfUtc - Math.floor(instant / 1000) * 1000;
 }
 
 /** How a system is named for a reader: its label if it has one, else its system_id. */
@@ -661,22 +743,16 @@ const MONTH_NAMES = [
   "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
 ];
 
-/** The day of a server timestamp, in UTC, as a heading of the history: "martedì 29 settembre 2026". */
+/** The day of a server timestamp, in Italian time, as a heading of the history: "martedì 29 settembre 2026". */
 export function formatDay(iso: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T/.exec(iso);
-  if (match === null) return iso;
-  const [, year, month, day] = match;
-  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
-  const weekday = WEEKDAYS[date.getUTCDay()];
-  const monthName = MONTH_NAMES[Number(month) - 1];
-  if (weekday === undefined || monthName === undefined) return iso;
-  return `${weekday} ${Number(day)} ${monthName} ${year}`;
+  const local = localTime(iso);
+  if (local === null) return iso;
+  return `${WEEKDAYS[local.weekday]} ${local.day} ${MONTH_NAMES[local.month - 1]} ${local.year}`;
 }
 
-/** The time of a server timestamp, in UTC, to the second: "12:40:13". */
+/** The time of a server timestamp, in Italian time, to the second: "12:40:13". */
 export function formatTime(iso: string): string {
-  const match = /T(\d{2}:\d{2}:\d{2})/.exec(iso);
-  return match?.[1] ?? iso;
+  return localTime(iso)?.time ?? iso;
 }
 
 /** The one word for an outcome, as the receipt sentences already use it. */

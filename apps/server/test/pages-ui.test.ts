@@ -69,7 +69,9 @@ beforeEach(async () => {
   await store.createSystem(EMPTY, "2026-09-29T12:50:00.000Z");
   const checkpoint = await store.createCheckpoint(SYSTEM);
   await store.recordTimestamp(checkpoint!.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), NOW);
-  const healthMonitor = new ChainHealthMonitor(store, signer.publicKey, 24 * 60 * 60_000);
+  // Five minutes for a first checkpoint, so that EMPTY, opened ten minutes
+  // before NOW and never sealed, is yellow.
+  const healthMonitor = new ChainHealthMonitor(store, signer.publicKey, 24 * 60 * 60_000, 5 * 60_000);
   healthMonitor.check();
   app = buildServer({
     store,
