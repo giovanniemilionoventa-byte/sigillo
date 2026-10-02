@@ -3133,6 +3133,21 @@ GitHub come metodo di accesso è rimandato: richiede un'app OAuth su GitHub e il
 server, e il committente l'ha indicato come facoltativo. Nessun file di `packages/verifier` o di
 `packages/core` è cambiato.
 
+### Sessione 23 — 2026-10-02 — il primo accesso vero con Google
+
+Primo accesso con Google sul server del committente: Google rimandava indietro correttamente, ma
+sigillo rispondeva "La richiesta è scaduta". Causa: il ritorno da Google è una navigazione partita
+da un altro sito, e il browser non manda i cookie `SameSite=Strict` né su quella né sui redirect che
+la seguono, quindi il biglietto per il modulo dell'azienda (e la sessione, dopo l'approvazione)
+arrivava senza cookie. Ora il ritorno da Google mostra una pagina che prosegue da sola
+(`meta refresh`, nessuno script), e la richiesta successiva parte da sigillo stesso. I cookie
+restano `Strict`. Un test in Chromium (`accounts.test.ts`, "in a real browser") riproduceva
+l'errore prima della correzione: la pagina di Google è servita in locale su `accounts.google.com`.
+
+Inoltre `SIGILLO_FIREBASE_API_KEY` sbagliata ora dice quanti caratteri ha e quanti non sono
+ammessi, senza mostrarla. Gli spazi intorno ai valori vengono ignorati. Al primo avvio la chiave
+incollata da una chat aveva caratteri invisibili e il server si fermava senza dire perché.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

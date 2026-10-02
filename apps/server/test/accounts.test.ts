@@ -1,9 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { createSign, randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
+import { type AddressInfo, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
+import { type Browser, chromium, type Page } from "playwright-core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { FirebaseAuth, FirebaseError, SECURETOKEN_CERTS } from "../src/auth/firebase.js";
@@ -16,6 +19,7 @@ import { escape } from "../src/http/layout.js";
 import { buildServer } from "../src/http/server.js";
 import { UI } from "../src/http/strings.js";
 import { ReceiptStore } from "../src/storage/store.js";
+import { BROWSER_PATH, caddyfilePolicy } from "./helpers/browser.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
 
 /**
@@ -109,6 +113,9 @@ class FakeFirebase {
   private googleSessions = new Set<string>();
   down = false;
 
+  /** `publicUrl`: where Google may send the browser back to, as the server was told. */
+  constructor(private readonly publicUrl = PUBLIC_URL) {}
+
   fetch = async (url: string, init?: { body?: string }) => {
     if (this.down) throw new Error("network down");
     if (url === SECURETOKEN_CERTS) {
@@ -153,7 +160,7 @@ class FakeFirebase {
         return reply(200, { authUri: `https://accounts.google.com/o/oauth2/v2/auth?client_id=x&state=s` });
       case "accounts:signInWithIdp": {
         const requestUri = String(body["requestUri"]);
-        if (!this.googleSessions.has(String(body["sessionId"])) || !requestUri.startsWith(`${PUBLIC_URL}/ui/login/google/back?`)) {
+        if (!this.googleSessions.has(String(body["sessionId"])) || !requestUri.startsWith(`${this.publicUrl}/ui/login/google/back?`)) {
           return reply(400, { error: { message: "INVALID_IDP_RESPONSE : the session does not match" } });
         }
         const { email: googleEmail, uid } = this.googleAccount;
@@ -496,8 +503,11 @@ describe("customers' accounts in the web view", () => {
     expect(fake.calls.filter((call) => call.method === "accounts:signInWithIdp")).toEqual([]);
 
     const back = await app.inject({ method: "GET", url: "/ui/login/google/back?code=abc&state=s", headers: { cookie: sealed } });
-    expect(back.statusCode).toBe(303);
-    expect(back.headers.location).toBe("/ui/registrazione");
+    // A page that moves on by itself, not a redirect: see the browser test below.
+    expect(back.statusCode).toBe(200);
+    expect(back.headers.location).toBeUndefined();
+    expect(back.body).toContain('<meta http-equiv="refresh" content="0; url=/ui/registrazione">');
+    expect(cookieSet(back, "sigillo_signup")).toMatch(/^sigillo_signup=\d+\./);
     const exchanged = fake.calls.find((call) => call.method === "accounts:signInWithIdp")?.body;
     expect(exchanged?.["requestUri"]).toBe(`${PUBLIC_URL}/ui/login/google/back?code=abc&state=s`);
     expect(exchanged?.["sessionId"]).toBe(started?.["sessionId"]);
@@ -570,6 +580,137 @@ describe("firebaseAccounts", () => {
 
   it("refuses values that cannot be a key or a project", () => {
     expect(() => firebaseAccounts({ ...valid, SIGILLO_FIREBASE_API_KEY: "short" })).toThrow(/API key/);
+    // Pasted through a chat: invisible characters inside, counted, not shown.
+    expect(() => firebaseAccounts({ ...valid, SIGILLO_FIREBASE_API_KEY: `AIzaSyBp\u200b${API_KEY.slice(8)}` })).toThrow(
+      /: 39 characters, 1 of them not a letter/,
+    );
+  });
+
+  it("ignores spaces around the values", () => {
+    expect(firebaseAccounts({ ...valid, SIGILLO_FIREBASE_API_KEY: ` ${API_KEY} `, SIGILLO_FIREBASE_PROJECT_ID: `${PROJECT}\r` })).toEqual({
+      apiKey: API_KEY,
+      projectId: PROJECT,
+      publicUrl: "https://sigillo.example.com",
+    });
     expect(() => firebaseAccounts({ ...valid, SIGILLO_FIREBASE_PROJECT_ID: "Bad Project" })).toThrow(/project id/);
   });
 });
+
+/**
+ * Google's way back, in a real browser. Google sends the browser back with a
+ * navigation that starts on Google's site, and a browser does not send a
+ * SameSite=Strict cookie on it, nor on any redirect that follows it: a
+ * session or a sign-up ticket set on that response and then redirected to
+ * would arrive without its cookie. That is what happened on the first real
+ * sign-in (2026-10-02, "La richiesta è scaduta"); a test without a browser
+ * cannot see it. Google's page is stood in for by a page on its own origin,
+ * served by Playwright; everything on Sigillo's side is real, CSP included.
+ */
+describe.skipIf(BROWSER_PATH === undefined)("signing in with Google, in a real browser", { timeout: 30_000 }, () => {
+  let directory: string;
+  let store: ReceiptStore;
+  let keys: ApiKeyStore;
+  let app: FastifyInstance;
+  let browser: Browser;
+  let base: string;
+  let fake: FakeFirebase;
+  let googleSite: HttpsServer;
+
+  beforeAll(async () => {
+    directory = mkdtempSync(join(tmpdir(), "sigillo-google-browser-"));
+    const databasePath = join(directory, "sigillo.db");
+    const signer = createTestSigner();
+    store = ReceiptStore.open(databasePath, signer);
+    keys = ApiKeyStore.open(databasePath);
+    const policy = caddyfilePolicy();
+    // localhost, not 127.0.0.1: the address the server is told it is reached
+    // at, which Google sends the browser back to. The port is picked first so
+    // that the server can be told it.
+    const port = await freePort();
+    base = `http://localhost:${port}`;
+    fake = new FakeFirebase(base);
+    app = buildServer({
+      store,
+      keys,
+      now: () => new Date(NOW),
+      ui: {
+        password: PASSWORD,
+        signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
+        healthMonitor: new ChainHealthMonitor(store, signer.publicKey, 24 * 3600_000),
+        checkpointer: new Checkpointer({ store, now: () => new Date(NOW) }),
+        accounts: { firebase: new FirebaseAuth({ apiKey: API_KEY, projectId: PROJECT }, () => new Date(NOW), fake.fetch), publicUrl: base },
+      },
+    });
+    app.addHook("onSend", async (_request, reply) => {
+      void reply.header("content-security-policy", policy);
+    });
+    await app.listen({ host: "127.0.0.1", port });
+
+    googleSite = createHttpsServer({ key: google.privateKey, cert: google.certificate }, (_request, response) => {
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end(`<!doctype html><title>Google</title><a id="consent" href="${base}/ui/login/google/back?code=4%2Fabc&state=s">Continua</a>`);
+    });
+    await new Promise<void>((resolve) => googleSite.listen(0, "127.0.0.1", resolve));
+    const googlePort = (googleSite.address() as AddressInfo).port;
+    browser = await chromium.launch({
+      ...(BROWSER_PATH === undefined ? {} : { executablePath: BROWSER_PATH }),
+      // Straight to that server, past any proxy the machine has configured.
+      args: ["--no-proxy-server", `--host-resolver-rules=MAP accounts.google.com 127.0.0.1:${googlePort}`],
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await browser?.close();
+    googleSite?.close();
+    await app?.close();
+    keys?.close();
+    store?.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  /**
+   * From the sign-in page to Google and back. Google's page is a page that
+   * the browser finds at accounts.google.com (resolved to a server of this
+   * test's own), whose link the person clicks: the way back starts on
+   * another site, as it does for real.
+   */
+  async function throughGoogle(): Promise<Page> {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    context.setDefaultTimeout(5_000);
+    const page = await context.newPage();
+    await page.goto(`${base}/ui/login`);
+    await Promise.all([page.waitForURL(/^https:\/\/accounts\.google\.com\//), page.click('a[href="/ui/login/google"]')]);
+    await page.click("#consent");
+    return page;
+  }
+
+  it("takes a newcomer back from Google to the company form, then into the register once approved", async () => {
+    const first = await throughGoogle();
+    await first.waitForURL(`${base}/ui/registrazione`, { timeout: 5_000 });
+    expect(await first.textContent("body")).toContain("anna@example.com");
+    await first.fill('input[name="name"]', "Rossi Trasporti S.r.l.");
+    await first.click('button[type="submit"]');
+    await first.waitForSelector(`text=${UI.account.waitingTitle}`, { timeout: 5_000 });
+    const user = store.userByUid(fake.googleAccount.uid);
+    expect(user).not.toBeNull();
+    await store.approveOrganization(user?.organization_id ?? "", ADMIN);
+    await first.context().close();
+
+    const again = await throughGoogle();
+    await again.waitForURL(`${base}/ui`, { timeout: 5_000 });
+    expect(await again.locator('form[action="/ui/logout"]').count()).toBe(1);
+    await again.context().close();
+  });
+});
+
+/** A port nothing listens on, to tell the server its own address before it starts. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const { port } = probe.address() as AddressInfo;
+      probe.close(() => resolve(port));
+    });
+  });
+}

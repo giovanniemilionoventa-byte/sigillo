@@ -295,12 +295,10 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     return null;
   };
 
-  /** Signs `viewer` in: a fresh session cookie, and the register. */
-  const startSession = (request: FastifyRequest, reply: FastifyReply, viewer: Viewer): FastifyReply => {
+  /** A fresh session cookie for `viewer`, as a Set-Cookie value. */
+  const sessionCookie = (request: FastifyRequest, viewer: Viewer): string => {
     const session = sessions.issue(viewer, options.now().getTime());
-    return reply
-      .header("set-cookie", `${COOKIE}=${session.value}; ${cookieAttributes(request)}; Max-Age=${session.maxAgeSeconds}`)
-      .redirect("/ui", viewer.kind === "operator" ? 302 : 303);
+    return `${COOKIE}=${session.value}; ${cookieAttributes(request)}; Max-Age=${session.maxAgeSeconds}`;
   };
 
   /** The sign-in page shows the customers' way in when there is one. */
@@ -400,7 +398,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     }
 
     loginThrottle.recordSuccess(client);
-    return startSession(request, reply, OPERATOR);
+    return reply.header("set-cookie", sessionCookie(request, OPERATOR)).redirect("/ui", 302);
   });
 
   if (options.accounts !== undefined) {
@@ -414,7 +412,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       requestThrottle: new AttemptThrottle(options.accounts.requestLimits ?? DEFAULT_REQUEST_LIMITS),
       html,
       cookieAttributes,
-      startSession,
+      sessionCookie,
     });
   }
 

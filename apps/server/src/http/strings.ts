@@ -87,6 +87,9 @@ export const UI = {
     companyLabel: "Nome dell'azienda",
     companySubmit: "Richiedi l'accesso",
     expired: "La richiesta è scaduta: accedi di nuovo.",
+    continueTitle: "Accesso in corso",
+    continueLead: "Un attimo: ti stiamo portando dentro.",
+    continueLink: "Continua",
     waitingTitle: "In attesa di approvazione",
     waiting: (name: string) =>
       `Lo spazio di ${name} è stato richiesto e attende la nostra approvazione. Riceverai conferma dal team di sigillo; poi potrai accedere da qui.`,

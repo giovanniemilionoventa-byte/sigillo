@@ -137,15 +137,21 @@ export function ingestPause(env: Environment): { except: ReadonlySet<string> } |
  * password only. The address must be https, except on this machine.
  */
 export function firebaseAccounts(env: Environment): { apiKey: string; projectId: string; publicUrl: string } | null {
-  const apiKey = env["SIGILLO_FIREBASE_API_KEY"] ?? "";
-  const projectId = env["SIGILLO_FIREBASE_PROJECT_ID"] ?? "";
+  const apiKey = (env["SIGILLO_FIREBASE_API_KEY"] ?? "").trim();
+  const projectId = (env["SIGILLO_FIREBASE_PROJECT_ID"] ?? "").trim();
   const publicUrl = (env["SIGILLO_PUBLIC_URL"] ?? "").replace(/\/+$/, "");
   if (apiKey === "" && projectId === "") return null;
   if (apiKey === "" || projectId === "") {
     throw new ConfigError("SIGILLO_FIREBASE_API_KEY and SIGILLO_FIREBASE_PROJECT_ID go together: set both, or neither");
   }
   if (!/^[A-Za-z0-9_-]{20,64}$/.test(apiKey)) {
-    throw new ConfigError("SIGILLO_FIREBASE_API_KEY does not look like a Firebase web API key");
+    // Says what is wrong without repeating the value: a key pasted from a
+    // chat can carry characters no one can see (2026-10-02).
+    const foreign = [...apiKey].filter((character) => !/[A-Za-z0-9_-]/.test(character)).length;
+    throw new ConfigError(
+      `SIGILLO_FIREBASE_API_KEY does not look like a Firebase web API key: ${[...apiKey].length} characters, ` +
+        `${foreign} of them not a letter, digit, "-" or "_" (a web API key is 39 characters, starting AIza)`,
+    );
   }
   if (!/^[a-z0-9-]{4,40}$/.test(projectId)) {
     throw new ConfigError("SIGILLO_FIREBASE_PROJECT_ID does not look like a Firebase project id");
