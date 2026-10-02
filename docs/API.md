@@ -254,8 +254,12 @@ different system than the key writes to.
 ## `GET /healthz`
 
 Returns `{"status":"ok"}` while the signer answers with the key the server
-started with, and `503 {"status":"signer unavailable"}` otherwise. No
-authentication, no information about any system. The server reconnects to a
+started with and every chain is intact. Otherwise `503`, with
+`{"status":"signer unavailable"}` when the signer does not answer, or
+`{"status":"a chain failed its check or disagrees with the signer"}` when a
+system is red in the web view (a broken link or signature, or a chain on which
+the signer and the database disagree). No authentication, and no information
+about which system: that is in the web view and the administrative log. The server reconnects to a
 restarted signer on its own; a signer that comes back with a different key is
 refused until the server is restarted.
 

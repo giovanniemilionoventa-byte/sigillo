@@ -53,6 +53,24 @@ describe("health", () => {
   });
 });
 
+describe("health of the chains", () => {
+  it("answers 503, naming no system, when a chain is not intact", async () => {
+    let intact = false;
+    const checked = buildServer({ store, keys, now: () => new Date(NOW), chainsIntact: () => intact });
+    await checked.ready();
+    try {
+      const broken = await checked.inject({ method: "GET", url: "/healthz" });
+      expect(broken.statusCode).toBe(503);
+      expect(broken.json()).toEqual({ status: "a chain failed its check or disagrees with the signer" });
+      expect(broken.body).not.toContain(SYSTEM);
+      intact = true;
+      expect((await checked.inject({ method: "GET", url: "/healthz" })).statusCode).toBe(200);
+    } finally {
+      await checked.close();
+    }
+  });
+});
+
 describe("authentication", () => {
   const requests = [
     { method: "POST" as const, url: "/v1/traces" },

@@ -360,6 +360,7 @@ describe("any other divergence", () => {
     const [outcome] = await store.reconcileWithSigner();
     expect(outcome).toMatchObject({ status: "diverged" });
     expect(store.signerDivergence(SYSTEM)).toMatch(/init-from-db/);
+    expect(store.divergentSystems()).toEqual([SYSTEM]);
     // The signer will not take the chain up from the server's word for it.
     await expect(store.append(event(5))).rejects.toBeInstanceOf(SignerRefusedError);
     expect(store.readChain(SYSTEM)).toHaveLength(5);
@@ -376,6 +377,42 @@ describe("the signer's clock", () => {
     expect(store.readChain(SYSTEM)).toHaveLength(5);
     // Not a divergence: the chains still agree, and the next honest receipt goes in.
     expect(store.signerDivergence(SYSTEM)).toBeNull();
+    expect(store.divergentSystems()).toEqual([]);
     expect((await store.append(event(5))).seq).toBe(5);
   });
+});
+
+describe("sigillo-server signer check", () => {
+  function check(): Promise<{ code: number; stdout: string; stderr: string }> {
+    return new Promise((resolve) => {
+      const child = spawn(TSX, [SERVER_CLI, "signer", "check", "--db", databasePath, "--signer-socket", socketPath], {
+        env: { PATH: process.env["PATH"] ?? "" },
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (data: Buffer) => (stdout += data.toString()));
+      child.stderr.on("data", (data: Buffer) => (stderr += data.toString()));
+      child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    });
+  }
+
+  it("says same for every chain the signer agrees on, and exits 0", async () => {
+    const run = await check();
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toBe(`${SYSTEM}\tdatabase seq 4\tsigner seq 4\tsame\n`);
+  }, 60_000);
+
+  it("after a rollback, with the signer ahead of the database: DIFFERENT, exit 1, R4 named, nothing written", async () => {
+    const head = store.readChain(SYSTEM).at(-1) as Receipt;
+    // Signed by the signer, never written to the database: as if the
+    // database had been put back to before it.
+    await client.signReceipt(forged(5, receiptHashHex(head), "after-upgrade"));
+    const before = rawCount("SELECT count(*) AS n FROM receipts");
+
+    const run = await check();
+    expect(run.code).toBe(1);
+    expect(run.stdout).toBe(`${SYSTEM}\tdatabase seq 4\tsigner seq 5\tDIFFERENT\n`);
+    expect(run.stderr).toContain("DEPLOY.md, step R4");
+    expect(rawCount("SELECT count(*) AS n FROM receipts")).toBe(before);
+  }, 60_000);
 });

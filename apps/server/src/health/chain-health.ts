@@ -44,13 +44,32 @@ interface TrackedState {
 export class ChainHealthMonitor {
   private readonly tracked = new Map<string, TrackedState>();
   private timer: NodeJS.Timeout | undefined;
+  /** Whether the signer answered when last asked; null until asked, or with no way to ask. */
+  private signerReachable: boolean | null = null;
 
   constructor(
     private readonly store: ReceiptStore,
     private readonly publicKey: KeyObject,
     private readonly staleAfterMs: number,
     private readonly maxAnchorDelayMs: number = DEFAULT_MAX_ANCHOR_DELAY_MS,
+    /** Asked on every tick: a server that cannot sign is not shown green. */
+    private readonly signerHealthy?: () => Promise<boolean>,
   ) {}
+
+  /** Asks the signer whether it answers, and remembers the answer for statusFor. */
+  async checkSigner(): Promise<void> {
+    if (this.signerHealthy === undefined) return;
+    try {
+      this.signerReachable = await this.signerHealthy();
+    } catch {
+      this.signerReachable = false;
+    }
+  }
+
+  /** The systems whose chain failed its check: a broken link or signature. Sorted. */
+  failedSystems(): string[] {
+    return [...this.tracked.entries()].filter(([, state]) => state.failed).map(([systemId]) => systemId).sort();
+  }
 
   /** Verifies whatever is new since the last call, for every system that exists. */
   check(): void {
@@ -72,8 +91,12 @@ export class ChainHealthMonitor {
   /** Same shape as Checkpointer.start(): a timer the process does not wait on. */
   start(intervalMinutes = 1): void {
     if (this.timer !== undefined) return;
-    this.check();
-    this.timer = setInterval(() => this.check(), intervalMinutes * 60 * 1000);
+    const tick = (): void => {
+      this.check();
+      void this.checkSigner();
+    };
+    tick();
+    this.timer = setInterval(tick, intervalMinutes * 60 * 1000);
     this.timer.unref();
   }
 
@@ -124,6 +147,14 @@ export class ChainHealthMonitor {
     const state = this.tracked.get(systemId);
     if (state?.failed === true) {
       return { status: "red", message: `Verifica fallita: ${state.failureDetail ?? "la catena non torna"}.` };
+    }
+    if (this.signerReachable === false) {
+      return {
+        status: "red",
+        message:
+          "Il firmatario non risponde: nessuna nuova azione può essere registrata finché non torna. " +
+          "Le ricevute già scritte non cambiano.",
+      };
     }
     // The signer keeps its own record of every chain. When the two disagree
     // in any way other than the one the server repairs by itself, nothing

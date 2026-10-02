@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { fromHex, GENESIS_PREV_HASH, merkleRoot, toHex } from "@sigillo/core";
+import { fromHex, GENESIS_PREV_HASH, merkleRoot, receiptHashHex, toHex } from "@sigillo/core";
 import { generateKeyFile, loadKeyFile } from "../../signer/src/index.js";
 import { SignerClient } from "../src/signer/client.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
@@ -147,14 +147,50 @@ describe("init-from-db", () => {
     }
   }, 60_000);
 
-  it("runs once: a second run is refused and changes nothing", () => {
+  it("runs once: a second run writes nothing, and says the signer still agrees", () => {
     expect(init().code).toBe(0);
     const files = readdirSync(stateDir).sort();
     const logged = adminActions().length;
 
     const again = init();
+    expect(again.code, again.stderr).toBe(0);
+    expect(again.stdout).toMatch(/already initialised on .*; the signer agrees with the database on all 2 chain\(s\): nothing to do/);
+    expect(readdirSync(stateDir).sort()).toEqual(files);
+    expect(adminActions()).toHaveLength(logged);
+  });
+
+  it("after a rollback, when the signer's record is ahead of the database, refuses a second run and points at R4", async () => {
+    expect(init().code).toBe(0);
+    // The new release signed one more receipt; then the previous release and
+    // its database were put back, and the signer's record stayed where it was.
+    const reader = ReceiptStore.open(databasePath);
+    const head = reader.readChain("support-bot").at(-1);
+    reader.close();
+    if (head === undefined) throw new Error("no head");
+    const ahead = createTestSigner({ key: loadKeyFile(keyPath), stateDir });
+    const now = new Date().toISOString();
+    await ahead.signReceipt({
+      v: 1,
+      system_id: "support-bot",
+      seq: head.seq + 1,
+      ts_event: now,
+      ts_received: now,
+      actor: { agent: "planner" },
+      action: { kind: "tool_call", name: "after-upgrade" },
+      input_hash: null,
+      output_hash: null,
+      outcome: "ok",
+      source: { type: "sdk" },
+      prev_hash: receiptHashHex(head),
+      key_id: ahead.keyId,
+    });
+    const files = readdirSync(stateDir).sort();
+    const logged = adminActions().length;
+
+    const again = init();
     expect(again.code).toBe(1);
-    expect(again.stderr).toMatch(/already initialised/);
+    expect(again.stderr).toMatch(/no longer agrees with this one: support-bot \(signer seq 6, database seq 5\)/);
+    expect(again.stderr).toMatch(/DEPLOY\.md, step R4/);
     expect(readdirSync(stateDir).sort()).toEqual(files);
     expect(adminActions()).toHaveLength(logged);
   });

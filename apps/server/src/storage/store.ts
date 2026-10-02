@@ -39,7 +39,7 @@ import {
   type UnsignedReceipt,
 } from "@sigillo/core";
 import { SignerRefusedError } from "../signer/errors.js";
-import { applySchema } from "./schema.js";
+import { applySchema, requireCurrentSchema } from "./schema.js";
 
 /**
  * Whatever holds the private key. In production this is the separate signer
@@ -483,6 +483,27 @@ export class ReceiptStore {
     return new ReceiptStore(write, read, signer, verificationKey);
   }
 
+  /**
+   * Opens the database at `location` for reading only: one read-only
+   * connection, no schema applied, nothing written, the file left exactly as
+   * it was. The schema must already be this release's (requireCurrentSchema).
+   * For the commands that only look: a listing, the administrative log, a
+   * lookup.
+   */
+  static openReadOnly(location: string): ReceiptStore {
+    const read = new Database(location, { readonly: true, fileMustExist: true });
+    try {
+      read.pragma("busy_timeout = 5000");
+      requireCurrentSchema(read);
+      // The write statements are prepared on this connection too, and fail
+      // if anything ever tries to run them.
+      return new ReceiptStore(read, read, undefined, undefined);
+    } catch (error) {
+      read.close();
+      throw error;
+    }
+  }
+
   /** Every key this database has been signed with, in the order they were first used. */
   signingKeys(): { key_id: string; public_key_base64: string }[] {
     return this.read
@@ -704,6 +725,11 @@ export class ReceiptStore {
       for (const systemId of systemIds) outcomes.push(await this.reconcileNow(systemId));
       return outcomes;
     });
+  }
+
+  /** Every chain the last comparison with the signer found wrong, sorted. */
+  divergentSystems(): string[] {
+    return [...this.divergences.keys()].sort();
   }
 
   /** What the last comparison with the signer found wrong with this chain, or null. */
@@ -1193,7 +1219,7 @@ export class ReceiptStore {
 
   close(): void {
     this.read.close();
-    this.write.close();
+    if (this.write !== this.read) this.write.close();
   }
 
   private async writeCheckpoint(systemId: string): Promise<StoredCheckpoint | null> {

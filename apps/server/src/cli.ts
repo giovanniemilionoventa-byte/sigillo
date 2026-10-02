@@ -4,7 +4,7 @@ import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { hostname, userInfo } from "node:os";
 import Database from "better-sqlite3";
 import { Command } from "commander";
-import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw } from "@sigillo/core";
+import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw, receiptHashHex } from "@sigillo/core";
 import { ApiKeyStore } from "./auth/api-keys.js";
 import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
@@ -13,6 +13,7 @@ import { archiveFromStore, positionsIn, tokensIn } from "./export/from-store.js"
 import { ChainHealthMonitor } from "./health/chain-health.js";
 import { buildServer } from "./http/server.js";
 import { SignerClient } from "./signer/client.js";
+import { SCHEMA_VERSION } from "./storage/schema.js";
 import { ReceiptStore, SystemNotDeletableError, type AdminRequest } from "./storage/store.js";
 import type { TsaOptions } from "./timestamp/rfc3161.js";
 
@@ -206,6 +207,7 @@ program
           publicKeyFromRaw(new Uint8Array(Buffer.from(signer.publicKeyBase64, "base64"))),
           staleAfterMinutes * 60 * 1000,
           maxAnchorDelayMinutes * 60 * 1000,
+          () => signer.healthy(),
         )
       : undefined;
 
@@ -225,6 +227,7 @@ program
       trustProxy: proxies,
       ingestLimits,
       signerHealthy: () => signer.healthy(),
+      chainsIntact: () => store.divergentSystems().length === 0 && (healthMonitor?.failedSystems().length ?? 0) === 0,
       ...(pause === null ? {} : { ingestPause: pause }),
       ...(!uiMounted || healthMonitor === undefined
         ? {}
@@ -293,7 +296,7 @@ system
   .option("--all", "include archived systems")
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
   .action((options: DatabaseOption & { all?: boolean }) => {
-    const store = ReceiptStore.open(options.db);
+    const store = ReceiptStore.openReadOnly(options.db);
     try {
       for (const record of store.listSystemRecords()) {
         if (record.archived_at !== null && options.all !== true) continue;
@@ -392,7 +395,7 @@ program
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
   .action((options: DatabaseOption & { limit: string }) => {
     const limit = positiveInteger("--limit", options.limit, 100, 10_000);
-    const store = ReceiptStore.open(options.db);
+    const store = ReceiptStore.openReadOnly(options.db);
     try {
       for (const entry of store.adminLog(limit)) {
         process.stdout.write(
@@ -447,7 +450,7 @@ key
   .option("--system <system_id>", "only this system's keys")
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
   .action((options: DatabaseOption & { system?: string }) => {
-    const keys = ApiKeyStore.open(options.db);
+    const keys = ApiKeyStore.openReadOnly(options.db);
     try {
       for (const record of keys.list(options.system)) {
         const state = record.revokedAt === null ? "live" : `revoked ${record.revokedAt}`;
@@ -456,6 +459,52 @@ key
     } finally {
       keys.close();
     }
+  });
+
+const signerCommand = program.command("signer").description("The signer's own record of every chain");
+
+signerCommand
+  .command("check")
+  .description(
+    "Compare the head the signer remembers for every chain with the database's last receipt; exit 1 if any differ. " +
+      "Reads only: nothing is recovered or repaired",
+  )
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .requiredOption("--signer-socket <path>", "the signer's socket", process.env["SIGILLO_SIGNER_SOCKET"])
+  .action(async (options: DatabaseOption & { signerSocket: string }) => {
+    const signer = await SignerClient.connect(options.signerSocket);
+    const store = ReceiptStore.openReadOnly(options.db);
+    let differ = 0;
+    try {
+      for (const systemId of store.listSystems()) {
+        const tip = store.tip(systemId);
+        const head = await signer.head(systemId);
+        const same = tip !== null && head !== null && head.seq === tip.seq && receiptHashHex(head) === tip.hash;
+        if (!same) differ += 1;
+        process.stdout.write(
+          `${systemId}\tdatabase seq ${tip?.seq ?? "none"}\tsigner seq ${head?.seq ?? "none"}\t${same ? "same" : "DIFFERENT"}\n`,
+        );
+      }
+    } finally {
+      store.close();
+      signer.close();
+    }
+    if (differ > 0) {
+      process.stderr.write(
+        `${differ} chain(s) differ. After a rollback, the signer's record is ahead of the database: ` +
+          "DEPLOY.md, step R4. After restoring a backup: DEPLOY.md, last section\n",
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("migrate")
+  .description("Bring a database up to this release's schema. The server does it by itself when it starts")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action((options: DatabaseOption) => {
+    ReceiptStore.open(options.db).close();
+    process.stdout.write(`${options.db}: schema ${SCHEMA_VERSION}\n`);
   });
 
 program
@@ -571,7 +620,7 @@ subject
   .argument("<identifier>")
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
   .action((identifier: string, options: DatabaseOption) => {
-    const store = ReceiptStore.open(options.db);
+    const store = ReceiptStore.openReadOnly(options.db);
     try {
       const token = store.subjectToken(identifier);
       if (token === null) {

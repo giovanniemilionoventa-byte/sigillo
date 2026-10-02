@@ -43,6 +43,12 @@ export interface ServerOptions {
    */
   signerHealthy?: () => Promise<boolean>;
   /**
+   * Whether every chain is intact and agrees with the signer. /healthz reports
+   * 503 when one is not, so that a monitor sees what the web view's traffic
+   * light shows red. Which system it is, the web view says, not /healthz.
+   */
+  chainsIntact?: () => boolean;
+  /**
    * Writes paused for maintenance (config.ts, ingestPause): both ingest
    * endpoints answer 503 with Retry-After to every system except those in
    * `except`, after the key has been checked. Nothing is read from the body.
@@ -240,6 +246,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   app.get("/healthz", async (_request, reply) => {
     if (options.signerHealthy !== undefined && !(await options.signerHealthy())) {
       return reply.code(503).send({ status: "signer unavailable" });
+    }
+    if (options.chainsIntact !== undefined && !options.chainsIntact()) {
+      return reply.code(503).send({ status: "a chain failed its check or disagrees with the signer" });
     }
     return { status: "ok" };
   });

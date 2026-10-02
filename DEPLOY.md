@@ -228,7 +228,12 @@ $ docker compose run --rm --no-deps -v sigillo_sigillo-data:/var/lib/sigillo sig
 con gli stessi numeri del punto 0, e alla fine
 `initialised K system(s), 0 retired; written to the administrative log`.
 (Su 506 ricevute ha impiegato circa un secondo.)
-❌ `already initialised`: è già stato fatto, va bene così, prosegui.
+❌ `already initialised …; the signer agrees with the database on all K chain(s):
+nothing to do`: era già stato fatto, e tutto torna; prosegui.
+❌ `already initialised …, and it no longer agrees with this one`: la memoria
+del signer è più avanti del database (succede dopo un ritorno indietro fatto
+senza il passo R4). **Non scrive nulla.** Fai il passo R4 del Piano di ritorno
+(solo quello) e ripeti questo comando.
 ❌ Un messaggio che nomina un sistema e una posizione (`seq`): una catena non
 torna. **Non scrive nulla.** Riparti con la versione vecchia (Piano di ritorno,
 passo R2–R4, senza R3) e chiedi aiuto.
@@ -287,29 +292,12 @@ il registro amministrativo mostra «registrato nello stato del firmatario» per
 ogni sistema. ❌ Rosso con «Il firmatario e il database non concordano»: non
 correggere nulla a mano; Piano di ritorno.
 
-**GET_HEAD: il signer e il database devono dire la stessa cosa** per ogni sistema.
+**Il signer e il database devono dire la stessa cosa** per ogni sistema.
 
 ```sh
-$ docker compose exec -T server node --input-type=module - <<'EOF'
-import { createConnection } from "node:net";
-import Database from "better-sqlite3";
-import { receiptHashHex } from "@sigillo/core";
-const db = new Database("/var/lib/sigillo/sigillo.db", { readonly: true });
-const socket = createConnection("/run/sigillo/signer.sock");
-let buffer = ""; const waiting = [];
-socket.on("data", (data) => { buffer += data; let i; while ((i = buffer.indexOf("\n")) >= 0) { const line = buffer.slice(0, i); buffer = buffer.slice(i + 1); waiting.shift()(JSON.parse(line)); } });
-const ask = (message) => new Promise((resolve) => { waiting.push(resolve); socket.write(JSON.stringify(message) + "\n"); });
-for (const { system_id } of db.prepare("SELECT system_id FROM systems ORDER BY system_id").all()) {
-  const last = db.prepare("SELECT seq, hash FROM receipts WHERE system_id = ? ORDER BY seq DESC LIMIT 1").get(system_id);
-  const reply = await ask({ v: 2, id: system_id, method: "GET_HEAD", system_id });
-  const head = reply.ok && reply.head ? { seq: reply.head.seq, hash: receiptHashHex(reply.head) } : null;
-  const same = head !== null && head.seq === last.seq && head.hash === last.hash;
-  console.log(system_id.padEnd(24), "database seq", last.seq, "| signer seq", head?.seq, same ? "UGUALI" : "DIVERSI");
-}
-socket.end();
-EOF
+$ docker compose exec server node dist/cli.js signer check
 ```
-✅ Una riga per sistema, tutte `UGUALI`. ❌ Anche una sola `DIVERSI`:
+✅ Una riga per sistema, tutte `same`. ❌ Anche una sola `DIFFERENT`:
 **fermati**, Piano di ritorno.
 
 **La pagina "verifica un documento"** (Caddy deve usare il Caddyfile nuovo):
@@ -536,8 +524,10 @@ Da ora il signer ricorda l'ultima ricevuta firmata di ogni catena. Se si rimette
 un backup del database **più vecchio** del signer (per esempio quello della
 notte), le catene che nel frattempo hanno avuto ricevute diventano **rosse**, e
 il server rifiuta di scrivere su di esse (`503`) finché qualcuno non decide.
-Gli altri sistemi continuano a funzionare. `/healthz` resta `ok`: se ne accorge
-solo chi guarda la pagina web o il registro amministrativo (`signer.divergence`).
+Gli altri sistemi continuano a funzionare. Se ne accorgono la pagina web, il
+registro amministrativo (`signer.divergence`), `/healthz` (che risponde `503`, e
+quindi `docker compose ps` mostra il server `unhealthy`), `update.sh` e
+`sigillo-server signer check`.
 
 - Se il signer è avanti di **una sola** ricevuta, il server la recupera da solo
   (`signer.recovered` nel registro): nessuna azione.

@@ -42,5 +42,23 @@ if [ "$loaded" != "$expected" ]; then
   exit 1
 fi
 
+# The signer's record of every chain against the database. They disagree
+# after a rollback that left the signer's record in place (DEPLOY.md, R4) or
+# after a database restored from a backup older than the signer: in both
+# cases the systems concerned are red and refuse writes, and this says so now
+# rather than leaving it to whoever next looks at the web view. Tried a few
+# times, because the server applies its schema as it starts.
+tries=0
+until report=$(docker compose exec -T server node dist/cli.js signer check 2>&1); do
+  tries=$((tries + 1))
+  if [ "$tries" -ge 10 ]; then
+    echo "$report" >&2
+    echo "update.sh: the signer and the database disagree (above); do not write to those systems until a person has decided" >&2
+    exit 1
+  fi
+  sleep 3
+done
+echo "$report"
+
 echo "update.sh: done; Caddy restarted and serves the Caddyfile's script hash $expected"
 docker compose ps

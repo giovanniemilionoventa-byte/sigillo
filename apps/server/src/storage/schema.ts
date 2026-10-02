@@ -269,6 +269,28 @@ export class NewerSchemaError extends Error {
   }
 }
 
+export class OlderSchemaError extends Error {
+  constructor(readonly found: number) {
+    super(
+      `this database is at schema ${found}, and this release reads schema ${SCHEMA_VERSION}. A command that only ` +
+        "reads does not bring it up to date: run `sigillo-server migrate` on it (on a copy, if it is a backup), " +
+        "or start the server on it once",
+    );
+    this.name = "OlderSchemaError";
+  }
+}
+
+/**
+ * For a connection that only reads: the schema must be exactly this
+ * release's. Nothing is applied, so a backup that is being looked at is left
+ * byte for byte as it was (verification report of 2026-10-01, point 8).
+ */
+export function requireCurrentSchema(db: Database.Database): void {
+  const found = db.pragma("user_version", { simple: true }) as number;
+  if (found > SCHEMA_VERSION) throw new NewerSchemaError(found);
+  if (found < SCHEMA_VERSION) throw new OlderSchemaError(found);
+}
+
 /**
  * Applies the schema and every migration, in the order a database needs them:
  * the tables first (a no-op on one that already has them), then any column a

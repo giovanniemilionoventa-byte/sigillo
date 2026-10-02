@@ -165,7 +165,11 @@ describe("deploy/Dockerfile", () => {
 describe.skipIf(process.platform === "win32")("deploy/update.sh", () => {
   const caddyfileHash = /'sha256-[A-Za-z0-9+/]+=*'/.exec(readFileSync(join(DEPLOY, "Caddyfile"), "utf8"))?.[0] ?? "";
 
-  function runUpdate(loadedHash: string, gitFails = false): { status: number | null; calls: string[]; stderr: string } {
+  function runUpdate(
+    loadedHash: string,
+    gitFails = false,
+    signerDiffers = false,
+  ): { status: number | null; calls: string[]; stdout: string; stderr: string } {
     const root = mkdtempSync(join(tmpdir(), "sigillo-update-"));
     try {
       mkdirSync(join(root, "deploy"));
@@ -178,9 +182,14 @@ describe.skipIf(process.platform === "win32")("deploy/update.sh", () => {
       writeFileSync(
         join(bin, "docker"),
         `#!/bin/sh\necho "docker $*" >> "${log}"\n` +
-          `case "$*" in *"exec -T caddy wget"*) printf '%s' '{"apps":{"http":{"servers":{"srv0":{"routes":[{"handle":[{"headers":{"set":{"Content-Security-Policy":["script-src ${loadedHash.replace(/'/g, "'\\''")}"]}}}]}]}}}}}' ;; esac\n`,
+          `case "$*" in *"exec -T caddy wget"*) printf '%s' '{"apps":{"http":{"servers":{"srv0":{"routes":[{"handle":[{"headers":{"set":{"Content-Security-Policy":["script-src ${loadedHash.replace(/'/g, "'\\''")}"]}}}]}]}}}}}' ;; esac\n` +
+          `case "$*" in *"signer check"*) ${
+            signerDiffers ? `printf 'bot\\tdatabase seq 4\\tsigner seq 5\\tDIFFERENT\\n'; exit 1` : `printf 'bot\\tdatabase seq 4\\tsigner seq 4\\tsame\\n'`
+          } ;; esac\n`,
         { mode: 0o755 },
       );
+      // The retries wait for nothing here.
+      writeFileSync(join(bin, "sleep"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
       const result = spawnSync("/bin/sh", [join(root, "deploy", "update.sh")], {
         encoding: "utf8",
         env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` },
@@ -191,7 +200,7 @@ describe.skipIf(process.platform === "win32")("deploy/update.sh", () => {
       } catch {
         // nothing was called
       }
-      return { status: result.status, calls, stderr: result.stderr };
+      return { status: result.status, calls, stdout: result.stdout, stderr: result.stderr };
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -208,6 +217,23 @@ describe.skipIf(process.platform === "win32")("deploy/update.sh", () => {
       "docker compose restart caddy",
       "docker compose exec -T caddy wget -qO- http://localhost:2019/config/",
     ]);
+  });
+
+  it("asks the server whether the signer agrees with the database, after Caddy", () => {
+    const { status, calls, stdout } = runUpdate(caddyfileHash);
+    expect(status).toBe(0);
+    expect(calls.indexOf("docker compose exec -T server node dist/cli.js signer check")).toBeGreaterThan(
+      calls.indexOf("docker compose exec -T caddy wget -qO- http://localhost:2019/config/"),
+    );
+    expect(stdout).toContain("bot\tdatabase seq 4\tsigner seq 4\tsame");
+  });
+
+  it("fails, showing which chain, when the signer and the database disagree", () => {
+    const { status, calls, stderr } = runUpdate(caddyfileHash, false, true);
+    expect(status).toBe(1);
+    expect(calls.filter((call) => call.includes("signer check"))).toHaveLength(10);
+    expect(stderr).toContain("DIFFERENT");
+    expect(stderr).toContain("the signer and the database disagree");
   });
 
   it("fails when Caddy serves another script hash than the Caddyfile's", () => {

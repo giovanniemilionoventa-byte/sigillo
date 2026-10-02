@@ -42,6 +42,8 @@ export interface InitReport {
   retired: string[];
   /** Systems the signer already knew with exactly the database's head. */
   unchanged: string[];
+  /** When it had been run before: then nothing is written, and every chain agreed. */
+  alreadyInitialised?: string;
 }
 
 interface ReceiptRow {
@@ -89,10 +91,13 @@ export function initFromDatabase(options: {
 }): InitReport {
   const markerPath = join(options.stateDir, INIT_MARKER);
   const state = StateDirectory.open(options.stateDir);
-  if (existsSync(markerPath)) {
-    const marker = JSON.parse(readFileSync(markerPath, "utf8")) as { ts?: string };
-    throw new Error(`the signer's state was already initialised from a database on ${marker.ts ?? "an unknown date"}; it is done once`);
-  }
+  // Run a second time, it writes nothing. It only says whether the signer
+  // still agrees with this database, because the case that brings someone
+  // back here is a rollback: the previous release put back, its database
+  // restored, and the signer's record left ahead of it (DEPLOY.md, R4).
+  const marker = existsSync(markerPath)
+    ? ((JSON.parse(readFileSync(markerPath, "utf8")) as { ts?: string }).ts ?? "an unknown date")
+    : null;
   if (!existsSync(options.databasePath)) {
     throw new Error(`no database at ${options.databasePath}`);
   }
@@ -118,6 +123,27 @@ export function initFromDatabase(options: {
     // Everything is built and checked before anything is written.
     const toWrite: SystemState[] = [];
     const report: InitReport = { systems: [], retired: [], unchanged: [] };
+    if (marker !== null) {
+      const differ: string[] = [];
+      for (const systemId of systemIds) {
+        const chain = chainStateOf(systemId, receipts.all(systemId) as ReceiptRow[], keys);
+        const known = state.get(systemId);
+        if (isChain(known) && known.seq === chain.seq && known.hash === chain.hash) {
+          report.unchanged.push(systemId);
+        } else {
+          differ.push(`${systemId} (signer seq ${isChain(known) ? known.seq : "none"}, database seq ${chain.seq})`);
+        }
+      }
+      if (differ.length > 0) {
+        throw new Error(
+          `the signer's state was already initialised from a database on ${marker}, and it no longer agrees with ` +
+            `this one: ${differ.join(", ")}. If the previous release was put back in between, move the state ` +
+            "aside first (DEPLOY.md, step R4); nothing was written",
+        );
+      }
+      report.alreadyInitialised = marker;
+      return report;
+    }
     for (const systemId of systemIds) {
       const chain = chainStateOf(systemId, receipts.all(systemId) as ReceiptRow[], keys);
       const known = state.get(systemId);
