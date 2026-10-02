@@ -190,7 +190,7 @@ describe("the signer process, protocol 2, and receipt version 4", () => {
     const sig = await client.signReceipt(v2);
     // The server died before storing it; the next one recovers it from the signer.
     expect(await store.reconcileWithSigner([SYSTEM])).toEqual([
-      { system_id: SYSTEM, status: "recovered", seq: 2, hash: receiptHashHex(v2) },
+      { system_id: SYSTEM, status: "recovered", seq: 2, hash: receiptHashHex(v2), count: 1 },
     ]);
     expect(store.readChain(SYSTEM)[2]).toEqual({ ...v2, sig });
     await store.append(event(3, { raw_input: { value: "score: 7" } }));

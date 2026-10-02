@@ -118,6 +118,7 @@ Protocol version 2 of the signer socket (`apps/signer/src/daemon.ts`) replaces
 | `SIGN_RECEIPT` (an unsigned receipt) | recomputes its hash with `packages/core`, and signs it only if `seq` is its last `seq` + 1 and `prev_hash` is its last receipt's hash (for a system it has never seen: only `seq` 0, a genesis); `key_id` must be its own; `ts_received` must be within the clock tolerance of its own clock and not earlier than the receipt before |
 | `CHECKPOINT` (a `system_id`) | signs a checkpoint whose size, root and time it computes itself, from its record and its clock; the request cannot carry any of them |
 | `GET_HEAD` (a `system_id`) | returns the last receipt it signed for that system, signature included, or nothing |
+| `GET_RECEIPTS` (a `system_id`, a `from_seq`, a `limit` of 1 to 50) | returns the receipts it signed for that system from `from_seq` on, from its journal, signatures included; nothing past its last receipt, and nothing past a position its journal does not hold |
 | `PUBKEY` | returns the key identifier and the raw public key |
 
 The signature is unchanged: Ed25519 over the 32 bytes of the receipt hash (or
@@ -140,15 +141,33 @@ The record is never in the server's database; the server cannot read or
 change it. A state file that does not hold together stops the signer from
 starting.
 
+**The journal.** Beside each state file, the signer appends every receipt it
+signs for that system to a journal (`<hash>.receipts.jsonl`, readable by the
+signer's user only), durably, before the state moves on. It is what lets a
+database restored from a backup older than the signer take back every receipt
+signed since (below). It is a record to recover from, not evidence: the server
+checks each receipt's signature and link before writing it, so a journal
+altered on the signer's disk yields a divergence, never a wrong chain. It
+holds what the receipts hold: since version 4, pseudonym tokens and digests,
+no identifier and no nonce. `init-from-db` writes no journal for the chain
+before it, because receipts of versions 1 to 3 can name people in clear; the
+journal begins with the next receipt signed.
+
 **When the database and the record disagree.** The server compares every
 chain's tip with `GET_HEAD` when it starts, and again whenever the signer
 refuses a receipt's position. One case has a safe answer and is repaired by
-itself: the signer **one receipt ahead**, that receipt hanging off the
-database's tip — the server died between the signature and the insert. The
-receipt is written, once (a span already on the chain under the same
-`trace_id`/`span_id` makes it a divergence instead), and the repair goes to the
-administrative log as `signer.recovered`. **Every other disagreement** — the
-signer further ahead, behind, on another branch, with no record of a chain the
+itself: the signer **ahead**, its receipts continuing the database's tip — the
+server died between the signature and the insert (one receipt), or the
+database was restored from a backup older than the signer (any number). The
+receipts are fetched with `GET_RECEIPTS` and written, once, each checked under
+a known key and linked to the one before, ending exactly at the signer's head;
+a span already on the chain under the same `trace_id`/`span_id`, or a position
+the journal does not hold, makes it a divergence instead. Each one goes to the
+administrative log as `signer.recovered`. Receipts taken back this way have no
+nonces and no `subjects` rows (those lived only in the database), so their
+digests can never be opened and their tokens lead to nobody. **Every other
+disagreement** — the signer behind, on another branch, ahead with a gap in its
+journal, with no record of a chain the
 database has, or a checkpoint whose root is not the database's — turns the
 system red, goes to the administrative log as `signer.divergence`, and is not
 corrected: which side is right is for a person to establish. Until then the
@@ -165,8 +184,10 @@ batch finds the receipts already written by `trace_id`/`span_id`.
 its positions, links, hashes and signatures, writes the signer's record, marks
 every system deleted earlier as retired (its identifier is never given a chain
 again, by the signer as well as by the server), and writes one `signer.init`
-entry per system to the administrative log. It refuses to run a second time,
-and never overwrites a system the signer already knows. Until it has run, the
+entry per system to the administrative log. Run a second time, it writes
+nothing: it says whether the signer still agrees with the database, and points
+at the rollback procedure when the signer is ahead. It never overwrites a
+system the signer already knows. Until it has run, the
 server shows every existing system red, and the signer refuses to extend them.
 
 **What the record does not protect.** Whoever can read the signer's volume has

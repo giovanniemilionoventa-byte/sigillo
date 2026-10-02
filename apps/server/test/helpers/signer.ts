@@ -81,6 +81,7 @@ export function createTestSigner(
       }),
     checkpoint: (systemId) => refusals(() => signer.checkpoint(systemId)),
     head: (systemId) => refusals(() => signer.head(systemId)),
+    receipts: (systemId, fromSeq, limit) => refusals(() => signer.receipts(systemId, fromSeq, limit)),
     forge: async (digest) => Buffer.from(sign(null, digest, key.privateKey)).toString("base64"),
   };
 }

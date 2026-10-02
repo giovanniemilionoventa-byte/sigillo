@@ -194,7 +194,11 @@ program
     // disagreement turns that system red and is left for a person.
     for (const outcome of await store.reconcileWithSigner()) {
       if (outcome.status === "recovered") {
-        process.stdout.write(`${outcome.system_id}: recovered seq ${outcome.seq} from the signer\n`);
+        process.stdout.write(
+          outcome.count === 1
+            ? `${outcome.system_id}: recovered seq ${outcome.seq} from the signer\n`
+            : `${outcome.system_id}: recovered seq ${outcome.seq - outcome.count + 1} to ${outcome.seq} from the signer\n`,
+        );
       } else if (outcome.status === "diverged") {
         process.stderr.write(`${outcome.system_id}: the signer and the database disagree: ${outcome.detail}\n`);
       }

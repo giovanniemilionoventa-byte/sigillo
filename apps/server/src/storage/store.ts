@@ -61,6 +61,12 @@ export interface SigningService {
   checkpoint(systemId: string): Promise<Checkpoint>;
   /** The last receipt the signer signed for the system, or null. */
   head(systemId: string): Promise<Receipt | null>;
+  /**
+   * The receipts the signer signed for the system from `fromSeq` on, at most
+   * `limit`, from its journal. Without it, only the one receipt the head
+   * holds can be taken back.
+   */
+  receipts?(systemId: string, fromSeq: number, limit: number): Promise<Receipt[]>;
 }
 
 /**
@@ -100,8 +106,11 @@ export interface ChainTip {
  */
 export type ReconcileOutcome =
   | { system_id: string; status: "in_sync" }
-  | { system_id: string; status: "recovered"; seq: number; hash: string }
+  | { system_id: string; status: "recovered"; seq: number; hash: string; /** How many receipts were taken back, ending at seq. */ count: number }
   | { system_id: string; status: "diverged"; detail: string };
+
+/** How many receipts to ask the signer's journal for at a time (its limit is 50). */
+const RECOVERY_PAGE = 50;
 
 /** The largest canonical receipt the store asks the signer to sign; its socket takes 256 KiB a line. */
 const MAX_RECEIPT_BYTES = 192 * 1024;
@@ -1581,6 +1590,26 @@ export class ReceiptStore {
     const { signer, verificationKey } = this.writer();
     const head = await signer.head(systemId);
 
+    // Receipts the signer is ahead by, beyond the one its head holds, come
+    // from its journal, fetched before the transaction: the queue this runs
+    // on keeps the database's tip where it is meanwhile.
+    const tipBefore = this.tipStatement.get(systemId) as TipRow | undefined;
+    const firstMissing = (tipBefore?.seq ?? -1) + 1;
+    let journal: Receipt[] | null = null;
+    if (head !== null && head.seq > firstMissing && signer.receipts !== undefined) {
+      journal = [];
+      try {
+        while (journal.length < head.seq - firstMissing + 1) {
+          const page = await signer.receipts(systemId, firstMissing + journal.length, RECOVERY_PAGE);
+          if (page.length === 0) break;
+          journal.push(...page);
+        }
+      } catch {
+        // A signer without a journal: only the one receipt its head holds can come back.
+        journal = null;
+      }
+    }
+
     return this.inTransaction(async () => {
       const tip = this.tipStatement.get(systemId) as TipRow | undefined;
       const here = tip === undefined ? "this database holds no chain for it" : `this database is at seq ${tip.seq} (${tip.hash})`;
@@ -1597,9 +1626,11 @@ export class ReceiptStore {
         );
       }
 
+      const keyFor = (receipt: Receipt): KeyObject | undefined =>
+        this.publicKeyFor(receipt.key_id) ?? (receipt.key_id === signer.keyId ? verificationKey : undefined);
       const headHash = receiptHashHex(head);
-      const key = this.publicKeyFor(head.key_id) ?? (head.key_id === signer.keyId ? verificationKey : undefined);
-      if (head.system_id !== systemId || key === undefined || !verifyReceiptSignature(head, key)) {
+      const headKey = keyFor(head);
+      if (head.system_id !== systemId || headKey === undefined || !verifyReceiptSignature(head, headKey)) {
         return diverged(`the head the signer returned for ${systemId} is not a receipt of it under a known key`);
       }
       const there = `the signer is at seq ${head.seq} (${headHash})`;
@@ -1607,31 +1638,71 @@ export class ReceiptStore {
       if (tip !== undefined && head.seq === tip.seq && headHash === tip.hash) {
         return { system_id: systemId, status: "in_sync" };
       }
+      const tipSeq = tip?.seq ?? -1;
+      if (head.seq <= tipSeq || tipSeq + 1 !== firstMissing) return diverged(`${there}, and ${here}`);
 
-      const extendsTip = head.seq === (tip?.seq ?? -1) + 1 && head.prev_hash === (tip?.hash ?? GENESIS_PREV_HASH);
-      if (!extendsTip) return diverged(`${there}, and ${here}`);
+      // The signer signed receipts this database does not hold: the process
+      // that asked for the last one never stored it, or the database was put
+      // back to a copy older than the signer. They are taken back only if
+      // every one is the next of the chain here, under a known key, ending
+      // exactly at the signer's head.
+      const missing = head.seq === firstMissing ? [head] : (journal ?? []);
+      let previous = tip?.hash ?? GENESIS_PREV_HASH;
+      const taken: Receipt[] = [];
+      for (const [index, receipt] of missing.entries()) {
+        const seq = firstMissing + index;
+        const key = keyFor(receipt);
+        if (
+          receipt.system_id !== systemId ||
+          receipt.seq !== seq ||
+          receipt.prev_hash !== previous ||
+          key === undefined ||
+          !verifyReceiptSignature(receipt, key)
+        ) {
+          return diverged(`${there}, and ${here}; the signer's receipt for seq ${seq} does not continue this chain`);
+        }
+        previous = receiptHashHex(receipt);
+        taken.push(receipt);
+        if (seq === head.seq) break;
+      }
+      const last = taken.at(-1);
+      if (last === undefined || last.seq !== head.seq || previous !== headHash) {
+        return diverged(
+          `${there}, and ${here}; the signer's journal does not hold every receipt in between ` +
+            `(it reaches seq ${last?.seq ?? tipSeq})`,
+        );
+      }
 
-      // The one case with a safe answer: the signer signed the receipt that
-      // comes next, and the process that asked for it never stored it.
       if (this.deletionOf(systemId, this.write) !== null) {
-        return diverged(`${there}, but ${systemId} was deleted here, so its receipt is not restored`);
+        return diverged(`${there}, but ${systemId} was deleted here, so its receipts are not restored`);
       }
-      const { trace_id, span_id } = head.source;
-      if (trace_id !== undefined && span_id !== undefined && this.duplicateStatement.get(systemId, trace_id, span_id) !== undefined) {
-        return diverged(`${there}, and its span ${trace_id}/${span_id} is already on the chain at another position`);
+      for (const receipt of taken) {
+        const { trace_id, span_id } = receipt.source;
+        if (trace_id !== undefined && span_id !== undefined && this.duplicateStatement.get(systemId, trace_id, span_id) !== undefined) {
+          return diverged(`${there}, and the span ${trace_id}/${span_id} of seq ${receipt.seq} is already on the chain at another position`);
+        }
       }
-      if (head.seq === 0) {
-        this.registerStatement.run({ system_id: systemId, created_at: head.ts_received });
+
+      for (const receipt of taken) {
+        if (receipt.seq === 0) {
+          this.registerStatement.run({ system_id: systemId, created_at: receipt.ts_received });
+        }
+        this.insertRow(receipt);
+        const { trace_id, span_id } = receipt.source;
+        this.logAdmin(
+          "signer.recovered",
+          systemId,
+          { actor: "server (reconciliation with the signer)", ts: new Date().toISOString() },
+          {
+            seq: receipt.seq,
+            hash: receiptHashHex(receipt),
+            ...(trace_id === undefined ? {} : { trace_id }),
+            ...(span_id === undefined ? {} : { span_id }),
+          },
+        );
       }
-      this.insertRow(head);
-      this.logAdmin(
-        "signer.recovered",
-        systemId,
-        { actor: "server (reconciliation with the signer)", ts: new Date().toISOString() },
-        { seq: head.seq, hash: headHash, ...(trace_id === undefined ? {} : { trace_id }), ...(span_id === undefined ? {} : { span_id }) },
-      );
       this.divergences.delete(systemId);
-      return { system_id: systemId, status: "recovered", seq: head.seq, hash: headHash };
+      return { system_id: systemId, status: "recovered", seq: head.seq, hash: headHash, count: taken.length };
     });
   }
 

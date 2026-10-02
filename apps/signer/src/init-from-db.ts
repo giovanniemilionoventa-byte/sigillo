@@ -167,6 +167,12 @@ export function initFromDatabase(options: {
       report.retired.push(system_id);
     }
 
+    // No journal is written for what came before (StateDirectory.record): the
+    // receipts of versions 1 to 3 may name people in clear, and a copy of
+    // them in the signer's volume would be one more place they could never
+    // be erased from. The journal begins with the next receipt signed; the
+    // backup taken just before this command (DEPLOY.md, step 1) covers
+    // everything older.
     for (const entry of toWrite) state.put(entry);
 
     const ts = options.now().toISOString();

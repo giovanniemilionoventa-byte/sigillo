@@ -520,20 +520,31 @@ punto 0.
 
 ## Se il database viene ripristinato da un backup DOPO l'aggiornamento
 
-Da ora il signer ricorda l'ultima ricevuta firmata di ogni catena. Se si rimette
-un backup del database **più vecchio** del signer (per esempio quello della
-notte), le catene che nel frattempo hanno avuto ricevute diventano **rosse**, e
-il server rifiuta di scrivere su di esse (`503`) finché qualcuno non decide.
-Gli altri sistemi continuano a funzionare. Se ne accorgono la pagina web, il
-registro amministrativo (`signer.divergence`), `/healthz` (che risponde `503`, e
-quindi `docker compose ps` mostra il server `unhealthy`), `update.sh` e
-`sigillo-server signer check`.
+Da ora il signer tiene un registro (journal) di ogni ricevuta che firma. Se si
+rimette un backup del database **più vecchio** del signer (per esempio quello
+dell'ultima ora), al riavvio il server riprende dal signer tutte le ricevute
+mancanti, le controlla una per una (firma e collegamento) e le riscrive; nel
+registro amministrativo compare un `signer.recovered` per ciascuna, e
+`docker compose logs server` dice `recovered seq N to M from the signer`.
+Nessuna azione.
 
-- Se il signer è avanti di **una sola** ricevuta, il server la recupera da solo
-  (`signer.recovered` nel registro): nessuna azione.
-- Se è avanti di **più** ricevute, quelle ricevute sono perse (il signer ricorda
-  solo l'ultima). L'unico modo di ripartire è mettere da parte la memoria del
-  signer (come al passo R4) e rifare `init-from-db`: la catena riprende dal
-  database, e **riusa le posizioni (`seq`) già firmate**. Chi ha un fascicolo
-  esportato nel frattempo vedrà `FAILED previous-export`: è una biforcazione
-  vera, e va spiegata. Non farlo senza averlo deciso e scritto.
+Quello che il backup non aveva e il signer non conosce va perso comunque: i
+nonce delle impronte con sale e le corrispondenze persona ↔ pseudonimo delle
+persone viste per la prima volta dopo il backup. Le ricevute restano valide; le
+loro impronte non si potranno più aprire.
+
+Il recupero **non** avviene, e il sistema diventa **rosso** (il server rifiuta
+di scrivere su di esso, `503`; `/healthz` risponde `503`; `signer check` dice
+`DIFFERENT`), quando:
+
+- il backup è più vecchio dell'aggiornamento (il registro del signer comincia
+  dopo `init-from-db`): usa il backup del punto 1, che è esattamente a quel
+  punto;
+- una ricevuta del registro non torna (firma, collegamento): qualcuno ha
+  toccato i file del signer, o il database è su un ramo diverso.
+
+In questi casi l'unico modo di ripartire è mettere da parte la memoria del
+signer (come al passo R4) e rifare `init-from-db`: la catena riprende dal
+database e **riusa le posizioni (`seq`) già firmate**. Chi ha un fascicolo
+esportato nel frattempo vedrà `FAILED previous-export`: è una biforcazione
+vera, e va spiegata. Non farlo senza averlo deciso e scritto.

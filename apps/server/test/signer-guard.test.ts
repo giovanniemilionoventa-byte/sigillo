@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -235,7 +236,7 @@ describe("a crash between the signature and the insert", () => {
     // A new server process takes over the same database.
     store = ReceiptStore.open(databasePath, client);
     const outcomes = await store.reconcileWithSigner();
-    expect(outcomes).toEqual([{ system_id: SYSTEM, status: "recovered", seq: 5, hash: receiptHashHex(lost) }]);
+    expect(outcomes).toEqual([{ system_id: SYSTEM, status: "recovered", seq: 5, hash: receiptHashHex(lost), count: 1 }]);
     const chain = store.readChain(SYSTEM);
     expect(chain[5]).toEqual({ ...lost, sig });
     const recovery = store.adminLog().find((entry) => entry.action === "signer.recovered");
@@ -335,11 +336,57 @@ describe("a signer restarted with its state kept", () => {
 });
 
 describe("any other divergence", () => {
-  it("a signer more than one receipt ahead: red, logged, and nothing corrected", async () => {
+  it("a signer more than one receipt ahead: every receipt taken back from its journal, in order, and logged", async () => {
+    // As after a database restored from a backup older than the signer.
     const tip = store.readChain(SYSTEM)[4] as Receipt;
     const fifth = forged(5, receiptHashHex(tip), "lost-5");
-    await client.signReceipt(fifth);
-    await client.signReceipt(forged(6, receiptHashHex(fifth), "lost-6"));
+    const fifthSig = await client.signReceipt(fifth);
+    const sixth = forged(6, receiptHashHex({ ...fifth, sig: fifthSig } as Receipt), "lost-6");
+    const sixthSig = await client.signReceipt(sixth);
+
+    const [outcome] = await store.reconcileWithSigner();
+    expect(outcome).toEqual({
+      system_id: SYSTEM,
+      status: "recovered",
+      seq: 6,
+      hash: receiptHashHex({ ...sixth, sig: sixthSig } as Receipt),
+      count: 2,
+    });
+    const chain = store.readChain(SYSTEM);
+    expect(chain[5]).toEqual({ ...fifth, sig: fifthSig });
+    expect(chain[6]).toEqual({ ...sixth, sig: sixthSig });
+    expect(store.adminLog().filter((entry) => entry.action === "signer.recovered").map((entry) => entry.detail["seq"])).toEqual(
+      [6, 5],
+    );
+    expect(store.signerDivergence(SYSTEM)).toBeNull();
+    expect((await store.append(event(7))).seq).toBe(7);
+    expect(health().status).not.toBe("red");
+  });
+
+  it("a database restored from a backup older than the signer takes back every receipt since", async () => {
+    const backupPath = join(directory, "backup.db");
+    await new Database(databasePath, { readonly: true }).backup(backupPath);
+    await store.appendBatch([5, 6, 7].map((index) => event(index)));
+    const before = store.readChain(SYSTEM);
+    store.close();
+    for (const suffix of ["", "-wal", "-shm"]) rmSync(`${databasePath}${suffix}`, { force: true });
+    writeFileSync(databasePath, readFileSync(backupPath));
+
+    store = ReceiptStore.open(databasePath, client);
+    expect(store.readChain(SYSTEM)).toHaveLength(5);
+    const [outcome] = await store.reconcileWithSigner();
+    expect(outcome).toMatchObject({ status: "recovered", seq: 7, count: 3 });
+    expect(store.readChain(SYSTEM)).toEqual(before);
+    expect(health().status).not.toBe("red");
+  });
+
+  it("a signer more than one receipt ahead without the receipts in between: red, logged, and nothing corrected", async () => {
+    const tip = store.readChain(SYSTEM)[4] as Receipt;
+    const fifth = forged(5, receiptHashHex(tip), "lost-5");
+    const fifthSig = await client.signReceipt(fifth);
+    await client.signReceipt(forged(6, receiptHashHex({ ...fifth, sig: fifthSig } as Receipt), "lost-6"));
+    // A journal begun after these receipts, as on a signer upgraded in between.
+    rmSync(join(stateDir, `${createHash("sha256").update(SYSTEM).digest("hex")}.receipts.jsonl`));
 
     const [outcome] = await store.reconcileWithSigner();
     expect(outcome?.status).toBe("diverged");
@@ -349,8 +396,22 @@ describe("any other divergence", () => {
 
     const logged = store.adminLog().filter((entry) => entry.action === "signer.divergence");
     expect(logged).toHaveLength(1);
-    expect(String(logged[0]?.detail["detail"])).toMatch(/seq 6.*seq 4/);
+    expect(String(logged[0]?.detail["detail"])).toMatch(/seq 6.*seq 4.*journal does not hold every receipt/);
     expect(health().status).toBe("red");
+  });
+
+  it("a journal entry altered on the signer's disk is not taken back", async () => {
+    const tip = store.readChain(SYSTEM)[4] as Receipt;
+    const fifth = forged(5, receiptHashHex(tip), "lost-5");
+    const fifthSig = await client.signReceipt(fifth);
+    await client.signReceipt(forged(6, receiptHashHex({ ...fifth, sig: fifthSig } as Receipt), "lost-6"));
+    const journal = join(stateDir, `${createHash("sha256").update(SYSTEM).digest("hex")}.receipts.jsonl`);
+    writeFileSync(journal, readFileSync(journal, "utf8").replace('"lost-5"', '"rewritten"'));
+
+    const [outcome] = await store.reconcileWithSigner();
+    expect(outcome?.status).toBe("diverged");
+    expect(store.signerDivergence(SYSTEM)).toMatch(/seq 5 does not continue this chain/);
+    expect(store.readChain(SYSTEM)).toHaveLength(5);
   });
 
   it("a signer that has lost its state: red, and pointed at init-from-db", async () => {

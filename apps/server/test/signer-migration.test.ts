@@ -111,6 +111,13 @@ describe("init-from-db", () => {
         { system_id: "support-bot", status: "in_sync" },
         { system_id: "triage-bot", status: "in_sync" },
       ]);
+      // Nothing from before goes into the signer's journal (receipts before
+      // version 4 may name people in clear): it holds the head, from the
+      // state, and begins with the next receipt.
+      const supportChain = store.readChain("support-bot");
+      expect(await client.receipts("support-bot", 0, 50)).toEqual([]);
+      expect(await client.receipts("support-bot", 5, 50)).toEqual([supportChain[5]]);
+      expect(readdirSync(stateDir).some((name) => name.endsWith(".receipts.jsonl"))).toBe(false);
       const now = new Date().toISOString();
       const next = await store.append({ ...event("support-bot", 6), ts_event: now, ts_received: now });
       expect(next.seq).toBe(6);
