@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyServerOptions } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from "fastify";
 import { z } from "zod";
 import type { Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
@@ -43,6 +43,12 @@ export interface ServerOptions {
    */
   signerHealthy?: () => Promise<boolean>;
   /**
+   * Writes paused for maintenance (config.ts, ingestPause): both ingest
+   * endpoints answer 503 with Retry-After to every system except those in
+   * `except`, after the key has been checked. Nothing is read from the body.
+   */
+  ingestPause?: { except: ReadonlySet<string> };
+  /**
    * The operator's view. Without a password it is not mounted at all: an
    * unguarded window onto an audit log is worse than no window.
    */
@@ -55,6 +61,9 @@ export interface ServerOptions {
     cookieSecure?: boolean | "auto";
   };
 }
+
+/** What a paused server asks a writer to wait before trying again. OTLP exporters honour it. */
+const PAUSE_RETRY_AFTER_SECONDS = 60;
 
 const DEFAULT_INGEST_LIMITS: ThrottleSettings = {
   maxFailures: 20,
@@ -217,6 +226,17 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return systemId;
   };
 
+  // Checked after authentication, so a paused server tells only a caller with
+  // a valid key that it is paused, and the attempt limits work as always.
+  const pausedFor = (systemId: string, reply: FastifyReply): boolean => {
+    if (options.ingestPause === undefined || options.ingestPause.except.has(systemId)) return false;
+    void reply
+      .code(503)
+      .header("retry-after", String(PAUSE_RETRY_AFTER_SECONDS))
+      .send({ error: "writes are paused for maintenance: retry later" });
+    return true;
+  };
+
   app.get("/healthz", async (_request, reply) => {
     if (options.signerHealthy !== undefined && !(await options.signerHealthy())) {
       return reply.code(503).send({ status: "signer unavailable" });
@@ -257,6 +277,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (systemId === null) {
       return reply.code(401).send({ error: "a valid Bearer API key is required" });
     }
+    if (pausedFor(systemId, reply)) return reply;
 
     const contentType = request.headers["content-type"] ?? "";
     let spans;
@@ -343,6 +364,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (systemId === null) {
       return reply.code(401).send({ error: "a valid Bearer API key is required" });
     }
+    if (pausedFor(systemId, reply)) return reply;
 
     const parsed = receiptRequestSchema.safeParse(request.body);
     if (!parsed.success) {

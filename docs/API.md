@@ -63,6 +63,15 @@ detail is in the administrative log; see SECURITY.md, "The signer's own record
 of every chain"). Any other failure inside the server gets `500` with
 `{"error":"internal error"}` and nothing more.
 
+While writes are **paused for maintenance** (`SIGILLO_INGEST_PAUSED=true`, used
+during an upgrade: `DEPLOY.md`), both ingest endpoints answer a request with a
+valid key `503` with `Retry-After: 60` and
+`{"error":"writes are paused for maintenance: retry later"}`, and write nothing.
+The systems named in `SIGILLO_INGEST_PAUSE_EXCEPT` (comma-separated) keep
+writing. A request without a valid key still gets `401`. OTLP exporters retry a
+`503` for a while and then drop the batch, so a pause longer than that loses
+events unless the agents are stopped or hold them.
+
 ## `POST /v1/traces` — OpenTelemetry ingest
 
 Accepts an OTLP/HTTP trace export in either encoding:

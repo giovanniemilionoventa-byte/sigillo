@@ -341,6 +341,15 @@ What the erasure reaches, and what it does not:
   neither;
 - **a plain digest** (computed by the client): it was never salted, so there is
   no nonce to erase, and a short value stays guessable from it;
+- **receipts written before version 4**: they carry `on_behalf_of` as the
+  client sent it, a person's identifier in clear included, and plain digests.
+  They are signed and chained, so nothing can change them, and erasing a
+  person does not reach them. `sigillo-server subject erase` and the web
+  view's "persone" page count them for the identifier being erased
+  (`legacyReceiptsNaming`) and say so, rather than claiming the person can no
+  longer be found. How many a database holds is counted by the query at step 0
+  of `DEPLOY.md`; the operator's privacy notice should say they are kept, and
+  on what basis;
 - **the content itself**, wherever the operator's own systems keep it.
 
 One case runs the other way, and is safe: a receipt the server recovers from

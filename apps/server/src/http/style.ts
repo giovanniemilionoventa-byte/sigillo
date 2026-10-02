@@ -168,6 +168,8 @@ h1 { margin-top: 4px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em
 .notice.ok svg { color: var(--ok); }
 .notice.bad { background: var(--bad-fill); box-shadow: none; }
 .notice.bad svg { color: var(--bad); }
+.notice.warn { background: var(--warn-fill); box-shadow: none; }
+.notice.warn svg { color: var(--warn); }
 p.warn { margin: 0 0 16px; padding: 10px 14px; border-radius: 10px; background: var(--warn-fill); color: var(--text);
   line-height: 1.5; max-width: 760px; }
 .info-line { display: flex; gap: 10px; align-items: flex-start; margin: 0 4px 16px; max-width: 680px; color: var(--label); }

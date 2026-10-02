@@ -8,7 +8,7 @@ import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw } from "@sig
 import { ApiKeyStore } from "./auth/api-keys.js";
 import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
-import { cookieSecure, port, positiveInteger, readSecret, trustProxy } from "./config.js";
+import { cookieSecure, ingestPause, port, positiveInteger, readSecret, trustProxy } from "./config.js";
 import { archiveFromStore, positionsIn, tokensIn } from "./export/from-store.js";
 import { ChainHealthMonitor } from "./health/chain-health.js";
 import { buildServer } from "./http/server.js";
@@ -172,6 +172,7 @@ program
     const ingestLimits = parseIngestThrottleSettings(process.env);
     const proxies = trustProxy(process.env["SIGILLO_TRUST_PROXY"]);
     const secureCookie = cookieSecure(process.env["SIGILLO_COOKIE_SECURE"]);
+    const pause = ingestPause(process.env);
     const tsa = tsaFromOptions(options.tsaUrl);
 
     // The operator's view is mounted only when a password is set. An audit log
@@ -224,6 +225,7 @@ program
       trustProxy: proxies,
       ingestLimits,
       signerHealthy: () => signer.healthy(),
+      ...(pause === null ? {} : { ingestPause: pause }),
       ...(!uiMounted || healthMonitor === undefined
         ? {}
         : {
@@ -258,6 +260,12 @@ program
 
     await app.listen({ host: options.host, port: listenPort });
     process.stdout.write(`signing with key ${signer.keyId}\n`);
+    if (pause !== null) {
+      const except = [...pause.except].sort().join(", ");
+      process.stdout.write(
+        `writes are PAUSED (SIGILLO_INGEST_PAUSED)${except.length > 0 ? `, except for ${except}` : ""}\n`,
+      );
+    }
     process.stdout.write(
       `checkpointing every ${checkpointMinutes} minutes, anchoring with ${tsa === undefined ? "no authority" : printableUrl(tsa.url)}\n`,
     );
@@ -591,11 +599,23 @@ subject
     }
     await withStore(options.db, async (store) => {
       const token = options.token ?? store.subjectToken(options.identifier ?? "");
+      // Read before the erasure: afterwards nothing says who the token was.
+      const identifier = options.identifier ?? (token === null ? null : store.subjectIdentifier(token));
+      const legacy = identifier === null ? 0 : store.legacyReceiptsNaming(identifier);
+      const legacyWarning =
+        `WARNING: ${legacy} receipt(s) written before receipt version 4 name this person in clear. ` +
+        "Receipts cannot be changed, so no erasure reaches them (SECURITY.md, \"Erasing a person\")\n";
       if (token === null || !isPseudonym(token) || !(await store.eraseSubject(token, cliRequest()))) {
         process.stderr.write("nothing to erase: no such subject (never seen, or already erased)\n");
+        if (legacy > 0) process.stderr.write(legacyWarning);
         process.exit(1);
       }
-      process.stdout.write(`erased ${token}: its receipts no longer lead to anyone\n`);
+      process.stdout.write(
+        legacy > 0
+          ? `erased ${token}: its receipts from version 4 on no longer lead to anyone\n`
+          : `erased ${token}: its receipts no longer lead to anyone\n`,
+      );
+      if (legacy > 0) process.stdout.write(legacyWarning);
       process.stdout.write("the erasure is in the administrative log (sigillo-server admin-log)\n");
     });
   });

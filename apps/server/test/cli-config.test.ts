@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { generateKeyFile, startSignerDaemon, type SignerDaemon } from "../../signer/src/index.js";
-import { positiveInteger, readSecret, trustProxy } from "../src/config.js";
+import { ingestPause, positiveInteger, readSecret, trustProxy } from "../src/config.js";
 
 /**
  * How `sigillo-server serve` reads its configuration, run as the real CLI in
@@ -129,6 +129,27 @@ describe("the proxy to trust", () => {
     expect(run.code).toBe(1);
     expect(run.output).toContain("SIGILLO_TRUST_PROXY");
   }, 60_000);
+});
+
+describe("writes paused for maintenance", () => {
+  it("is off unless SIGILLO_INGEST_PAUSED is true", () => {
+    expect(ingestPause({})).toBeNull();
+    expect(ingestPause({ SIGILLO_INGEST_PAUSED: "" })).toBeNull();
+    expect(ingestPause({ SIGILLO_INGEST_PAUSED: "false" })).toBeNull();
+    expect([...(ingestPause({ SIGILLO_INGEST_PAUSED: "true" })?.except ?? ["unset"])]).toEqual([]);
+  });
+
+  it("reads the exceptions as a comma-separated list", () => {
+    const pause = ingestPause({ SIGILLO_INGEST_PAUSED: "true", SIGILLO_INGEST_PAUSE_EXCEPT: " prova-a, prova-b ,," });
+    expect([...(pause?.except ?? [])].sort()).toEqual(["prova-a", "prova-b"]);
+  });
+
+  it("refuses a value that is not true or false, and an exception without a pause", () => {
+    for (const bad of ["1", "yes", "TRUE"]) {
+      expect(() => ingestPause({ SIGILLO_INGEST_PAUSED: bad })).toThrow(/SIGILLO_INGEST_PAUSED/);
+    }
+    expect(() => ingestPause({ SIGILLO_INGEST_PAUSE_EXCEPT: "prova" })).toThrow(/SIGILLO_INGEST_PAUSE_EXCEPT/);
+  });
 });
 
 describe("secrets read from a file", () => {

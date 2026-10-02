@@ -25,6 +25,7 @@ import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { buildServer } from "../src/http/server.js";
 import { ReceiptStore } from "../src/storage/store.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
+import { appendLegacyReceipt } from "./helpers/legacy-receipt.js";
 
 /**
  * Receipt version 4 end to end, through the real ingest routes, the real web
@@ -369,10 +370,50 @@ describe("a candidate who asks to be forgotten", () => {
     expect((await serverCli("admin-log")).stdout).toContain(`subject.erase`);
     expect((await serverCli("admin-log")).stdout).not.toContain(PERSON);
     expect((await serverCli("subject", "find", PERSON)).code).toBe(1);
+    expect(erased.stdout).not.toContain("WARNING");
   }, 60_000);
 });
 
 describe("a chain started before version 4", () => {
+  it("says, when a person is searched for and erased, how many earlier receipts still name them in clear", async () => {
+    // As the server wrote it before version 4: the identifier as the client
+    // spelled it, in the signed receipt itself.
+    const at = new Date(clock).toISOString();
+    await appendLegacyReceipt(databasePath, store, signer, {
+      v: RECEIPT_VERSION_2,
+      system_id: SYSTEM,
+      ts_event: at,
+      ts_received: at,
+      actor: { agent: "agente-cv", on_behalf_of: "Elena.Rizzo" },
+      action: { kind: "tool_call", name: "leggi_curriculum" },
+      input_hash: null,
+      output_hash: null,
+      outcome: "ok",
+      source: { type: "sdk" },
+    });
+    await ingest(candidateRun());
+    const token = chain()[2]?.actor.on_behalf_of ?? "";
+    expect(isPseudonym(token)).toBe(true);
+    expect(store.legacyReceiptsNaming(" ELENA.rizzo ")).toBe(1);
+    expect(store.legacyReceiptsNaming("someone.else")).toBe(0);
+
+    const found = await post("/ui/persone", { identifier: PERSON });
+    expect(found.body).toContain("Attenzione: 1 ricevuta scritta prima delle ricevute senza nomi");
+    expect((await post("/ui/persone", { identifier: "someone.else" })).body).not.toContain("Attenzione:");
+
+    const erased = await serverCli("subject", "erase", "--identifier", PERSON);
+    expect(erased.code, erased.stderr).toBe(0);
+    expect(erased.stdout).toContain(`erased ${token}: its receipts from version 4 on no longer lead to anyone`);
+    expect(erased.stdout).toContain("WARNING: 1 receipt(s) written before receipt version 4 name this person in clear");
+
+    // Nothing left to erase, and still the same warning: the receipt is there.
+    const again = await serverCli("subject", "erase", "--identifier", PERSON);
+    expect(again.code).toBe(1);
+    expect(again.stderr).toContain("nothing to erase");
+    expect(again.stderr).toContain("WARNING: 1 receipt(s)");
+    expect((await post("/ui/persone", { identifier: PERSON })).body).toContain("Attenzione: 1 ricevuta");
+  }, 60_000);
+
   it("keeps its v2 receipts valid, with v4 receipts after them, in the same export", async () => {
     // A v2 receipt as the previous server wrote it, with an identifier in the
     // clear and a plain digest: signed by the signer itself (which accepts

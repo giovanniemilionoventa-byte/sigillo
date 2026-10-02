@@ -461,7 +461,12 @@ export class ReceiptStore {
     // A deleted subject or nonce is overwritten with zeros, not left in a
     // free page of the file for anyone with a copy to read (eraseSubject).
     write.pragma("secure_delete = ON");
-    applySchema(write);
+    try {
+      applySchema(write);
+    } catch (error) {
+      write.close();
+      throw error;
+    }
 
     if (signer !== undefined) {
       // Remembered before anything is signed with it, and never forgotten.
@@ -982,6 +987,39 @@ export class ReceiptStore {
       | { token: string }
       | undefined;
     return row?.token ?? null;
+  }
+
+  /**
+   * How many receipts written before version 4 name this identifier in clear,
+   * in any spelling normaliseSubjectIdentifier folds together. Those receipts
+   * carry `on_behalf_of` as the client sent it, cannot be changed, and are
+   * not reached by eraseSubject: whoever erases a person is told how many
+   * there are (SECURITY.md, "Erasing a person").
+   */
+  legacyReceiptsNaming(identifier: string): number {
+    let wanted: string;
+    try {
+      wanted = normaliseSubjectIdentifier(identifier);
+    } catch {
+      return 0;
+    }
+    const rows = this.read
+      .prepare(
+        `SELECT json_extract(canonical, '$.actor.on_behalf_of') AS who, count(*) AS n
+         FROM receipts
+         WHERE json_extract(canonical, '$.v') < 4 AND json_extract(canonical, '$.actor.on_behalf_of') IS NOT NULL
+         GROUP BY who`,
+      )
+      .all() as { who: string; n: number }[];
+    let count = 0;
+    for (const row of rows) {
+      try {
+        if (normaliseSubjectIdentifier(row.who) === wanted) count += row.n;
+      } catch {
+        // Too long or empty once normalised: it cannot be anyone's identifier today.
+      }
+    }
+    return count;
   }
 
   /** The identifier a token stands for, or null: never known, or erased. */

@@ -102,3 +102,29 @@ export function cookieSecure(value: string | undefined): boolean | "auto" {
   if (value === "false") return false;
   throw new ConfigError(`SIGILLO_COOKIE_SECURE must be true, false or auto, received ${JSON.stringify(value)}`);
 }
+
+/**
+ * SIGILLO_INGEST_PAUSED (true, false or unset) and SIGILLO_INGEST_PAUSE_EXCEPT
+ * (system identifiers, comma-separated): writes paused for maintenance, so
+ * that an upgrade can be checked, and if need be undone, before any real
+ * system has a receipt the previous version cannot read (DEPLOY.md). Null
+ * when writes are open. An exception without a pause is refused: it would
+ * read as a pause that is not there.
+ */
+export function ingestPause(env: Environment): { except: ReadonlySet<string> } | null {
+  const paused = env["SIGILLO_INGEST_PAUSED"];
+  const except = (env["SIGILLO_INGEST_PAUSE_EXCEPT"] ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (paused === undefined || paused.length === 0 || paused === "false") {
+    if (except.length > 0) {
+      throw new ConfigError("SIGILLO_INGEST_PAUSE_EXCEPT is set but SIGILLO_INGEST_PAUSED is not true");
+    }
+    return null;
+  }
+  if (paused !== "true") {
+    throw new ConfigError(`SIGILLO_INGEST_PAUSED must be true or false, received ${JSON.stringify(paused)}`);
+  }
+  return { except: new Set(except) };
+}

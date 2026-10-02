@@ -104,6 +104,59 @@ describe("authentication", () => {
   });
 });
 
+describe("writes paused for maintenance", () => {
+  const OTHER = "prova-aggiornamento";
+  let paused: FastifyInstance;
+  let otherToken: string;
+
+  beforeEach(async () => {
+    await store.createSystem(OTHER, "2026-03-29T14:00:02.000Z");
+    otherToken = keys.issue(OTHER, "2026-03-29T14:00:03.000Z").token;
+    paused = buildServer({ store, keys, now: () => new Date(NOW), ingestPause: { except: new Set([OTHER]) } });
+    await paused.ready();
+  });
+
+  afterEach(async () => {
+    await paused.close();
+  });
+
+  const receipt = { actor: { agent: "planner" }, action: { kind: "tool_call", name: "x" }, outcome: "ok" };
+
+  it("answers 503 with Retry-After on both endpoints, and writes nothing", async () => {
+    const before = store.readChain(SYSTEM).length;
+    const native = await paused.inject({ method: "POST", url: "/api/v1/receipts", headers: auth(), payload: receipt });
+    const otlp = await paused.inject({
+      method: "POST",
+      url: "/v1/traces",
+      headers: { ...auth(), "content-type": "application/x-protobuf" },
+      payload: fixture("otel-genai.protobuf.bin"),
+    });
+    for (const response of [native, otlp]) {
+      expect(response.statusCode).toBe(503);
+      expect(response.headers["retry-after"]).toBe("60");
+      expect(response.json()).toEqual({ error: "writes are paused for maintenance: retry later" });
+    }
+    expect(store.readChain(SYSTEM)).toHaveLength(before);
+  });
+
+  it("still checks the key first", async () => {
+    const response = await paused.inject({ method: "POST", url: "/api/v1/receipts", payload: receipt });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("lets the excepted systems write, and leaves /healthz alone", async () => {
+    const response = await paused.inject({
+      method: "POST",
+      url: "/api/v1/receipts",
+      headers: auth(otherToken),
+      payload: receipt,
+    });
+    expect(response.statusCode).toBe(201);
+    expect(store.readChain(OTHER)).toHaveLength(2);
+    expect((await paused.inject({ method: "GET", url: "/healthz" })).statusCode).toBe(200);
+  });
+});
+
 describe("POST /v1/traces", () => {
   it("accepts a protobuf export from the official exporter", async () => {
     const response = await app.inject({

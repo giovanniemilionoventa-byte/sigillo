@@ -208,6 +208,8 @@ export const UI = {
     erased: (token: string): string =>
       `Fatto: le ricevute con lo pseudonimo ${token} non sono più collegabili a nessuna persona. L'operazione è nel registro amministrativo.`,
     confirmMismatch: "Il testo scritto non corrisponde allo pseudonimo: niente è stato cancellato.",
+    legacy: (count: number): string =>
+      `Attenzione: ${count} ${count === 1 ? "ricevuta scritta" : "ricevute scritte"} prima delle ricevute senza nomi (versione 4, ottobre 2026) ${count === 1 ? "contiene" : "contengono"} questo identificativo in chiaro. Le ricevute non si possono modificare, quindi nessuna cancellazione le raggiunge: restano nel registro e in ogni export.`,
   },
   manage: {
     nameTitle: "Nome mostrato",
