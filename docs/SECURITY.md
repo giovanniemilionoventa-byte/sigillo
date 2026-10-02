@@ -570,6 +570,12 @@ beside it and remains the only way to the operator's pages.
   `SameSite=Lax` because Google's redirect back is a cross-site navigation, and
   checked by Firebase against the code), and who signed in until they name
   their company (30 minutes, `Path=/ui/registrazione`).
+- **Back from Google, the browser is not redirected but shown a page that
+  moves on by itself** (`<meta http-equiv="refresh">`, no script). A browser
+  sends no `SameSite=Strict` cookie on a navigation that started on another
+  site, nor on the redirects that follow it, so the session or the sign-up
+  ticket set on that response would not arrive with a redirect. The refresh
+  is a new navigation, started from this site. The cookies stay `Strict`.
 - **A newcomer cannot see anything until the operator approves them.** The
   first sign-in creates an organization waiting for approval, with that person
   as its member, in one transaction; approval is on the operator's "Clienti"

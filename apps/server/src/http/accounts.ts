@@ -32,8 +32,8 @@ export interface AccountsContext {
   requestThrottle: AttemptThrottle;
   html: (reply: FastifyReply, body: string, status?: number) => FastifyReply;
   cookieAttributes: (request: FastifyRequest) => string;
-  /** Signs `viewer` in and sends the browser to the register. */
-  startSession: (request: FastifyRequest, reply: FastifyReply, viewer: Viewer) => FastifyReply;
+  /** A fresh session cookie for `viewer`, as a Set-Cookie value. */
+  sessionCookie: (request: FastifyRequest, viewer: Viewer) => string;
 }
 
 /** The Google sign-in's own session id, between the redirect and the return. */
@@ -84,10 +84,31 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
   };
 
   /**
+   * Sends the browser on to `location`, with `cookie` set. After a form on
+   * this site, a redirect. After Google, a page that moves on by itself:
+   * the browser came back from Google's site, and it sends no
+   * SameSite=Strict cookie on that navigation nor on any redirect that
+   * follows it, so a redirect would arrive without the cookie just set.
+   * The page's own refresh is a new navigation, started from this site.
+   */
+  const goOn = (reply: FastifyReply, location: string, cookie: string, fromGoogle: boolean): FastifyReply => {
+    void reply.header("set-cookie", cookie);
+    if (!fromGoogle) return reply.redirect(location, 303);
+    const link = `<meta http-equiv="refresh" content="0; url=${escape(location)}">
+<p><a class="button primary wide" href="${escape(location)}">${escape(t.continueLink)}</a></p>`;
+    return html(reply, accountPage(t.continueTitle, t.continueLead, {}, link));
+  };
+
+  /**
    * Someone Firebase vouches for: in, if their organization is approved;
    * told to wait, if it is not; asked for their company, the first time.
    */
-  const signedIn = async (request: FastifyRequest, reply: FastifyReply, identity: FirebaseIdentity): Promise<FastifyReply> => {
+  const signedIn = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    identity: FirebaseIdentity,
+    fromGoogle: boolean,
+  ): Promise<FastifyReply> => {
     if (!identity.emailVerified) {
       try {
         await firebase.sendVerification(identity.idToken);
@@ -99,19 +120,15 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
     const user = store.userByUid(identity.uid);
     if (user === null) {
       const ticket = sessions.seal("signup", JSON.stringify({ uid: identity.uid, email: identity.email }), nowMs(), SIGNUP_TTL_MS);
-      return reply
-        .header("set-cookie", `${SIGNUP_COOKIE}=${ticket}; ${context.cookieAttributes(request).replace("Path=/", `Path=${SIGNUP_PATH}`)}; Max-Age=${SIGNUP_TTL_MS / 1000}`)
-        .redirect(SIGNUP_PATH, 303);
+      const cookie = `${SIGNUP_COOKIE}=${ticket}; ${context.cookieAttributes(request).replace("Path=/", `Path=${SIGNUP_PATH}`)}; Max-Age=${SIGNUP_TTL_MS / 1000}`;
+      return goOn(reply, SIGNUP_PATH, cookie, fromGoogle);
     }
     const organization = store.organization(user.organization_id);
     if (organization === null || organization.approved_at === null) {
       return html(reply, accountPage(t.waitingTitle, t.waiting(organization?.name ?? user.organization_id), {}), 403);
     }
-    return context.startSession(request, reply, {
-      kind: "organization",
-      organizationId: organization.organization_id,
-      userId: user.uid,
-    });
+    const viewer: Viewer = { kind: "organization", organizationId: organization.organization_id, userId: user.uid };
+    return goOn(reply, "/ui", context.sessionCookie(request, viewer), fromGoogle);
   };
 
   // Email and password.
@@ -132,7 +149,7 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
       return login(reply, { error: message }, message === t.unavailable ? 503 : 401);
     }
     context.loginThrottle.recordSuccess(client);
-    return signedIn(request, reply, identity);
+    return signedIn(request, reply, identity, false);
   });
 
   const signUpForm = (email = ""): string => `<form method="post" action="/ui/registrati" class="fields">
@@ -243,7 +260,7 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
       if (error instanceof FirebaseError && error.code !== "UNAVAILABLE") return login(reply, { error: t.googleFailed }, 401);
       return login(reply, { error: failure(error) }, 503);
     }
-    return signedIn(request, reply, identity);
+    return signedIn(request, reply, identity, true);
   });
 
   // The first time: the company.
