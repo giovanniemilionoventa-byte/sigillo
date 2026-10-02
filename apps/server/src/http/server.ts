@@ -10,7 +10,7 @@ import { decodeJsonTraces, decodeProtobufTraces, OtlpDecodeError } from "../inge
 import { SignerRefusedError, SignerUnavailableError } from "../signer/errors.js";
 import type { ReceiptStore } from "../storage/store.js";
 import type { UiSessions } from "../auth/sessions.js";
-import { registerUi } from "./ui.js";
+import { registerUi, type UiOptions } from "./ui.js";
 
 /**
  * The ingest surface.
@@ -56,6 +56,12 @@ export interface ServerOptions {
    */
   ingestPause?: { except: ReadonlySet<string> };
   /**
+   * How many receipts an organization's systems together may receive in a
+   * calendar month (UTC). Past it, its writes are refused with 429 until the
+   * month turns; the operator's own systems have no limit. Unset: no limit.
+   */
+  organizationMonthlyReceipts?: number;
+  /**
    * The operator's view. Without a password it is not mounted at all: an
    * unguarded window onto an audit log is worse than no window.
    */
@@ -68,6 +74,8 @@ export interface ServerOptions {
     cookieSecure?: boolean | "auto";
     /** The web view's sessions (auth/sessions.ts); a fresh set when not given. */
     sessions?: UiSessions;
+    /** Customers' accounts (ui.ts, UiOptions.accounts). */
+    accounts?: UiOptions["accounts"];
   };
 }
 
@@ -257,6 +265,24 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return true;
   };
 
+  // Checked after authentication too. What is counted is what was written
+  // this month; a batch that starts below the limit is written whole.
+  const overQuota = (systemId: string, reply: FastifyReply): boolean => {
+    const limit = options.organizationMonthlyReceipts;
+    if (limit === undefined) return false;
+    const organizationId = store.systemRecord(systemId)?.organization_id ?? null;
+    if (organizationId === null) return false;
+    const at = now();
+    const monthStart = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1)).toISOString();
+    if (store.receiptsSince(organizationId, monthStart) < limit) return false;
+    const nextMonth = Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + 1, 1);
+    void reply
+      .code(429)
+      .header("retry-after", String(Math.max(1, Math.ceil((nextMonth - at.getTime()) / 1000))))
+      .send({ error: `this organization has reached its limit of ${limit} receipts this month` });
+    return true;
+  };
+
   app.get("/healthz", async (_request, reply) => {
     if (options.signerHealthy !== undefined && !(await options.signerHealthy())) {
       return reply.code(503).send({ status: "signer unavailable" });
@@ -293,6 +319,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.ui.loginLimits === undefined ? {} : { loginLimits: options.ui.loginLimits }),
       ...(options.ui.cookieSecure === undefined ? {} : { cookieSecure: options.ui.cookieSecure }),
       ...(options.ui.sessions === undefined ? {} : { sessions: options.ui.sessions }),
+      ...(options.ui.accounts === undefined ? {} : { accounts: options.ui.accounts }),
     });
   }
 
@@ -302,6 +329,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       return reply.code(401).send({ error: "a valid Bearer API key is required" });
     }
     if (pausedFor(systemId, reply)) return reply;
+    if (overQuota(systemId, reply)) return reply;
 
     const contentType = request.headers["content-type"] ?? "";
     let spans;
@@ -391,6 +419,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       return reply.code(401).send({ error: "a valid Bearer API key is required" });
     }
     if (pausedFor(systemId, reply)) return reply;
+    if (overQuota(systemId, reply)) return reply;
 
     const parsed = receiptRequestSchema.safeParse(request.body);
     if (!parsed.success) {

@@ -27,7 +27,15 @@ export function systemPath(systemId: string): string {
 }
 
 /** Which entry of the sidebar a page belongs to. */
-export type NavCurrent = "registro" | "sistemi" | "archiviati" | "tutti" | "persone" | "verifica" | `system:${string}`;
+export type NavCurrent =
+  | "registro"
+  | "sistemi"
+  | "archiviati"
+  | "tutti"
+  | "persone"
+  | "clienti"
+  | "verifica"
+  | `system:${string}`;
 
 /** A system as the sidebar and the main page show it: its record and its chain's health. */
 export interface SystemRow {
@@ -177,6 +185,7 @@ ${item("/ui/sistemi?vista=tutti", "tutti", ICONS.list, UI.nav.allSystems)}
 <p class="side-head">${escape(UI.nav.tools)}</p>
 ${item("/ui/verify-document", "verifica", ICONS.docCheck, UI.nav.verificaDocumento)}
 ${shell.operator ? item("/ui/persone", "persone", ICONS.people, UI.nav.persone) : ""}
+${shell.operator ? item("/ui/clienti", "clienti", ICONS.folder, UI.nav.clienti) : ""}
 </nav>
 <div class="side-foot">
 <p class="side-key">${ICONS.key}<span>${escape(UI.brand.signingKey)} <code>${escape(shell.keyId)}</code></span></p>
@@ -199,12 +208,11 @@ ${options.body}
 </body></html>`;
 }
 
-/** The sign-in page: who this is on the left, the password on the right. */
-export function loginPage(message?: string): string {
+/** The sign-in pages' frame: who this is on the left, the form on the right. */
+function loginShell(main: string): string {
   const t = UI.login;
   const point = (tile: string, glyph: string, title: string, text: string): string =>
     `<li><span class="icon-tile ${tile}" aria-hidden="true">${glyph}</span><span><strong>${escape(title)}</strong><span class="muted">${escape(text)}</span></span></li>`;
-  const failed = message !== undefined;
   return `${documentStart("sigillo")}<body>
 <div class="login">
 <aside class="login-id">
@@ -217,19 +225,81 @@ ${point("purple", ICONS.folder, UI.home.q3, t.points.q3)}
 </ul>
 </aside>
 <main class="login-main" id="main">
-<form method="post" action="/ui/login" class="login-form">
-<h1>${escape(t.submit)}</h1>
-<p class="lead">${escape(t.lead)}</p>
-<label>${escape(t.label)}
-  <input type="password" name="password" autocomplete="current-password" autofocus required${
-    failed ? ' aria-invalid="true" aria-describedby="login-error"' : ""
-  }>
-</label>
-${failed ? `<p class="field-error" id="login-error" role="alert">${STATE_ICONS.bad}<span>${escape(message)}</span></p>` : ""}
-<button type="submit" class="primary">${escape(t.submit)}</button>
-<p class="login-note">${escape(t.restricted)}</p>
-</form>
+${main}
 </main>
 </div>
 </body></html>`;
+}
+
+/** A message on a sign-in page: an error is announced, a notice is not. */
+function loginMessage(extra: { notice?: string; error?: string }, id = "login-error"): string {
+  if (extra.error !== undefined) {
+    return `<p class="field-error" id="${id}" role="alert">${STATE_ICONS.bad}<span>${escape(extra.error)}</span></p>`;
+  }
+  return extra.notice === undefined ? "" : `<p class="notice" role="status">${ICONS.info}<span>${escape(extra.notice)}</span></p>`;
+}
+
+/** The operator's password form. */
+function passwordForm(message: string | undefined, standalone: boolean): string {
+  const t = UI.login;
+  const failed = message !== undefined;
+  const autofocus = standalone;
+  return `<form method="post" action="/ui/login" class="${standalone ? "login-form" : "fields"}">
+${standalone ? `<h1>${escape(t.submit)}</h1>\n<p class="lead">${escape(t.lead)}</p>` : ""}
+<label>${escape(t.label)}
+  <input type="password" name="password" autocomplete="current-password"${autofocus ? " autofocus" : ""} required${
+    failed ? ' aria-invalid="true" aria-describedby="login-error"' : ""
+  }>
+</label>
+${failed ? loginMessage({ error: message }) : ""}
+<button type="submit" class="primary">${escape(t.submit)}</button>
+<p class="login-note">${escape(t.restricted)}</p>
+</form>`;
+}
+
+/**
+ * The sign-in page. Without customer accounts, the operator's password and
+ * nothing else, as it always was. With them (auth/firebase.ts), Google and
+ * email first, and the operator's password folded away underneath.
+ */
+export function loginPage(message?: string, accounts?: { notice?: string; error?: string }): string {
+  if (accounts === undefined) return loginShell(passwordForm(message, true));
+  const t = UI.account;
+  return loginShell(`<div class="login-form">
+<h1>${escape(t.signIn)}</h1>
+<p class="lead">${escape(t.lead)}</p>
+${loginMessage(accounts)}
+<a class="button primary wide" href="/ui/login/google">${escape(t.google)}</a>
+<p class="login-note">${escape(t.orEmail)}</p>
+<form method="post" action="/ui/login/email" class="fields">
+<label>${escape(t.email)}
+  <input type="email" name="email" autocomplete="email" required>
+</label>
+<label>${escape(t.password)}
+  <input type="password" name="password" autocomplete="current-password" required>
+</label>
+<button type="submit" class="primary">${escape(t.signIn)}</button>
+</form>
+<p class="login-note"><a href="/ui/registrati">${escape(t.toSignUp)}</a> · <a href="/ui/password">${escape(t.toReset)}</a></p>
+<details${message === undefined ? "" : " open"}>
+<summary>${escape(t.operator)}</summary>
+${passwordForm(message, false)}
+</details>
+</div>`);
+}
+
+/** One of the account pages: a title, a sentence, an optional message, a form or nothing, the way back. */
+export function accountPage(
+  title: string,
+  lead: string,
+  extra: { notice?: string; error?: string },
+  form = "",
+): string {
+  return loginShell(`<div class="login-form">
+<h1>${escape(title)}</h1>
+<p class="lead">${escape(lead)}</p>
+${loginMessage(extra)}
+${form}
+<p class="login-note"><a href="/ui/login">${escape(UI.account.toLogin)}</a></p>
+</div>`);
 }

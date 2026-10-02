@@ -110,6 +110,29 @@ describe("the administration commands", () => {
     expect(lines[2]).toMatch(/\torganization\.create\t\t/);
   }, 60_000);
 
+  it("approves an organization that signed itself up, and lists who signs in for it", async () => {
+    const store = ReceiptStore.open(databasePath);
+    let organizationId: string;
+    try {
+      const organization = await store.registerOrganization({ uid: "uid0001", email: "anna@rossi.it" }, "Rossi S.r.l.", {
+        actor: "web anna@rossi.it",
+        ts: "2026-10-02T09:00:00.000Z",
+      });
+      organizationId = organization.organization_id;
+    } finally {
+      store.close();
+    }
+    expect((await cli("org", "list")).stdout).toContain(`${organizationId}\twaiting`);
+    expect((await cli("org", "members", organizationId)).stdout).toBe("anna@rossi.it\t2026-10-02T09:00:00.000Z\n");
+
+    const approved = await cli("org", "approve", organizationId);
+    expect(approved.code).toBe(0);
+    expect(approved.stdout).toBe(`approved ${organizationId} (Rossi S.r.l.)\n`);
+    expect((await cli("org", "list")).stdout).toMatch(new RegExp(`^${organizationId}\\tapproved `));
+    expect((await cli("org", "approve", "nobody")).code).toBe(1);
+    expect((await cli("admin-log")).stdout.trim().split("\n")[0]).toMatch(/\torganization\.approve\t/);
+  }, 60_000);
+
   it("refuses to delete a system with a recorded action, with or without confirmation, and changes nothing", async () => {
     const refused = await cli("system", "delete", "acme-support-bot", "--confirm", "acme-support-bot");
     expect(refused.code).toBe(1);

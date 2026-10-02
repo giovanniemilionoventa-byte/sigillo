@@ -72,6 +72,12 @@ writing. A request without a valid key still gets `401`. OTLP exporters retry a
 `503` for a while and then drop the batch, so a pause longer than that loses
 events unless the agents are stopped or hold them.
 
+A system that belongs to a customer organization over its **monthly limit**
+(`SIGILLO_ORG_MONTHLY_RECEIPTS` receipts per calendar month, UTC) gets `429`
+with `Retry-After` set to the start of next month and
+`{"error":"this organization has reached its limit of N receipts this month"}`,
+on both endpoints, after its key is checked. Nothing is written.
+
 ## `POST /v1/traces` — OpenTelemetry ingest
 
 Accepts an OTLP/HTTP trace export in either encoding:

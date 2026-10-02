@@ -128,3 +128,39 @@ export function ingestPause(env: Environment): { except: ReadonlySet<string> } |
   }
   return { except: new Set(except) };
 }
+
+/**
+ * Customers' accounts (auth/firebase.ts): SIGILLO_FIREBASE_API_KEY and
+ * SIGILLO_FIREBASE_PROJECT_ID, both or neither, and SIGILLO_PUBLIC_URL, the
+ * address browsers reach this installation at, to which Google sends them
+ * back. Null when not configured: the web view then has the operator's
+ * password only. The address must be https, except on this machine.
+ */
+export function firebaseAccounts(env: Environment): { apiKey: string; projectId: string; publicUrl: string } | null {
+  const apiKey = env["SIGILLO_FIREBASE_API_KEY"] ?? "";
+  const projectId = env["SIGILLO_FIREBASE_PROJECT_ID"] ?? "";
+  const publicUrl = (env["SIGILLO_PUBLIC_URL"] ?? "").replace(/\/+$/, "");
+  if (apiKey === "" && projectId === "") return null;
+  if (apiKey === "" || projectId === "") {
+    throw new ConfigError("SIGILLO_FIREBASE_API_KEY and SIGILLO_FIREBASE_PROJECT_ID go together: set both, or neither");
+  }
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(apiKey)) {
+    throw new ConfigError("SIGILLO_FIREBASE_API_KEY does not look like a Firebase web API key");
+  }
+  if (!/^[a-z0-9-]{4,40}$/.test(projectId)) {
+    throw new ConfigError("SIGILLO_FIREBASE_PROJECT_ID does not look like a Firebase project id");
+  }
+  let url: URL;
+  try {
+    url = new URL(publicUrl);
+  } catch {
+    throw new ConfigError(
+      `SIGILLO_PUBLIC_URL must be the address browsers reach this installation at, such as https://sigillo.example.com, received ${JSON.stringify(publicUrl)}`,
+    );
+  }
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  if ((url.protocol !== "https:" && !(local && url.protocol === "http:")) || url.pathname !== "/" || url.search !== "" || url.hash !== "") {
+    throw new ConfigError(`SIGILLO_PUBLIC_URL must be an https origin with no path, received ${JSON.stringify(publicUrl)}`);
+  }
+  return { apiKey, projectId, publicUrl: url.origin };
+}

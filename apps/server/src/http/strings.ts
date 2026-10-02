@@ -16,6 +16,7 @@ export const UI = {
     registro: "registro",
     sistemi: "sistemi",
     persone: "persone",
+    clienti: "clienti",
     verificaDocumento: "verifica documento",
     esci: "esci",
     label: "sezioni",
@@ -45,6 +46,65 @@ export const UI = {
       q2: "Strumenti, modelli, passi e decisioni, una ricevuta firmata per azione.",
       q3: "Un fascicolo .zip con ricevute, checkpoint e marche temporali.",
     },
+  },
+  // Signing in, signing up and the rest of a customer's account (auth/firebase.ts).
+  account: {
+    google: "Accedi con Google",
+    orEmail: "oppure con la tua email",
+    email: "Email",
+    password: "Password",
+    passwordRepeat: "Ripeti la password",
+    signIn: "Accedi",
+    lead: "Accedi al registro della tua azienda.",
+    toSignUp: "Crea un account",
+    toReset: "Password dimenticata?",
+    toLogin: "Torna all'accesso",
+    operator: "Accesso amministratore",
+    wrong: "Email o password non corrette. Dopo troppi tentativi l'accesso resta sospeso per qualche minuto.",
+    unavailable: "Il servizio di accesso non risponde. Riprova tra qualche minuto.",
+    googleFailed: "L'accesso con Google non è riuscito. Riprova.",
+    disabled: "Questo account è stato disattivato.",
+    tooMany: "Troppi tentativi da questo indirizzo. Riprova tra qualche minuto.",
+    unverified: (email: string) =>
+      `Prima di entrare devi confermare l'indirizzo ${email}: ti abbiamo appena mandato di nuovo il link. Aprilo, poi accedi.`,
+    signUpTitle: "Crea un account",
+    signUpLead: "Con email e password. Dopo la conferma dell'indirizzo indicherai il nome della tua azienda.",
+    signUpSubmit: "Crea l'account",
+    passwordRule: "Almeno 10 caratteri.",
+    passwordShort: "La password deve avere almeno 10 caratteri.",
+    passwordMismatch: "Le due password non coincidono.",
+    emailInvalid: "Questo indirizzo email non sembra valido.",
+    emailExists: "Esiste già un account con questa email: accedi, oppure recupera la password.",
+    signedUp: (email: string) =>
+      `Account creato. Ti abbiamo mandato un link a ${email}: aprilo per confermare l'indirizzo, poi accedi.`,
+    resetTitle: "Password dimenticata",
+    resetLead: "Scrivi la tua email: se ha un account, riceverai un link per sceglierne una nuova.",
+    resetSubmit: "Mandami il link",
+    resetSent: "Se l'indirizzo ha un account, il link è in arrivo. Controlla anche la posta indesiderata.",
+    companyTitle: "La tua azienda",
+    companyLead: (email: string) =>
+      `Sei entrato come ${email}. Come si chiama l'azienda per cui userai sigillo? Il suo spazio sarà attivo appena lo approviamo.`,
+    companyLabel: "Nome dell'azienda",
+    companySubmit: "Richiedi l'accesso",
+    expired: "La richiesta è scaduta: accedi di nuovo.",
+    waitingTitle: "In attesa di approvazione",
+    waiting: (name: string) =>
+      `Lo spazio di ${name} è stato richiesto e attende la nostra approvazione. Riceverai conferma dal team di sigillo; poi potrai accedere da qui.`,
+  },
+  organizations: {
+    title: "Clienti",
+    eyebrow: "Amministrazione",
+    heading: "Clienti",
+    intro:
+      "Le aziende che usano questa installazione. Un cliente in attesa non può entrare finché non lo approvi; ognuno vede soltanto i propri sistemi.",
+    none: "Nessun cliente ancora.",
+    waiting: "In attesa",
+    approvedOn: "Approvato il",
+    approve: "Approva",
+    members: "Persone",
+    systems: "Sistemi",
+    noMembers: "Nessuna persona: creato dall'amministratore.",
+    approved: (name: string) => `${name} è approvato: le sue persone possono entrare.`,
   },
   home: {
     title: "sigillo",
@@ -431,6 +491,8 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "subject.erase": "interessato cancellato",
   "openings.erase": "nonce cancellati",
   "organization.create": "organizzazione creata",
+  "organization.approve": "organizzazione approvata",
+  "user.register": "nuova registrazione",
   "system.assign": "assegnato a un'organizzazione",
 };
 
@@ -451,7 +513,7 @@ export function describeAdminEntry(entry: {
   if (entry.action === "subject.erase") {
     return `${formatTs(entry.ts)} — ${what}: pseudonimo ${String(entry.detail["token"])} (${entry.actor})`;
   }
-  if (entry.action === "organization.create") {
+  if (entry.action === "organization.create" || entry.action === "organization.approve" || entry.action === "user.register") {
     return `${formatTs(entry.ts)} — ${what}: ${String(entry.detail["organization_id"])} (${entry.actor})`;
   }
   if (entry.action === "system.assign") {

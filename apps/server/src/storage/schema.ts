@@ -33,6 +33,18 @@ CREATE TABLE IF NOT EXISTS organizations (
   approved_at     TEXT
 ) STRICT;
 
+-- The people who sign in for an organization (auth/firebase.ts). uid is
+-- Firebase's identifier for the account; the password, if there is one, is
+-- Firebase's and never reaches this file. One organization per person.
+CREATE TABLE IF NOT EXISTS users (
+  uid             TEXT PRIMARY KEY,
+  email           TEXT NOT NULL,
+  organization_id TEXT NOT NULL REFERENCES organizations (organization_id),
+  created_at      TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS users_by_organization ON users (organization_id);
+
 -- Not evidence, and deliberately not append-only: a key must be revocable.
 -- Only the scrypt hash of the secret is stored, so a copy of this database
 -- does not let anyone speak for a system.
@@ -271,7 +283,8 @@ function ensureColumn(db: Database.Database, table: string, column: string, type
  */
 // 2: organizations, and the organization a system belongs to. A release at 1
 // would show every system to whoever holds its password.
-export const SCHEMA_VERSION = 2;
+// 3: the people who sign in for an organization.
+export const SCHEMA_VERSION = 3;
 
 export class NewerSchemaError extends Error {
   constructor(readonly found: number) {

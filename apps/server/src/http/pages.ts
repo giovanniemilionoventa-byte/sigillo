@@ -512,3 +512,33 @@ export function notFoundPage(systemId: string): string {
 <p class="actions"><a class="button" href="/ui/sistemi?vista=tutti">${escape(UI.nav.allSystems)}</a></p>`;
 }
 
+
+/** The operator's list of customers: who waits, who is in, who signs in for each, and how many systems each has. */
+export function organizationsPage(store: ReceiptStore, extra: { notice?: string; error?: string }): string {
+  const t = UI.organizations;
+  const organizations = store
+    .listOrganizations()
+    .sort((a, b) => Number(a.approved_at !== null) - Number(b.approved_at !== null) || b.created_at.localeCompare(a.created_at));
+  const systems = store.listSystemRecords();
+  const items = organizations
+    .map((organization) => {
+      const members = store.usersOf(organization.organization_id);
+      const count = systems.filter((record) => record.organization_id === organization.organization_id).length;
+      const state =
+        organization.approved_at === null
+          ? `<form method="post" action="/ui/clienti/${escape(encodeURIComponent(organization.organization_id))}/approva"><span class="pill yellow">${STATE_ICONS.warn}${escape(t.waiting)}</span> <button type="submit" class="primary">${escape(t.approve)}</button></form>`
+          : `<span class="pill green">${STATE_ICONS.ok}${escape(t.approvedOn)} ${escape(formatTs(organization.approved_at))}</span>`;
+      const who = members.length === 0 ? escape(t.noMembers) : members.map((member) => escape(member.email)).join(", ");
+      return `<li class="card padded" data-organization="${escape(organization.organization_id)}">
+<h2>${escape(organization.name)} <code>${escape(organization.organization_id)}</code></h2>
+${state}
+<p>${escape(t.members)}: ${who}</p>
+<p>${escape(t.systems)}: ${count}</p>
+</li>`;
+    })
+    .join("\n");
+  return `${pageHead({ eyebrow: t.eyebrow, h1: t.heading })}
+<p class="intro">${escape(t.intro)}</p>
+${notices(extra)}
+${organizations.length === 0 ? `<p class="empty card">${escape(t.none)}</p>` : `<ul class="organizations">${items}</ul>`}`;
+}

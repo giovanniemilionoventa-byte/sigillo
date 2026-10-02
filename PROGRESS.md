@@ -3102,6 +3102,37 @@ Prossimo passo, quando il committente avrà creato il progetto Firebase: il logi
 email) che emette le sessioni di un'organizzazione, l'approvazione delle organizzazioni nuove e le
 quote. Nessun file di `packages/verifier` o di `packages/core` è cambiato.
 
+### Sessione 22 — 2026-10-02 — l'accesso dei clienti con Firebase
+
+Il committente ha creato il progetto Firebase (`sigillo-e15c9`) e ne ha mandato la configurazione
+web. Fatto:
+
+- **Accesso dal server, senza script di Firebase nel browser** (`auth/firebase.ts`): email e
+  password, registrazione, link di conferma e di recupero, e Google con il flusso a codice, tutto
+  tramite l'API REST di Firebase (Identity Toolkit). L'identità vale solo da un ID token verificato
+  qui (RS256 sui certificati pubblicati da Google, `aud`/`iss` del progetto, tempi). La CSP di Caddy
+  non cambia. Nessuna dipendenza nuova.
+- **Il cliente nuovo** (`http/accounts.ts`): conferma l'email, scrive il nome dell'azienda, che
+  diventa un'organizzazione in attesa; entra dopo l'approvazione dell'operatore, dalla pagina
+  **Clienti** o con `sigillo-server org approve <id>`. `org members <id>` elenca chi entra.
+  Tabella `users` (uid, email, organizzazione), schema 3. Una sessione di un membro è valida solo
+  finché il membro appartiene ancora a quell'organizzazione.
+- **Limite mensile per organizzazione**: `SIGILLO_ORG_MONTHLY_RECEIPTS` (100.000), poi `429` con
+  `Retry-After` fino al mese dopo. Le ricevute di genesi non contano; i sistemi dell'operatore non
+  hanno limite.
+- **Limiti di tentativi**: le password sbagliate dei clienti contano con quelle dell'operatore;
+  registrazioni e richieste di recupero 5 per indirizzo ogni 15 minuti.
+- **Configurazione e guida**: `SIGILLO_FIREBASE_API_KEY`, `SIGILLO_FIREBASE_PROJECT_ID`,
+  `SIGILLO_PUBLIC_URL` (in Compose da `SIGILLO_DOMAIN`); `DEPLOY-PRODUZIONE.md` 2.6 spiega i passi
+  sulla console di Firebase e di Google Cloud (URI di reindirizzamento
+  `https://<dominio>/ui/login/google/back`).
+- **Test**: `accounts.test.ts` (22) contro un Firebase finto che firma i token con una vera chiave
+  RSA e un certificato fatto da openssl; `cli-admin.test.ts` per `org approve|members`.
+
+GitHub come metodo di accesso è rimandato: richiede un'app OAuth su GitHub e il suo segreto nel
+server, e il committente l'ha indicato come facoltativo. Nessun file di `packages/verifier` o di
+`packages/core` è cambiato.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

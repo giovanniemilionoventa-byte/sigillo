@@ -231,6 +231,33 @@ export interface Organization {
  */
 export const ORGANIZATION_ID = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
 
+/** Someone who signs in for an organization (auth/firebase.ts). */
+export interface User {
+  /** Firebase's identifier for the account. */
+  uid: string;
+  email: string;
+  organization_id: string;
+  created_at: string;
+}
+
+/**
+ * An identifier for an organization that signs itself up: its name, folded to
+ * what ORGANIZATION_ID allows, and four random hex digits, so that two
+ * companies with the same name never meet and an identifier cannot be
+ * claimed ahead of its company by guessing.
+ */
+export function organizationIdFor(name: string): string {
+  const slug = name
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24)
+    .replace(/-+$/g, "");
+  return `${slug === "" ? "org" : slug}-${randomBytes(2).toString("hex")}`;
+}
+
 export type AdminAction =
   | "system.rename"
   | "system.archive"
@@ -245,6 +272,9 @@ export type AdminAction =
   | "subject.erase"
   | "openings.erase"
   | "organization.create"
+  | "organization.approve"
+  /** Someone signed up and was given a new organization, waiting for approval. */
+  | "user.register"
   /** A system was given to an organization, moved to another, or taken back by the operator. */
   | "system.assign";
 
@@ -661,6 +691,90 @@ export class ReceiptStore {
       .prepare("SELECT organization_id, name, created_at, approved_at FROM organizations WHERE organization_id = ?")
       .get(organizationId) as Organization | undefined;
     return row ?? null;
+  }
+
+  /**
+   * A new organization for someone who has just signed in for the first time,
+   * waiting for the operator, and its first member, in one transaction.
+   */
+  async registerOrganization(
+    user: { uid: string; email: string },
+    name: string,
+    request: AdminRequest,
+  ): Promise<Organization> {
+    const label = normaliseDisplayName(name);
+    if (label === null) throw new StorageError("an organization needs a name");
+    return this.enqueue(() =>
+      this.inTransaction(async () => {
+        if (this.userByUid(user.uid, this.write) !== null) {
+          throw new StorageError("this account already belongs to an organization");
+        }
+        let organizationId = organizationIdFor(label);
+        while (this.organization(organizationId, this.write) !== null) organizationId = organizationIdFor(label);
+        const organization: Organization = {
+          organization_id: organizationId,
+          name: label,
+          created_at: request.ts,
+          approved_at: null,
+        };
+        this.write
+          .prepare(
+            `INSERT INTO organizations (organization_id, name, created_at, approved_at)
+             VALUES (@organization_id, @name, @created_at, @approved_at)`,
+          )
+          .run(organization);
+        this.write
+          .prepare("INSERT INTO users (uid, email, organization_id, created_at) VALUES (?, ?, ?, ?)")
+          .run(user.uid, user.email, organizationId, request.ts);
+        this.logAdmin("user.register", "", request, { organization_id: organizationId, name: label, email: user.email });
+        return organization;
+      }),
+    );
+  }
+
+  /** Lets an organization's members in. A no-op for one already approved. */
+  async approveOrganization(organizationId: string, request: AdminRequest): Promise<Organization> {
+    return this.enqueue(() =>
+      this.inTransaction(async () => {
+        const organization = this.organization(organizationId, this.write);
+        if (organization === null) throw new StorageError(`unknown organization ${organizationId}`);
+        if (organization.approved_at !== null) return organization;
+        this.write
+          .prepare("UPDATE organizations SET approved_at = ? WHERE organization_id = ?")
+          .run(request.ts, organizationId);
+        this.logAdmin("organization.approve", "", request, { organization_id: organizationId, name: organization.name });
+        return { ...organization, approved_at: request.ts };
+      }),
+    );
+  }
+
+  userByUid(uid: string, connection: Database.Database = this.read): User | null {
+    const row = connection
+      .prepare("SELECT uid, email, organization_id, created_at FROM users WHERE uid = ?")
+      .get(uid) as User | undefined;
+    return row ?? null;
+  }
+
+  usersOf(organizationId: string): User[] {
+    return this.read
+      .prepare("SELECT uid, email, organization_id, created_at FROM users WHERE organization_id = ? ORDER BY created_at")
+      .all(organizationId) as User[];
+  }
+
+  /**
+   * How many receipts an organization's systems have received since `since`
+   * (an ISO time), genesis receipts aside: its quota's measure. Opening a
+   * system is not a use of it.
+   */
+  receiptsSince(organizationId: string, since: string): number {
+    const row = this.read
+      .prepare(
+        `SELECT COUNT(*) AS n FROM receipts r
+         JOIN systems s ON s.system_id = r.system_id
+         WHERE s.organization_id = ? AND r.ts_received >= ? AND r.action_kind <> 'genesis'`,
+      )
+      .get(organizationId, since) as { n: number };
+    return row.n;
   }
 
   listOrganizations(): Organization[] {
