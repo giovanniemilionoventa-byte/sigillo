@@ -3018,6 +3018,21 @@ Verificatore non toccato.
   (servirebbe JavaScript); "Annulla" lo chiude.
 - `pip-audit` come strumento solo-CI resta da confermare (fase 3), come prima.
 
+### Sessione 19 — 2026-10-02 — vuoto sotto la cronologia dopo aver scelto una ricevuta
+
+Segnalato dal committente su `get-sigillo.eu`: scegliendo una riga della cronologia compariva una
+banda vuota sotto la pagina, più alta per le prime righe, che spariva scegliendo le ultime.
+
+**Causa, riprodotta con Chromium.** Le etichette per i lettori di schermo (`.sr`, posizionate in
+modo assoluto) dentro le righe non avevano un antenato posizionato: il loro riferimento era la pagina,
+quindi sfuggivano al ritaglio della colonna con lo scroll e allungavano il documento di tante righe
+quante ne restavano sotto il bordo (a 420 px di finestra il documento era alto 523 px). Il link
+`#r-<seq>` della riga, portandola in vista, faceva allora scorrere l'intera pagina.
+
+**Correzione.** Le tre colonne della cronologia con scroll proprio sono posizionate
+(`position: relative`): il documento resta alto quanto la finestra e non scorre più. Un test in
+`style.test.ts` lo tiene fermo. Nessun altro cambiamento.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
