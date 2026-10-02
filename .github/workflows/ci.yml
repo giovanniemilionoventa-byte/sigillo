@@ -20,6 +20,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # The PDF tests read the report back with pdftotext; the runner image
+      # no longer ships poppler-utils, so install it rather than let them skip.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
