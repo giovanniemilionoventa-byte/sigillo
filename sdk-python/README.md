@@ -77,6 +77,15 @@ the server still stores only a digest either way — this setting decides what
 crosses the network and sits in the server's memory while a request is
 handled, not what a receipt ends up holding.
 
+Each digest is also **salted** (`salt_content=True`, the default since October
+2026): SHA-256 of a fresh 32-byte nonce followed by the content, with the
+nonce sent beside it as `sigillo.input.nonce` / `sigillo.output.nonce`. A
+receipt then holds a digest nobody can guess a short value from ("score: 7"),
+and the server keeps the nonce apart, where erasing it cuts the receipt off
+from its content. A server older than October 2026 does not read the nonce and
+would record the salted digest as a plain one: only for such a server, pass
+`salt_content=False`.
+
 ## Pseudonymous identities
 
 `actor.on_behalf_of` — who an action was for — is the one receipt field an

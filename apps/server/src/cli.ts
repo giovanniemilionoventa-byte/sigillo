@@ -4,15 +4,16 @@ import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { hostname, userInfo } from "node:os";
 import Database from "better-sqlite3";
 import { Command } from "commander";
-import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw } from "@sigillo/core";
+import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw, receiptHashHex } from "@sigillo/core";
 import { ApiKeyStore } from "./auth/api-keys.js";
 import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
-import { cookieSecure, port, positiveInteger, readSecret, trustProxy } from "./config.js";
+import { cookieSecure, ingestPause, port, positiveInteger, readSecret, trustProxy } from "./config.js";
 import { archiveFromStore, positionsIn, tokensIn } from "./export/from-store.js";
 import { ChainHealthMonitor } from "./health/chain-health.js";
 import { buildServer } from "./http/server.js";
 import { SignerClient } from "./signer/client.js";
+import { SCHEMA_VERSION } from "./storage/schema.js";
 import { ReceiptStore, SystemNotDeletableError, type AdminRequest } from "./storage/store.js";
 import type { TsaOptions } from "./timestamp/rfc3161.js";
 
@@ -172,6 +173,7 @@ program
     const ingestLimits = parseIngestThrottleSettings(process.env);
     const proxies = trustProxy(process.env["SIGILLO_TRUST_PROXY"]);
     const secureCookie = cookieSecure(process.env["SIGILLO_COOKIE_SECURE"]);
+    const pause = ingestPause(process.env);
     const tsa = tsaFromOptions(options.tsaUrl);
 
     // The operator's view is mounted only when a password is set. An audit log
@@ -192,7 +194,11 @@ program
     // disagreement turns that system red and is left for a person.
     for (const outcome of await store.reconcileWithSigner()) {
       if (outcome.status === "recovered") {
-        process.stdout.write(`${outcome.system_id}: recovered seq ${outcome.seq} from the signer\n`);
+        process.stdout.write(
+          outcome.count === 1
+            ? `${outcome.system_id}: recovered seq ${outcome.seq} from the signer\n`
+            : `${outcome.system_id}: recovered seq ${outcome.seq - outcome.count + 1} to ${outcome.seq} from the signer\n`,
+        );
       } else if (outcome.status === "diverged") {
         process.stderr.write(`${outcome.system_id}: the signer and the database disagree: ${outcome.detail}\n`);
       }
@@ -205,6 +211,7 @@ program
           publicKeyFromRaw(new Uint8Array(Buffer.from(signer.publicKeyBase64, "base64"))),
           staleAfterMinutes * 60 * 1000,
           maxAnchorDelayMinutes * 60 * 1000,
+          () => signer.healthy(),
         )
       : undefined;
 
@@ -224,6 +231,8 @@ program
       trustProxy: proxies,
       ingestLimits,
       signerHealthy: () => signer.healthy(),
+      chainsIntact: () => store.divergentSystems().length === 0 && (healthMonitor?.failedSystems().length ?? 0) === 0,
+      ...(pause === null ? {} : { ingestPause: pause }),
       ...(!uiMounted || healthMonitor === undefined
         ? {}
         : {
@@ -258,6 +267,12 @@ program
 
     await app.listen({ host: options.host, port: listenPort });
     process.stdout.write(`signing with key ${signer.keyId}\n`);
+    if (pause !== null) {
+      const except = [...pause.except].sort().join(", ");
+      process.stdout.write(
+        `writes are PAUSED (SIGILLO_INGEST_PAUSED)${except.length > 0 ? `, except for ${except}` : ""}\n`,
+      );
+    }
     process.stdout.write(
       `checkpointing every ${checkpointMinutes} minutes, anchoring with ${tsa === undefined ? "no authority" : printableUrl(tsa.url)}\n`,
     );
@@ -285,7 +300,7 @@ system
   .option("--all", "include archived systems")
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
   .action((options: DatabaseOption & { all?: boolean }) => {
-    const store = ReceiptStore.open(options.db);
+    const store = ReceiptStore.openReadOnly(options.db);
     try {
       for (const record of store.listSystemRecords()) {
         if (record.archived_at !== null && options.all !== true) continue;
@@ -384,7 +399,7 @@ program
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
   .action((options: DatabaseOption & { limit: string }) => {
     const limit = positiveInteger("--limit", options.limit, 100, 10_000);
-    const store = ReceiptStore.open(options.db);
+    const store = ReceiptStore.openReadOnly(options.db);
     try {
       for (const entry of store.adminLog(limit)) {
         process.stdout.write(
@@ -439,7 +454,7 @@ key
   .option("--system <system_id>", "only this system's keys")
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
   .action((options: DatabaseOption & { system?: string }) => {
-    const keys = ApiKeyStore.open(options.db);
+    const keys = ApiKeyStore.openReadOnly(options.db);
     try {
       for (const record of keys.list(options.system)) {
         const state = record.revokedAt === null ? "live" : `revoked ${record.revokedAt}`;
@@ -448,6 +463,52 @@ key
     } finally {
       keys.close();
     }
+  });
+
+const signerCommand = program.command("signer").description("The signer's own record of every chain");
+
+signerCommand
+  .command("check")
+  .description(
+    "Compare the head the signer remembers for every chain with the database's last receipt; exit 1 if any differ. " +
+      "Reads only: nothing is recovered or repaired",
+  )
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .requiredOption("--signer-socket <path>", "the signer's socket", process.env["SIGILLO_SIGNER_SOCKET"])
+  .action(async (options: DatabaseOption & { signerSocket: string }) => {
+    const signer = await SignerClient.connect(options.signerSocket);
+    const store = ReceiptStore.openReadOnly(options.db);
+    let differ = 0;
+    try {
+      for (const systemId of store.listSystems()) {
+        const tip = store.tip(systemId);
+        const head = await signer.head(systemId);
+        const same = tip !== null && head !== null && head.seq === tip.seq && receiptHashHex(head) === tip.hash;
+        if (!same) differ += 1;
+        process.stdout.write(
+          `${systemId}\tdatabase seq ${tip?.seq ?? "none"}\tsigner seq ${head?.seq ?? "none"}\t${same ? "same" : "DIFFERENT"}\n`,
+        );
+      }
+    } finally {
+      store.close();
+      signer.close();
+    }
+    if (differ > 0) {
+      process.stderr.write(
+        `${differ} chain(s) differ. After a rollback, the signer's record is ahead of the database: ` +
+          "DEPLOY.md, step R4. After restoring a backup: DEPLOY.md, last section\n",
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("migrate")
+  .description("Bring a database up to this release's schema. The server does it by itself when it starts")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action((options: DatabaseOption) => {
+    ReceiptStore.open(options.db).close();
+    process.stdout.write(`${options.db}: schema ${SCHEMA_VERSION}\n`);
   });
 
 program
@@ -563,7 +624,7 @@ subject
   .argument("<identifier>")
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
   .action((identifier: string, options: DatabaseOption) => {
-    const store = ReceiptStore.open(options.db);
+    const store = ReceiptStore.openReadOnly(options.db);
     try {
       const token = store.subjectToken(identifier);
       if (token === null) {
@@ -591,11 +652,23 @@ subject
     }
     await withStore(options.db, async (store) => {
       const token = options.token ?? store.subjectToken(options.identifier ?? "");
+      // Read before the erasure: afterwards nothing says who the token was.
+      const identifier = options.identifier ?? (token === null ? null : store.subjectIdentifier(token));
+      const legacy = identifier === null ? 0 : store.legacyReceiptsNaming(identifier);
+      const legacyWarning =
+        `WARNING: ${legacy} receipt(s) written before receipt version 4 name this person in clear. ` +
+        "Receipts cannot be changed, so no erasure reaches them (SECURITY.md, \"Erasing a person\")\n";
       if (token === null || !isPseudonym(token) || !(await store.eraseSubject(token, cliRequest()))) {
         process.stderr.write("nothing to erase: no such subject (never seen, or already erased)\n");
+        if (legacy > 0) process.stderr.write(legacyWarning);
         process.exit(1);
       }
-      process.stdout.write(`erased ${token}: its receipts no longer lead to anyone\n`);
+      process.stdout.write(
+        legacy > 0
+          ? `erased ${token}: its receipts from version 4 on no longer lead to anyone\n`
+          : `erased ${token}: its receipts no longer lead to anyone\n`,
+      );
+      if (legacy > 0) process.stdout.write(legacyWarning);
       process.stdout.write("the erasure is in the administrative log (sigillo-server admin-log)\n");
     });
   });

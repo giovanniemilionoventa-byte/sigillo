@@ -18,6 +18,7 @@ import {
   type Receipt,
   type UnsignedReceipt,
 } from "@sigillo/core";
+import { NewerSchemaError, SCHEMA_VERSION } from "../src/storage/schema.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
 
@@ -70,6 +71,40 @@ describe("opening the database", () => {
     const raw = openRawConnection();
     expect(raw.pragma("journal_mode", { simple: true })).toBe("wal");
     raw.close();
+  });
+
+  it("stamps the schema version, and keeps it on a second open", () => {
+    store.close();
+    store = ReceiptStore.open(databasePath, signer);
+    const raw = openRawConnection();
+    expect(raw.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    raw.close();
+  });
+
+  it("stamps a database written before the stamp existed", () => {
+    store.close();
+    const raw = openRawConnection();
+    raw.pragma("user_version = 0");
+    raw.close();
+    store = ReceiptStore.open(databasePath, signer);
+    const again = openRawConnection();
+    expect(again.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    again.close();
+  });
+
+  it("refuses, with a sentence, a database written by a newer release, and leaves it as it was", () => {
+    store.close();
+    const raw = openRawConnection();
+    raw.pragma(`user_version = ${SCHEMA_VERSION + 1}`);
+    raw.close();
+    expect(() => ReceiptStore.open(databasePath, signer)).toThrow(NewerSchemaError);
+    expect(() => ReceiptStore.open(databasePath)).toThrow(/written by a newer release of sigillo/);
+    const after = openRawConnection();
+    expect(after.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION + 1);
+    after.close();
+    // afterEach closes `store`; give it one that opens.
+    const fresh = join(directory, "other.db");
+    store = ReceiptStore.open(fresh, signer);
   });
 });
 

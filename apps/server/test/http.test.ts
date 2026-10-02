@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { fromHex, hashCanonicalJson, openSaltedDigest, verifyReceiptSignature } from "@sigillo/core";
+import { fromHex, hashCanonicalJson, openSaltedDigest, saltedDigest, verifyReceiptSignature } from "@sigillo/core";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { buildServer } from "../src/http/server.js";
 import { ReceiptStore } from "../src/storage/store.js";
@@ -50,6 +50,24 @@ describe("health", () => {
     const response = await app.inject({ method: "GET", url: "/healthz" });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: "ok" });
+  });
+});
+
+describe("health of the chains", () => {
+  it("answers 503, naming no system, when a chain is not intact", async () => {
+    let intact = false;
+    const checked = buildServer({ store, keys, now: () => new Date(NOW), chainsIntact: () => intact });
+    await checked.ready();
+    try {
+      const broken = await checked.inject({ method: "GET", url: "/healthz" });
+      expect(broken.statusCode).toBe(503);
+      expect(broken.json()).toEqual({ status: "a chain failed its check or disagrees with the signer" });
+      expect(broken.body).not.toContain(SYSTEM);
+      intact = true;
+      expect((await checked.inject({ method: "GET", url: "/healthz" })).statusCode).toBe(200);
+    } finally {
+      await checked.close();
+    }
   });
 });
 
@@ -101,6 +119,102 @@ describe("authentication", () => {
       payload: { actor: { agent: "planner" }, action: { kind: "tool_call", name: "x" }, outcome: "ok" },
     });
     expect(refused.statusCode).toBe(401);
+  });
+});
+
+describe("writes paused for maintenance", () => {
+  const OTHER = "prova-aggiornamento";
+  let paused: FastifyInstance;
+  let otherToken: string;
+
+  beforeEach(async () => {
+    await store.createSystem(OTHER, "2026-03-29T14:00:02.000Z");
+    otherToken = keys.issue(OTHER, "2026-03-29T14:00:03.000Z").token;
+    paused = buildServer({ store, keys, now: () => new Date(NOW), ingestPause: { except: new Set([OTHER]) } });
+    await paused.ready();
+  });
+
+  afterEach(async () => {
+    await paused.close();
+  });
+
+  const receipt = { actor: { agent: "planner" }, action: { kind: "tool_call", name: "x" }, outcome: "ok" };
+
+  it("answers 503 with Retry-After on both endpoints, and writes nothing", async () => {
+    const before = store.readChain(SYSTEM).length;
+    const native = await paused.inject({ method: "POST", url: "/api/v1/receipts", headers: auth(), payload: receipt });
+    const otlp = await paused.inject({
+      method: "POST",
+      url: "/v1/traces",
+      headers: { ...auth(), "content-type": "application/x-protobuf" },
+      payload: fixture("otel-genai.protobuf.bin"),
+    });
+    for (const response of [native, otlp]) {
+      expect(response.statusCode).toBe(503);
+      expect(response.headers["retry-after"]).toBe("60");
+      expect(response.json()).toEqual({ error: "writes are paused for maintenance: retry later" });
+    }
+    expect(store.readChain(SYSTEM)).toHaveLength(before);
+  });
+
+  it("still checks the key first", async () => {
+    const response = await paused.inject({ method: "POST", url: "/api/v1/receipts", payload: receipt });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("lets the excepted systems write, and leaves /healthz alone", async () => {
+    const response = await paused.inject({
+      method: "POST",
+      url: "/api/v1/receipts",
+      headers: auth(otherToken),
+      payload: receipt,
+    });
+    expect(response.statusCode).toBe(201);
+    expect(store.readChain(OTHER)).toHaveLength(2);
+    expect((await paused.inject({ method: "GET", url: "/healthz" })).statusCode).toBe(200);
+  });
+});
+
+describe("a digest salted by the client", () => {
+  const nonce = "ab".repeat(32);
+  const content = "score: 7";
+  const salted = (): string => saltedDigest(new Uint8Array(Buffer.from(nonce, "hex")), content);
+
+  it("is recorded as salted, with its nonce kept apart, and opens with the content", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/receipts",
+      headers: auth(),
+      payload: {
+        actor: { agent: "planner" },
+        action: { kind: "tool_call", name: "x" },
+        outcome: "ok",
+        input_hash: salted(),
+        input_nonce: nonce,
+      },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const receipt = store.readChain(SYSTEM).at(-1);
+    expect(receipt?.v).toBe(4);
+    if (receipt?.v !== 4) throw new Error("not v4");
+    expect(receipt.input_hash).toBe(salted());
+    expect(receipt.input_hash_scheme).toBe("salted");
+    expect(JSON.stringify(receipt)).not.toContain(nonce);
+    expect(store.opening(SYSTEM, receipt.seq, "input")).toBe(nonce);
+    expect(openSaltedDigest(receipt.input_hash ?? "", fromHex(nonce), content)).toBe(true);
+  });
+
+  it("refuses a nonce without its digest, beside the value, or malformed", async () => {
+    const base = { actor: { agent: "planner" }, action: { kind: "tool_call", name: "x" }, outcome: "ok" };
+    for (const payload of [
+      { ...base, input_nonce: nonce },
+      { ...base, input: content, input_nonce: nonce },
+      { ...base, input_hash: salted(), input_nonce: "AB".repeat(32) },
+      { ...base, output_hash: null, output_nonce: nonce },
+    ]) {
+      const response = await app.inject({ method: "POST", url: "/api/v1/receipts", headers: auth(), payload });
+      expect(response.statusCode, JSON.stringify(payload)).toBe(400);
+    }
   });
 });
 

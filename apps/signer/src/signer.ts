@@ -137,6 +137,7 @@ export class Signer {
     const sig = signDigest(digest, key.privateKey);
     const hash = toHex(digest);
     const head = { ...receipt, sig } as Receipt;
+    state.record(head);
     state.put({
       system_id: receipt.system_id,
       seq: receipt.seq,
@@ -164,6 +165,18 @@ export class Signer {
       },
       this.options.key.privateKey,
     );
+  }
+
+  /**
+   * The receipts signed for the system from `fromSeq` on, from the journal,
+   * at most `limit`: what lets the server take back receipts it lost, for
+   * instance to a database restored from a backup older than the signer.
+   */
+  receipts(systemId: string, fromSeq: number, limit: number): Receipt[] {
+    if (!isChain(this.options.state.get(systemId))) {
+      throw new Refusal("unknown_system", `this signer has signed no chain for ${systemId}`);
+    }
+    return this.options.state.receipts(systemId, fromSeq, limit);
   }
 
   /** The last receipt signed for the system, or null if there is none. */

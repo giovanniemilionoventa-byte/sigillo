@@ -39,7 +39,7 @@ import {
   type UnsignedReceipt,
 } from "@sigillo/core";
 import { SignerRefusedError } from "../signer/errors.js";
-import { applySchema } from "./schema.js";
+import { applySchema, requireCurrentSchema } from "./schema.js";
 
 /**
  * Whatever holds the private key. In production this is the separate signer
@@ -61,6 +61,12 @@ export interface SigningService {
   checkpoint(systemId: string): Promise<Checkpoint>;
   /** The last receipt the signer signed for the system, or null. */
   head(systemId: string): Promise<Receipt | null>;
+  /**
+   * The receipts the signer signed for the system from `fromSeq` on, at most
+   * `limit`, from its journal. Without it, only the one receipt the head
+   * holds can be taken back.
+   */
+  receipts?(systemId: string, fromSeq: number, limit: number): Promise<Receipt[]>;
 }
 
 /**
@@ -68,8 +74,9 @@ export interface SigningService {
  * choose. The receipt written for it is always version 4: `actor.on_behalf_of`
  * may name a person here, and leaves as a pseudonym token; an input or output
  * arrives either as a digest the client computed (`input_hash`, recorded as
- * plain) or as the value itself (`raw_input`, digested here under a fresh
- * nonce and never kept), not both.
+ * plain, or salted when the client also sends the nonce it salted it under,
+ * `input_nonce`) or as the value itself (`raw_input`, digested here under a
+ * fresh nonce and never kept), not both.
  */
 export interface ChainEvent {
   system_id: string;
@@ -81,6 +88,9 @@ export interface ChainEvent {
   output_hash: string | null;
   raw_input?: { value: unknown };
   raw_output?: { value: unknown };
+  /** The 32-byte nonce, hex, the client salted `input_hash` under: the digest is then recorded as salted. */
+  input_nonce?: string;
+  output_nonce?: string;
   outcome: Outcome;
   source: Source;
   artifacts?: ArtifactEntryV3[];
@@ -100,8 +110,14 @@ export interface ChainTip {
  */
 export type ReconcileOutcome =
   | { system_id: string; status: "in_sync" }
-  | { system_id: string; status: "recovered"; seq: number; hash: string }
+  | { system_id: string; status: "recovered"; seq: number; hash: string; /** How many receipts were taken back, ending at seq. */ count: number }
   | { system_id: string; status: "diverged"; detail: string };
+
+/** A salt nonce as a client sends it: 32 bytes, lowercase hex. */
+const NONCE_HEX = /^[0-9a-f]{64}$/;
+
+/** How many receipts to ask the signer's journal for at a time (its limit is 50). */
+const RECOVERY_PAGE = 50;
 
 /** The largest canonical receipt the store asks the signer to sign; its socket takes 256 KiB a line. */
 const MAX_RECEIPT_BYTES = 192 * 1024;
@@ -461,7 +477,12 @@ export class ReceiptStore {
     // A deleted subject or nonce is overwritten with zeros, not left in a
     // free page of the file for anyone with a copy to read (eraseSubject).
     write.pragma("secure_delete = ON");
-    applySchema(write);
+    try {
+      applySchema(write);
+    } catch (error) {
+      write.close();
+      throw error;
+    }
 
     if (signer !== undefined) {
       // Remembered before anything is signed with it, and never forgotten.
@@ -476,6 +497,27 @@ export class ReceiptStore {
     read.pragma("busy_timeout = 5000");
 
     return new ReceiptStore(write, read, signer, verificationKey);
+  }
+
+  /**
+   * Opens the database at `location` for reading only: one read-only
+   * connection, no schema applied, nothing written, the file left exactly as
+   * it was. The schema must already be this release's (requireCurrentSchema).
+   * For the commands that only look: a listing, the administrative log, a
+   * lookup.
+   */
+  static openReadOnly(location: string): ReceiptStore {
+    const read = new Database(location, { readonly: true, fileMustExist: true });
+    try {
+      read.pragma("busy_timeout = 5000");
+      requireCurrentSchema(read);
+      // The write statements are prepared on this connection too, and fail
+      // if anything ever tries to run them.
+      return new ReceiptStore(read, read, undefined, undefined);
+    } catch (error) {
+      read.close();
+      throw error;
+    }
   }
 
   /** Every key this database has been signed with, in the order they were first used. */
@@ -699,6 +741,11 @@ export class ReceiptStore {
       for (const systemId of systemIds) outcomes.push(await this.reconcileNow(systemId));
       return outcomes;
     });
+  }
+
+  /** Every chain the last comparison with the signer found wrong, sorted. */
+  divergentSystems(): string[] {
+    return [...this.divergences.keys()].sort();
   }
 
   /** What the last comparison with the signer found wrong with this chain, or null. */
@@ -984,6 +1031,39 @@ export class ReceiptStore {
     return row?.token ?? null;
   }
 
+  /**
+   * How many receipts written before version 4 name this identifier in clear,
+   * in any spelling normaliseSubjectIdentifier folds together. Those receipts
+   * carry `on_behalf_of` as the client sent it, cannot be changed, and are
+   * not reached by eraseSubject: whoever erases a person is told how many
+   * there are (SECURITY.md, "Erasing a person").
+   */
+  legacyReceiptsNaming(identifier: string): number {
+    let wanted: string;
+    try {
+      wanted = normaliseSubjectIdentifier(identifier);
+    } catch {
+      return 0;
+    }
+    const rows = this.read
+      .prepare(
+        `SELECT json_extract(canonical, '$.actor.on_behalf_of') AS who, count(*) AS n
+         FROM receipts
+         WHERE json_extract(canonical, '$.v') < 4 AND json_extract(canonical, '$.actor.on_behalf_of') IS NOT NULL
+         GROUP BY who`,
+      )
+      .all() as { who: string; n: number }[];
+    let count = 0;
+    for (const row of rows) {
+      try {
+        if (normaliseSubjectIdentifier(row.who) === wanted) count += row.n;
+      } catch {
+        // Too long or empty once normalised: it cannot be anyone's identifier today.
+      }
+    }
+    return count;
+  }
+
   /** The identifier a token stands for, or null: never known, or erased. */
   subjectIdentifier(token: string): string | null {
     const row = this.read.prepare("SELECT identifier FROM subjects WHERE token = ?").get(token) as
@@ -1155,7 +1235,7 @@ export class ReceiptStore {
 
   close(): void {
     this.read.close();
-    this.write.close();
+    if (this.write !== this.read) this.write.close();
   }
 
   private async writeCheckpoint(systemId: string): Promise<StoredCheckpoint | null> {
@@ -1291,9 +1371,18 @@ export class ReceiptStore {
     role: "input" | "output",
     clientHash: string | null,
     raw: { value: unknown } | undefined,
+    clientNonce?: string,
   ): Digest {
     if (raw !== undefined && clientHash !== null) {
       throw new StorageError(`an action carries either its ${role} or a digest of it, not both`);
+    }
+    if (clientNonce !== undefined) {
+      // Salted by the client, which never sent the value: the nonce is kept
+      // in `openings` exactly like one made here, and erased the same way.
+      if (clientHash === null || !NONCE_HEX.test(clientNonce)) {
+        throw new StorageError(`a ${role} nonce is 64 lowercase hex characters, sent with the digest it salted`);
+      }
+      return { hash: clientHash, scheme: HASH_SCHEME_SALTED, nonce: clientNonce };
     }
     if (raw === undefined) {
       return { hash: clientHash, scheme: clientHash === null ? null : HASH_SCHEME_PLAIN, nonce: null };
@@ -1380,8 +1469,8 @@ export class ReceiptStore {
   private prepare(event: ChainEvent, write: boolean): Prepared {
     return {
       actor: this.pseudonymous(event.actor, event.ts_received, write),
-      input: this.digestFor("input", event.input_hash, event.raw_input),
-      output: this.digestFor("output", event.output_hash, event.raw_output),
+      input: this.digestFor("input", event.input_hash, event.raw_input, event.input_nonce),
+      output: this.digestFor("output", event.output_hash, event.raw_output, event.output_nonce),
     };
   }
 
@@ -1517,6 +1606,26 @@ export class ReceiptStore {
     const { signer, verificationKey } = this.writer();
     const head = await signer.head(systemId);
 
+    // Receipts the signer is ahead by, beyond the one its head holds, come
+    // from its journal, fetched before the transaction: the queue this runs
+    // on keeps the database's tip where it is meanwhile.
+    const tipBefore = this.tipStatement.get(systemId) as TipRow | undefined;
+    const firstMissing = (tipBefore?.seq ?? -1) + 1;
+    let journal: Receipt[] | null = null;
+    if (head !== null && head.seq > firstMissing && signer.receipts !== undefined) {
+      journal = [];
+      try {
+        while (journal.length < head.seq - firstMissing + 1) {
+          const page = await signer.receipts(systemId, firstMissing + journal.length, RECOVERY_PAGE);
+          if (page.length === 0) break;
+          journal.push(...page);
+        }
+      } catch {
+        // A signer without a journal: only the one receipt its head holds can come back.
+        journal = null;
+      }
+    }
+
     return this.inTransaction(async () => {
       const tip = this.tipStatement.get(systemId) as TipRow | undefined;
       const here = tip === undefined ? "this database holds no chain for it" : `this database is at seq ${tip.seq} (${tip.hash})`;
@@ -1533,9 +1642,11 @@ export class ReceiptStore {
         );
       }
 
+      const keyFor = (receipt: Receipt): KeyObject | undefined =>
+        this.publicKeyFor(receipt.key_id) ?? (receipt.key_id === signer.keyId ? verificationKey : undefined);
       const headHash = receiptHashHex(head);
-      const key = this.publicKeyFor(head.key_id) ?? (head.key_id === signer.keyId ? verificationKey : undefined);
-      if (head.system_id !== systemId || key === undefined || !verifyReceiptSignature(head, key)) {
+      const headKey = keyFor(head);
+      if (head.system_id !== systemId || headKey === undefined || !verifyReceiptSignature(head, headKey)) {
         return diverged(`the head the signer returned for ${systemId} is not a receipt of it under a known key`);
       }
       const there = `the signer is at seq ${head.seq} (${headHash})`;
@@ -1543,31 +1654,71 @@ export class ReceiptStore {
       if (tip !== undefined && head.seq === tip.seq && headHash === tip.hash) {
         return { system_id: systemId, status: "in_sync" };
       }
+      const tipSeq = tip?.seq ?? -1;
+      if (head.seq <= tipSeq || tipSeq + 1 !== firstMissing) return diverged(`${there}, and ${here}`);
 
-      const extendsTip = head.seq === (tip?.seq ?? -1) + 1 && head.prev_hash === (tip?.hash ?? GENESIS_PREV_HASH);
-      if (!extendsTip) return diverged(`${there}, and ${here}`);
+      // The signer signed receipts this database does not hold: the process
+      // that asked for the last one never stored it, or the database was put
+      // back to a copy older than the signer. They are taken back only if
+      // every one is the next of the chain here, under a known key, ending
+      // exactly at the signer's head.
+      const missing = head.seq === firstMissing ? [head] : (journal ?? []);
+      let previous = tip?.hash ?? GENESIS_PREV_HASH;
+      const taken: Receipt[] = [];
+      for (const [index, receipt] of missing.entries()) {
+        const seq = firstMissing + index;
+        const key = keyFor(receipt);
+        if (
+          receipt.system_id !== systemId ||
+          receipt.seq !== seq ||
+          receipt.prev_hash !== previous ||
+          key === undefined ||
+          !verifyReceiptSignature(receipt, key)
+        ) {
+          return diverged(`${there}, and ${here}; the signer's receipt for seq ${seq} does not continue this chain`);
+        }
+        previous = receiptHashHex(receipt);
+        taken.push(receipt);
+        if (seq === head.seq) break;
+      }
+      const last = taken.at(-1);
+      if (last === undefined || last.seq !== head.seq || previous !== headHash) {
+        return diverged(
+          `${there}, and ${here}; the signer's journal does not hold every receipt in between ` +
+            `(it reaches seq ${last?.seq ?? tipSeq})`,
+        );
+      }
 
-      // The one case with a safe answer: the signer signed the receipt that
-      // comes next, and the process that asked for it never stored it.
       if (this.deletionOf(systemId, this.write) !== null) {
-        return diverged(`${there}, but ${systemId} was deleted here, so its receipt is not restored`);
+        return diverged(`${there}, but ${systemId} was deleted here, so its receipts are not restored`);
       }
-      const { trace_id, span_id } = head.source;
-      if (trace_id !== undefined && span_id !== undefined && this.duplicateStatement.get(systemId, trace_id, span_id) !== undefined) {
-        return diverged(`${there}, and its span ${trace_id}/${span_id} is already on the chain at another position`);
+      for (const receipt of taken) {
+        const { trace_id, span_id } = receipt.source;
+        if (trace_id !== undefined && span_id !== undefined && this.duplicateStatement.get(systemId, trace_id, span_id) !== undefined) {
+          return diverged(`${there}, and the span ${trace_id}/${span_id} of seq ${receipt.seq} is already on the chain at another position`);
+        }
       }
-      if (head.seq === 0) {
-        this.registerStatement.run({ system_id: systemId, created_at: head.ts_received });
+
+      for (const receipt of taken) {
+        if (receipt.seq === 0) {
+          this.registerStatement.run({ system_id: systemId, created_at: receipt.ts_received });
+        }
+        this.insertRow(receipt);
+        const { trace_id, span_id } = receipt.source;
+        this.logAdmin(
+          "signer.recovered",
+          systemId,
+          { actor: "server (reconciliation with the signer)", ts: new Date().toISOString() },
+          {
+            seq: receipt.seq,
+            hash: receiptHashHex(receipt),
+            ...(trace_id === undefined ? {} : { trace_id }),
+            ...(span_id === undefined ? {} : { span_id }),
+          },
+        );
       }
-      this.insertRow(head);
-      this.logAdmin(
-        "signer.recovered",
-        systemId,
-        { actor: "server (reconciliation with the signer)", ts: new Date().toISOString() },
-        { seq: head.seq, hash: headHash, ...(trace_id === undefined ? {} : { trace_id }), ...(span_id === undefined ? {} : { span_id }) },
-      );
       this.divergences.delete(systemId);
-      return { system_id: systemId, status: "recovered", seq: head.seq, hash: headHash };
+      return { system_id: systemId, status: "recovered", seq: head.seq, hash: headHash, count: taken.length };
     });
   }
 

@@ -1,9 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import Database from "better-sqlite3";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { SCHEMA_VERSION } from "../src/storage/schema.js";
 import { ReceiptStore } from "../src/storage/store.js";
 import { createTestSigner } from "./helpers/signer.js";
 
@@ -110,4 +113,35 @@ describe("the administration commands", () => {
     expect((await cli("system", "list", "--all")).stdout).not.toContain("prova");
     expect((await cli("admin-log")).stdout).toMatch(/\tsystem\.delete\tprova\tcli \S+@\S+\t/);
   }, 60_000);
+});
+
+describe("the commands that only read", () => {
+  const fileHash = (): string => createHash("sha256").update(readFileSync(databasePath)).digest("hex");
+
+  it("leave the database file byte for byte as it was", async () => {
+    const before = fileHash();
+    expect((await cli("system", "list", "--all")).code).toBe(0);
+    expect((await cli("admin-log")).code).toBe(0);
+    expect((await cli("key", "list")).code).toBe(0);
+    expect((await cli("subject", "find", "nobody")).code).toBe(1);
+    expect(fileHash()).toBe(before);
+  });
+
+  it("refuse a database at an older schema, without changing it, and migrate brings it up", async () => {
+    const raw = new Database(databasePath);
+    raw.pragma("user_version = 0");
+    raw.close();
+    const before = fileHash();
+
+    const refused = await cli("system", "list");
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain("run `sigillo-server migrate` on it");
+    expect((await cli("key", "list")).code).toBe(1);
+    expect(fileHash()).toBe(before);
+
+    const migrated = await cli("migrate");
+    expect(migrated.code, migrated.stderr).toBe(0);
+    expect(migrated.stdout).toContain(`schema ${SCHEMA_VERSION}`);
+    expect((await cli("system", "list")).code).toBe(0);
+  });
 });

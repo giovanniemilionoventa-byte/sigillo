@@ -27,6 +27,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | P1 | Ricevute senza dati personali (formato v4) | fatto | Pseudonimi `psn_` in una tabella `subjects` cancellabile, impronte con sale per input/output ricevuti in chiaro con i nonce in `openings`, cancellazione di interessati e di nonce, export senza identificativi per default, `sigillo-verify open`; v1–v3 restano valide; 989 test Node (sessione 16) |
 | V1 | Verifica prima del deploy (sola verifica) | fatto | `docs/RAPPORTO-VERIFICA-2026-10-01.md`: PRONTO CON RISERVE, 15 problemi (1 alto, 6 medi, 8 bassi), nessuna correzione al codice. Prova completa in Docker con il compose di produzione, migrazione da un database creato con la versione `30b5e9a`, crash del server e del signer, ripristino e ritorno indietro. Procedura per il VPS in `DEPLOY.md`. Cross-check Python esteso (frontiera di Merkle, ricevute v4 da rifiutare) nella branch `chore/crosscheck-v4`, non unita. 1079 test Node, 50 SDK, 22 demo (sessione 17) |
 | B | Interfaccia B | fatto | Direzione di design "B" a tre colonne (barra laterale, contenuto, dettaglio), solo aspetto e navigazione; milestone B1–B4 nella sezione "Interfaccia B"; 1161 test Node (sessione 18) |
+| R1 | Riserve della verifica pre-rilascio | fatto | Pausa delle scritture durante l'aggiornamento, guardia di versione dello schema, "cancella interessato" onesto sulle ricevute v1–v3, `/healthz` e semaforo coerenti, comandi di sola lettura che non modificano il file, `signer check` (anche in `update.sh`), registro delle ricevute nel signer con recupero completo dopo un ripristino, SDK con impronte con sale; oscuramento delle ricevute v1–v3 in attesa del conteggio sul VPS; 1194 test Node, 52 SDK, 22 demo (sessione 20) |
 
 ## Interfaccia B — fase (dal 2026-10-01)
 
@@ -3032,6 +3033,42 @@ quante ne restavano sotto il bordo (a 420 px di finestra il documento era alto 5
 **Correzione.** Le tre colonne della cronologia con scroll proprio sono posizionate
 (`position: relative`): il documento resta alto quanto la finestra e non scorre più. Un test in
 `style.test.ts` lo tiene fermo. Nessun altro cambiamento.
+
+### Sessione 20 — 2026-10-02 — le riserve della verifica pre-rilascio
+
+Il committente ha chiesto di scegliere, per ogni riserva di `docs/RAPPORTO-VERIFICA-2026-10-01.md`,
+l'opzione più sicura tra quelle fattibili. Piano con pro e contro nel documento condiviso nel thread
+del progetto. Fatto, in una PR (#26), senza toccare il VPS:
+
+- **Problema 6 (ritorno indietro).** `SIGILLO_INGEST_PAUSED` / `SIGILLO_INGEST_PAUSE_EXCEPT`: le
+  scritture restano in pausa (503 + `Retry-After`, dopo il controllo della chiave) dal punto 3 al
+  punto 7.4 di `DEPLOY.md`, tranne per il sistema di prova. Un ritorno indietro prima del 7.4 non perde
+  nulla e non riusa posizioni firmate. Nuovo passo R0 (salvare i fascicoli prima di R3). Il nome del
+  sistema di prova ha data e ora. Lo schema è timbrato in `user_version`: una versione futura rifiuta
+  con una frase un database scritto da una più nuova, invece di riavviarsi in ciclo.
+- **Problema 1 (nomi in chiaro nelle ricevute v1–v3).** `subject erase` e la pagina "persone" contano
+  le ricevute v1–v3 che contengono l'identificativo e lo dicono, invece di affermare che la persona non
+  è più rintracciabile. `SECURITY.md` aggiornato. L'oscuramento vero (sostituire la ricevuta con
+  posizione, impronta e firma, che restano verificabili) **non è fatto**: cambia il formato del
+  fascicolo e fa crescere il verificatore di qualche centinaio di righe, e serve solo se il conteggio
+  del punto 0 di `DEPLOY.md` sul VPS non è zero. Si decide con quel numero.
+- **Problemi 3 e 4 (memoria del signer, backup più vecchio).** Il signer tiene un registro
+  (`<hash>.receipts.jsonl`) di ogni ricevuta firmata, scritto prima dello stato; nuovo metodo
+  `GET_RECEIPTS` (protocollo 2, aggiunto). Il server, trovando il signer avanti di quante ricevute
+  si voglia, le riprende, le controlla una per una e le scrive: un backup più vecchio del signer non
+  perde più ricevute e non costringe a una biforcazione. `init-from-db` non copia nel registro le
+  ricevute v1–v3 (possono contenere nomi). `init-from-db` rilanciato dice se il signer concorda
+  ancora col database e, se è avanti, rimanda a R4. `sigillo-server signer check` confronta le teste,
+  e `update.sh` lo esegue. Backup ogni ora, 48 conservati.
+- **Problema 5.** `/healthz` risponde 503 anche quando un sistema è rosso (senza nominarlo); il
+  semaforo diventa rosso quando il signer non risponde.
+- **Problema 8.** `system list`, `admin-log`, `key list`, `subject find` aprono il file in sola
+  lettura e non applicano lo schema; su uno schema vecchio rifiutano e rimandano a `migrate` (nuovo).
+- **Problema 2.** L'SDK sala le proprie impronte (`salt_content=True`) e manda il nonce; il server le
+  registra come `salted` e conserva il nonce in `openings`. L'API nativa accetta `input_nonce`.
+
+Nessun file di `packages/verifier` o di `packages/core` è cambiato. 1194 test Node, 52 SDK Python
+(end-to-end compreso), 22 demo, cross-check Python OK.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

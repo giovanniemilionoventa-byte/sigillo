@@ -79,6 +79,13 @@ program
       actor: `cli ${userInfo().username}@${hostname()} (signer init-from-db)`,
       now: () => new Date(),
     });
+    if (report.alreadyInitialised !== undefined) {
+      process.stdout.write(
+        `already initialised on ${report.alreadyInitialised}; the signer agrees with the database on all ` +
+          `${report.unchanged.length} chain(s): nothing to do\n`,
+      );
+      return;
+    }
     for (const system of report.systems) {
       process.stdout.write(`${system.system_id}: seq ${system.seq}, ${system.tree_size} receipts, head ${system.hash}\n`);
     }

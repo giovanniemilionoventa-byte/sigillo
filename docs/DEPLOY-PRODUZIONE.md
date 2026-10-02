@@ -466,7 +466,7 @@ quale ricevuta non collega più alla precedente, e `uscita 1`.
 
 ## Parte 6 — Tenerlo in piedi
 
-### 6.1 Backup del database, ogni notte, e fuori dal server
+### 6.1 Backup del database, ogni ora, e fuori dal server
 
 ```sh
 $ crontab -e
@@ -475,8 +475,16 @@ $ crontab -e
 Aggiungi la riga:
 
 ```
-0 3 * * * cd /srv/sigillo/deploy && docker compose exec -T server /app/backup.sh >> /srv/sigillo-backup.log 2>&1
+0 * * * * cd /srv/sigillo/deploy && docker compose exec -T -e SIGILLO_BACKUP_KEEP=48 server /app/backup.sh >> /srv/sigillo-backup.log 2>&1
 ```
+
+Ogni ora, e ne tiene 48 (due giorni). Perché ogni ora: se un giorno si deve
+rimettere un backup, tutto quello che è arrivato dopo quel backup va recuperato
+dal firmatario, e più il backup è recente meno c'è da recuperare (le impronte
+recuperate così non si possono più aprire: `SECURITY.md`). Perché due giorni e
+non di più: una persona cancellata resta nei backup finché non vengono
+sostituiti, quindi al massimo per due giorni. La copia fuori dal server, sotto,
+è quella che copre i periodi più lunghi.
 
 Provalo subito a mano:
 
@@ -485,7 +493,7 @@ $ cd /srv/sigillo/deploy && docker compose exec -T server /app/backup.sh
 ```
 
 Deve stampare `wrote … bytes to /var/lib/sigillo-backups/sigillo-….db` e
-`backups in /var/lib/sigillo-backups: 1`. Ne tiene 14, i più recenti.
+`backups in /var/lib/sigillo-backups: 1`.
 
 **Quel volume è sullo stesso disco del database.** Un backup vero sta altrove.
 Il modo più semplice è prendere ogni giorno l'ultima copia dal portatile, o da
@@ -695,7 +703,7 @@ non dà il risultato atteso, fermati lì.
 | 28 | portatile | `node packages/verifier/dist/cli.js fascicolo.zip --tsa-ca cacert.pem --key-id <key_id>` | `OK …`, token `verified … attested time …`, `every signature is by a key you said to expect`; uscita 0 |
 | 29 | portatile | fascicolo alterato (5.4) | `FAILED  chain-link at receipts.jsonl:4`, uscita 1 |
 | 30 | server | `docker compose exec -T server /app/backup.sh` | `wrote … bytes`, `backups in …: 1` |
-| 31 | server | `crontab -l` | la riga delle 03:00 |
+| 31 | server | `crontab -l` | la riga `0 * * * *` del backup orario |
 | 32 | portatile | copia dell'ultimo backup (6.1) e `tar -tvf sigillo-backup.tar` | un file `sigillo-….db` |
 | 33 | portatile | `node apps/server/dist/cli.js system list --all --db sigillo-*.db` | `acme-support-bot	N receipts	active	…` |
 

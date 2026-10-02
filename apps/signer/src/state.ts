@@ -2,11 +2,14 @@ import { createHash } from "node:crypto";
 import {
   chmodSync,
   closeSync,
+  existsSync,
+  fstatSync,
   fsyncSync,
   mkdirSync,
   openSync,
   readdirSync,
   readFileSync,
+  readSync,
   renameSync,
   unlinkSync,
   writeSync,
@@ -17,6 +20,7 @@ import {
   parseFrontier,
   receiptHashHex,
   receiptSchema,
+  safeParseReceipt,
   serializeFrontier,
   type MerkleFrontier,
   type Receipt,
@@ -87,6 +91,15 @@ const retiredFileSchema = z
 /** The name of the file that holds a system's state: the system_id may hold any character. */
 function fileNameOf(systemId: string): string {
   return `${createHash("sha256").update(systemId, "utf8").digest("hex")}.json`;
+}
+
+/**
+ * The name of the file that holds every receipt signed for a system, one per
+ * line (the journal). It does not match FILE_NAME, so open() never reads it
+ * as a state.
+ */
+function journalNameOf(systemId: string): string {
+  return `${createHash("sha256").update(systemId, "utf8").digest("hex")}.receipts.jsonl`;
 }
 
 function serialize(state: SystemState): string {
@@ -184,6 +197,73 @@ export class StateDirectory {
   /** Every system the signer knows, by system_id. */
   list(): SystemState[] {
     return [...this.systems.values()].sort((a, b) => (a.system_id < b.system_id ? -1 : 1));
+  }
+
+  /**
+   * Appends a signed receipt to its system's journal, durably. Called before
+   * put(): the journal is never behind the state, so every receipt the state
+   * has moved past is in it. It may be ahead, by a receipt whose state was
+   * never written and whose signature was never returned; receipts() reads
+   * nothing past the state's head, and a later receipt at the same position
+   * replaces it there.
+   *
+   * A line cut short by a crash is left where it is and skipped when read; a
+   * newline goes first so the next receipt starts on a line of its own.
+   */
+  record(receipt: Receipt): void {
+    const target = join(this.path, journalNameOf(receipt.system_id));
+    const created = !existsSync(target);
+    const descriptor = openSync(target, "a+", 0o600);
+    try {
+      const { size } = fstatSync(descriptor);
+      let separator = "";
+      if (size > 0) {
+        const last = Buffer.alloc(1);
+        readSync(descriptor, last, 0, 1, size - 1);
+        if (last[0] !== 0x0a) separator = "\n";
+      }
+      writeSync(descriptor, `${separator}${JSON.stringify(receipt)}\n`);
+      fsyncSync(descriptor);
+    } finally {
+      closeSync(descriptor);
+    }
+    if (created) fsyncDirectory(this.path);
+  }
+
+  /**
+   * The receipts signed for a system from `fromSeq` on, in order, at most
+   * `limit` of them, never past the state's head, and stopping at the first
+   * position the journal does not hold (a chain begun before the journal
+   * existed). The head comes from the state itself. Whoever asks checks every
+   * signature and link: this is a record to recover from, not evidence.
+   */
+  receipts(systemId: string, fromSeq: number, limit: number): Receipt[] {
+    const known = this.systems.get(systemId);
+    if (known === undefined || !("head" in known) || fromSeq > known.seq) return [];
+    const bySeq = new Map<number, Receipt>();
+    const target = join(this.path, journalNameOf(systemId));
+    if (existsSync(target)) {
+      for (const line of readFileSync(target, "utf8").split("\n")) {
+        if (line.length === 0) continue;
+        let value: unknown;
+        try {
+          value = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        const parsed = safeParseReceipt(value);
+        if (!parsed.ok || parsed.receipt.system_id !== systemId) continue;
+        if (parsed.receipt.seq >= fromSeq && parsed.receipt.seq <= known.seq) bySeq.set(parsed.receipt.seq, parsed.receipt);
+      }
+    }
+    bySeq.set(known.seq, known.head);
+    const found: Receipt[] = [];
+    for (let seq = fromSeq; seq <= known.seq && found.length < limit; seq += 1) {
+      const receipt = bySeq.get(seq);
+      if (receipt === undefined) break;
+      found.push(receipt);
+    }
+    return found;
   }
 
   /** Replaces a system's state on disk, durably, and only then in memory. */

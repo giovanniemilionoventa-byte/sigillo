@@ -18,6 +18,8 @@ import { StateDirectory } from "./state.js";
  *     -> {"v":2,"id":"<id>","ok":true,"checkpoint":{<signed checkpoint>}}
  *   {"v":2,"id":"<id>","method":"GET_HEAD","system_id":"<id>"}
  *     -> {"v":2,"id":"<id>","ok":true,"head":{<signed receipt>} | null}
+ *   {"v":2,"id":"<id>","method":"GET_RECEIPTS","system_id":"<id>","from_seq":<n>,"limit":<1..50>}
+ *     -> {"v":2,"id":"<id>","ok":true,"receipts":[{<signed receipt>}, …]}
  *   anything refused
  *     -> {"v":2,"id":"<id>","ok":false,"code":"<code>","error":"<reason>"}
  *
@@ -39,6 +41,8 @@ import { StateDirectory } from "./state.js";
  */
 
 export const PROTOCOL_VERSION = 2;
+/** At most this many receipts in one GET_RECEIPTS reply. */
+export const MAX_RECEIPTS_PER_REPLY = 50;
 const MAX_LINE_BYTES = 256 * 1024;
 const MAX_CONNECTIONS = 16;
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -53,6 +57,16 @@ const requestSchema = z.discriminatedUnion("method", [
   z.object({ v: version, id, method: z.literal("SIGN_RECEIPT"), receipt: unsignedReceiptSchema }).strict(),
   z.object({ v: version, id, method: z.literal("CHECKPOINT"), system_id: systemId }).strict(),
   z.object({ v: version, id, method: z.literal("GET_HEAD"), system_id: systemId }).strict(),
+  z
+    .object({
+      v: version,
+      id,
+      method: z.literal("GET_RECEIPTS"),
+      system_id: systemId,
+      from_seq: z.number().int().nonnegative(),
+      limit: z.number().int().min(1).max(MAX_RECEIPTS_PER_REPLY),
+    })
+    .strict(),
 ]);
 
 export interface SignerDaemon {
@@ -106,6 +120,8 @@ export function handleLine(line: string, signer: Signer): Reply {
         return ok({ checkpoint: signer.checkpoint(valid.system_id) });
       case "GET_HEAD":
         return ok({ head: signer.head(valid.system_id) });
+      case "GET_RECEIPTS":
+        return ok({ receipts: signer.receipts(valid.system_id, valid.from_seq, valid.limit) });
     }
   } catch (error) {
     if (error instanceof Refusal) return refusal(error.code, error.message, requestId);

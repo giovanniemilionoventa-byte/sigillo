@@ -147,6 +147,23 @@ export class SignerClient implements SigningService {
     return parsed.receipt;
   }
 
+  /**
+   * The receipts the signer signed for the system from `fromSeq` on, at most
+   * `limit` (50 at most), from its journal. A signer older than the journal
+   * refuses the method as malformed, and that refusal is passed on.
+   */
+  async receipts(systemId: string, fromSeq: number, limit: number): Promise<Receipt[]> {
+    const reply = await this.request({ method: "GET_RECEIPTS", system_id: systemId, from_seq: fromSeq, limit });
+    if (!Array.isArray(reply["receipts"])) {
+      throw new SignerUnavailableError("the signer returned no list of receipts");
+    }
+    return reply["receipts"].map((value) => {
+      const parsed = safeParseReceipt(value);
+      if (!parsed.ok) throw new SignerUnavailableError(`the signer returned a malformed receipt: ${parsed.error}`);
+      return parsed.receipt;
+    });
+  }
+
   private requireIdentity(): { keyId: string; publicKeyBase64: string } {
     if (this.identity === null) {
       throw new SignerUnavailableError("the signer has not been asked for its public key yet");

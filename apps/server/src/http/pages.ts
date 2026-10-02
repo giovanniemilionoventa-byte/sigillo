@@ -406,6 +406,9 @@ export function peoplePage(
   extra: { notice?: string; error?: string },
 ): string {
   const t = UI.people;
+  const legacy = search === null ? 0 : store.legacyReceiptsNaming(search.identifier);
+  const legacyNotice =
+    legacy === 0 ? "" : `<p class="notice warn" role="status">${ICONS.info}<span>${escape(t.legacy(legacy))}</span></p>\n`;
   let result = "";
   if (search !== null && search.token === null) {
     result = `<p class="notice" role="status">${ICONS.info}<span>${escape(t.notFound)}</span></p>`;
@@ -451,7 +454,7 @@ ${notices(extra)}
   </label>
   <button type="submit" class="primary">${ICONS.search}${escape(t.searchSubmit)}</button>
 </form>
-${result}`;
+${legacyNotice}${result}`;
 }
 
 /** What the store found for a document's fingerprints, beside the form that computed them. */

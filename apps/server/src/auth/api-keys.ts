@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
 import Database from "better-sqlite3";
-import { applySchema } from "../storage/schema.js";
+import { applySchema, requireCurrentSchema } from "../storage/schema.js";
 
 /**
  * One API key per system, stored only as an scrypt hash.
@@ -99,6 +99,19 @@ export class ApiKeyStore {
     db.pragma("busy_timeout = 5000");
     applySchema(db);
     return new ApiKeyStore(db);
+  }
+
+  /** For `key list`: one read-only connection, no schema applied (ReceiptStore.openReadOnly). */
+  static openReadOnly(location: string): ApiKeyStore {
+    const db = new Database(location, { readonly: true, fileMustExist: true });
+    try {
+      db.pragma("busy_timeout = 5000");
+      requireCurrentSchema(db);
+      return new ApiKeyStore(db);
+    } catch (error) {
+      db.close();
+      throw error;
+    }
   }
 
   issue(systemId: string, createdAt: string): IssuedKey {

@@ -173,6 +173,11 @@ class EndToEndTest(unittest.TestCase):
 
         tool_call = next(r for r in receipts if r["action"]["name"] == "search_orders")
         self.assertRegex(tool_call["input_hash"], r"^[0-9a-f]{64}$")
+        # Salted by the SDK, with the nonce kept by the server and not in the
+        # export: the digest cannot be guessed back from the record.
+        self.assertEqual(tool_call["v"], 4)
+        self.assertEqual(tool_call["input_hash_scheme"], "salted")
+        self.assertNotIn("openings.jsonl", names)
 
         # Whatever the agent actually said must not be in the record.
         self.assertNotIn("A-1099", receipts_text)

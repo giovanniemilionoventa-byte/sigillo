@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyServerOptions } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from "fastify";
 import { z } from "zod";
 import type { Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
@@ -43,6 +43,18 @@ export interface ServerOptions {
    */
   signerHealthy?: () => Promise<boolean>;
   /**
+   * Whether every chain is intact and agrees with the signer. /healthz reports
+   * 503 when one is not, so that a monitor sees what the web view's traffic
+   * light shows red. Which system it is, the web view says, not /healthz.
+   */
+  chainsIntact?: () => boolean;
+  /**
+   * Writes paused for maintenance (config.ts, ingestPause): both ingest
+   * endpoints answer 503 with Retry-After to every system except those in
+   * `except`, after the key has been checked. Nothing is read from the body.
+   */
+  ingestPause?: { except: ReadonlySet<string> };
+  /**
    * The operator's view. Without a password it is not mounted at all: an
    * unguarded window onto an audit log is worse than no window.
    */
@@ -55,6 +67,9 @@ export interface ServerOptions {
     cookieSecure?: boolean | "auto";
   };
 }
+
+/** What a paused server asks a writer to wait before trying again. OTLP exporters honour it. */
+const PAUSE_RETRY_AFTER_SECONDS = 60;
 
 const DEFAULT_INGEST_LIMITS: ThrottleSettings = {
   maxFailures: 20,
@@ -104,6 +119,9 @@ const receiptRequestSchema = z
       .optional(),
     input_hash: hex64.nullable().optional(),
     output_hash: hex64.nullable().optional(),
+    /** The nonce the caller salted input_hash under: the digest is then recorded as salted. */
+    input_nonce: hex64.optional(),
+    output_nonce: hex64.optional(),
     /** A value to digest here with a salt, and discard. Never stored, never logged. */
     input: z.unknown().optional(),
     output: z.unknown().optional(),
@@ -116,6 +134,14 @@ const receiptRequestSchema = z
   .refine((body) => !(body.output_hash !== undefined && body.output !== undefined), {
     message: "send either output or output_hash, not both",
     path: ["output"],
+  })
+  .refine((body) => body.input_nonce === undefined || typeof body.input_hash === "string", {
+    message: "input_nonce goes with the input_hash it salted",
+    path: ["input_nonce"],
+  })
+  .refine((body) => body.output_nonce === undefined || typeof body.output_hash === "string", {
+    message: "output_nonce goes with the output_hash it salted",
+    path: ["output_nonce"],
   });
 
 function isoNow(now: () => Date): string {
@@ -217,9 +243,23 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return systemId;
   };
 
+  // Checked after authentication, so a paused server tells only a caller with
+  // a valid key that it is paused, and the attempt limits work as always.
+  const pausedFor = (systemId: string, reply: FastifyReply): boolean => {
+    if (options.ingestPause === undefined || options.ingestPause.except.has(systemId)) return false;
+    void reply
+      .code(503)
+      .header("retry-after", String(PAUSE_RETRY_AFTER_SECONDS))
+      .send({ error: "writes are paused for maintenance: retry later" });
+    return true;
+  };
+
   app.get("/healthz", async (_request, reply) => {
     if (options.signerHealthy !== undefined && !(await options.signerHealthy())) {
       return reply.code(503).send({ status: "signer unavailable" });
+    }
+    if (options.chainsIntact !== undefined && !options.chainsIntact()) {
+      return reply.code(503).send({ status: "a chain failed its check or disagrees with the signer" });
     }
     return { status: "ok" };
   });
@@ -257,6 +297,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (systemId === null) {
       return reply.code(401).send({ error: "a valid Bearer API key is required" });
     }
+    if (pausedFor(systemId, reply)) return reply;
 
     const contentType = request.headers["content-type"] ?? "";
     let spans;
@@ -289,6 +330,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         output_hash: action.output_hash,
         ...(action.raw_input === undefined ? {} : { raw_input: action.raw_input }),
         ...(action.raw_output === undefined ? {} : { raw_output: action.raw_output }),
+        ...(action.input_nonce === undefined ? {} : { input_nonce: action.input_nonce }),
+        ...(action.output_nonce === undefined ? {} : { output_nonce: action.output_nonce }),
         outcome: action.outcome,
         source: action.source,
         ...(action.artifacts === undefined ? {} : { artifacts: action.artifacts }),
@@ -343,6 +386,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (systemId === null) {
       return reply.code(401).send({ error: "a valid Bearer API key is required" });
     }
+    if (pausedFor(systemId, reply)) return reply;
 
     const parsed = receiptRequestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -374,6 +418,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         // "input" in body, not body.input !== undefined: a JSON null is a value too.
         ...("input" in body ? { raw_input: { value: body.input } } : {}),
         ...("output" in body ? { raw_output: { value: body.output } } : {}),
+        ...(body.input_nonce === undefined ? {} : { input_nonce: body.input_nonce }),
+        ...(body.output_nonce === undefined ? {} : { output_nonce: body.output_nonce }),
         outcome: body.outcome,
         source: body.source ?? { type: "api" },
       });

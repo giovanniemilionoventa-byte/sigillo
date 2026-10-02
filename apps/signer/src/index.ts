@@ -1,6 +1,6 @@
 export { generateKeyFile, loadKeyFile } from "./key-file.js";
 export type { SignerKey } from "./key-file.js";
-export { handleLine, PROTOCOL_VERSION, startSignerDaemon } from "./daemon.js";
+export { handleLine, MAX_RECEIPTS_PER_REPLY, PROTOCOL_VERSION, startSignerDaemon } from "./daemon.js";
 export type { SignerDaemon, SignerDaemonOptions } from "./daemon.js";
 export { DEFAULT_CLOCK_TOLERANCE_MS, Refusal, Signer } from "./signer.js";
 export type { RefusalCode, SignerOptions } from "./signer.js";

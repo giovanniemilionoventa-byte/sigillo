@@ -536,6 +536,38 @@ describe("content already hashed by the SDK (fase 9, D6)", () => {
     expect(action?.raw_input).toEqual({ value: '{"order_id":"A-1099"}' });
   });
 
+  it("passes on the nonce the SDK salted its digest under", () => {
+    const span = jsonSpan({
+      attributes: {
+        "openinference.span.kind": "TOOL",
+        "tool.name": "leggi_curriculum",
+        "sigillo.input.sha256": SHA_A,
+        "sigillo.input.nonce": SHA_B,
+        "sigillo.output.sha256": SHA_B,
+      },
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.input_hash).toBe(SHA_A);
+    expect(action?.input_nonce).toBe(SHA_B);
+    expect(action?.output_hash).toBe(SHA_B);
+    expect(action).not.toHaveProperty("output_nonce");
+  });
+
+  it("records no digest at all when the nonce beside it is malformed: it could not be recorded as what it is", () => {
+    const span = jsonSpan({
+      attributes: {
+        "openinference.span.kind": "TOOL",
+        "tool.name": "leggi_curriculum",
+        "sigillo.input.sha256": SHA_A,
+        "sigillo.input.nonce": "not-a-nonce",
+      },
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.input_hash).toBeNull();
+    expect(action).not.toHaveProperty("input_nonce");
+    expect(action).not.toHaveProperty("raw_input");
+  });
+
   it("is absent, as before, when neither a digest nor a value is present", () => {
     const span = jsonSpan({ attributes: { "openinference.span.kind": "TOOL", "tool.name": "noop" } });
     const [action] = adaptSpans([span]).actions;

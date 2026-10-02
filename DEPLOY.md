@@ -70,6 +70,23 @@ EOF
 contengono un nome in chiaro. Annota i numeri. ❌ Un errore: annotalo e vai
 avanti, è solo informativo.
 
+**Il nome del sistema di prova** (punto 5). Contiene data e ora, così un
+secondo tentativo, dopo un eventuale ritorno indietro, non riusa lo stesso nome.
+
+```sh
+$ echo "verifica-aggiornamento-$(date -u +%Y%m%d-%H%M)" | tee ~/sigillo-nome-prova.txt
+```
+✅ Una riga come `verifica-aggiornamento-20261002-0915`. Scrivila qui:
+`NOME_PROVA = ________________`, e usala dove compare `NOME_PROVA`.
+
+**Gli agenti durante l'aggiornamento.** Dal punto 3 al punto 7 il server nuovo
+accetta scritture **solo** per il sistema di prova: a tutti gli altri risponde
+`503` (scritture in pausa). Così, se serve tornare indietro, nessun sistema vero
+ha ricevute v4: non si perde nulla e non si riusano posizioni già firmate.
+Gli agenti riprovano per circa un minuto e poi scartano l'evento: quello che
+fanno durante la pausa **non viene registrato**. Se non va bene, fermali prima
+del punto 3 e riaccendili dopo il punto 7.3; in ogni caso avvisa chi li gestisce.
+
 **Un fascicolo per ogni sistema, fatto con la versione attuale.** Servirà al
 punto 7 per dimostrare che l'aggiornamento non ha cambiato nulla del passato.
 
@@ -211,16 +228,38 @@ $ docker compose run --rm --no-deps -v sigillo_sigillo-data:/var/lib/sigillo sig
 con gli stessi numeri del punto 0, e alla fine
 `initialised K system(s), 0 retired; written to the administrative log`.
 (Su 506 ricevute ha impiegato circa un secondo.)
-❌ `already initialised`: è già stato fatto, va bene così, prosegui.
+❌ `already initialised …; the signer agrees with the database on all K chain(s):
+nothing to do`: era già stato fatto, e tutto torna; prosegui.
+❌ `already initialised …, and it no longer agrees with this one`: la memoria
+del signer è più avanti del database (succede dopo un ritorno indietro fatto
+senza il passo R4). **Non scrive nulla.** Fai il passo R4 del Piano di ritorno
+(solo quello) e ripeti questo comando.
 ❌ Un messaggio che nomina un sistema e una posizione (`seq`): una catena non
 torna. **Non scrive nulla.** Riparti con la versione vecchia (Piano di ritorno,
 passo R2–R4, senza R3) e chiedi aiuto.
+
+Le scritture in pausa, tranne per il sistema di prova (si tolgono al punto 7.3):
+
+```sh
+$ printf '\nSIGILLO_INGEST_PAUSED=true\nSIGILLO_INGEST_PAUSE_EXCEPT=%s\n' "$(cat ~/sigillo-nome-prova.txt)" >> .env
+$ grep '^SIGILLO_INGEST_PAUSE' .env
+```
+✅ Due righe: `SIGILLO_INGEST_PAUSED=true` e `SIGILLO_INGEST_PAUSE_EXCEPT=NOME_PROVA`.
+❌ Righe ripetute con valori diversi: apri `.env` con un editor e lascia solo
+queste due.
 
 ```sh
 $ docker compose up -d
 $ docker compose restart caddy
 ```
 ✅ `Started` / `Restarted`.
+
+```sh
+$ docker compose logs server | grep PAUSED | tail -1
+```
+✅ `writes are PAUSED (SIGILLO_INGEST_PAUSED), except for NOME_PROVA`.
+❌ Nessuna riga: le scritture **non** sono in pausa; `docker compose stop server`
+e ricontrolla `.env`.
 
 ```sh
 $ sleep 45 && docker compose ps
@@ -253,29 +292,12 @@ il registro amministrativo mostra «registrato nello stato del firmatario» per
 ogni sistema. ❌ Rosso con «Il firmatario e il database non concordano»: non
 correggere nulla a mano; Piano di ritorno.
 
-**GET_HEAD: il signer e il database devono dire la stessa cosa** per ogni sistema.
+**Il signer e il database devono dire la stessa cosa** per ogni sistema.
 
 ```sh
-$ docker compose exec -T server node --input-type=module - <<'EOF'
-import { createConnection } from "node:net";
-import Database from "better-sqlite3";
-import { receiptHashHex } from "@sigillo/core";
-const db = new Database("/var/lib/sigillo/sigillo.db", { readonly: true });
-const socket = createConnection("/run/sigillo/signer.sock");
-let buffer = ""; const waiting = [];
-socket.on("data", (data) => { buffer += data; let i; while ((i = buffer.indexOf("\n")) >= 0) { const line = buffer.slice(0, i); buffer = buffer.slice(i + 1); waiting.shift()(JSON.parse(line)); } });
-const ask = (message) => new Promise((resolve) => { waiting.push(resolve); socket.write(JSON.stringify(message) + "\n"); });
-for (const { system_id } of db.prepare("SELECT system_id FROM systems ORDER BY system_id").all()) {
-  const last = db.prepare("SELECT seq, hash FROM receipts WHERE system_id = ? ORDER BY seq DESC LIMIT 1").get(system_id);
-  const reply = await ask({ v: 2, id: system_id, method: "GET_HEAD", system_id });
-  const head = reply.ok && reply.head ? { seq: reply.head.seq, hash: receiptHashHex(reply.head) } : null;
-  const same = head !== null && head.seq === last.seq && head.hash === last.hash;
-  console.log(system_id.padEnd(24), "database seq", last.seq, "| signer seq", head?.seq, same ? "UGUALI" : "DIVERSI");
-}
-socket.end();
-EOF
+$ docker compose exec server node dist/cli.js signer check
 ```
-✅ Una riga per sistema, tutte `UGUALI`. ❌ Anche una sola `DIVERSI`:
+✅ Una riga per sistema, tutte `same`. ❌ Anche una sola `DIFFERENT`:
 **fermati**, Piano di ritorno.
 
 **La pagina "verifica un documento"** (Caddy deve usare il Caddyfile nuovo):
@@ -294,8 +316,8 @@ Un sistema apposta, così le catene vere non contengono prove tecniche. Non si
 potrà cancellare (avrà una ricevuta vera), solo archiviare: è voluto.
 
 ```sh
-$ docker compose exec server node dist/cli.js system create verifica-aggiornamento-2026-10
-$ docker compose exec server node dist/cli.js key create verifica-aggiornamento-2026-10
+$ docker compose exec server node dist/cli.js system create NOME_PROVA
+$ docker compose exec server node dist/cli.js key create NOME_PROVA
 ```
 ✅ `created …`, `genesis signed by key KEY_ID`, poi un token `sigillo_…`.
 Copialo nella riga sotto al posto di `IL_TOKEN`.
@@ -305,7 +327,7 @@ $ curl -sS https://sigillo.tuaazienda.it/api/v1/receipts \
     -H "Authorization: Bearer IL_TOKEN" -H "Content-Type: application/json" \
     -d '{"actor":{"agent":"prova-aggiornamento","on_behalf_of":"persona.di.prova.20261001"},"action":{"kind":"decision","name":"prova.aggiornamento"},"outcome":"ok","input":"contenuto di prova 20261001","output":"contenuto di prova 20261001"}'
 ```
-✅ `{"seq":1,"system_id":"verifica-aggiornamento-2026-10",…,"key_id":"KEY_ID"}`.
+✅ `{"seq":1,"system_id":"NOME_PROVA",…,"key_id":"KEY_ID"}`.
 ❌ `503`: il signer non firma (punto 4). `401`: token copiato male.
 
 Controlla che sia una ricevuta v4, con pseudonimo e impronte con sale:
@@ -314,7 +336,7 @@ Controlla che sia una ricevuta v4, con pseudonimo e impronte con sale:
 $ docker compose exec -T server node --input-type=module - <<'EOF'
 import Database from "better-sqlite3";
 const db = new Database("/var/lib/sigillo/sigillo.db", { readonly: true });
-const { canonical } = db.prepare("SELECT canonical FROM receipts WHERE system_id = 'verifica-aggiornamento-2026-10' ORDER BY seq DESC LIMIT 1").get();
+const { canonical } = db.prepare("SELECT canonical FROM receipts WHERE system_id = 'NOME_PROVA' ORDER BY seq DESC LIMIT 1").get();
 const r = JSON.parse(canonical);
 console.log({ v: r.v, on_behalf_of: r.actor.on_behalf_of, input_hash_scheme: r.input_hash_scheme, output_hash_scheme: r.output_hash_scheme });
 EOF
@@ -347,7 +369,7 @@ waiting`: FreeTSA non ha risposto; aspetta 5 minuti e ripeti (si riprova da solo
 Per la prova e per **ogni** sistema del punto 0:
 
 ```sh
-$ docker compose exec server node dist/cli.js export verifica-aggiornamento-2026-10 --out /var/lib/sigillo-backups/dopo-verifica-aggiornamento-2026-10.zip
+$ docker compose exec server node dist/cli.js export NOME_PROVA --out /var/lib/sigillo-backups/dopo-NOME_PROVA.zip
 $ docker compose exec server node dist/cli.js export NOME_SISTEMA --out /var/lib/sigillo-backups/dopo-NOME_SISTEMA.zip
 $ docker compose cp server:/var/lib/sigillo-backups/dopo-NOME_SISTEMA.zip ~/dopo-NOME_SISTEMA.zip
 ```
@@ -387,10 +409,23 @@ portatile$ node packages/verifier/dist/cli.js ../dopo-NOME_SISTEMA.zip --tsa-ca 
 ### 7.3 Chiudere la prova
 
 ```sh
-$ docker compose exec server node dist/cli.js system archive verifica-aggiornamento-2026-10
+$ docker compose exec server node dist/cli.js system archive NOME_PROVA
 $ docker compose exec server sh -c 'rm -f /var/lib/sigillo-backups/prima-*.zip /var/lib/sigillo-backups/dopo-*.zip'
 ```
-✅ `archived …`. L'aggiornamento è finito.
+✅ `archived …`.
+
+### 7.4 Riaprire le scritture
+
+Solo adesso, con tutto verde, i sistemi veri ricevono la prima ricevuta v4. Da
+qui il ritorno indietro costa ricevute (vedi Piano di ritorno).
+
+```sh
+$ sed -i '/^SIGILLO_INGEST_PAUSE/d' .env && grep -c '^SIGILLO_INGEST_PAUSE' .env
+$ docker compose up -d server && sleep 30 && docker compose ps
+$ docker compose logs server --since 2m | grep -c PAUSED
+```
+✅ Il primo stampa `0`; poi `server` `(healthy)`; l'ultimo stampa `0`. Se avevi
+fermato gli agenti, riaccendili. L'aggiornamento è finito.
 
 Il backup notturno (`crontab`) non cambia. **Da ora in poi**, per gli
 aggiornamenti normali si torna a `/srv/sigillo/deploy/update.sh`.
@@ -402,11 +437,32 @@ aggiornamenti normali si torna a `/srv/sigillo/deploy/update.sh`.
 Quando: il punto 3 si rifiuta, oppure ai punti 4–7 qualcosa resta rosso,
 `DIVERSI` o `FAILED`.
 
+Il ritorno indietro rimette la **versione** di prima, ma non toglie le righe
+`SIGILLO_INGEST_PAUSE…` da `.env` (la versione vecchia le ignora): toglile con
+il primo comando del punto 7.4, così il prossimo tentativo parte pulito.
+
 **Cosa si perde.** La versione vecchia **non parte** su un database che contiene
 anche una sola ricevuta v4 (si riavvia di continuo con `Invalid discriminator
-value`): bisogna rimettere il backup del punto 1. Le ricevute arrivate dopo il
-backup vanno perse. Per questo il ritorno va deciso **subito**, prima che gli
-agenti scrivano molto.
+value`): bisogna rimettere il backup del punto 1. Fino al punto 7.4 le scritture
+sono in pausa, quindi si perde solo il sistema di prova. Dopo, le ricevute dei
+sistemi veri arrivate dopo il backup vanno perse **e** le loro posizioni verranno
+firmate di nuovo dalla versione vecchia (una biforcazione). Per questo il ritorno
+va deciso **prima** del punto 7.4.
+
+**R0. Salvare le ricevute v4 dei sistemi veri** (solo se il ritorno indietro
+avviene dopo il punto 7.4; prima, con le scritture in pausa, non ce ne sono).
+Va fatto con la versione nuova ancora accesa, perché quella vecchia non le sa
+leggere. Per ogni sistema:
+
+```sh
+$ docker compose exec server node dist/cli.js export NOME_SISTEMA --out /var/lib/sigillo-backups/ritorno-NOME_SISTEMA.zip
+$ docker compose cp server:/var/lib/sigillo-backups/ritorno-NOME_SISTEMA.zip ~/ritorno-NOME_SISTEMA.zip
+portatile$ scp utente@sigillo.tuaazienda.it:'~/ritorno-*.zip' .
+```
+✅ `the archive verifies`, poi i file sul portatile. Dopo il ritorno indietro la
+versione vecchia firmerà di nuovo, con la stessa chiave, le posizioni di queste
+ricevute: questi fascicoli sono la prova di cosa c'era, e chi li ha ricevuti va
+avvisato che quella parte della catena è stata abbandonata.
 
 **R1. Fermare server e signer**
 
@@ -464,18 +520,31 @@ punto 0.
 
 ## Se il database viene ripristinato da un backup DOPO l'aggiornamento
 
-Da ora il signer ricorda l'ultima ricevuta firmata di ogni catena. Se si rimette
-un backup del database **più vecchio** del signer (per esempio quello della
-notte), le catene che nel frattempo hanno avuto ricevute diventano **rosse**, e
-il server rifiuta di scrivere su di esse (`503`) finché qualcuno non decide.
-Gli altri sistemi continuano a funzionare. `/healthz` resta `ok`: se ne accorge
-solo chi guarda la pagina web o il registro amministrativo (`signer.divergence`).
+Da ora il signer tiene un registro (journal) di ogni ricevuta che firma. Se si
+rimette un backup del database **più vecchio** del signer (per esempio quello
+dell'ultima ora), al riavvio il server riprende dal signer tutte le ricevute
+mancanti, le controlla una per una (firma e collegamento) e le riscrive; nel
+registro amministrativo compare un `signer.recovered` per ciascuna, e
+`docker compose logs server` dice `recovered seq N to M from the signer`.
+Nessuna azione.
 
-- Se il signer è avanti di **una sola** ricevuta, il server la recupera da solo
-  (`signer.recovered` nel registro): nessuna azione.
-- Se è avanti di **più** ricevute, quelle ricevute sono perse (il signer ricorda
-  solo l'ultima). L'unico modo di ripartire è mettere da parte la memoria del
-  signer (come al passo R4) e rifare `init-from-db`: la catena riprende dal
-  database, e **riusa le posizioni (`seq`) già firmate**. Chi ha un fascicolo
-  esportato nel frattempo vedrà `FAILED previous-export`: è una biforcazione
-  vera, e va spiegata. Non farlo senza averlo deciso e scritto.
+Quello che il backup non aveva e il signer non conosce va perso comunque: i
+nonce delle impronte con sale e le corrispondenze persona ↔ pseudonimo delle
+persone viste per la prima volta dopo il backup. Le ricevute restano valide; le
+loro impronte non si potranno più aprire.
+
+Il recupero **non** avviene, e il sistema diventa **rosso** (il server rifiuta
+di scrivere su di esso, `503`; `/healthz` risponde `503`; `signer check` dice
+`DIFFERENT`), quando:
+
+- il backup è più vecchio dell'aggiornamento (il registro del signer comincia
+  dopo `init-from-db`): usa il backup del punto 1, che è esattamente a quel
+  punto;
+- una ricevuta del registro non torna (firma, collegamento): qualcuno ha
+  toccato i file del signer, o il database è su un ramo diverso.
+
+In questi casi l'unico modo di ripartire è mettere da parte la memoria del
+signer (come al passo R4) e rifare `init-from-db`: la catena riprende dal
+database e **riusa le posizioni (`seq`) già firmate**. Chi ha un fascicolo
+esportato nel frattempo vedrà `FAILED previous-export`: è una biforcazione
+vera, e va spiegata. Non farlo senza averlo deciso e scritto.

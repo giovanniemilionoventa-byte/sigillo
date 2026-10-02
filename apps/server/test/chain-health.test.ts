@@ -221,3 +221,46 @@ describe("chains of different systems", () => {
     expect(monitor.statusFor(OTHER, new Date(NOW)).status).not.toBe("red");
   });
 });
+
+describe("the signer", () => {
+  beforeEach(async () => {
+    await store.createSystem(SYSTEM, NOW);
+  });
+
+  it("not answering turns every system red, and answering again lifts it", async () => {
+    let answers = false;
+    const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS, undefined, async () => answers);
+    monitor.check();
+    await monitor.checkSigner();
+    const down = monitor.statusFor(SYSTEM, new Date(NOW));
+    expect(down.status).toBe("red");
+    expect(down.message).toContain("Il firmatario non risponde");
+
+    answers = true;
+    await monitor.checkSigner();
+    expect(monitor.statusFor(SYSTEM, new Date(NOW)).status).not.toBe("red");
+  });
+
+  it("failing to be asked counts as not answering", async () => {
+    const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS, undefined, async () => {
+      throw new Error("socket gone");
+    });
+    await monitor.checkSigner();
+    expect(monitor.statusFor(SYSTEM, new Date(NOW)).status).toBe("red");
+  });
+});
+
+describe("failedSystems", () => {
+  it("names the systems whose chain failed its check, and only those", async () => {
+    await store.createSystem(SYSTEM, NOW);
+    await store.createSystem("other-bot", NOW);
+    await store.append(event());
+    const raw = new Database(databasePath);
+    raw.exec("DROP TRIGGER receipts_no_update");
+    raw.prepare("UPDATE receipts SET sig = ? WHERE system_id = ? AND seq = 1").run("A".repeat(86) + "==", SYSTEM);
+    raw.close();
+    const monitor = new ChainHealthMonitor(store, signer.publicKey, ONE_DAY_MS);
+    monitor.check();
+    expect(monitor.failedSystems()).toEqual([SYSTEM]);
+  });
+});

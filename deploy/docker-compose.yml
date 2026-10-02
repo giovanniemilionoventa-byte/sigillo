@@ -117,6 +117,10 @@ services:
       SIGILLO_LOGIN_LOCKOUT_MINUTES: ${SIGILLO_LOGIN_LOCKOUT_MINUTES:-5}
       SIGILLO_LOGIN_LOCKOUT_MAX_MINUTES: ${SIGILLO_LOGIN_LOCKOUT_MAX_MINUTES:-60}
       SIGILLO_INGEST_MAX_FAILURES: ${SIGILLO_INGEST_MAX_FAILURES:-20}
+      # Writes paused for maintenance (DEPLOY.md): 503 to every system except
+      # those listed. Off unless set in .env.
+      SIGILLO_INGEST_PAUSED: ${SIGILLO_INGEST_PAUSED:-false}
+      SIGILLO_INGEST_PAUSE_EXCEPT: ${SIGILLO_INGEST_PAUSE_EXCEPT:-}
       # Only Caddy can reach this port, over the compose network, which uses
       # private addresses: believe its X-Forwarded-For and -Proto, so that the
       # attempt limits see each client's own address and the session cookie

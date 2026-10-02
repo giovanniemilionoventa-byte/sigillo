@@ -6,9 +6,10 @@
 # it. Old copies are pruned by count, not by age, so a backup that stops running
 # does not silently delete the last good one.
 #
-# Run it from cron on the host:
-#   0 3 * * *  docker compose -f /srv/sigillo/deploy/docker-compose.yml \
-#                exec -T server /app/backup.sh
+# Run it from cron on the host, every hour, keeping two days of copies
+# (docs/DEPLOY-PRODUZIONE.md, 6.1):
+#   0 * * * *  docker compose -f /srv/sigillo/deploy/docker-compose.yml \
+#                exec -T -e SIGILLO_BACKUP_KEEP=48 server /app/backup.sh
 #
 # Environment:
 #   SIGILLO_DB             the database (default: /var/lib/sigillo/sigillo.db)

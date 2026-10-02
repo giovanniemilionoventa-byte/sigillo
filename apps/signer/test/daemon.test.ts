@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -261,6 +261,66 @@ describe("GET_HEAD", () => {
 
   it("refuses extra fields", async () => {
     expectRefused(await call(socketPath, "GET_HEAD", { system_id: SYSTEM, seq: 2 }), "malformed");
+  });
+});
+
+describe("GET_RECEIPTS", () => {
+  const journalOf = (systemId: string): string =>
+    join(stateDir, `${createHash("sha256").update(systemId, "utf8").digest("hex")}.receipts.jsonl`);
+
+  it("returns every receipt signed from a position on, in order, signatures included", async () => {
+    const signed = await chain(4);
+    const reply = await call(socketPath, "GET_RECEIPTS", { system_id: SYSTEM, from_seq: 2, limit: 50 });
+    expect(reply["ok"], JSON.stringify(reply)).toBe(true);
+    expect(reply["receipts"]).toEqual(signed.slice(2));
+  });
+
+  it("returns at most `limit`, and refuses a limit over 50 or a negative position", async () => {
+    const signed = await chain(4);
+    const reply = await call(socketPath, "GET_RECEIPTS", { system_id: SYSTEM, from_seq: 0, limit: 2 });
+    expect(reply["receipts"]).toEqual(signed.slice(0, 2));
+    expectRefused(await call(socketPath, "GET_RECEIPTS", { system_id: SYSTEM, from_seq: 0, limit: 51 }), "malformed");
+    expectRefused(await call(socketPath, "GET_RECEIPTS", { system_id: SYSTEM, from_seq: -1, limit: 5 }), "malformed");
+    expectRefused(
+      await call(socketPath, "GET_RECEIPTS", { system_id: SYSTEM, from_seq: 0, limit: 5, extra: true }),
+      "malformed",
+    );
+  });
+
+  it("refuses a system it has never signed for, and returns nothing past its head", async () => {
+    expectRefused(await call(socketPath, "GET_RECEIPTS", { system_id: SYSTEM, from_seq: 0, limit: 5 }), "unknown_system");
+    await chain(2);
+    expect((await call(socketPath, "GET_RECEIPTS", { system_id: SYSTEM, from_seq: 3, limit: 5 }))["receipts"]).toEqual([]);
+  });
+
+  it("is kept in a journal only its own user can read, which survives a restart", async () => {
+    const signed = await chain(3);
+    expect(statSync(journalOf(SYSTEM)).mode & 0o777).toBe(0o600);
+    expect(readFileSync(journalOf(SYSTEM), "utf8").trim().split("\n").map((line) => JSON.parse(line))).toEqual(signed);
+    await daemon?.close();
+    await start();
+    expect((await call(socketPath, "GET_RECEIPTS", { system_id: SYSTEM, from_seq: 0, limit: 50 }))["receipts"]).toEqual(signed);
+  });
+
+  it("skips a line cut short by a crash, and the next receipt starts a line of its own", async () => {
+    const signed = await chain(1);
+    // A crash in the middle of writing a receipt that was then never signed.
+    appendFileSync(journalOf(SYSTEM), '{"v":1,"system_id":"acme-supp');
+    const next = action(SYSTEM, key.keyId, 2, receiptHashHex(signed[1] as ReturnType<typeof parseReceipt>));
+    const reply = await sign(next);
+    expect(reply["ok"]).toBe(true);
+    const receipts = (await call(socketPath, "GET_RECEIPTS", { system_id: SYSTEM, from_seq: 0, limit: 50 }))["receipts"];
+    expect(receipts).toEqual([...signed, parseReceipt({ ...next, sig: reply["sig"] })]);
+  });
+
+  it("stops at the first position its journal does not hold, and always has the head", async () => {
+    const signed = await chain(3);
+    // A chain begun before the journal existed: nothing in it but what came after.
+    writeFileSync(journalOf(SYSTEM), "");
+    expect((await call(socketPath, "GET_RECEIPTS", { system_id: SYSTEM, from_seq: 1, limit: 50 }))["receipts"]).toEqual([]);
+    expect((await call(socketPath, "GET_RECEIPTS", { system_id: SYSTEM, from_seq: 3, limit: 50 }))["receipts"]).toEqual([
+      signed[3],
+    ]);
   });
 });
 

@@ -248,6 +248,50 @@ function ensureColumn(db: Database.Database, table: string, column: string, type
 }
 
 /**
+ * The schema this build writes, kept in SQLite's `user_version`. It goes up
+ * whenever a release changes the schema or starts writing something an
+ * earlier release cannot read (receipt version 4 was the first: the release
+ * before it restarts in a loop on such a database, with nothing but a parse
+ * error to say why). A database stamped with a higher number was written by a
+ * newer release, and this one refuses it with a sentence instead.
+ * Databases written before the stamp existed read 0.
+ */
+export const SCHEMA_VERSION = 1;
+
+export class NewerSchemaError extends Error {
+  constructor(readonly found: number) {
+    super(
+      `this database was written by a newer release of sigillo (schema ${found}; this release knows up to ` +
+        `${SCHEMA_VERSION}). Run that release, or restore a backup taken before it was installed ` +
+        "(DEPLOY.md, \"Piano di ritorno\")",
+    );
+    this.name = "NewerSchemaError";
+  }
+}
+
+export class OlderSchemaError extends Error {
+  constructor(readonly found: number) {
+    super(
+      `this database is at schema ${found}, and this release reads schema ${SCHEMA_VERSION}. A command that only ` +
+        "reads does not bring it up to date: run `sigillo-server migrate` on it (on a copy, if it is a backup), " +
+        "or start the server on it once",
+    );
+    this.name = "OlderSchemaError";
+  }
+}
+
+/**
+ * For a connection that only reads: the schema must be exactly this
+ * release's. Nothing is applied, so a backup that is being looked at is left
+ * byte for byte as it was (verification report of 2026-10-01, point 8).
+ */
+export function requireCurrentSchema(db: Database.Database): void {
+  const found = db.pragma("user_version", { simple: true }) as number;
+  if (found > SCHEMA_VERSION) throw new NewerSchemaError(found);
+  if (found < SCHEMA_VERSION) throw new OlderSchemaError(found);
+}
+
+/**
  * Applies the schema and every migration, in the order a database needs them:
  * the tables first (a no-op on one that already has them), then any column a
  * later version added, then the indexes that depend on those columns. Every
@@ -255,6 +299,10 @@ function ensureColumn(db: Database.Database, table: string, column: string, type
  * goes through here, so it does not matter which one opens the file first.
  */
 export function applySchema(db: Database.Database): void {
+  const found = db.pragma("user_version", { simple: true }) as number;
+  if (found > SCHEMA_VERSION) {
+    throw new NewerSchemaError(found);
+  }
   db.exec(SCHEMA_SQL);
   ensureColumn(db, "receipts", "source_trace_id", "TEXT");
   ensureColumn(db, "receipts", "source_span_id", "TEXT");
@@ -293,4 +341,5 @@ export function applySchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS receipts_by_on_behalf_of
       ON receipts (json_extract(canonical, '$.actor.on_behalf_of'));
   `);
+  if (found < SCHEMA_VERSION) db.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
