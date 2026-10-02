@@ -189,12 +189,11 @@ same span, when present, and the resulting receipt is `v: 2` rather than `v: 1`:
   Ollama.
 
 The span's status becomes the receipt's outcome: `OK` → `ok`, `ERROR` →
-`error`, and an unset status → `unknown`, unless the span carries an
-`error.type` attribute, the semantic conventions' failure marker, which makes
-it `error`. An unset status is not read as success: OpenTelemetry leaves it
-unset unless the source said otherwise. LangChain, CrewAI and the OpenAI
-instrumentation set it; a tool span opened by hand must set it itself, which
-the Python SDK's `Tracing.tool(...)` does.
+`error`. An unset status is read as OpenTelemetry defines it: instrumentations
+leave a successful span unset and set only errors, so an unset span becomes
+`ok`, unless it carries an `error.type` attribute, the semantic conventions'
+failure marker (→ `error`), or an `exception` event without a status, which
+may have been caught and handled (→ `unknown`).
 
 Response `200`:
 
