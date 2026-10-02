@@ -50,6 +50,29 @@ def _core_requirements_met() -> str | None:
     return None
 
 
+def _salted_digest_in_node(value: str, nonce_hex: str) -> str:
+    """The real `saltedDigest` from `packages/core`, run for real in Node, as
+    `_hash_canonical_json_in_node` below: the value over stdin, the nonce in
+    the script (it is only hex).
+    """
+    script = (
+        f"import {{ saltedDigest }} from {json.dumps(str(_CORE_INDEX))};\n"
+        "const chunks = [];\n"
+        "process.stdin.on('data', (chunk) => chunks.push(chunk));\n"
+        "process.stdin.on('end', () => {\n"
+        f"  const nonce = new Uint8Array(Buffer.from({json.dumps(nonce_hex)}, 'hex'));\n"
+        "  process.stdout.write(saltedDigest(nonce, Buffer.concat(chunks).toString('utf8')));\n"
+        "});\n"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        input=value.encode("utf-8"),
+        capture_output=True,
+        check=True,
+    )
+    return result.stdout.decode("utf-8")
+
+
 def _hash_canonical_json_in_node(value: str) -> str:
     """The real `hashCanonicalJson` from `packages/core`, run for real in Node.
 
@@ -651,14 +674,14 @@ class ContentFilterTest(unittest.TestCase):
         attributes = _string_attributes(_first_span(body).attributes)
         self.assertNotIn("input.value", attributes)
         self.assertNotIn("output.value", attributes)
-        self.assertEqual(
-            attributes["sigillo.input.sha256"],
-            hashlib.sha256(json.dumps(input_value, ensure_ascii=False).encode("utf-8")).hexdigest(),
-        )
-        self.assertEqual(
-            attributes["sigillo.output.sha256"],
-            hashlib.sha256(json.dumps(output_value, ensure_ascii=False).encode("utf-8")).hexdigest(),
-        )
+        for role, value in (("input", input_value), ("output", output_value)):
+            nonce = bytes.fromhex(attributes[f"sigillo.{role}.nonce"])
+            self.assertEqual(len(nonce), 32)
+            self.assertEqual(
+                attributes[f"sigillo.{role}.sha256"],
+                hashlib.sha256(nonce + json.dumps(value, ensure_ascii=False).encode("utf-8")).hexdigest(),
+            )
+        self.assertNotEqual(attributes["sigillo.input.nonce"], attributes["sigillo.output.nonce"])
         self.assertNotIn(input_value.encode("utf-8"), body)
         self.assertNotIn(output_value.encode("utf-8"), body)
         self.assertNotIn(b"Maria Bianchi", body)
@@ -678,8 +701,31 @@ class ContentFilterTest(unittest.TestCase):
                     tracing,
                     {"openinference.span.kind": "TOOL", "tool.name": "t", "input.value": value},
                 )
-                digest = _string_attributes(_first_span(body).attributes)["sigillo.input.sha256"]
-                self.assertEqual(digest, _hash_canonical_json_in_node(value))
+                attributes = _string_attributes(_first_span(body).attributes)
+                self.assertEqual(
+                    attributes["sigillo.input.sha256"],
+                    _salted_digest_in_node(value, attributes["sigillo.input.nonce"]),
+                )
+
+    def test_a_fresh_nonce_each_time_so_the_same_value_never_gives_the_same_digest(self) -> None:
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+        self.addCleanup(tracing.shutdown)
+        seen = set()
+        for _ in range(3):
+            body = self._emit(tracing, {"openinference.span.kind": "TOOL", "tool.name": "t", "input.value": "score: 7"})
+            seen.add(_string_attributes(_first_span(body).attributes)["sigillo.input.sha256"])
+        self.assertEqual(len(seen), 3)
+        plain = hashlib.sha256(json.dumps("score: 7").encode("utf-8")).hexdigest()
+        self.assertNotIn(plain, seen)
+
+    @unittest.skipIf(_core_requirements_met() is not None, _core_requirements_met() or "")
+    def test_the_plain_digest_still_matches_the_server_when_salting_is_turned_off(self) -> None:
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], salt_content=False)
+        self.addCleanup(tracing.shutdown)
+        body = self._emit(tracing, {"openinference.span.kind": "TOOL", "tool.name": "t", "input.value": "caffè ☕"})
+        attributes = _string_attributes(_first_span(body).attributes)
+        self.assertNotIn("sigillo.input.nonce", attributes)
+        self.assertEqual(attributes["sigillo.input.sha256"], _hash_canonical_json_in_node("caffè ☕"))
 
     def test_strips_attributes_the_server_does_not_read(self) -> None:
         tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { fromHex, hashCanonicalJson, openSaltedDigest, verifyReceiptSignature } from "@sigillo/core";
+import { fromHex, hashCanonicalJson, openSaltedDigest, saltedDigest, verifyReceiptSignature } from "@sigillo/core";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { buildServer } from "../src/http/server.js";
 import { ReceiptStore } from "../src/storage/store.js";
@@ -172,6 +172,49 @@ describe("writes paused for maintenance", () => {
     expect(response.statusCode).toBe(201);
     expect(store.readChain(OTHER)).toHaveLength(2);
     expect((await paused.inject({ method: "GET", url: "/healthz" })).statusCode).toBe(200);
+  });
+});
+
+describe("a digest salted by the client", () => {
+  const nonce = "ab".repeat(32);
+  const content = "score: 7";
+  const salted = (): string => saltedDigest(new Uint8Array(Buffer.from(nonce, "hex")), content);
+
+  it("is recorded as salted, with its nonce kept apart, and opens with the content", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/receipts",
+      headers: auth(),
+      payload: {
+        actor: { agent: "planner" },
+        action: { kind: "tool_call", name: "x" },
+        outcome: "ok",
+        input_hash: salted(),
+        input_nonce: nonce,
+      },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const receipt = store.readChain(SYSTEM).at(-1);
+    expect(receipt?.v).toBe(4);
+    if (receipt?.v !== 4) throw new Error("not v4");
+    expect(receipt.input_hash).toBe(salted());
+    expect(receipt.input_hash_scheme).toBe("salted");
+    expect(JSON.stringify(receipt)).not.toContain(nonce);
+    expect(store.opening(SYSTEM, receipt.seq, "input")).toBe(nonce);
+    expect(openSaltedDigest(receipt.input_hash ?? "", fromHex(nonce), content)).toBe(true);
+  });
+
+  it("refuses a nonce without its digest, beside the value, or malformed", async () => {
+    const base = { actor: { agent: "planner" }, action: { kind: "tool_call", name: "x" }, outcome: "ok" };
+    for (const payload of [
+      { ...base, input_nonce: nonce },
+      { ...base, input: content, input_nonce: nonce },
+      { ...base, input_hash: salted(), input_nonce: "AB".repeat(32) },
+      { ...base, output_hash: null, output_nonce: nonce },
+    ]) {
+      const response = await app.inject({ method: "POST", url: "/api/v1/receipts", headers: auth(), payload });
+      expect(response.statusCode, JSON.stringify(payload)).toBe(400);
+    }
   });
 });
 

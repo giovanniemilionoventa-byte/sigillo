@@ -119,6 +119,9 @@ const receiptRequestSchema = z
       .optional(),
     input_hash: hex64.nullable().optional(),
     output_hash: hex64.nullable().optional(),
+    /** The nonce the caller salted input_hash under: the digest is then recorded as salted. */
+    input_nonce: hex64.optional(),
+    output_nonce: hex64.optional(),
     /** A value to digest here with a salt, and discard. Never stored, never logged. */
     input: z.unknown().optional(),
     output: z.unknown().optional(),
@@ -131,6 +134,14 @@ const receiptRequestSchema = z
   .refine((body) => !(body.output_hash !== undefined && body.output !== undefined), {
     message: "send either output or output_hash, not both",
     path: ["output"],
+  })
+  .refine((body) => body.input_nonce === undefined || typeof body.input_hash === "string", {
+    message: "input_nonce goes with the input_hash it salted",
+    path: ["input_nonce"],
+  })
+  .refine((body) => body.output_nonce === undefined || typeof body.output_hash === "string", {
+    message: "output_nonce goes with the output_hash it salted",
+    path: ["output_nonce"],
   });
 
 function isoNow(now: () => Date): string {
@@ -319,6 +330,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         output_hash: action.output_hash,
         ...(action.raw_input === undefined ? {} : { raw_input: action.raw_input }),
         ...(action.raw_output === undefined ? {} : { raw_output: action.raw_output }),
+        ...(action.input_nonce === undefined ? {} : { input_nonce: action.input_nonce }),
+        ...(action.output_nonce === undefined ? {} : { output_nonce: action.output_nonce }),
         outcome: action.outcome,
         source: action.source,
         ...(action.artifacts === undefined ? {} : { artifacts: action.artifacts }),
@@ -405,6 +418,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         // "input" in body, not body.input !== undefined: a JSON null is a value too.
         ...("input" in body ? { raw_input: { value: body.input } } : {}),
         ...("output" in body ? { raw_output: { value: body.output } } : {}),
+        ...(body.input_nonce === undefined ? {} : { input_nonce: body.input_nonce }),
+        ...(body.output_nonce === undefined ? {} : { output_nonce: body.output_nonce }),
         outcome: body.outcome,
         source: body.source ?? { type: "api" },
       });

@@ -74,8 +74,9 @@ export interface SigningService {
  * choose. The receipt written for it is always version 4: `actor.on_behalf_of`
  * may name a person here, and leaves as a pseudonym token; an input or output
  * arrives either as a digest the client computed (`input_hash`, recorded as
- * plain) or as the value itself (`raw_input`, digested here under a fresh
- * nonce and never kept), not both.
+ * plain, or salted when the client also sends the nonce it salted it under,
+ * `input_nonce`) or as the value itself (`raw_input`, digested here under a
+ * fresh nonce and never kept), not both.
  */
 export interface ChainEvent {
   system_id: string;
@@ -87,6 +88,9 @@ export interface ChainEvent {
   output_hash: string | null;
   raw_input?: { value: unknown };
   raw_output?: { value: unknown };
+  /** The 32-byte nonce, hex, the client salted `input_hash` under: the digest is then recorded as salted. */
+  input_nonce?: string;
+  output_nonce?: string;
   outcome: Outcome;
   source: Source;
   artifacts?: ArtifactEntryV3[];
@@ -108,6 +112,9 @@ export type ReconcileOutcome =
   | { system_id: string; status: "in_sync" }
   | { system_id: string; status: "recovered"; seq: number; hash: string; /** How many receipts were taken back, ending at seq. */ count: number }
   | { system_id: string; status: "diverged"; detail: string };
+
+/** A salt nonce as a client sends it: 32 bytes, lowercase hex. */
+const NONCE_HEX = /^[0-9a-f]{64}$/;
 
 /** How many receipts to ask the signer's journal for at a time (its limit is 50). */
 const RECOVERY_PAGE = 50;
@@ -1364,9 +1371,18 @@ export class ReceiptStore {
     role: "input" | "output",
     clientHash: string | null,
     raw: { value: unknown } | undefined,
+    clientNonce?: string,
   ): Digest {
     if (raw !== undefined && clientHash !== null) {
       throw new StorageError(`an action carries either its ${role} or a digest of it, not both`);
+    }
+    if (clientNonce !== undefined) {
+      // Salted by the client, which never sent the value: the nonce is kept
+      // in `openings` exactly like one made here, and erased the same way.
+      if (clientHash === null || !NONCE_HEX.test(clientNonce)) {
+        throw new StorageError(`a ${role} nonce is 64 lowercase hex characters, sent with the digest it salted`);
+      }
+      return { hash: clientHash, scheme: HASH_SCHEME_SALTED, nonce: clientNonce };
     }
     if (raw === undefined) {
       return { hash: clientHash, scheme: clientHash === null ? null : HASH_SCHEME_PLAIN, nonce: null };
@@ -1453,8 +1469,8 @@ export class ReceiptStore {
   private prepare(event: ChainEvent, write: boolean): Prepared {
     return {
       actor: this.pseudonymous(event.actor, event.ts_received, write),
-      input: this.digestFor("input", event.input_hash, event.raw_input),
-      output: this.digestFor("output", event.output_hash, event.raw_output),
+      input: this.digestFor("input", event.input_hash, event.raw_input, event.input_nonce),
+      output: this.digestFor("output", event.output_hash, event.raw_output, event.output_nonce),
     };
   }
 

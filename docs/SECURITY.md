@@ -307,8 +307,9 @@ What an operator **can** see:
 - digests of inputs and outputs, which are useful only to someone who already
   has the original values and wants to prove they match. A salted digest
   (receipt version 4) also needs its nonce, which the server keeps until it is
-  erased; a plain one, computed by the client, can be checked by anyone who
-  can guess the value.
+  erased (the Python SDK salts its own digests the same way, and sends the
+  nonce beside them); a plain one, computed by a client without a nonce, can
+  be checked by anyone who can guess the value.
 
 Names are metadata, but a name can be abused to carry content. Every
 free-text field is capped: 128 characters for a system, 256 for an agent, an

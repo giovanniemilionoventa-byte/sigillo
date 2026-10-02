@@ -114,9 +114,12 @@ digest can be checked by anyone who holds, or can guess, the original.
   hashing each candidate value. A **salted** one (version 4, what the server
   computes for content it receives in the clear) cannot, without its nonce:
   exports leave the nonces out unless asked for chosen receipts, and deleting
-  a receipt's nonces cuts it off from its content for good. A digest the
-  client computed itself (`sigillo.input.sha256`, the native API's
-  `input_hash`) is recorded as it came, marked `plain`, and stays guessable.
+  a receipt's nonces cuts it off from its content for good. The Python SDK
+  salts its digests itself by default (October 2026, `salt_content`), sending
+  the nonce beside each one; the native API takes `input_nonce` for the same.
+  A digest the client computed without a nonce (`sigillo.input.sha256` alone,
+  the native API's `input_hash` alone) is recorded as it came, marked
+  `plain`, and stays guessable.
 
 ## What travels to the server without being stored
 

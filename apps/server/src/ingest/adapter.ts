@@ -30,9 +30,12 @@ export interface AdaptedAction {
   action: Action;
   actor: Actor;
   outcome: Outcome;
-  /** A digest the caller computed: recorded as plain. */
+  /** A digest the caller computed: recorded as plain, or as salted with the nonce below. */
   input_hash: string | null;
   output_hash: string | null;
+  /** The nonce the caller salted its digest under (`sigillo.input.nonce`). */
+  input_nonce?: string;
+  output_nonce?: string;
   /** A value received in the clear, for the store to digest with a salt. Never with a digest beside it. */
   raw_input?: { value: string };
   raw_output?: { value: string };
@@ -139,9 +142,15 @@ function payloadOf(
   role: "input" | "output",
   rawContent: { count: number },
   ...names: string[]
-): Partial<Pick<AdaptedAction, "raw_input" | "raw_output">> & { hash: string | null } {
+): Partial<Pick<AdaptedAction, "raw_input" | "raw_output">> & { hash: string | null; nonce?: string } {
   const preHashed = text(attributes, `sigillo.${role}.sha256`);
-  if (preHashed !== null && SHA256_HEX.test(preHashed)) return { hash: preHashed };
+  const nonce = text(attributes, `sigillo.${role}.nonce`);
+  if (preHashed !== null && SHA256_HEX.test(preHashed)) {
+    if (nonce === null) return { hash: preHashed };
+    // Salted by the SDK. A nonce that is not 32 bytes of hex means the digest
+    // cannot be recorded as what it is, so it is not recorded at all.
+    return SHA256_HEX.test(nonce) ? { hash: preHashed, nonce } : { hash: null };
+  }
   const raw = text(attributes, ...names);
   if (raw === null) return { hash: null };
   rawContent.count += 1;
@@ -154,10 +163,17 @@ function payloads(
   rawContent: { count: number },
   inputNames: string[],
   outputNames: string[],
-): Pick<AdaptedAction, "input_hash" | "output_hash" | "raw_input" | "raw_output"> {
-  const { hash: input_hash, ...input } = payloadOf(attributes, "input", rawContent, ...inputNames);
-  const { hash: output_hash, ...output } = payloadOf(attributes, "output", rawContent, ...outputNames);
-  return { input_hash, output_hash, ...input, ...output };
+): Pick<AdaptedAction, "input_hash" | "output_hash" | "input_nonce" | "output_nonce" | "raw_input" | "raw_output"> {
+  const { hash: input_hash, nonce: input_nonce, ...input } = payloadOf(attributes, "input", rawContent, ...inputNames);
+  const { hash: output_hash, nonce: output_nonce, ...output } = payloadOf(attributes, "output", rawContent, ...outputNames);
+  return {
+    input_hash,
+    output_hash,
+    ...(input_nonce === undefined ? {} : { input_nonce }),
+    ...(output_nonce === undefined ? {} : { output_nonce }),
+    ...input,
+    ...output,
+  };
 }
 
 /**

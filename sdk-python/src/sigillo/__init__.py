@@ -45,6 +45,7 @@ import logging as _logging
 import mimetypes as _mimetypes
 import os as _os
 import pathlib as _pathlib
+import secrets as _secrets
 import urllib.request as _urllib_request
 from typing import Sequence as _Sequence
 
@@ -255,7 +256,23 @@ def _hash_content_value(value: str) -> str:
     return _hashlib.sha256(_json.dumps(value, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
-def _filtered_attributes(attributes: object) -> dict[str, object]:
+# The nonce that goes with each digest when content is salted here.
+_NONCE_ATTRIBUTES: dict[str, str] = {
+    "sigillo.input.sha256": "sigillo.input.nonce",
+    "sigillo.output.sha256": "sigillo.output.nonce",
+}
+
+
+def _salted_hash_content_value(value: str, nonce: bytes) -> str:
+    """The salted digest `packages/core` defines (`saltedDigest`, FORMAT.md
+    2.7): SHA-256 of the 32-byte nonce followed by the RFC 8785 canonical JSON
+    form of the string. A short value ("score: 7") cannot be found from it
+    without the nonce, which the server keeps apart and can erase.
+    """
+    return _hashlib.sha256(nonce + _json.dumps(value, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def _filtered_attributes(attributes: object, salt: bool = True) -> dict[str, object]:
     kept: dict[str, object] = {}
     if not attributes:
         return kept
@@ -263,14 +280,19 @@ def _filtered_attributes(attributes: object) -> dict[str, object]:
         digest_name = _CONTENT_ATTRIBUTES.get(key)
         if digest_name is not None:
             if isinstance(value, str) and digest_name not in kept:
-                kept[digest_name] = _hash_content_value(value)
+                if salt:
+                    nonce = _secrets.token_bytes(32)
+                    kept[digest_name] = _salted_hash_content_value(value, nonce)
+                    kept[_NONCE_ATTRIBUTES[digest_name]] = nonce.hex()
+                else:
+                    kept[digest_name] = _hash_content_value(value)
             continue
         if key in _KEEP_ATTRIBUTES:
             kept[key] = value
     return kept
 
 
-def _filtered_span(span: _ReadableSpan) -> _ReadableSpan:
+def _filtered_span(span: _ReadableSpan, salt: bool = True) -> _ReadableSpan:
     """A copy of `span`, its attributes replaced — nothing else about it
     changes: same name, same timing, same trace, same events (so
     `sigillo.artifact`, which never carried content in the first place, is
@@ -283,7 +305,7 @@ def _filtered_span(span: _ReadableSpan) -> _ReadableSpan:
         context=span.context,
         parent=span.parent,
         resource=span.resource,
-        attributes=_filtered_attributes(span.attributes),
+        attributes=_filtered_attributes(span.attributes, salt),
         events=span.events,
         links=span.links,
         kind=span.kind,
@@ -301,8 +323,12 @@ class _ContentFilteringExporter(_OTLPSpanExporter):
     process (fase 9, decision D6).
     """
 
+    def __init__(self, *args: object, salt: bool = True, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self._salt = salt
+
     def export(self, spans: _Sequence[_ReadableSpan]) -> _SpanExportResult:
-        return super().export([_filtered_span(span) for span in spans])
+        return super().export([_filtered_span(span, self._salt) for span in spans])
 
 
 def init(
@@ -312,6 +338,7 @@ def init(
     instrument: _Sequence[str] = _SUPPORTED,
     ollama_url: str | None = None,
     redact_content: bool = True,
+    salt_content: bool = True,
 ) -> Tracing:
     """Point OpenTelemetry at a sigillo server and turn on the instrumentations.
 
@@ -339,6 +366,15 @@ def init(
             stores only a digest: this setting decides what crosses the
             network and sits in the server's memory while a request is
             handled, not what a receipt ends up holding.
+        salt_content: true by default, and only with `redact_content`. Each
+            digest is salted with a fresh 32-byte nonce (FORMAT.md 2.7), sent
+            alongside it as `sigillo.input.nonce` / `sigillo.output.nonce`:
+            the receipt then holds a digest nobody can guess a short value
+            from ("score: 7"), and the server keeps the nonce apart, where
+            erasing it cuts the receipt off from its content. Needs a server
+            that reads the nonce (October 2026 or later); an older one would
+            record the salted digest as a plain one, so set this to false only
+            for such a server.
 
     Returns:
         A handle with `flush()` and `shutdown()`, and the list of the
@@ -361,15 +397,13 @@ def init(
     if ollama_url:
         provider.add_span_processor(_ModelDigestProcessor(_fetch_ollama_digests(ollama_url)))
 
-    exporter_class = _ContentFilteringExporter if redact_content else _OTLPSpanExporter
-    provider.add_span_processor(
-        _BatchSpanProcessor(
-            exporter_class(
-                endpoint=traces_endpoint,
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-        )
+    headers = {"Authorization": f"Bearer {api_key}"}
+    exporter = (
+        _ContentFilteringExporter(endpoint=traces_endpoint, headers=headers, salt=salt_content)
+        if redact_content
+        else _OTLPSpanExporter(endpoint=traces_endpoint, headers=headers)
     )
+    provider.add_span_processor(_BatchSpanProcessor(exporter))
 
     # Instrumentations are attached to this provider explicitly, so they keep
     # working even where the global provider was already set by something else.

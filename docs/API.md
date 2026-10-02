@@ -149,6 +149,14 @@ A value there that is not a well-formed digest is not trusted as one, and
 falls back to hashing the raw attribute exactly as before — counted in
 `rawContentHashed` below, never rejected.
 
+With `sigillo.input.nonce` / `sigillo.output.nonce` beside it (64 lowercase
+hex, the 32-byte nonce), the digest is a **salted** one computed by the
+client (FORMAT.md 2.7: SHA-256 of the nonce followed by the canonical JSON),
+and is recorded as `salted`, its nonce kept in the server's `openings` table
+like one the server made. This is what the Python SDK sends by default since
+October 2026 (`salt_content`). A nonce that is not 64 lowercase hex makes the
+digest unusable, and no digest is recorded for that field.
+
 Whichever OTLP span carries a `trace_id` and a `span_id` that this system's
 chain already has a receipt for is recognised as a duplicate — the same span,
 sent again because the exporter never saw the first response — and is not
@@ -235,14 +243,19 @@ curl -X POST https://sigillo.example/api/v1/receipts \
 | `source` | no | `{ type: "sdk" \| "api", trace_id?, span_id? }`, defaults to `api` |
 | `input` / `output` | no | any JSON value. Digested on arrival with a fresh 32-byte nonce (`salted`), and discarded |
 | `input_hash` / `output_hash` | no | a digest you computed yourself, 64 lowercase hex, recorded as `plain` |
+| `input_nonce` / `output_nonce` | no | the 32-byte nonce, 64 lowercase hex, you salted `input_hash` / `output_hash` under: the digest is then recorded as `salted`, and the nonce kept by the server |
 | `system_id` | no | if present, must be the system the key writes to |
 
 Send either the value or its digest for a given field, never both. A caller that
 would rather the server never see the value at all can compute the digest itself:
 it is the SHA-256 of the RFC 8785 canonical JSON of the value, as FORMAT.md
 section 3 defines it. It is then recorded as `plain`, and a short value can be
-guessed back from it; a value the server receives is digested `salted`, under
-a nonce the server keeps (FORMAT.md 2.7, SECURITY.md "Erasing a person").
+guessed back from it. Better: salt it yourself, SHA-256 of 32 random bytes
+followed by that canonical JSON, and send the nonce as `input_nonce`; it is
+then recorded as `salted`, exactly like a value the server receives and
+digests under a nonce it keeps (FORMAT.md 2.7, SECURITY.md "Erasing a person").
+Use a fresh nonce from a cryptographic random source every time: a nonce used
+twice lets the two digests be compared.
 
 `ts_received` is always stamped by the server. A caller cannot choose where in
 the chain its receipt lands, nor when the server says it arrived. Response
