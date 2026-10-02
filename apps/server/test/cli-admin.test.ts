@@ -86,6 +86,30 @@ describe("the administration commands", () => {
     expect(lines[1]).toMatch(/\tsystem\.rename\tacme-support-bot\tcli \S+@\S+\t\{"from":null,"to":"Assistente clienti"\}$/);
   }, 60_000);
 
+  it("creates organizations, assigns systems to them and takes them back, and logs each step", async () => {
+    expect((await cli("org", "create", "acme", "Acme S.p.A.")).code).toBe(0);
+    expect((await cli("org", "create", "Acme", "wrong case")).code).toBe(1);
+    expect((await cli("org", "create", "acme", "again")).code).toBe(1);
+    expect((await cli("org", "list")).stdout).toMatch(/^acme\tapproved \S+\tAcme S\.p\.A\.\n$/);
+
+    expect((await cli("system", "assign", "acme-support-bot", "acme")).code).toBe(0);
+    expect((await cli("system", "assign", "prova", "nobody")).code).toBe(1);
+    expect((await cli("system", "assign", "prova")).code).toBe(1);
+    expect((await cli("system", "list", "--organization", "acme")).stdout).toBe(
+      "acme-support-bot\t2 receipts\tactive\t\torganization acme\n",
+    );
+    const back = await cli("system", "assign", "acme-support-bot", "--none");
+    expect(back.code).toBe(0);
+    expect(back.stdout).toBe("acme-support-bot: acme -> the operator's alone\n");
+    expect((await cli("system", "list", "--organization", "acme")).stdout).toBe("");
+
+    const lines = (await cli("admin-log")).stdout.trim().split("\n");
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toMatch(/\tsystem\.assign\tacme-support-bot\t.*\{"from":"acme","to":null\}$/);
+    expect(lines[1]).toMatch(/\tsystem\.assign\tacme-support-bot\t.*\{"from":null,"to":"acme"\}$/);
+    expect(lines[2]).toMatch(/\torganization\.create\t\t/);
+  }, 60_000);
+
   it("refuses to delete a system with a recorded action, with or without confirmation, and changes nothing", async () => {
     const refused = await cli("system", "delete", "acme-support-bot", "--confirm", "acme-support-bot");
     expect(refused.code).toBe(1);

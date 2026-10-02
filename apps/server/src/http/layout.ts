@@ -38,6 +38,8 @@ export interface SystemRow {
 /** What the sidebar needs, read once per page. */
 export interface Shell {
   keyId: string;
+  /** Whether the operator is looking: only then are the people pages offered (ui.ts, requireOperator). */
+  operator: boolean;
   /** The systems the main page shows, in the same order. */
   systems: SystemRow[];
   archivedCount: number;
@@ -63,9 +65,15 @@ export function homeRows(store: ReceiptStore, healthMonitor: ChainHealthMonitor,
   return { records, rows, shown };
 }
 
-export function shellFor(store: ReceiptStore, healthMonitor: ChainHealthMonitor, now: Date, keyId: string): Shell {
+export function shellFor(
+  store: ReceiptStore,
+  healthMonitor: ChainHealthMonitor,
+  now: Date,
+  keyId: string,
+  operator: boolean,
+): Shell {
   const { records, shown } = homeRows(store, healthMonitor, now);
-  return { keyId, systems: shown, archivedCount: records.filter((record) => record.archived_at !== null).length };
+  return { keyId, operator, systems: shown, archivedCount: records.filter((record) => record.archived_at !== null).length };
 }
 
 /** The worst state among the systems shown: one red makes the page red. */
@@ -168,7 +176,7 @@ ${item("/ui/sistemi?vista=archiviati", "archiviati", `<span class="dot archived"
 ${item("/ui/sistemi?vista=tutti", "tutti", ICONS.list, UI.nav.allSystems)}
 <p class="side-head">${escape(UI.nav.tools)}</p>
 ${item("/ui/verify-document", "verifica", ICONS.docCheck, UI.nav.verificaDocumento)}
-${item("/ui/persone", "persone", ICONS.people, UI.nav.persone)}
+${shell.operator ? item("/ui/persone", "persone", ICONS.people, UI.nav.persone) : ""}
 </nav>
 <div class="side-foot">
 <p class="side-key">${ICONS.key}<span>${escape(UI.brand.signingKey)} <code>${escape(shell.keyId)}</code></span></p>

@@ -284,29 +284,35 @@ system
   .command("create")
   .description("Register a system and write the genesis receipt of its chain")
   .argument("<system_id>")
+  .option("--organization <id>", "the organization it belongs to (sigillo-server org list); without it, the operator's alone")
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
   .requiredOption("--signer-socket <path>", "the signer's socket", process.env["SIGILLO_SIGNER_SOCKET"])
-  .action(async (systemId: string, options: DatabaseOption & { signerSocket: string }) => {
+  .action(async (systemId: string, options: DatabaseOption & { signerSocket: string; organization?: string }) => {
     const genesis = await withSigner(options.signerSocket, options.db, (store) =>
-      store.createSystem(systemId, now()),
+      store.createSystem(systemId, now(), options.organization ?? null),
     );
-    process.stdout.write(`created ${systemId}\n`);
+    process.stdout.write(`created ${systemId}${options.organization === undefined ? "" : ` for ${options.organization}`}\n`);
     process.stdout.write(`genesis signed by key ${genesis.key_id}\n`);
   });
 
 system
   .command("list")
-  .description("List the systems that have a chain: system_id, receipts, state, display name")
+  .description(
+    "List the systems that have a chain: system_id, receipts, state, display name, and the organization when there is one",
+  )
   .option("--all", "include archived systems")
+  .option("--organization <id>", "only this organization's systems")
   .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
-  .action((options: DatabaseOption & { all?: boolean }) => {
+  .action((options: DatabaseOption & { all?: boolean; organization?: string }) => {
     const store = ReceiptStore.openReadOnly(options.db);
     try {
       for (const record of store.listSystemRecords()) {
         if (record.archived_at !== null && options.all !== true) continue;
+        if (options.organization !== undefined && record.organization_id !== options.organization) continue;
         const state = record.archived_at === null ? "active" : `archived ${record.archived_at}`;
         process.stdout.write(
-          `${record.system_id}\t${record.receipts} receipts\t${state}\t${record.display_name ?? ""}\n`,
+          `${record.system_id}\t${record.receipts} receipts\t${state}\t${record.display_name ?? ""}` +
+            `${record.organization_id === null ? "" : `\torganization ${record.organization_id}`}\n`,
         );
       }
     } finally {
@@ -388,6 +394,61 @@ system
         throw error;
       }
     });
+  });
+
+system
+  .command("assign")
+  .description(
+    "Give a system to an organization, whose members then see it in the web view, or with --none take it " +
+      "back to the operator alone. The chain is not touched",
+  )
+  .argument("<system_id>")
+  .argument("[organization_id]")
+  .option("--none", "the operator's alone")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action(async (systemId: string, organizationId: string | undefined, options: DatabaseOption & { none?: boolean }) => {
+    if ((organizationId === undefined) === (options.none !== true)) {
+      throw new Error("name exactly one: an organization, or --none");
+    }
+    await withStore(options.db, async (store) => {
+      const before = await store.assignSystem(systemId, organizationId ?? null, cliRequest());
+      process.stdout.write(
+        `${systemId}: ${before ?? "the operator's alone"} -> ${organizationId ?? "the operator's alone"}\n`,
+      );
+    });
+  });
+
+const org = program
+  .command("org")
+  .description("Manage the organizations of a hosted installation: each sees only its own systems in the web view");
+
+org
+  .command("create")
+  .description("Register an organization, approved: its members can sign in as soon as a login is attached")
+  .argument("<organization_id>", "1 to 32 lower-case letters, digits and hyphens; its systems are named <organization_id>.<name>")
+  .argument("<name>", "the name people know it by")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action(async (organizationId: string, name: string, options: DatabaseOption) => {
+    await withStore(options.db, async (store) => {
+      await store.createOrganization(organizationId, name, cliRequest(), { approved: true });
+      process.stdout.write(`created organization ${organizationId}\n`);
+    });
+  });
+
+org
+  .command("list")
+  .description("List the organizations: identifier, state, name")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action((options: DatabaseOption) => {
+    const store = ReceiptStore.openReadOnly(options.db);
+    try {
+      for (const organization of store.listOrganizations()) {
+        const state = organization.approved_at === null ? "waiting for approval" : `approved ${organization.approved_at}`;
+        process.stdout.write(`${organization.organization_id}\t${state}\t${organization.name}\n`);
+      }
+    } finally {
+      store.close();
+    }
   });
 
 program

@@ -210,7 +210,26 @@ export interface SystemRecord {
   receipts: number;
   /** When the server received the chain's last receipt. */
   last_received: string | null;
+  /** Whose system this is in a hosted installation; null for the operator's own (organizations.ts). */
+  organization_id: string | null;
 }
+
+/** A customer of a hosted installation (organizations.ts). */
+export interface Organization {
+  organization_id: string;
+  name: string;
+  created_at: string;
+  /** When the operator let it in; null while it waits. */
+  approved_at: string | null;
+}
+
+/**
+ * An organization's identifier: lower-case letters, digits and inner hyphens,
+ * at most 32 characters. No dot: the systems an organization creates from the
+ * web view are named `<organization_id>.<name>`, so the part before the first
+ * dot is always the organization's.
+ */
+export const ORGANIZATION_ID = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
 
 export type AdminAction =
   | "system.rename"
@@ -224,14 +243,17 @@ export type AdminAction =
   /** The signer's head and this database's tip disagree in a way nothing here corrects. */
   | "signer.divergence"
   | "subject.erase"
-  | "openings.erase";
+  | "openings.erase"
+  | "organization.create"
+  /** A system was given to an organization, moved to another, or taken back by the operator. */
+  | "system.assign";
 
 /** One line of the administrative log: something done to a system outside its chain. */
 export interface AdminLogEntry {
   id: number;
   ts: string;
   action: AdminAction;
-  /** Empty for an erasure of a subject, which concerns every system. */
+  /** Empty for what concerns no one system: erasing a subject, creating an organization. */
   system_id: string;
   /** Who did it: "web <address>" from the web view, "cli <user>@<host>" from the command line. */
   actor: string;
@@ -253,10 +275,12 @@ export interface DeletedSystem {
   checkpoints: number;
   timestamps: number;
   api_keys: string[];
+  /** Whose it was: an organization's view shows its own deletions (tenancy.ts). */
+  organization_id: string | null;
 }
 
 const SYSTEM_RECORDS = `
-  SELECT s.system_id, s.display_name, s.created_at, s.archived_at,
+  SELECT s.system_id, s.display_name, s.created_at, s.archived_at, s.organization_id,
          (SELECT COUNT(*) FROM receipts r WHERE r.system_id = s.system_id) AS receipts,
          (SELECT MAX(ts_received) FROM receipts r WHERE r.system_id = s.system_id) AS last_received
   FROM systems s`;
@@ -432,7 +456,8 @@ export class ReceiptStore {
       "SELECT seq, hash, ts_received FROM receipts WHERE system_id = ? ORDER BY seq DESC LIMIT 1",
     );
     this.registerStatement = this.write.prepare(
-      "INSERT INTO systems (system_id, created_at) VALUES (@system_id, @created_at)",
+      `INSERT INTO systems (system_id, created_at, organization_id)
+       VALUES (@system_id, @created_at, @organization_id)`,
     );
     this.insertStatement = this.write.prepare(
       `INSERT INTO receipts (system_id, seq, hash, prev_hash, canonical, sig, key_id,
@@ -535,12 +560,20 @@ export class ReceiptStore {
     return row === undefined ? undefined : publicKeyFromRaw(new Uint8Array(Buffer.from(row.public_key_base64, "base64")));
   }
 
-  /** Registers a system and opens its chain by writing the genesis receipt. */
-  async createSystem(systemId: string, ts: string): Promise<Receipt> {
+  /**
+   * Registers a system and opens its chain by writing the genesis receipt. With
+   * an organization, the system is that organization's from the same
+   * transaction that writes its genesis: there is no moment at which it
+   * exists and belongs to nobody, or to the wrong one.
+   */
+  async createSystem(systemId: string, ts: string, organizationId: string | null = null): Promise<Receipt> {
     return this.enqueue(async () => {
       // An identifier whose chain was once deleted is not given out again: an
       // export of the deleted chain, or a timestamp over its root, may exist
       // somewhere, and a second genesis under the same name would contradict it.
+      if (organizationId !== null && this.organization(organizationId, this.write) === null) {
+        throw new StorageError(`unknown organization ${organizationId}`);
+      }
       const deletedOn = this.deletionOf(systemId, this.write);
       if (deletedOn !== null) {
         throw new StorageError(
@@ -560,6 +593,7 @@ export class ReceiptStore {
           source: { type: "api" },
         },
         "genesis",
+        organizationId,
       );
       return written.receipt;
     });
@@ -579,6 +613,76 @@ export class ReceiptStore {
       | SystemRecord
       | undefined;
     return row ?? null;
+  }
+
+  /**
+   * Registers a customer. `approved` is for the operator creating one by hand,
+   * who has nothing to wait for; an organization that signs itself up waits
+   * for the operator. Logged like any other administrative change.
+   */
+  async createOrganization(
+    organizationId: string,
+    name: string,
+    request: AdminRequest,
+    options: { approved: boolean },
+  ): Promise<Organization> {
+    if (!ORGANIZATION_ID.test(organizationId)) {
+      throw new StorageError(
+        "an organization identifier is 1 to 32 lower-case letters, digits and hyphens, not starting or ending with a hyphen",
+      );
+    }
+    const label = normaliseDisplayName(name);
+    if (label === null) throw new StorageError("an organization needs a name");
+    return this.enqueue(() =>
+      this.inTransaction(async () => {
+        if (this.organization(organizationId, this.write) !== null) {
+          throw new StorageError(`an organization called ${organizationId} already exists`);
+        }
+        const organization: Organization = {
+          organization_id: organizationId,
+          name: label,
+          created_at: request.ts,
+          approved_at: options.approved ? request.ts : null,
+        };
+        this.write
+          .prepare(
+            `INSERT INTO organizations (organization_id, name, created_at, approved_at)
+             VALUES (@organization_id, @name, @created_at, @approved_at)`,
+          )
+          .run(organization);
+        this.logAdmin("organization.create", "", request, { ...organization });
+        return organization;
+      }),
+    );
+  }
+
+  organization(organizationId: string, connection: Database.Database = this.read): Organization | null {
+    const row = connection
+      .prepare("SELECT organization_id, name, created_at, approved_at FROM organizations WHERE organization_id = ?")
+      .get(organizationId) as Organization | undefined;
+    return row ?? null;
+  }
+
+  listOrganizations(): Organization[] {
+    return this.read
+      .prepare("SELECT organization_id, name, created_at, approved_at FROM organizations ORDER BY organization_id")
+      .all() as Organization[];
+  }
+
+  /**
+   * Gives a system to an organization, moves it to another, or, with null,
+   * takes it back to the operator alone. The chain is not touched: who may see
+   * a system in the web view is not evidence. Returns the organization it had.
+   */
+  async assignSystem(systemId: string, organizationId: string | null, request: AdminRequest): Promise<string | null> {
+    return this.administer(systemId, (record) => {
+      if (organizationId !== null && this.organization(organizationId, this.write) === null) {
+        throw new StorageError(`unknown organization ${organizationId}`);
+      }
+      this.write.prepare("UPDATE systems SET organization_id = ? WHERE system_id = ?").run(organizationId, systemId);
+      this.logAdmin("system.assign", systemId, request, { from: record.organization_id, to: organizationId });
+      return record.organization_id;
+    });
   }
 
   /**
@@ -653,6 +757,7 @@ export class ReceiptStore {
         checkpoints: checkpointIds.length,
         timestamps,
         api_keys: apiKeys,
+        organization_id: record.organization_id,
       };
 
       // The log first: the triggers let the genesis go only once its deletion
@@ -1072,6 +1177,33 @@ export class ReceiptStore {
     return row?.identifier ?? null;
   }
 
+  /**
+   * The identifier a token stands for, but only if some receipt of this
+   * system was made on its behalf: what an export of the system may disclose.
+   * A token from another system's chain, which an organization has no
+   * business naming, gets null here, exactly like an erased one.
+   */
+  subjectIdentifierIn(systemId: string, token: string): string | null {
+    const row = this.read
+      .prepare(
+        `SELECT s.identifier FROM subjects s
+         WHERE s.token = @token AND EXISTS (
+           SELECT 1 FROM receipts r
+           WHERE r.system_id = @system_id AND json_extract(r.canonical, '$.actor.on_behalf_of') = @token
+         )`,
+      )
+      .get({ token, system_id: systemId }) as { identifier: string } | undefined;
+    return row?.identifier ?? null;
+  }
+
+  /** Which system a checkpoint belongs to, or null if there is no such checkpoint. */
+  checkpointSystemId(checkpointId: number): string | null {
+    const row = this.read.prepare("SELECT system_id FROM checkpoints WHERE id = ?").get(checkpointId) as
+      | { system_id: string }
+      | undefined;
+    return row?.system_id ?? null;
+  }
+
   /** Every receipt made on behalf of `token`, across systems, newest first. */
   receiptsOnBehalfOf(token: string, limit = 500): Receipt[] {
     const rows = this.read
@@ -1330,9 +1462,10 @@ export class ReceiptStore {
   private async writeReceipt(
     event: ChainEvent,
     mode: "genesis" | "continuation",
+    organizationId: string | null = null,
   ): Promise<{ receipt: Receipt; duplicate: boolean }> {
     try {
-      return await this.inTransaction(() => this.insertReceipt(event, mode));
+      return await this.inTransaction(() => this.insertReceipt(event, mode, organizationId));
     } catch (error) {
       if (!(error instanceof SignerRefusedError) || error.code !== "sequence") throw error;
       const outcome = await this.reconcileNow(event.system_id);
@@ -1342,7 +1475,7 @@ export class ReceiptStore {
           outcome.status === "diverged" ? `${error.message}; ${outcome.detail}` : error.message,
         );
       }
-      return this.inTransaction(() => this.insertReceipt(event, mode));
+      return this.inTransaction(() => this.insertReceipt(event, mode, organizationId));
     }
   }
 
@@ -1498,6 +1631,7 @@ export class ReceiptStore {
   private async insertReceipt(
     event: ChainEvent,
     mode: "genesis" | "continuation",
+    organizationId: string | null,
   ): Promise<{ receipt: Receipt; duplicate: boolean }> {
     const { signer, verificationKey } = this.writer();
 
@@ -1541,7 +1675,11 @@ export class ReceiptStore {
     }
 
     if (mode === "genesis") {
-      this.registerStatement.run({ system_id: event.system_id, created_at: event.ts_received });
+      this.registerStatement.run({
+        system_id: event.system_id,
+        created_at: event.ts_received,
+        organization_id: organizationId,
+      });
     }
     this.insertRow(receipt, prepared);
     return { receipt, duplicate: false };
@@ -1701,7 +1839,8 @@ export class ReceiptStore {
 
       for (const receipt of taken) {
         if (receipt.seq === 0) {
-          this.registerStatement.run({ system_id: systemId, created_at: receipt.ts_received });
+          // Whose it was is not in the signer's record: the operator decides again.
+          this.registerStatement.run({ system_id: systemId, created_at: receipt.ts_received, organization_id: null });
         }
         this.insertRow(receipt);
         const { trace_id, span_id } = receipt.source;

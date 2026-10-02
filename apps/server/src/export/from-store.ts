@@ -26,7 +26,9 @@ export async function archiveFromStore(store: ReceiptStore, systemId: string, re
 
   const subjects: SubjectEntry[] = [];
   for (const token of new Set(request.subjects ?? [])) {
-    const identifier = isPseudonym(token) ? store.subjectIdentifier(token) : null;
+    // Only a person this system's chain acted on behalf of: a token from
+    // another chain is not this export's to name.
+    const identifier = isPseudonym(token) ? store.subjectIdentifierIn(systemId, token) : null;
     if (identifier !== null) subjects.push({ token, identifier });
   }
   const openings: OpeningEntry[] = store.openingsOf(systemId, request.openings ?? []);

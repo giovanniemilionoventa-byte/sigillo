@@ -3070,6 +3070,35 @@ del progetto. Fatto, in una PR (#26), senza toccare il VPS:
 Nessun file di `packages/verifier` o di `packages/core` è cambiato. 1194 test Node, 52 SDK Python
 (end-to-end compreso), 22 demo, cross-check Python OK.
 
+### Sessione 21 — 2026-10-02 — organizzazioni e backup che non riempiono il disco
+
+Il committente ha deciso (thread "self-hosted") che per ora Sigillo resta solo online, sul suo
+server, con un login vero per i clienti tramite Firebase Authentication. Prima del login serviva la
+separazione dei clienti: fino a oggi chi entrava nella pagina web vedeva ogni sistema. Fatto, senza
+Firebase e senza toccare il VPS:
+
+- **Organizzazioni.** Tabella `organizations`, colonna `systems.organization_id` (NULL = solo
+  l'operatore). Schema 2. `sigillo-server org create|list`, `system assign <id> <org>|--none`,
+  `system create --organization`, `system list --organization`; tutto nel registro amministrativo.
+- **La pagina web per organizzazione.** Le sessioni dicono chi è entrato (`auth/sessions.ts`; la
+  password resta l'accesso dell'operatore). Ogni pagina riceve lo store attraverso
+  `auth/tenancy.ts`, chiuso per difetto: un metodo non elencato lancia un errore invece di
+  rispondere. Un sistema altrui risponde 404 come uno inesistente; verifica documento, export,
+  registro amministrativo e creazione dei sistemi (`<org>.<nome>`) restano dentro l'organizzazione.
+  Le pagine "persone" restano solo dell'operatore finché gli pseudonimi sono comuni a tutti i
+  sistemi. Una sessione di un'organizzazione non approvata o inesistente non vale.
+- **L'export** nomina solo persone per cui la catena esportata ha agito, anche per l'operatore.
+- **Backup.** `backup.sh` tiene 2 copie sul server (era 14 di default e 48 nella guida): ogni copia
+  è l'intero database sullo stesso disco, e 48 avrebbero fermato il database a circa 1/50 del disco.
+  Rifiuta di scrivere se dopo resterebbe libero meno di quanto pesa il database. Le copie lunghe
+  vanno fuori dal server (6.1 di `DEPLOY-PRODUZIONE.md`). Il recupero dal signer della sessione 20
+  copre comunque un backup più vecchio.
+- **Misura:** circa 2,1 KB per ricevuta nel database (20.000 ricevute complete, indici compresi).
+
+Prossimo passo, quando il committente avrà creato il progetto Firebase: il login (Google, GitHub,
+email) che emette le sessioni di un'organizzazione, l'approvazione delle organizzazioni nuove e le
+quote. Nessun file di `packages/verifier` o di `packages/core` è cambiato.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

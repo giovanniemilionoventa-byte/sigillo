@@ -356,8 +356,9 @@ What the erasure reaches, and what it does not:
   write-ahead log. The test `privacy-store.test.ts` searches the file's bytes
   for the identifier and the nonce after an erasure and finds neither;
 - **backups and copies made before**, `deploy/backup.sh`'s included: they keep
-  the row until they are rotated away (14 days by default). Any other copy of
-  the database file is the operator's to account for;
+  the row until they are rotated away (on the host, two hourly copies by
+  default; the off-host copies for as long as the operator keeps them). Any
+  other copy of the database file is the operator's to account for;
 - **exports made before**: one that disclosed the identifier (`subjects.jsonl`)
   or the nonces (`openings.jsonl`) still holds them. By default an export holds
   neither;
@@ -726,9 +727,24 @@ the server's clock is the only witness.
 **One writer.** One process owns the database. Two writing processes on the same
 file are out of scope and not supported.
 
-**No multi-tenancy.** Every system in one database is administered by whoever
-administers that database. There is no separation between them beyond the API
-keys that decide where a request writes.
+**Organizations separate what the web view shows, not the evidence.** A
+hosted installation can hold several customers (`sigillo-server org create`),
+each system belonging to one of them or to the operator alone. Signed in as an
+organization, the web view shows that organization's systems and nothing else:
+another's system answers exactly as one that does not exist, a document is
+found only in its own systems, an export names only people its own chain acted
+for, and a system it creates is named `<organization_id>.<name>`, so no refusal
+can tell it about anyone else's. This is enforced in one place,
+`apps/server/src/auth/tenancy.ts`, by a stand-in for the store that is closed
+by default: a store method it does not list throws instead of answering, so a
+method added later fails a page rather than leaking across organizations
+(`apps/server/test/tenancy.test.ts`). What it does not change: one signing key
+signs every organization's chains; the operator sees everything; whoever
+administers the database administers every organization in it; and the people
+pages stay the operator's alone, because one person has one pseudonym token
+across every system, whichever organization's agent acted for them. Until
+pseudonyms are kept per organization, opening those pages to an organization
+would let it look up, and erase, another's people.
 
 **Retention and erasure are not implemented.** Nothing here deletes a
 recorded action, and the append-only triggers actively prevent it. The one

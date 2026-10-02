@@ -1,7 +1,9 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { DOCUMENT_TEXT_SOURCE, type DocumentFingerprints } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
+import { UiSessions } from "../auth/sessions.js";
+import { OPERATOR, storeFor, type Viewer } from "../auth/tenancy.js";
 import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { archiveFromStore, positionsIn, tokensIn } from "../export/from-store.js";
@@ -56,7 +58,12 @@ import { ICONS, STATE_ICONS } from "./style.js";
  */
 
 const COOKIE = "sigillo_session";
-const SESSION_HOURS = 12;
+
+/** Who signed in, and the store as they may see it (tenancy.ts). */
+interface Session {
+  viewer: Viewer;
+  store: ReceiptStore;
+}
 
 export interface UiOptions {
   store: ReceiptStore;
@@ -75,6 +82,12 @@ export interface UiOptions {
    * trusted proxy's X-Forwarded-Proto) shows it.
    */
   cookieSecure?: boolean | "auto";
+  /**
+   * The sessions this view issues and accepts. The password above signs the
+   * operator in; an organization's members are signed in by whatever
+   * identity login is attached to the same sessions. Default: a fresh set.
+   */
+  sessions?: UiSessions;
 }
 
 export const DEFAULT_LOGIN_LIMITS: ThrottleSettings = {
@@ -204,34 +217,13 @@ function fingerprintsFromQuery(query: Record<string, unknown>): DocumentFingerpr
 
 
 export function registerUi(app: FastifyInstance, options: UiOptions): void {
-  // A fresh secret per process: a restart signs everyone out, which for an
-  // operator's view is the right trade against storing anything.
-  const sessionSecret = randomBytes(32);
-  // Part of what every session cookie signs. Signing out moves it on, and with
-  // it every cookie issued before, copies included, stops working: there is
-  // one password, so every session is the same person's (review point 12).
-  let epoch = 0;
-  const { store, keys } = options;
+  // Every system, every organization's. Never handed to a page as it is: a
+  // page gets storeFor(this, the viewer), which for the operator is this.
+  const allSystems = options.store;
+  const { keys } = options;
+  const sessions = options.sessions ?? new UiSessions();
   const loginThrottle = new AttemptThrottle(options.loginLimits ?? DEFAULT_LOGIN_LIMITS);
   const cookieSecure = options.cookieSecure ?? "auto";
-
-  const mac = (expiry: string, sessionEpoch: number): string =>
-    createHmac("sha256", sessionSecret).update(`${expiry}.${sessionEpoch}`).digest("hex");
-
-  const sign = (expiry: number): string => `${expiry}.${mac(String(expiry), epoch)}`;
-
-  const sessionValid = (cookie: string | undefined): boolean => {
-    if (cookie === undefined) return false;
-    const [expiry, given] = cookie.split(".");
-    if (expiry === undefined || given === undefined) return false;
-    const deadline = Number(expiry);
-    if (!Number.isFinite(deadline) || deadline < options.now().getTime()) return false;
-    const expected = mac(expiry, epoch);
-    return (
-      given.length === expected.length &&
-      timingSafeEqual(Buffer.from(given, "hex"), Buffer.from(expected, "hex"))
-    );
-  };
 
   const cookieFrom = (request: FastifyRequest): string | undefined => {
     const header = request.headers.cookie;
@@ -248,10 +240,39 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     return `HttpOnly; SameSite=Strict; Path=/${secure ? "; Secure" : ""}`;
   };
 
-  const requireSession = (request: FastifyRequest, reply: FastifyReply): boolean => {
-    if (sessionValid(cookieFrom(request))) return true;
+  /**
+   * Who signed in, or null. An organization's session counts only while the
+   * organization exists and is approved: the operator withdrawing an approval
+   * signs its members out at their next page.
+   */
+  const viewerOf = (request: FastifyRequest): Viewer | null => {
+    const viewer = sessions.read(cookieFrom(request), options.now().getTime());
+    if (viewer === null || viewer.kind === "operator") return viewer;
+    const organization = allSystems.organization(viewer.organizationId);
+    return organization !== null && organization.approved_at !== null ? viewer : null;
+  };
+
+  /**
+   * The operator's session, or null after answering. The people pages work on
+   * the subjects table, which every system shares: one person has one token
+   * whichever organization's agent acted for them. Until pseudonyms are kept
+   * per organization, those pages are the operator's alone, and to anyone
+   * else they do not exist.
+   */
+  const requireOperator = (request: FastifyRequest, reply: FastifyReply): Session | null => {
+    const session = requireSession(request, reply);
+    if (session === null) return null;
+    if (session.viewer.kind === "operator") return session;
+    reply.callNotFound();
+    return null;
+  };
+
+  /** The viewer and the store as they may see it, or null after redirecting to the sign-in page. */
+  const requireSession = (request: FastifyRequest, reply: FastifyReply): Session | null => {
+    const viewer = viewerOf(request);
+    if (viewer !== null) return { viewer, store: storeFor(allSystems, viewer) };
     void reply.redirect("/ui/login", 302);
-    return false;
+    return null;
   };
 
   // The status is a parameter: setting it on the reply and then calling a
@@ -308,7 +329,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   app.get("/", async (_request, reply) => reply.redirect("/ui", 302));
 
   app.get("/ui/login", async (request, reply) =>
-    sessionValid(cookieFrom(request))
+    viewerOf(request) !== null
       ? reply.redirect("/ui", 302)
       : html(reply, loginPage()),
   );
@@ -340,17 +361,15 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     }
 
     loginThrottle.recordSuccess(client);
-    const expiry = now + SESSION_HOURS * 3600 * 1000;
+    const session = sessions.issue(OPERATOR, now);
     return reply
-      .header(
-        "set-cookie",
-        `${COOKIE}=${sign(expiry)}; ${cookieAttributes(request)}; Max-Age=${SESSION_HOURS * 3600}`,
-      )
+      .header("set-cookie", `${COOKIE}=${session.value}; ${cookieAttributes(request)}; Max-Age=${session.maxAgeSeconds}`)
       .redirect("/ui", 302);
   });
 
   app.post("/ui/logout", async (request, reply) => {
-    if (sessionValid(cookieFrom(request))) epoch += 1;
+    const viewer = viewerOf(request);
+    if (viewer !== null) sessions.endAll(viewer);
     return reply
       .header("set-cookie", `${COOKIE}=; ${cookieAttributes(request)}; Max-Age=0`)
       .redirect("/ui/login", 303);
@@ -358,8 +377,11 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
 
   const keyId = options.signerKey.key_id;
   /** A page in the shell; the sidebar is read fresh, with the same health as the main page's traffic lights. */
-  const render = (pageOptions: PageOptions): string =>
-    page(pageOptions, shellFor(store, options.healthMonitor, options.now(), keyId));
+  const render = (session: Session, pageOptions: PageOptions): string =>
+    page(
+      pageOptions,
+      shellFor(session.store, options.healthMonitor, options.now(), keyId, session.viewer.kind === "operator"),
+    );
 
   /** Who is acting, for the administrative log: this view has one password, so an address is what there is. */
   const adminRequest = (request: FastifyRequest): AdminRequest => ({
@@ -368,12 +390,14 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   });
 
   app.get("/ui", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
     const query = request.query as { checkpoint?: string };
     const justCheckpointed = query.checkpoint === "1";
     return html(
       reply,
-      render({
+      render(session, {
         title: UI.home.heading,
         current: "registro",
         body: (() => {
@@ -385,13 +409,18 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   });
 
   app.post("/ui/checkpoint", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    // The same checkpoint the timer runs, over every chain: sooner, not
+    // different, and nothing of anyone's is shown by it.
     await options.checkpointer.runOnce();
     return reply.redirect("/ui?checkpoint=1", 303);
   });
 
   app.post("/ui/export", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
     const body = request.body as
       | { system_id?: unknown; from?: unknown; to?: unknown; subjects?: unknown; openings?: unknown }
       | undefined;
@@ -399,21 +428,23 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     if (!store.hasSystem(systemId)) {
       return reply.code(404).send({ error: `no system called ${systemId}` });
     }
-    return sendArchive(reply, systemId, dayBounds(body?.from, body?.to), body);
+    return sendArchive(store, reply, systemId, dayBounds(body?.from, body?.to), body);
   });
 
   const systemsView = (value: unknown): SystemsView =>
     value === "archiviati" || value === "tutti" ? value : "attivi";
 
-  const renderSistemi = (view: SystemsView, extra: { notice?: string; error?: string } = {}): string =>
-    render({
+  const renderSistemi = (session: Session, view: SystemsView, extra: { notice?: string; error?: string } = {}): string =>
+    render(session, {
       title: UI.systemsPage.title,
       current: view === "attivi" ? "sistemi" : view,
-      body: sistemiPage(store, view, extra),
+      body: sistemiPage(session.store, view, extra),
     });
 
   app.get("/ui/sistemi", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
     const query = request.query as { vista?: string; eliminato?: string };
     // Said only for a deletion the administrative log actually holds: the
     // query string alone cannot make the page claim one.
@@ -421,14 +452,22 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       typeof query.eliminato === "string" && !store.hasSystem(query.eliminato) && store.deletionOf(query.eliminato) !== null
         ? UI.systemsPage.deleted(query.eliminato)
         : undefined;
-    return html(reply, renderSistemi(systemsView(query.vista), deleted === undefined ? {} : { notice: deleted }));
+    return html(reply, renderSistemi(session, systemsView(query.vista), deleted === undefined ? {} : { notice: deleted }));
   });
 
   app.post("/ui/sistemi", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
     const body = request.body as { system_id?: unknown; display_name?: unknown } | undefined;
-    const systemId = typeof body?.system_id === "string" ? body.system_id.trim() : "";
+    const typed = typeof body?.system_id === "string" ? body.system_id.trim() : "";
     const displayName = typeof body?.display_name === "string" ? body.display_name : "";
+    // An organization's systems are named `<organization_id>.<name>`: two
+    // organizations never compete for an identifier, and no refusal ("already
+    // exists") can tell one about another's systems.
+    const prefix = session.viewer.kind === "organization" ? `${session.viewer.organizationId}.` : "";
+    const name = prefix !== "" && typed.startsWith(prefix) ? typed.slice(prefix.length) : typed;
+    const systemId = name === "" ? "" : `${prefix}${name}`;
 
     try {
       // Checked before the chain is opened: a genesis cannot be taken back
@@ -443,7 +482,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       const record = store.systemRecord(systemId);
       return html(
         reply,
-        render({
+        render(session, {
           title: UI.systemsPage.title,
           current: "sistemi",
           body: systemCreatedPage(record, systemId, issued.token),
@@ -451,12 +490,14 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return html(reply, renderSistemi("attivi", { error: message }), 400);
+      return html(reply, renderSistemi(session, "attivi", { error: message }), 400);
     }
   });
 
   app.get("/ui/verify-document", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
 
     const query = request.query as Record<string, unknown>;
     const fingerprints = fingerprintsFromQuery(query);
@@ -470,7 +511,7 @@ ${fingerprints === null ? "" : verifyDocumentResult(store, fingerprints, from, s
 </div>`;
     return html(
       reply,
-      render({
+      render(session, {
         title: UI.verifyDocument.title,
         current: "verifica",
         body,
@@ -478,16 +519,16 @@ ${fingerprints === null ? "" : verifyDocumentResult(store, fingerprints, from, s
     );
   });
 
-  const notFound = (reply: FastifyReply, systemId: string): FastifyReply =>
+  const notFound = (session: Session, reply: FastifyReply, systemId: string): FastifyReply =>
     html(
       reply,
-      render({ title: UI.notFound.title, body: notFoundPage(systemId) }),
+      render(session, { title: UI.notFound.title, body: notFoundPage(systemId) }),
       404,
     );
 
   /** A page about one system that is not its history: header and tabs, the page, the evidence sheet. */
-  const systemPage = (record: SystemRecord, tab: SystemTab, title: string, body: string): string =>
-    render({
+  const systemPage = (session: Session, record: SystemRecord, tab: SystemTab, title: string, body: string): string =>
+    render(session, {
       title,
       current: `system:${record.system_id}`,
       mainClass: "system-page",
@@ -499,11 +540,13 @@ ${exportSheet(record)}`,
     });
 
   app.get("/ui/systems/:systemId", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
 
     const { systemId } = request.params as { systemId: string };
     const record = store.systemRecord(systemId);
-    if (record === null) return notFound(reply, systemId);
+    if (record === null) return notFound(session, reply, systemId);
 
     const query = historyQuery(request.query as Record<string, unknown>);
     const filters = { systemId, ...storeRange(query), ...(query.name === undefined ? {} : { name: query.name }) };
@@ -520,7 +563,7 @@ ${exportSheet(record)}`,
 
     return html(
       reply,
-      render({
+      render(session, {
         title: asked === null ? systemTitle(record) : `${UI.inspector.receiptNo(asked.seq)} — ${systemTitle(record)}`,
         current: `system:${systemId}`,
         mainClass: `studio${asked === null ? "" : " has-selection"}`,
@@ -540,22 +583,24 @@ ${exportSheet(record)}`,
   });
 
   app.get("/ui/systems/:systemId/checkpoints", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
 
     const { systemId } = request.params as { systemId: string };
     const record = store.systemRecord(systemId);
-    if (record === null) return notFound(reply, systemId);
+    if (record === null) return notFound(session, reply, systemId);
     return html(
       reply,
-      systemPage(record, "checkpoints", `${systemTitle(record)} — ${UI.checkpoints.title}`, checkpointsPage(store, systemId)),
+      systemPage(session, record, "checkpoints", `${systemTitle(record)} — ${UI.checkpoints.title}`, checkpointsPage(store, systemId)),
     );
   });
 
   // Managing one system: its label, whether it is archived, and — for a
   // chain that never recorded anything — deleting it.
 
-  const renderManage = (record: SystemRecord, extra: { notice?: string; error?: string } = {}): string =>
-    systemPage(record, "manage", `${systemTitle(record)} — ${UI.systemsPage.manage}`, managePage(record, extra));
+  const renderManage = (session: Session, record: SystemRecord, extra: { notice?: string; error?: string } = {}): string =>
+    systemPage(session, record, "manage", `${systemTitle(record)} — ${UI.systemsPage.manage}`, managePage(record, extra));
 
   const DONE: Record<string, string> = {
     nome: UI.manage.renamed,
@@ -564,60 +609,70 @@ ${exportSheet(record)}`,
   };
 
   app.get("/ui/systems/:systemId/manage", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
     const { systemId } = request.params as { systemId: string };
     const record = store.systemRecord(systemId);
-    if (record === null) return notFound(reply, systemId);
+    if (record === null) return notFound(session, reply, systemId);
     const done = (request.query as { fatto?: string }).fatto;
     const notice = done === undefined ? undefined : DONE[done];
-    return html(reply, renderManage(record, notice === undefined ? {} : { notice }));
+    return html(reply, renderManage(session, record, notice === undefined ? {} : { notice }));
   });
 
   const manageUrl = (systemId: string, done: string): string =>
     `/ui/systems/${encodeURIComponent(systemId)}/manage?fatto=${done}`;
 
   app.post("/ui/systems/:systemId/rename", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
     const { systemId } = request.params as { systemId: string };
     const record = store.systemRecord(systemId);
-    if (record === null) return notFound(reply, systemId);
+    if (record === null) return notFound(session, reply, systemId);
     const body = request.body as { display_name?: unknown } | undefined;
     const displayName = typeof body?.display_name === "string" ? body.display_name : "";
     try {
       await store.renameSystem(systemId, displayName, adminRequest(request));
     } catch (error) {
       if (!(error instanceof StorageError)) throw error;
-      return html(reply, renderManage(record, { error: error.message }), 400);
+      return html(reply, renderManage(session, record, { error: error.message }), 400);
     }
     return reply.redirect(manageUrl(systemId, "nome"), 303);
   });
 
   app.post("/ui/systems/:systemId/archive", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
     const { systemId } = request.params as { systemId: string };
-    if (!store.hasSystem(systemId)) return notFound(reply, systemId);
+    if (!store.hasSystem(systemId)) return notFound(session, reply, systemId);
     await store.archiveSystem(systemId, adminRequest(request));
     return reply.redirect(manageUrl(systemId, "archiviato"), 303);
   });
 
   app.post("/ui/systems/:systemId/unarchive", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
     const { systemId } = request.params as { systemId: string };
-    if (!store.hasSystem(systemId)) return notFound(reply, systemId);
+    if (!store.hasSystem(systemId)) return notFound(session, reply, systemId);
     await store.unarchiveSystem(systemId, adminRequest(request));
     return reply.redirect(manageUrl(systemId, "riattivato"), 303);
   });
 
   app.post("/ui/systems/:systemId/delete", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
     const { systemId } = request.params as { systemId: string };
     const record = store.systemRecord(systemId);
-    if (record === null) return notFound(reply, systemId);
+    if (record === null) return notFound(session, reply, systemId);
 
     // The exact system_id, typed out: not a "sei sicuro?" a thumb can tap.
     const body = request.body as { confirm?: unknown } | undefined;
     if (body?.confirm !== systemId) {
-      return html(reply, renderManage(record, { error: UI.manage.confirmMismatch }), 400);
+      return html(reply, renderManage(session, record, { error: UI.manage.confirmMismatch }), 400);
     }
 
     try {
@@ -628,7 +683,7 @@ ${exportSheet(record)}`,
     } catch (error) {
       if (!(error instanceof SystemNotDeletableError)) throw error;
       const now = store.systemRecord(systemId) ?? record;
-      return html(reply, renderManage(now, { error: UI.manage.deleteRefused(error.receipts) }), 409);
+      return html(reply, renderManage(session, now, { error: UI.manage.deleteRefused(error.receipts) }), 409);
     }
     options.healthMonitor.forget(systemId);
     request.log.info({ system: systemId, action: "system.delete" }, "an empty system was deleted");
@@ -640,48 +695,56 @@ ${exportSheet(record)}`,
   // any log that keeps addresses.
 
   const renderPeople = (
+    session: Session,
     search: { identifier: string; token: string | null } | null,
     extra: { notice?: string; error?: string } = {},
   ): string =>
-    render({
+    render(session, {
       title: UI.people.title,
       current: "persone",
-      body: peoplePage(store, search, extra),
+      body: peoplePage(session.store, search, extra),
     });
 
   app.get("/ui/persone", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireOperator(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
     const erased = (request.query as { cancellato?: string }).cancellato;
     // Said only for an erasure the administrative log actually holds.
     const done =
       typeof erased === "string" &&
       store.adminLog(10_000).some((entry) => entry.action === "subject.erase" && entry.detail["token"] === erased);
-    return html(reply, renderPeople(null, done ? { notice: UI.people.erased(erased) } : {}));
+    return html(reply, renderPeople(session, null, done ? { notice: UI.people.erased(erased) } : {}));
   });
 
   app.post("/ui/persone", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireOperator(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
     const body = request.body as { identifier?: unknown } | undefined;
     const identifier = typeof body?.identifier === "string" ? body.identifier : "";
-    return html(reply, renderPeople({ identifier, token: store.subjectToken(identifier) }));
+    return html(reply, renderPeople(session, { identifier, token: store.subjectToken(identifier) }));
   });
 
   app.post("/ui/persone/cancella", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireOperator(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
     const body = request.body as { token?: unknown; confirm?: unknown } | undefined;
     const token = typeof body?.token === "string" ? body.token : "";
     // The exact token, typed out: not a "sei sicuro?" a thumb can tap.
     if (body?.confirm !== token || token === "") {
-      return html(reply, renderPeople(null, { error: UI.people.confirmMismatch }), 400);
+      return html(reply, renderPeople(session, null, { error: UI.people.confirmMismatch }), 400);
     }
     if (!(await store.eraseSubject(token, adminRequest(request)))) {
-      return html(reply, renderPeople(null, { error: UI.people.notFound }), 404);
+      return html(reply, renderPeople(session, null, { error: UI.people.notFound }), 404);
     }
     request.log.info({ action: "subject.erase", token }, "a subject was erased");
     return reply.redirect(`/ui/persone?cancellato=${encodeURIComponent(token)}`, 303);
   });
 
   async function sendArchive(
+    store: ReceiptStore,
     reply: FastifyReply,
     systemId: string,
     range: { from?: string; to?: string },
@@ -707,7 +770,9 @@ ${exportSheet(record)}`,
   }
 
   app.post("/ui/systems/:systemId/export", async (request, reply) => {
-    if (!requireSession(request, reply)) return reply;
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
 
     const { systemId } = request.params as { systemId: string };
     if (!store.hasSystem(systemId)) {
@@ -716,7 +781,7 @@ ${exportSheet(record)}`,
     // The sheet on the system's pages sends a period too; a form without one
     // exports the whole chain, as this route always did.
     const body = request.body as { from?: unknown; to?: unknown; subjects?: unknown; openings?: unknown } | undefined;
-    return sendArchive(reply, systemId, dayBounds(body?.from, body?.to), body);
+    return sendArchive(store, reply, systemId, dayBounds(body?.from, body?.to), body);
   });
 }
 
