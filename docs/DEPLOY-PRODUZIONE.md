@@ -475,16 +475,26 @@ $ crontab -e
 Aggiungi la riga:
 
 ```
-0 * * * * cd /srv/sigillo/deploy && docker compose exec -T -e SIGILLO_BACKUP_KEEP=48 server /app/backup.sh >> /srv/sigillo-backup.log 2>&1
+0 * * * * cd /srv/sigillo/deploy && docker compose exec -T server /app/backup.sh >> /srv/sigillo-backup.log 2>&1
 ```
 
-Ogni ora, e ne tiene 48 (due giorni). Perché ogni ora: se un giorno si deve
-rimettere un backup, tutto quello che è arrivato dopo quel backup va recuperato
-dal firmatario, e più il backup è recente meno c'è da recuperare (le impronte
-recuperate così non si possono più aprire: `SECURITY.md`). Perché due giorni e
-non di più: una persona cancellata resta nei backup finché non vengono
-sostituiti, quindi al massimo per due giorni. La copia fuori dal server, sotto,
-è quella che copre i periodi più lunghi.
+Ogni ora, e ne tiene **2** sul server (le ultime due ore). Perché ogni ora: se
+un giorno si deve rimettere un backup, tutto quello che è arrivato dopo quel
+backup va recuperato dal firmatario, e più il backup è recente meno c'è da
+recuperare (le impronte recuperate così non si possono più aprire:
+`SECURITY.md`). Perché solo due: ogni copia è l'intero database, e sta sullo
+stesso disco. Con 48 copie il database potrebbe crescere solo fino a circa
+1/50 del disco prima che i backup lo riempiano; con 2, fino a circa un quinto.
+Un disco pieno ferma la registrazione delle ricevute, che è peggio di un
+backup saltato: per questo `backup.sh` rifiuta di scrivere una copia se dopo
+non resterebbe libero almeno quanto pesa il database, ed esce con un errore
+che finisce in `/srv/sigillo-backup.log`. Una persona cancellata resta nei
+backup sul server al massimo per due ore. **La copia fuori dal server, sotto,
+è quella che copre i giorni e le settimane**, e va fatta davvero.
+
+Per fare i conti: una ricevuta occupa circa 2 KB nel database (misurato il
+2026-10-02 con ricevute complete di impronte e pseudonimo), quindi 1 GB
+contiene circa mezzo milione di ricevute.
 
 Provalo subito a mano:
 

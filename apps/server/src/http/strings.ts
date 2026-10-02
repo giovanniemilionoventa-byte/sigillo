@@ -430,6 +430,8 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "signer.divergence": "in disaccordo con il firmatario",
   "subject.erase": "interessato cancellato",
   "openings.erase": "nonce cancellati",
+  "organization.create": "organizzazione creata",
+  "system.assign": "assegnato a un'organizzazione",
 };
 
 /** One line of the administrative log, for the systems page. */
@@ -448,6 +450,13 @@ export function describeAdminEntry(entry: {
   }
   if (entry.action === "subject.erase") {
     return `${formatTs(entry.ts)} — ${what}: pseudonimo ${String(entry.detail["token"])} (${entry.actor})`;
+  }
+  if (entry.action === "organization.create") {
+    return `${formatTs(entry.ts)} — ${what}: ${String(entry.detail["organization_id"])} (${entry.actor})`;
+  }
+  if (entry.action === "system.assign") {
+    const whose = (value: unknown): string => (typeof value === "string" ? value : "solo l'operatore");
+    extra = `: da ${whose(entry.detail["from"])} a ${whose(entry.detail["to"])}`;
   }
   if (entry.action === "openings.erase") {
     const seqs = Array.isArray(entry.detail["seqs"]) ? entry.detail["seqs"].join(", ") : "";

@@ -9,6 +9,7 @@ import { adaptSpans } from "../ingest/adapter.js";
 import { decodeJsonTraces, decodeProtobufTraces, OtlpDecodeError } from "../ingest/otlp.js";
 import { SignerRefusedError, SignerUnavailableError } from "../signer/errors.js";
 import type { ReceiptStore } from "../storage/store.js";
+import type { UiSessions } from "../auth/sessions.js";
 import { registerUi } from "./ui.js";
 
 /**
@@ -65,6 +66,8 @@ export interface ServerOptions {
     checkpointer: Checkpointer;
     loginLimits?: ThrottleSettings;
     cookieSecure?: boolean | "auto";
+    /** The web view's sessions (auth/sessions.ts); a fresh set when not given. */
+    sessions?: UiSessions;
   };
 }
 
@@ -289,6 +292,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       now,
       ...(options.ui.loginLimits === undefined ? {} : { loginLimits: options.ui.loginLimits }),
       ...(options.ui.cookieSecure === undefined ? {} : { cookieSecure: options.ui.cookieSecure }),
+      ...(options.ui.sessions === undefined ? {} : { sessions: options.ui.sessions }),
     });
   }
 

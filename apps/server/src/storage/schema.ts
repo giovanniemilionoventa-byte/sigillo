@@ -20,6 +20,19 @@ CREATE TABLE IF NOT EXISTS systems (
   created_at TEXT NOT NULL
 ) STRICT;
 
+-- The customers of a hosted installation. Not evidence, and not part of any
+-- chain: which organization a system belongs to decides who may see it in the
+-- web view, never what its receipts say. A system's organization_id (added by
+-- ensureColumn in applySchema) is NULL for a system no organization was given,
+-- and such a system is seen by the operator alone. approved_at is NULL until
+-- the operator lets the organization in.
+CREATE TABLE IF NOT EXISTS organizations (
+  organization_id TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  created_at      TEXT NOT NULL,
+  approved_at     TEXT
+) STRICT;
+
 -- Not evidence, and deliberately not append-only: a key must be revocable.
 -- Only the scrypt hash of the secret is stored, so a copy of this database
 -- does not let anyone speak for a system.
@@ -256,7 +269,9 @@ function ensureColumn(db: Database.Database, table: string, column: string, type
  * newer release, and this one refuses it with a sentence instead.
  * Databases written before the stamp existed read 0.
  */
-export const SCHEMA_VERSION = 1;
+// 2: organizations, and the organization a system belongs to. A release at 1
+// would show every system to whoever holds its password.
+export const SCHEMA_VERSION = 2;
 
 export class NewerSchemaError extends Error {
   constructor(readonly found: number) {
@@ -308,6 +323,7 @@ export function applySchema(db: Database.Database): void {
   ensureColumn(db, "receipts", "source_span_id", "TEXT");
   ensureColumn(db, "systems", "display_name", "TEXT");
   ensureColumn(db, "systems", "archived_at", "TEXT");
+  ensureColumn(db, "systems", "organization_id", "TEXT REFERENCES organizations (organization_id)");
   ensureColumn(db, "artifacts", "text_canon", "TEXT");
   ensureColumn(db, "artifacts", "text_sha256", "TEXT");
   // Databases written before empty systems could be deleted carry the
@@ -324,6 +340,8 @@ export function applySchema(db: Database.Database): void {
       WHERE source_trace_id IS NOT NULL AND source_span_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS artifacts_by_text_sha256
       ON artifacts (text_sha256) WHERE text_sha256 IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS systems_by_organization
+      ON systems (organization_id) WHERE organization_id IS NOT NULL;
   `);
   // "Is this text exactly an action's whole input or output" (the document
   // lookup): indexes on the digests as the receipt itself holds them, so no
