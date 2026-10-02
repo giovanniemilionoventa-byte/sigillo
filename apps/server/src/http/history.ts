@@ -9,6 +9,7 @@ import {
   formatDay,
   formatTime,
   formatTs,
+  localDayRange,
   modelWhere,
   receiptSubtitle,
   receiptTitle,
@@ -58,13 +59,13 @@ export function selectedSeq(query: HistoryQuery): number | null {
 
 /**
  * The period as the store compares it. A date alone (what the date fields
- * send) is the whole day, in UTC; a full ISO time, as older links carry, is
- * used as it is.
+ * send) is the whole day in Italian time, as the history shows it; a full ISO
+ * time, as older links carry, is used as it is.
  */
 export function storeRange(query: HistoryQuery): { from?: string; to?: string } {
   const DATE = /^\d{4}-\d{2}-\d{2}$/;
-  const from = query.from === undefined ? undefined : DATE.test(query.from) ? `${query.from}T00:00:00.000Z` : query.from;
-  const to = query.to === undefined ? undefined : DATE.test(query.to) ? `${query.to}T23:59:59.999Z` : query.to;
+  const from = query.from === undefined ? undefined : DATE.test(query.from) ? localDayRange(query.from).from : query.from;
+  const to = query.to === undefined ? undefined : DATE.test(query.to) ? localDayRange(query.to).to : query.to;
   return { ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }) };
 }
 
@@ -189,7 +190,7 @@ function receiptList(systemId: string, receipts: Receipt[], query: HistoryQuery,
     else days.push({ day, rows: [row] });
   }
   return days
-    .map(({ day, rows }) => `<h3 class="day">${escape(UI.history.dayUtc(day))}</h3>\n<ol class="rows">${rows.join("\n")}</ol>`)
+    .map(({ day, rows }) => `<h3 class="day">${escape(UI.history.dayLocal(day))}</h3>\n<ol class="rows">${rows.join("\n")}</ol>`)
     .join("\n");
 }
 

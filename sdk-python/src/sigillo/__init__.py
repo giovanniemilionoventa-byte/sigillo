@@ -20,7 +20,9 @@ optional: code that calls neither behaves exactly as before. A third,
 `sigillo.current_span_from_callbacks(...)`, is the one piece most LangChain
 tools need alongside `artifact`: see its docstring. A fourth,
 `sigillo.pseudonym(...)`, turns an identifier into an opaque stand-in before it
-goes into `on_behalf_of` — see its docstring.
+goes into `on_behalf_of` — see its docstring. The handle `init` returns has
+`tool(...)`, for a tool call written by hand: it records the call with its
+outcome, which a hand-made span otherwise leaves unknown.
 
 By default, `init` also hashes a span's input and output right here, before
 anything is sent, instead of letting the raw text travel to the server: see
@@ -38,6 +40,7 @@ from __future__ import annotations
 # Imported under private names: this package's public surface is init,
 # artifact, current_span_from_callbacks and pseudonym, and a stray
 # `sigillo.TracerProvider` would be part of it otherwise.
+import contextlib as _contextlib
 import hashlib as _hashlib
 import hmac as _hmac
 import json as _json
@@ -47,9 +50,11 @@ import os as _os
 import pathlib as _pathlib
 import secrets as _secrets
 import urllib.request as _urllib_request
+from typing import Iterator as _Iterator
 from typing import Sequence as _Sequence
 
 from opentelemetry import trace as _trace
+from opentelemetry.trace import StatusCode as _StatusCode
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
     OTLPSpanExporter as _OTLPSpanExporter,
 )
@@ -94,6 +99,44 @@ class Tracing:
 
     def shutdown(self) -> None:
         self.provider.shutdown()
+
+    @_contextlib.contextmanager
+    def tool(self, name: str, agent: str | None = None) -> _Iterator[_Span]:
+        """Records one tool call written by hand, with its outcome.
+
+            with tracing.tool("scrivi_file", agent="agente-codice"):
+                scrivi_file(percorso, testo)
+
+        A span opened by hand ends with its status unset unless something sets
+        it, and the server reads an unset status as "esito sconosciuto": it
+        does not take silence for success. This sets it. A block that returns
+        is `ok`; one that raises is `error`, with the exception's class name as
+        `error.type`, and the exception goes on unchanged. Its message and
+        traceback are not attached: they can quote the very content this
+        package keeps from leaving the process.
+
+        Tools run by LangChain, CrewAI or the OpenAI instrumentation do not
+        need this: their instrumentation already reports the outcome.
+        """
+        if not name:
+            raise ValueError("name must not be empty")
+        attributes = {"gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": name}
+        if agent:
+            attributes["gen_ai.agent.name"] = agent
+        tracer = self.provider.get_tracer("sigillo")
+        with tracer.start_as_current_span(
+            f"execute_tool {name}",
+            attributes=attributes,
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                yield span
+            except BaseException as error:
+                span.set_attribute("error.type", type(error).__qualname__)
+                span.set_status(_StatusCode.ERROR)
+                raise
+            span.set_status(_StatusCode.OK)
 
     def __repr__(self) -> str:
         return (
@@ -238,6 +281,7 @@ _KEEP_ATTRIBUTES = frozenset(
         "llm.system",
         "user.id",
         "enduser.id",
+        "error.type",
         "sigillo.model.digest",
     }
 )

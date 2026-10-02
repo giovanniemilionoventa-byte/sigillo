@@ -20,7 +20,10 @@ import type { ReceiptStore } from "../storage/store.js";
  * is retried by the checkpointer, and is not worth a yellow light until it
  * has waited longer than `maxAnchorDelayMs`, the delay sigillo-verify accepts
  * (--max-anchor-delay); nor is one timestamped within it. Beyond it, the next
- * export will carry an anchor-delay warning, and the light says so now.
+ * export will carry an anchor-delay warning, and the light says so now. A new
+ * system has the same allowance for its first checkpoint, counted from its
+ * opening: the checkpointer seals each chain on its own timer, and a system
+ * opened a minute ago that has not met it yet has nothing wrong with it.
  *
  * A failure is sticky: once a system turns red it stays red until the process
  * restarts. Manufacturing an "un-failing" would mean deciding when a broken
@@ -182,9 +185,12 @@ export class ChainHealthMonitor {
     const tolerance = Math.round(this.maxAnchorDelayMs / 60_000);
     // How the newest checkpoint stands with its timestamp: none yet within the
     // tolerance is "coming"; none beyond it, or one attested beyond it, is late.
-    let anchoring: "anchored" | "coming" | "missing" | "late" | "none" = "none";
+    let anchoring: "anchored" | "coming" | "missing" | "late" | "first" | "none" = "none";
     let lateBy = 0;
-    if (checkpoint !== null) {
+    if (checkpoint === null) {
+      const opened = this.store.receiptAt(systemId, 0);
+      if (opened !== null && now.getTime() - Date.parse(opened.ts_received) <= this.maxAnchorDelayMs) anchoring = "first";
+    } else {
       const declared = Date.parse(checkpoint.checkpoint.ts);
       const attested = this.store
         .readTimestamps(checkpoint.id)
@@ -198,6 +204,14 @@ export class ChainHealthMonitor {
     }
 
     const total = tip.seq + 1;
+    if (anchoring === "first" && !stale) {
+      return {
+        status: "green",
+        message:
+          `Registro integro. ${total} azion${total === 1 ? "e" : "i"} registrat${total === 1 ? "a" : "e"}, ` +
+          `primo sigillo in arrivo entro ${durationWords(tolerance)}.`,
+      };
+    }
     if ((anchoring === "anchored" || anchoring === "coming") && !stale && checkpoint !== null) {
       return {
         status: "green",
@@ -208,15 +222,22 @@ export class ChainHealthMonitor {
     }
 
     const reasons: string[] = [];
-    if (anchoring === "none") reasons.push("la marca temporale è in attesa");
-    if (anchoring === "missing") reasons.push(`manca la marca temporale da oltre ${tolerance} minuti`);
+    if (anchoring === "none") reasons.push(`non è ancora stato sigillato, da oltre ${durationWords(tolerance)}`);
+    if (anchoring === "missing") reasons.push(`manca la marca temporale da oltre ${durationWords(tolerance)}`);
     if (anchoring === "late") {
-      reasons.push(`l'ultima marca temporale è arrivata ${Math.round(lateBy / 60_000)} minuti dopo il sigillo, oltre i ${tolerance} ammessi`);
+      reasons.push(`l'ultima marca temporale è arrivata ${durationWords(Math.round(lateBy / 60_000))} dopo il sigillo, oltre il limite di ${durationWords(tolerance)}`);
     }
-    if (stale) reasons.push(`nessuna attività da oltre ${Math.round(this.staleAfterMs / 60_000)} minuti`);
+    if (stale) reasons.push(`nessuna nuova azione da oltre ${durationWords(Math.round(this.staleAfterMs / 60_000))}`);
     return {
       status: "yellow",
       message: `Registro integro (${total} azion${total === 1 ? "e" : "i"}), ma ${reasons.join(" e ")}.`,
     };
   }
+}
+
+/** A whole number of minutes as a person says it: "90 minuti", "1 ora", "24 ore", "2 giorni". */
+export function durationWords(minutes: number): string {
+  if (minutes >= 2880 && minutes % 1440 === 0) return `${minutes / 1440} giorni`;
+  if (minutes >= 60 && minutes % 60 === 0) return minutes === 60 ? "1 ora" : `${minutes / 60} ore`;
+  return minutes === 1 ? "1 minuto" : `${minutes} minuti`;
 }

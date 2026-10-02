@@ -22,6 +22,7 @@ from pathlib import Path
 
 from opentelemetry import trace
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+from opentelemetry.proto.trace.v1.trace_pb2 import Status
 
 import sigillo
 
@@ -615,6 +616,60 @@ class SigilloInitTest(unittest.TestCase):
         self.addCleanup(tracing.shutdown)
         installed = importlib.util.find_spec("openinference.instrumentation.openai") is not None
         self.assertEqual(tracing.instrumented, ("openai",) if installed else ())
+
+    def _sent_spans(self) -> list:
+        spans = []
+        for body in _Capture.bodies:
+            request = ExportTraceServiceRequest()
+            request.ParseFromString(body)
+            spans.extend(
+                span
+                for resource in request.resource_spans
+                for scope in resource.scope_spans
+                for span in scope.spans
+            )
+        return spans
+
+    def test_tool_records_a_tool_call_that_returns_as_ok(self) -> None:
+        tracing = sigillo.init(
+            endpoint=self.base, api_key="sigillo_key", system_id="acme-support-bot", instrument=[]
+        )
+        self.addCleanup(tracing.shutdown)
+        with tracing.tool("scrivi_file", agent="agente-codice"):
+            pass
+        tracing.flush()
+
+        [span] = self._sent_spans()
+        attributes = {kv.key: kv.value.string_value for kv in span.attributes}
+        self.assertEqual(span.status.code, Status.STATUS_CODE_OK)
+        self.assertEqual(attributes["gen_ai.operation.name"], "execute_tool")
+        self.assertEqual(attributes["gen_ai.tool.name"], "scrivi_file")
+        self.assertEqual(attributes["gen_ai.agent.name"], "agente-codice")
+
+    def test_tool_records_a_tool_call_that_raises_as_an_error_without_its_message(self) -> None:
+        tracing = sigillo.init(
+            endpoint=self.base, api_key="sigillo_key", system_id="acme-support-bot", instrument=[]
+        )
+        self.addCleanup(tracing.shutdown)
+        with self.assertRaises(PermissionError):
+            with tracing.tool("scrivi_file"):
+                raise PermissionError("/home/mario.rossi/segreto.txt")
+        tracing.flush()
+
+        [span] = self._sent_spans()
+        attributes = {kv.key: kv.value.string_value for kv in span.attributes}
+        self.assertEqual(span.status.code, Status.STATUS_CODE_ERROR)
+        self.assertEqual(attributes["error.type"], "PermissionError")
+        self.assertNotIn("mario.rossi", span.SerializeToString().decode("utf-8", "replace"))
+
+    def test_tool_refuses_an_empty_name(self) -> None:
+        tracing = sigillo.init(
+            endpoint=self.base, api_key="sigillo_key", system_id="acme-support-bot", instrument=[]
+        )
+        self.addCleanup(tracing.shutdown)
+        with self.assertRaises(ValueError):
+            with tracing.tool(""):
+                pass
 
     def test_the_public_surface_is_three_functions_and_a_handle(self) -> None:
         self.assertEqual(

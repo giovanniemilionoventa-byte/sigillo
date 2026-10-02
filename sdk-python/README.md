@@ -58,6 +58,27 @@ tracing.shutdown()
 A long-running service does not need the handle. A script does: without a flush,
 the last spans may never leave the process.
 
+## Tool calls written by hand
+
+LangChain, CrewAI and the OpenAI instrumentation report whether each step
+succeeded. A span you open yourself does not: its status stays unset, and the
+server shows an unset status as *esito sconosciuto* rather than guess it was a
+success. `tracing.tool(...)` records the call with its outcome:
+
+```python
+with tracing.tool("scrivi_file", agent="agente-codice"):
+    scrivi_file(percorso, testo)
+```
+
+A block that returns is `ok`. One that raises is `error`, with the exception's
+class name as `error.type`; the exception goes on unchanged, and its message
+and traceback are not sent, since they can quote the content this package keeps
+here. `sigillo.artifact(...)` inside the block attaches to this call.
+
+With your own tracer instead, set the status yourself before the span ends:
+`span.set_status(StatusCode.OK)` on success, `StatusCode.ERROR` on failure
+(`from opentelemetry.trace import StatusCode`).
+
 ## What is recorded
 
 Nothing your agent said or received. Each receipt carries only metadata: which

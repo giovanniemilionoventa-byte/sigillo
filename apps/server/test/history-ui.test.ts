@@ -93,7 +93,9 @@ beforeEach(async () => {
   await store.append(event("39", { action: { kind: "tool_call", name: "rimborsa_pagamento" }, outcome: "blocked" }));
   await store.append(event("40", { action: { kind: "decision", name: "escalation_operatore" } }));
   await store.createSystem(EMPTY, "2026-09-29T12:50:00.000Z");
-  healthMonitor = new ChainHealthMonitor(store, signer.publicKey, DAY_MS);
+  // Five minutes for a first checkpoint, so that SYSTEM, opened 44 minutes
+  // before NOW and never sealed, is yellow.
+  healthMonitor = new ChainHealthMonitor(store, signer.publicKey, DAY_MS, 5 * 60_000);
   healthMonitor.check();
   app = await start(healthMonitor);
   cookie = await signIn(app);
@@ -165,7 +167,7 @@ describe("?ricevuta= and the inspector", () => {
     expect(body).toContain('<dt>Tipo</dt><dd><span class="cap">strumento</span></dd>');
     expect(body).toContain("<dt>Agente</dt><dd>support-agent</dd>");
     expect(body).toContain("<dt>Arrivata da</dt><dd>SDK</dd>");
-    expect(body).toContain(`<dt>Ricevuta il</dt><dd>29 set 2026, 12:39:13 UTC</dd>`);
+    expect(body).toContain(`<dt>Ricevuta il</dt><dd>29 set 2026, 14:39:13 CEST</dd>`);
   });
 
   it("names a model receipt's model and where it runs, and its prompt and reply fingerprints", async () => {

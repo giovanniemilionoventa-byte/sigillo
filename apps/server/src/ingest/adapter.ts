@@ -114,6 +114,10 @@ function outcomeOf(span: OtlpSpan): Outcome {
   // source said otherwise, so the honest reading is that nothing was reported.
   if (span.status === "ok") return "ok";
   if (span.status === "error") return "error";
+  // error.type is the semantic conventions' own failure marker, set only when
+  // the operation failed: a source that names the error but leaves the status
+  // unset still said it failed.
+  if (text(span.attributes, "error.type") !== null) return "error";
   return "unknown";
 }
 

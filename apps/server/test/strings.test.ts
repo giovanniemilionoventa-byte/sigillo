@@ -6,6 +6,8 @@ import {
   describeReceipt,
   formatDay,
   formatTime,
+  formatTs,
+  localDayRange,
   modelWhere,
   receiptSubtitle,
   receiptTitle,
@@ -217,17 +219,40 @@ describe("artifactRoleWords", () => {
   });
 });
 
-describe("formatDay and formatTime: the history's day headings and times, in UTC", () => {
-  it("names the weekday and the month in full", () => {
+describe("formatDay and formatTime: the history's day headings and times, in Italian time", () => {
+  it("names the weekday and the month in full, of the day in Italy", () => {
     expect(formatDay("2026-09-29T12:40:13.790Z")).toBe("martedì 29 settembre 2026");
-    expect(formatDay("2026-03-01T23:59:59.000Z")).toBe("domenica 1 marzo 2026");
-    expect(UI.history.dayUtc(formatDay("2026-10-01T00:00:00.000Z"))).toBe("giovedì 1 ottobre 2026 · ore UTC");
+    // 23:59 UTC on 1 March is already 2 March in Rome.
+    expect(formatDay("2026-03-01T23:59:59.000Z")).toBe("lunedì 2 marzo 2026");
+    expect(UI.history.dayLocal(formatDay("2026-10-01T00:00:00.000Z"))).toBe("giovedì 1 ottobre 2026 · ora italiana");
   });
 
-  it("gives the time to the second, and leaves what does not parse as it is", () => {
-    expect(formatTime("2026-09-29T12:40:13.790Z")).toBe("12:40:13");
+  it("gives the time to the second, summer and winter, and leaves what does not parse as it is", () => {
+    expect(formatTime("2026-10-02T17:54:37.120Z")).toBe("19:54:37");
+    expect(formatTime("2026-01-15T17:54:37.120Z")).toBe("18:54:37");
     expect(formatDay("not a date")).toBe("not a date");
     expect(formatTime("not a date")).toBe("not a date");
+  });
+});
+
+describe("formatTs: a server timestamp in Italian time, its zone named", () => {
+  it("shows summer time as CEST and winter time as CET", () => {
+    expect(formatTs("2026-10-02T17:54:37.120Z")).toBe("2 ott 2026, 19:54:37 CEST");
+    expect(formatTs("2026-12-31T23:30:00.000Z")).toBe("1 gen 2027, 00:30:00 CET");
+  });
+
+  it("leaves what does not parse as it is", () => {
+    expect(formatTs("not a date")).toBe("not a date");
+    expect(formatTs("2026-13-45T99:00:00Z")).toBe("2026-13-45T99:00:00Z");
+  });
+});
+
+describe("localDayRange: a day picked in the filter is that day in Italy", () => {
+  it("runs from local midnight to local midnight, across a change of clock too", () => {
+    expect(localDayRange("2026-10-02")).toEqual({ from: "2026-10-01T22:00:00.000Z", to: "2026-10-02T21:59:59.999Z" });
+    expect(localDayRange("2026-01-15")).toEqual({ from: "2026-01-14T23:00:00.000Z", to: "2026-01-15T22:59:59.999Z" });
+    // The last Sunday of October has 25 hours.
+    expect(localDayRange("2026-10-25")).toEqual({ from: "2026-10-24T22:00:00.000Z", to: "2026-10-25T22:59:59.999Z" });
   });
 });
 
@@ -246,7 +271,7 @@ describe("the new texts of direction B", () => {
     expect(UI.notFound.system("x")).toBe("Nessun sistema chiamato x.");
     expect(UI.system.receipts(1)).toBe("1 ricevuta");
     expect(UI.inspector.receiptNo(4)).toBe("Ricevuta n. 4");
-    expect(UI.anchoring.at("1 ott 2026, 10:00:00 UTC")).toBe("con marca temporale del 1 ott 2026, 10:00:00 UTC");
+    expect(UI.anchoring.at("1 ott 2026, 10:00:00 CEST")).toBe("con marca temporale del 1 ott 2026, 10:00:00 CEST");
   });
 
   it("use no exclamation marks and no emoji", () => {
