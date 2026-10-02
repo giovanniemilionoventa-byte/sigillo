@@ -107,4 +107,13 @@ describe("the stylesheet and design/tokens.json", () => {
     expect(contrast(tokens.color.dark["secondary"] ?? "", tokens.color.dark["segment-on"] ?? "")).toBeLessThan(4.5);
     expect(STYLE).toContain('.segmented a[aria-current="page"] .count { color: var(--text); }');
   });
+
+  it("positions every history column that scrolls on its own, so a screen-reader label cannot stretch the page", () => {
+    // Regression (session 19): the .sr labels in the rows are absolutely
+    // positioned; with no positioned ancestor they escaped the list's
+    // clipping, the document grew taller than the window, and selecting a
+    // row (#r-<seq>) scrolled the whole page, leaving an empty band.
+    expect(STYLE).toContain(".sr { position: absolute;");
+    expect(STYLE).toContain(".studio-list, .rows-scroll, .inspector { position: relative; }");
+  });
 });

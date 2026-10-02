@@ -306,6 +306,14 @@ details.fold > .fold-body { display: flex; flex-direction: column; gap: 12px; pa
   background: var(--canvas); border-top: 1px solid var(--separator); }
 
 /* the history: list and inspector side by side, each scrolling on its own */
+/*
+ * Every column of the history that scrolls on its own is also positioned. A
+ * .sr label (position: absolute) inside a row would otherwise take the page
+ * itself as its containing block, escape the column's clipping, and make the
+ * document taller than the window: selecting a row (#r-<seq>) then scrolled
+ * the whole page, leaving an empty band under it.
+ */
+.studio-list, .rows-scroll, .inspector { position: relative; }
 .studio { display: grid; grid-template-columns: minmax(0, 1fr) 360px; height: 100vh; padding: 0; background: var(--bg); }
 .studio-list { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .toolbar { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 10px 22px;
