@@ -110,15 +110,18 @@ function cap(value: string, limit = 256): string {
 }
 
 function outcomeOf(span: OtlpSpan): Outcome {
-  // An unset status is not a success: OpenTelemetry leaves it unset unless the
-  // source said otherwise, so the honest reading is that nothing was reported.
   if (span.status === "ok") return "ok";
   if (span.status === "error") return "error";
-  // error.type is the semantic conventions' own failure marker, set only when
-  // the operation failed: a source that names the error but leaves the status
-  // unset still said it failed.
+  // An unset status, on a span that has ended, is how OpenTelemetry reports a
+  // success: instrumentations "SHOULD leave the status code as Unset unless
+  // there is an error", and only an application sets Ok. So unset is read as
+  // ok unless the span itself says otherwise. error.type is the semantic
+  // conventions' failure marker, set only when the operation failed. An
+  // exception recorded without a status is the one case left open: it may
+  // have been caught and handled, and the source did not say.
   if (text(span.attributes, "error.type") !== null) return "error";
-  return "unknown";
+  if (span.events.some((event) => event.name === "exception")) return "unknown";
+  return "ok";
 }
 
 function isoFromUnixNano(nanos: bigint): string {

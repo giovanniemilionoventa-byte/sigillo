@@ -22,7 +22,7 @@ tools need alongside `artifact`: see its docstring. A fourth,
 `sigillo.pseudonym(...)`, turns an identifier into an opaque stand-in before it
 goes into `on_behalf_of` — see its docstring. The handle `init` returns has
 `tool(...)`, for a tool call written by hand: it records the call with its
-outcome, which a hand-made span otherwise leaves unknown.
+outcome, and without the exception's text when it fails.
 
 By default, `init` also hashes a span's input and output right here, before
 anything is sent, instead of letting the raw text travel to the server: see
@@ -107,13 +107,11 @@ class Tracing:
             with tracing.tool("scrivi_file", agent="agente-codice"):
                 scrivi_file(percorso, testo)
 
-        A span opened by hand ends with its status unset unless something sets
-        it, and the server reads an unset status as "esito sconosciuto": it
-        does not take silence for success. This sets it. A block that returns
-        is `ok`; one that raises is `error`, with the exception's class name as
-        `error.type`, and the exception goes on unchanged. Its message and
-        traceback are not attached: they can quote the very content this
-        package keeps from leaving the process.
+        Sets the outcome explicitly. A block that returns is `ok`; one that
+        raises is `error`, with the exception's class name as `error.type`,
+        and the exception goes on unchanged. Its message and traceback are not
+        attached: they can quote the very content this package keeps from
+        leaving the process, and OpenTelemetry's own handling would send both.
 
         Tools run by LangChain, CrewAI or the OpenAI instrumentation do not
         need this: their instrumentation already reports the outcome.

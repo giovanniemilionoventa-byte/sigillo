@@ -196,10 +196,11 @@ describe("the OpenTelemetry GenAI dialect", () => {
     expect(byName(batch.actions, "gpt-4o").actor).toEqual({ agent: "openai" });
   });
 
-  it("maps span status to outcome, and an unset status to unknown", () => {
+  it("maps span status to outcome, and an unset status with no sign of failure to ok", () => {
     expect(byName(batch.actions, "claude-sonnet-5").outcome).toBe("ok");
     expect(byName(batch.actions, "search_orders").outcome).toBe("error");
-    expect(byName(batch.actions, "support-agent").outcome).toBe("unknown");
+    // OpenTelemetry instrumentations leave a successful span unset.
+    expect(byName(batch.actions, "support-agent").outcome).toBe("ok");
   });
 
   it("carries the trace context into the receipt source", () => {
@@ -249,7 +250,7 @@ describe("the OpenInference dialect", () => {
 
   it("maps span status to outcome", () => {
     expect(byName(batch.actions, "claude-sonnet-5").outcome).toBe("ok");
-    expect(byName(batch.actions, "AgentExecutor").outcome).toBe("unknown");
+    expect(byName(batch.actions, "AgentExecutor").outcome).toBe("ok");
   });
 
   it("tolerates a span kind it has no mapping for, and reports it", () => {
@@ -304,17 +305,28 @@ function jsonSpan(options: {
   return span;
 }
 
-describe("an unset status with an error.type", () => {
+describe("an unset status", () => {
+  const TOOL = { "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": "scrivi_file" };
+
   it("reads error.type as a failure, since the conventions set it only then", () => {
-    const span = jsonSpan({
-      attributes: { "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": "scrivi_file", "error.type": "PermissionError" },
-    });
+    const span = jsonSpan({ attributes: { ...TOOL, "error.type": "PermissionError" } });
     expect(span.status).toBe("unset");
     expect(adaptSpans([span]).actions[0]?.outcome).toBe("error");
   });
 
-  it("still reads an unset status alone as unknown, not as success", () => {
-    const span = jsonSpan({ attributes: { "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": "scrivi_file" } });
+  it("reads a span that ended with no sign of failure as ok, as OpenTelemetry defines unset", () => {
+    // "Instrumentation Libraries SHOULD leave the status code as Unset unless
+    // there is an error": an agent step whose children all succeeded ends so.
+    for (const attributes of [TOOL, { "gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": "agente-codice" }]) {
+      expect(adaptSpans([jsonSpan({ attributes })]).actions[0]?.outcome).toBe("ok");
+    }
+  });
+
+  it("stays unknown when an exception was recorded but the source did not say whether the step failed", () => {
+    const span = jsonSpan({
+      attributes: TOOL,
+      events: [{ name: "exception", attributes: { "exception.type": "ValueError" } }],
+    });
     expect(adaptSpans([span]).actions[0]?.outcome).toBe("unknown");
   });
 });

@@ -60,10 +60,14 @@ the last spans may never leave the process.
 
 ## Tool calls written by hand
 
-LangChain, CrewAI and the OpenAI instrumentation report whether each step
-succeeded. A span you open yourself does not: its status stays unset, and the
-server shows an unset status as *esito sconosciuto* rather than guess it was a
-success. `tracing.tool(...)` records the call with its outcome:
+The server reads a span the way OpenTelemetry defines its status: one that
+ended with its status unset and no sign of failure is a success, `ERROR` or an
+`error.type` attribute is a failure, and an `exception` event with no status is
+*esito sconosciuto*, since the exception may have been caught. So a span you
+open yourself is recorded correctly as long as a failure leaves a mark on it,
+which `start_as_current_span` does for an exception that escapes the block.
+`tracing.tool(...)` records a tool call explicitly, and keeps the exception's
+text out of what is sent:
 
 ```python
 with tracing.tool("scrivi_file", agent="agente-codice"):
