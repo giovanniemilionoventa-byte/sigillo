@@ -372,7 +372,12 @@ What the erasure reaches, and what it does not:
   (`legacyReceiptsNaming`) and say so, rather than claiming the person can no
   longer be found. How many a database holds is counted by the query at step 0
   of `DEPLOY.md`; the operator's privacy notice should say they are kept, and
-  on what basis;
+  on what basis. Redacting them in an export (replacing each receipt with its
+  position, hash and signature) was considered and not built: it changes the
+  export format and grows the verifier, and it serves only a database that
+  holds real people's names from before version 4. The one production database
+  counted (2026-10-02: 160 receipts, version 1 and 2) holds test names, so the
+  work waits for a case that needs it;
 - **the content itself**, wherever the operator's own systems keep it.
 
 One case runs the other way, and is safe: a receipt the server recovers from

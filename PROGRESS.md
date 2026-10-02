@@ -27,7 +27,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | P1 | Ricevute senza dati personali (formato v4) | fatto | Pseudonimi `psn_` in una tabella `subjects` cancellabile, impronte con sale per input/output ricevuti in chiaro con i nonce in `openings`, cancellazione di interessati e di nonce, export senza identificativi per default, `sigillo-verify open`; v1–v3 restano valide; 989 test Node (sessione 16) |
 | V1 | Verifica prima del deploy (sola verifica) | fatto | `docs/RAPPORTO-VERIFICA-2026-10-01.md`: PRONTO CON RISERVE, 15 problemi (1 alto, 6 medi, 8 bassi), nessuna correzione al codice. Prova completa in Docker con il compose di produzione, migrazione da un database creato con la versione `30b5e9a`, crash del server e del signer, ripristino e ritorno indietro. Procedura per il VPS in `DEPLOY.md`. Cross-check Python esteso (frontiera di Merkle, ricevute v4 da rifiutare) nella branch `chore/crosscheck-v4`, non unita. 1079 test Node, 50 SDK, 22 demo (sessione 17) |
 | B | Interfaccia B | fatto | Direzione di design "B" a tre colonne (barra laterale, contenuto, dettaglio), solo aspetto e navigazione; milestone B1–B4 nella sezione "Interfaccia B"; 1161 test Node (sessione 18) |
-| R1 | Riserve della verifica pre-rilascio | fatto | Pausa delle scritture durante l'aggiornamento, guardia di versione dello schema, "cancella interessato" onesto sulle ricevute v1–v3, `/healthz` e semaforo coerenti, comandi di sola lettura che non modificano il file, `signer check` (anche in `update.sh`), registro delle ricevute nel signer con recupero completo dopo un ripristino, SDK con impronte con sale; oscuramento delle ricevute v1–v3 in attesa del conteggio sul VPS; 1194 test Node, 52 SDK, 22 demo (sessione 20) |
+| R1 | Riserve della verifica pre-rilascio | fatto | Pausa delle scritture durante l'aggiornamento, guardia di versione dello schema, "cancella interessato" onesto sulle ricevute v1–v3, `/healthz` e semaforo coerenti, comandi di sola lettura che non modificano il file, `signer check` (anche in `update.sh`), registro delle ricevute nel signer con recupero completo dopo un ripristino, SDK con impronte con sale; oscuramento delle ricevute v1–v3 non costruito (160 nomi di prova sul VPS, deciso il 2026-10-02); 1194 test Node, 52 SDK, 22 demo (sessione 20) |
 
 ## Interfaccia B — fase (dal 2026-10-01)
 
@@ -3052,6 +3052,9 @@ del progetto. Fatto, in una PR (#26), senza toccare il VPS:
   posizione, impronta e firma, che restano verificabili) **non è fatto**: cambia il formato del
   fascicolo e fa crescere il verificatore di qualche centinaio di righe, e serve solo se il conteggio
   del punto 0 di `DEPLOY.md` sul VPS non è zero. Si decide con quel numero.
+  **Deciso il 2026-10-02:** il conteggio sul VPS è 160 (100 v1, 60 v2, nessuna v4 con nomi) e il
+  titolare ha confermato che sono nomi di prova, non persone vere. L'oscuramento non si costruisce:
+  `SECURITY.md` dice perché e quando riprenderlo (un database con nomi veri precedenti alla v4).
 - **Problemi 3 e 4 (memoria del signer, backup più vecchio).** Il signer tiene un registro
   (`<hash>.receipts.jsonl`) di ogni ricevuta firmata, scritto prima dello stato; nuovo metodo
   `GET_RECEIPTS` (protocollo 2, aggiunto). Il server, trovando il signer avanti di quante ricevute
