@@ -5,6 +5,7 @@ import { discloseFields } from "./history.js";
 import {
   archivedButShown,
   archivedPill,
+  capital,
   chainPill,
   escape,
   initials,
@@ -161,7 +162,9 @@ export function homePage(view: {
 
   const systems = shown
     .map(({ record, health }) => {
-      const archived = archivedButShown(record, health.status) === null ? "" : archivedPill();
+      // An archived system is here only for a reason, and the reason is said beside it.
+      const reason = archivedButShown(record, health.status);
+      const archived = reason === null ? "" : `<span class="line-aside">${escape(capital(reason))}</span>${archivedPill()}`;
       return `<li><a class="line" href="${systemPath(record.system_id)}"><span class="line-text">${escape(systemTitle(record))}</span>${archived}${chainPill(health.status)}${chevron}</a></li>`;
     })
     .join("\n");
@@ -278,9 +281,11 @@ ${notices(extra)}
 <label>${escape(t.displayNameLabel)}
   <input type="text" name="display_name" value="${escape(values.display_name ?? "")}" maxlength="128" placeholder="${escape(t.displayNamePlaceholder)}" autofocus>
 </label>
-<label>${escape(t.nameLabel)}
+<details class="fold"${(values.system_id ?? "") === "" ? "" : " open"}><summary>${ICONS.chevronRight}<span>${escape(t.nameLabel)}</span></summary>
+<div class="fold-body"><label><span class="sr">${escape(t.nameLabel)}</span>
   <input type="text" name="system_id" value="${escape(values.system_id ?? "")}" class="mono" placeholder="${escape(t.namePlaceholder)}" autocapitalize="off" autocomplete="off" spellcheck="false">
-</label>
+</label></div>
+</details>
 <button type="submit" class="primary big">${escape(t.submit)}</button>
 </form></div>`;
 }
@@ -477,7 +482,7 @@ export function peoplePage(
     const items = receipts
       .map((receipt) => {
         const record = records.get(receipt.system_id);
-        return `<li><a class="line" href="${receiptPath(receipt.system_id, receipt.seq)}">${kindIcon(receipt.action.kind)}<span class="line-text">${escape(receiptTitle(receipt))}</span><span class="line-aside">${escape(
+        return `<li class="person-receipt"><a class="line" href="${receiptPath(receipt.system_id, receipt.seq)}">${kindIcon(receipt.action.kind)}<span class="line-text">${escape(receiptTitle(receipt))}</span><span class="line-aside">${escape(
           record === undefined ? receipt.system_id : systemTitle(record),
         )} · ${escape(formatWhen(receipt.ts_received, now))}</span>${receipt.outcome === "ok" ? "" : outcomePill(receipt.outcome)}${chevron}</a></li>`;
       })
@@ -530,7 +535,7 @@ export function verifyDocumentResult(
   const textLine =
     fingerprints.text === null
       ? `<p>${escape(t.textFingerprint)}: ${escape(t.noTextFingerprint)}</p>`
-      : `<p>${escape(t.textFingerprint)}: <code class="hash-full text-hash">${escape(fingerprints.text)}</code></p>`;
+      : `<p>${escape(t.textFingerprint)}: <span class="hash text-hash">${escape(fingerprints.text)}</span></p>`;
 
   const names = new Map(store.listSystemRecords().map((record) => [record.system_id, record]));
   const sentences = matches.map((match) => {
@@ -540,10 +545,11 @@ export function verifyDocumentResult(
   const technical = `<details class="tech"><summary>${ICONS.chevronRight}<span>${escape(t.technical)}</span></summary>
 <div class="card padded prints">
 ${sentences.join("\n")}
-<p>${escape(t.searchedFingerprint)}: <code class="hash-full">${escape(fingerprints.bytes)}</code></p>
+<p>${escape(t.searchedFingerprint)}: <span class="hash">${escape(fingerprints.bytes)}</span></p>
 ${textLine}
 ${source}
-</div>
+${matches.length === 0 ? `<p>${escape(t.noMatchHint)}</p>
+` : ""}</div>
 </details>`;
 
   let found: string;

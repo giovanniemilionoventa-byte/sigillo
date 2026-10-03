@@ -370,6 +370,8 @@ export const UI = {
     fromFile: "Calcolate dal browser sul file scelto.",
     fromText: "Calcolate dal browser sul testo incollato.",
     noMatch: "Nessuna azione registrata ha usato questo documento.",
+    noMatchHint:
+      "Un testo registrato prima della versione 3 si trova solo se coincide byte per byte, a meno del modo di andare a capo. Per un PDF o un'immagine conta ogni byte. Puoi confrontare l'impronta esatta con quella del file: Get-FileHash su Windows, sha256sum su Linux, shasum -a 256 su Mac.",
     match: {
       bytes: "Identico",
       text: "Stesso testo",

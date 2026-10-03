@@ -122,7 +122,7 @@ const amp = (url: string): string => url.replaceAll("&", "&amp;");
 describe("?ricevuta= and the inspector", () => {
   it("opens the most recent receipt shown when the address names none, without marking a selection", async () => {
     const body = await get(`/ui/systems/${SYSTEM}`);
-    expect(inspectorOf(body)).toContain(`<p class="insp-no" id="dettaglio-titolo">${UI.inspector.receiptNo(4)}</p>`);
+    expect(inspectorOf(body)).toContain('<h2 class="insp-title" id="dettaglio-titolo">Decisione: escalation_operatore</h2>');
     expect(body).toContain('<a class="row" id="r-4" href="/ui/systems/acme-support-bot?ricevuta=4#r-4" aria-current="true">');
     expect(body).toContain('<main id="main" class="studio">');
   });
@@ -158,37 +158,36 @@ describe("?ricevuta= and the inspector", () => {
     }
   });
 
-  it("shows a blocked outcome as a triangle and a word, and the sentence that says it was attempted", async () => {
+  it("shows a blocked outcome as a triangle and a word, under a title that names the tool", async () => {
     const body = inspectorOf(await get(`/ui/systems/${SYSTEM}?kind=tool_call&ricevuta=3`));
-    expect(body).toContain(`<span class="pill yellow large" data-outcome="blocked">${STATE_ICONS.warn}bloccato</span>`);
-    expect(body).toContain(
-      `<h2 class="insp-sentence">L&#39;agente «support-agent» ha tentato lo strumento «rimborsa_pagamento» — bloccato.</h2>`,
-    );
-    expect(body).toContain('<dt>Tipo</dt><dd><span class="cap">strumento</span></dd>');
+    expect(body).toContain(`<span class="pill yellow" data-outcome="blocked">${STATE_ICONS.warn}Bloccato</span>`);
+    expect(body).toContain('<h2 class="insp-title" id="dettaglio-titolo">Strumento: rimborsa_pagamento</h2>');
     expect(body).toContain("<dt>Agente</dt><dd>support-agent</dd>");
-    expect(body).toContain("<dt>Arrivata da</dt><dd>SDK</dd>");
-    expect(body).toContain(`<dt>Ricevuta il</dt><dd>29 set 2026, 14:39:13 CEST</dd>`);
+    expect(body).toContain("<dt>Arrivata da</dt><dd>SDK Python</dd>");
+    // In Italian time, and said as people say it; the exact instant is in the technical details.
+    expect(body).toContain("<dt>Quando</dt><dd>Oggi, 14:39</dd>");
+    expect(body).toContain("<code>2026-09-29T12:39:13.000Z</code>");
   });
 
   it("names a model receipt's model and where it runs, and its prompt and reply fingerprints", async () => {
     const body = inspectorOf(await get(`/ui/systems/${SYSTEM}?kind=llm_call&ricevuta=2`));
-    expect(body).toContain("Il modello «llama3.1:8b» (locale) ha generato una risposta — completato.");
-    expect(body).toContain('<dt>Modello</dt><dd><code>llama3.1:8b</code><span class="sub">in locale, con ollama</span></dd>');
+    expect(body).toContain('<h2 class="insp-title" id="dettaglio-titolo">Modello: llama3.1:8b</h2>');
+    expect(body).toContain('<dt>Modello</dt><dd>llama3.1:8b<span class="sub">in locale, con ollama</span></dd>');
     expect(body).toContain(`<dt>${UI.inspector.promptHash}</dt>`);
     expect(body).toContain(`<dt>${UI.inspector.replyHash}</dt>`);
-    expect(body).toContain('<span class="pill green large" data-outcome="ok">');
+    expect(body).toContain('<span class="pill green" data-outcome="ok">');
   });
 
   it("explains the opening of the register, with no agent, no previous receipt, and its anchoring still pending", async () => {
     const body = await get(`/ui/systems/${EMPTY}?kind=genesis`);
     const inspector = inspectorOf(body);
     expect(inspector).toContain(UI.inspector.receiptNo(0));
-    expect(inspector).toContain(`Il sistema «${EMPTY}» ha aperto il registro.`);
+    expect(inspector).toContain('<h2 class="insp-title" id="dettaglio-titolo">Registro aperto</h2>');
     expect(inspector).toContain(UI.inspector.genesisNote.replaceAll("'", "&#39;"));
     expect(inspector).not.toContain("<dt>Agente</dt>");
     expect(inspector).toContain(`<dt>Arrivata da</dt><dd>${UI.inspector.sources.genesis}</dd>`);
     expect(inspector).toContain(`${UI.inspector.first}<code class="hash-full">${"0".repeat(64)}</code>`);
-    expect(inspector).toContain(`<span class="stamp yellow">${STATE_ICONS.warn}${UI.history.anchorPending}</span>`);
+    expect(inspector).toContain(`<dt>${UI.inspector.seal}</dt><dd><span class="wait">${UI.inspector.sealWaiting}</span></dd>`);
     expect(inspector).toContain(UI.anchoring.notCovered);
     expect(listOf(body)).toContain('<span class="row-title">Registro aperto</span>');
   });
@@ -198,7 +197,7 @@ describe("?ricevuta= and the inspector", () => {
     expect(inspector).toContain('<dt>Per conto di</dt><dd><a href="/ui/persone">');
     const previous = store.readChain(SYSTEM)[0];
     expect(inspector).toContain(
-      `<a href="/ui/systems/acme-support-bot?ricevuta=0#r-0">${UI.inspector.receiptNo(0)}</a><code class="hash-full">${receiptHashHex(previous!)}</code>`,
+      `<a href="/ui/systems/acme-support-bot?ricevuta=0#r-0">${UI.inspector.linkedTo(0)}</a><code class="hash-full">${receiptHashHex(previous!)}</code>`,
     );
     expect(inspector).toContain(receiptHashHex(store.readChain(SYSTEM)[1]!));
   });
@@ -207,30 +206,28 @@ describe("?ricevuta= and the inspector", () => {
     const checkpoint = await store.createCheckpoint(SYSTEM);
     await store.recordTimestamp(checkpoint!.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), NOW);
     const inspector = inspectorOf(await get(`/ui/systems/${SYSTEM}?ricevuta=3`));
-    expect(inspector).toContain(`<span class="stamp green">${STATE_ICONS.ok}${UI.history.anchored}</span>`);
-    expect(inspector).toContain(UI.inspector.anchoredNote);
-    expect(inspector).toContain(`<a href="/ui/systems/${SYSTEM}/checkpoints">${UI.inspector.seeCheckpoints}</a>`);
+    expect(inspector).toContain(`<dt>${UI.inspector.seal}</dt><dd><span class="ok">${UI.inspector.sealedAt("oggi alle 15:00")}</span></dd>`);
+    expect(inspector).toContain(`<a href="/ui/systems/${SYSTEM}/checkpoints">${UI.checkpoints.title}</a>`);
   });
 
   it("keeps signature, key and full fingerprints in a <details>, opened without a script", async () => {
     const inspector = inspectorOf(await get(`/ui/systems/${SYSTEM}?ricevuta=4`));
     const details = inspector.slice(inspector.indexOf('<details class="tech">'));
-    expect(details).toContain(`<span class="when-closed">${UI.inspector.showTechnical}</span>`);
+    expect(details).toContain(`<span>${UI.inspector.technical}</span>`);
     expect(details).toContain(store.readChain(SYSTEM)[4]!.sig);
-    expect(details).toContain(`<code>${signer.keyId}</code>`);
+    expect(details).toContain(`Ed25519 · ${signer.keyId}`);
     expect(details).toContain("a".repeat(64));
   });
 });
 
 describe("the filter by kind, with its counts", () => {
-  it("offers every kind as a link, each with how many receipts it holds", async () => {
+  it("offers every kind it holds as a link, each with how many receipts, and leaves out the empty ones", async () => {
     const segments = segmentsOf(await get(`/ui/systems/${SYSTEM}`));
     const counted = [...segments.matchAll(/>([^<>]+)<span class="count">(\d+)<\/span><\/a>/g)].map((match) => [match[1], Number(match[2])]);
     expect(counted).toEqual([
       ["Tutte", 5],
       ["Strumenti", 2],
       ["Modelli", 1],
-      ["Passi", 0],
       ["Decisioni", 1],
       ["Apertura", 1],
     ]);
@@ -242,17 +239,17 @@ describe("the filter by kind, with its counts", () => {
     const body = await get(`/ui/systems/${SYSTEM}?kind=tool_call&name=r`);
     const segments = segmentsOf(body);
     expect(segments).toContain(`<a href="${amp("/ui/systems/acme-support-bot?kind=tool_call&name=r")}" aria-current="page">Strumenti<span class="count">2</span>`);
-    expect(segments).toContain('Modelli<span class="count">0</span>');
+    expect(segments).not.toContain("Modelli");
     expect(segments).toContain('Decisioni<span class="count">1</span>');
     expect(segments).toContain('Tutte<span class="count">4</span>');
     expect(segments).toContain('Apertura<span class="count">1</span>');
-    expect(body).toContain('<h2 class="list-count">2 ricevute</h2>');
+    expect(listOf(body).match(/class="row"/g)).toHaveLength(2);
   });
 
   it("says plainly when nothing matches", async () => {
     const body = await get(`/ui/systems/${SYSTEM}?kind=agent_step`);
     expect(body).toContain(UI.history.noMatches);
-    expect(body).toContain('<h2 class="list-count">0 ricevute</h2>');
+    expect(listOf(body)).not.toContain('class="row"');
   });
 });
 
@@ -296,33 +293,35 @@ describe("every link keeps the filters it was drawn under", () => {
 });
 
 describe("the system's header, tabs and evidence sheet", () => {
-  it("shows the name, the identifier, the receipts and the chain state from the real check, on every tab", async () => {
+  it("shows the name and the chain state from the real check, on every tab", async () => {
     for (const [path, tab] of [
-      ["", "cronologia"],
-      ["/checkpoints", "checkpoint"],
-      ["/manage", "gestisci"],
+      ["", UI.history.back],
+      ["/checkpoints", UI.checkpoints.title],
+      ["/manage", UI.settings.title],
     ] as const) {
       const body = await get(`/ui/systems/${SYSTEM}${path}`);
-      expect(body, path).toContain(`<code class="sid">${SYSTEM}</code><span aria-hidden="true">·</span><span>5 ricevute</span>`);
+      expect(body, path).toContain(`<h1>${SYSTEM}</h1>`);
       // Not anchored yet: the monitor says yellow, and the header says what it says.
-      expect(body, path).toContain(`<span class="stamp yellow" data-chain="yellow">`);
+      expect(body, path).toContain(`<span class="pill yellow" data-chain="yellow">`);
       expect(body, path).toContain(`${UI.chain.yellow}</span>`);
-      expect(body, path).toContain(`<p class="sys-health">${healthMonitor.statusFor(SYSTEM, new Date(NOW)).message.replaceAll("'", "&#39;")}</p>`);
-      expect(body, path).toContain(`aria-current="page"><span class="cap">${tab}</span></a>`);
+      expect(body, path).toContain(
+        `<p class="sys-health yellow">${healthMonitor.statusFor(SYSTEM, new Date(NOW)).message.replaceAll("'", "&#39;")}</p>`,
+      );
+      expect(body, path).toContain(`aria-current="page">${tab}</a>`);
       expect(body.match(/<nav class="tabs"[^]*?<\/nav>/)?.[0].match(/aria-current/g), path).toHaveLength(1);
       expect(body, path).toContain('<a class="button primary" href="#fascicolo">');
       expect(body, path).toContain('<section class="sheet-layer" id="fascicolo"');
     }
   });
 
-  it("says 'Registro integro' only when the check says green, and 'Verifica fallita' when the chain no longer verifies", async () => {
+  it("says 'Integro' only when the check says green, and 'Verifica fallita' when the chain no longer verifies", async () => {
     const checkpoint = await store.createCheckpoint(SYSTEM);
     await store.recordTimestamp(checkpoint!.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), NOW);
     expect(healthMonitor.statusFor(SYSTEM, new Date(NOW)).status).toBe("green");
     const green = await get(`/ui/systems/${SYSTEM}`);
-    expect(green).toContain(`<span class="stamp green" data-chain="green">`);
+    expect(green).toContain(`<span class="pill green" data-chain="green">`);
     expect(green).toContain(`${UI.chain.green}</span>`);
-    expect(green).not.toContain('<p class="sys-health">');
+    expect(green).not.toContain('<p class="sys-health');
 
     const raw = new Database(join(directory, "sigillo.db"));
     raw.exec("DROP TRIGGER receipts_no_update");
@@ -334,9 +333,9 @@ describe("the system's header, tabs and evidence sheet", () => {
     const freshApp = await start(fresh);
     try {
       const red = await get(`/ui/systems/${SYSTEM}`, freshApp, await signIn(freshApp));
-      expect(red).toContain(`<span class="stamp red" data-chain="red">`);
+      expect(red).toContain(`<span class="pill red" data-chain="red">`);
       expect(red).toContain(`${UI.chain.red}</span>`);
-      expect(red).not.toContain(UI.chain.green);
+      expect(red).not.toContain(`${UI.chain.green}</span>`);
     } finally {
       await freshApp.close();
     }

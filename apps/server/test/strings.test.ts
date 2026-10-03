@@ -4,9 +4,14 @@ import {
   artifactRoleWords,
   describeArtifact,
   describeReceipt,
+  formatClock,
+  formatCount,
   formatDay,
+  formatDayHeading,
   formatTime,
   formatTs,
+  formatWhen,
+  formatWhenInline,
   localDayRange,
   modelWhere,
   receiptSubtitle,
@@ -224,7 +229,6 @@ describe("formatDay and formatTime: the history's day headings and times, in Ita
     expect(formatDay("2026-09-29T12:40:13.790Z")).toBe("martedì 29 settembre 2026");
     // 23:59 UTC on 1 March is already 2 March in Rome.
     expect(formatDay("2026-03-01T23:59:59.000Z")).toBe("lunedì 2 marzo 2026");
-    expect(UI.history.dayLocal(formatDay("2026-10-01T00:00:00.000Z"))).toBe("giovedì 1 ottobre 2026 · ora italiana");
   });
 
   it("gives the time to the second, summer and winter, and leaves what does not parse as it is", () => {
@@ -256,22 +260,37 @@ describe("localDayRange: a day picked in the filter is that day in Italy", () =>
   });
 });
 
-describe("the history's count", () => {
-  it("agrees in number, and says when the list stops at the 200 most recent", () => {
-    expect(UI.history.shown(1, false)).toBe("1 ricevuta");
-    expect(UI.history.shown(0, false)).toBe("0 ricevute");
-    expect(UI.history.shown(200, true)).toBe("200 ricevute (le 200 più recenti)");
+describe("formatWhen and its kin: times as people say them, in Italian time", () => {
+  const now = new Date("2026-10-01T12:44:00.000Z"); // 14:44 in Rome
+
+  it("says today and yesterday by name, and gives the date otherwise", () => {
+    expect(formatWhen("2026-10-01T12:44:10.000Z", now)).toBe("Oggi, 14:44");
+    expect(formatWhen("2026-09-30T20:03:00.000Z", now)).toBe("Ieri, 22:03");
+    expect(formatWhen("2026-09-29T16:03:00.000Z", now)).toBe("29 set 2026, 18:03");
+    // 23:30 UTC on 30 September is already 1 October in Rome: today.
+    expect(formatWhen("2026-09-30T23:30:00.000Z", now)).toBe("Oggi, 01:30");
+    expect(formatWhenInline("2026-10-01T12:44:10.000Z", now)).toBe("oggi alle 14:44");
+  });
+
+  it("heads a day of the history with its weekday, and names today", () => {
+    expect(formatDayHeading("2026-10-01T08:00:00.000Z", now)).toBe("Oggi · giovedì 1 ottobre");
+    expect(formatDayHeading("2026-09-29T08:00:00.000Z", now)).toBe("martedì 29 settembre 2026");
+    expect(formatClock("2026-10-02T17:54:37.120Z")).toBe("19:54");
+  });
+
+  it("groups thousands the Italian way, from four digits up", () => {
+    expect(formatCount(2840)).toBe("2.840");
+    expect(formatCount(10000)).toBe("10.000");
+    expect(formatCount(7)).toBe("7");
   });
 });
 
-describe("the new texts of direction B", () => {
-  it("have the three chain states, the export sheet, and the not-found page", () => {
-    expect(UI.chain).toEqual({ green: "Registro integro", yellow: "Da controllare", red: "Verifica fallita" });
-    expect(UI.exportSheet.title("Assistente clienti")).toBe("Genera il fascicolo di Assistente clienti");
-    expect(UI.notFound.system("x")).toBe("Nessun sistema chiamato x.");
-    expect(UI.system.receipts(1)).toBe("1 ricevuta");
+describe("the texts of the simple design", () => {
+  it("have the three chain states, the export sheet, and the receipt's number", () => {
+    expect(UI.chain).toEqual({ green: "Integro", yellow: "Da controllare", red: "Verifica fallita" });
+    expect(UI.exportSheet.title("Assistente clienti")).toBe("Fascicolo di Assistente clienti");
     expect(UI.inspector.receiptNo(4)).toBe("Ricevuta n. 4");
-    expect(UI.anchoring.at("1 ott 2026, 10:00:00 CEST")).toBe("con marca temporale del 1 ott 2026, 10:00:00 CEST");
+    expect(UI.anchoring.at("1 ott 2026, 10:00:00 CEST")).toBe("Marca temporale del 1 ott 2026, 10:00:00 CEST");
   });
 
   it("use no exclamation marks and no emoji", () => {

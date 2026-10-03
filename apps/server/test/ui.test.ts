@@ -201,23 +201,25 @@ describe("the main page: È tutto a posto?", () => {
     expect(response.headers["content-type"]).toContain("text/html");
     const body = response.body;
     expect(body).toContain(SYSTEM);
-    expect(body).toContain("6 azioni");
-    // Not anchored yet: yellow, and the reason is spelled out in words.
-    expect(body).toContain('class="dot yellow"');
-    expect(body).toContain('class="status-word yellow">giallo<');
-    expect(body).toContain("non è ancora stato sigillato");
+    // Not anchored yet: yellow, as a light in the sidebar and as a pill with its word on the page.
+    expect(body).toContain(`<span class="light yellow" aria-hidden="true"></span><span class="sr">${UI.chain.yellow}: </span>`);
+    expect(body).toContain(`<span class="pill yellow" data-chain="yellow">${STATE_ICONS.warn}${UI.chain.yellow}</span>`);
+    // Today's five actions, the opening of the register aside.
+    expect(body).toContain(`<div class="card tile"><strong>5</strong><span>${UI.home.tiles.today}</span></div>`);
+    // The reason is spelled out in words on the system's page.
+    expect((await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}`, headers: { cookie } })).body).toContain("non è ancora stato sigillato");
   });
 
   it("states the situation in one sentence, and pairs each state with an icon of its own shape", async () => {
     healthMonitor.check();
     const cookie = await signIn();
     const body = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-    expect(body).toContain(`<h1>${UI.home.summary.yellow(1)}</h1>`);
-    // The headline's disc carries the worst state's own icon too.
-    expect(body).toContain(`<span class="state-disc yellow" aria-hidden="true">${STATE_ICONS.warn}</span><h1>`);
-    expect(body).toContain(`${UI.brand.signingKey} <code>${signer.keyId}</code>`);
+    // The line carries the worst state's own icon, and says where to look.
+    expect(body).toContain(
+      `<div class="status yellow" role="status" data-status="yellow">${STATE_ICONS.warn}<span>${UI.home.summary.yellow(1)}</span><a href="/ui/systems/${SYSTEM}">${UI.home.summary.why}</a></div>`,
+    );
     // The yellow icon is the triangle: its path starts at the apex.
-    expect(body).toMatch(/class="dot yellow" aria-hidden="true"><svg[^>]*><path d="M10 2\.25/);
+    expect(STATE_ICONS.warn).toMatch(/^<svg[^>]*><path d="M10 2\.25/);
   });
 
   it("marks each receipt in the history as anchored or waiting, with its outcome and fingerprint", async () => {
@@ -225,19 +227,19 @@ describe("the main page: È tutto a posto?", () => {
     const history = async (): Promise<string> =>
       (await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}?ricevuta=1`, headers: { cookie } })).body;
     const before = await history();
-    expect(before).toMatch(new RegExp(`<span class="stamp yellow"><svg[^]*?</svg>${UI.history.anchorPending}</span>`));
-    expect(before).not.toContain(UI.history.anchored);
+    expect(before).toContain(`<span class="wait">${UI.inspector.sealWaiting}</span>`);
+    expect(before).not.toContain('<span class="ok">');
     const checkpoint = await store.createCheckpoint(SYSTEM);
     if (checkpoint !== null) {
       await store.recordTimestamp(checkpoint.id, "https://freetsa.org/tsr", Buffer.from([0x30]).toString("base64"), "2026-03-29T15:00:05.000Z");
     }
     const after = await history();
-    expect(after).toMatch(new RegExp(`<span class="stamp green"><svg[^]*?</svg>${UI.history.anchored}</span>`));
-    expect(after).not.toContain(UI.history.anchorPending);
+    expect(after).toContain(`<span class="ok">${UI.inspector.sealedAt("")}`);
+    expect(after).not.toContain('<span class="wait">');
     const receipt = store.readChain(SYSTEM)[1];
     expect(receipt).toBeDefined();
     if (receipt !== undefined) expect(after).toContain(receiptHashHex(receipt));
-    expect(after).toContain("completato</span>");
+    expect(after).toContain(`data-outcome="ok">${STATE_ICONS.ok}Completato</span>`);
   });
 
   it("turns green once a checkpoint anchors the chain", async () => {
@@ -253,7 +255,8 @@ describe("the main page: È tutto a posto?", () => {
     healthMonitor.check();
     const cookie = await signIn();
     const body = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-    expect(body).toContain('class="status-word green">verde<');
+    expect(body).toContain(`<div class="status green" role="status" data-status="green">`);
+    expect(body).toContain(`<span class="pill green" data-chain="green">${STATE_ICONS.ok}${UI.chain.green}</span>`);
   });
 
   it("turns red when a chain no longer verifies", async () => {
@@ -292,8 +295,8 @@ describe("the main page: È tutto a posto?", () => {
     try {
       const cookie = await signIn(freshApp);
       const body = (await freshApp.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-      expect(body).toContain('class="status-word red">rosso<');
-      expect(body).toContain("Verifica fallita");
+      expect(body).toContain(`<div class="status red" role="status" data-status="red">`);
+      expect(body).toContain(`<span class="pill red" data-chain="red">${STATE_ICONS.bad}${UI.chain.red}</span>`);
     } finally {
       await freshApp.close();
     }
@@ -318,7 +321,10 @@ describe("the main page: È tutto a posto?", () => {
     try {
       const cookie = await signIn(bareApp);
       const body = (await bareApp.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-      expect(body).toContain("Nessun sistema ancora");
+      // A newcomer: the first steps instead of an empty register.
+      expect(body).toContain(UI.home.welcome);
+      expect(body).toContain(UI.home.steps.create);
+      expect(body).toContain('href="/ui/sistemi/nuovo"');
     } finally {
       await bareApp.close();
       bareStore.close();
@@ -327,12 +333,11 @@ describe("the main page: È tutto a posto?", () => {
 });
 
 describe("checkpointing on demand", () => {
-  it("offers a button, with a hint that it is not usually needed", async () => {
+  it("offers a button", async () => {
     const cookie = await signIn();
     const body = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
     expect(body).toContain('action="/ui/checkpoint"');
     expect(body).toContain(UI.home.checkpointNow);
-    expect(body).toContain(UI.home.checkpointHint);
   });
 
   it("refuses the request without a session", async () => {
@@ -364,13 +369,13 @@ describe("checkpointing on demand", () => {
 });
 
 describe("the main page: Cosa ha fatto l'AI?", () => {
-  it("shows recent actions as readable sentences, with a link to the full history", async () => {
+  it("shows recent actions as short sentences, each opening its receipt", async () => {
     const cookie = await signIn();
     const body = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-    expect(body).toContain("ha usato lo strumento");
-    // Each action opens its receipt in the system's history.
-    expect(body).toContain(`<a href="/ui/systems/${SYSTEM}?ricevuta=5#r-5" class="activity">`);
-    expect(body).toContain(`<span class="activity-who">${SYSTEM} · n. 5</span>`);
+    expect(body).toContain("Ha usato «call-5»");
+    // Each action opens its receipt in the system's history, with its time and its system beside it.
+    expect(body).toContain(`<a class="line" href="/ui/systems/${SYSTEM}?ricevuta=5#r-5"><span class="line-time">16:35</span>`);
+    expect(body).toContain(`<span class="line-aside system">${SYSTEM}</span>`);
   });
 });
 
@@ -412,11 +417,12 @@ describe("the main page: Mi prepari le prove?", () => {
 });
 
 describe("the sistemi page", () => {
-  it("lists existing systems and the signing key", async () => {
+  it("lists existing systems, and keeps the signing key in the settings", async () => {
     const cookie = await signIn();
     const response = await app.inject({ method: "GET", url: "/ui/sistemi", headers: { cookie } });
     expect(response.body).toContain(SYSTEM);
-    expect(response.body).toContain(signer.keyId);
+    const settings = await app.inject({ method: "GET", url: "/ui/impostazioni", headers: { cookie } });
+    expect(settings.body).toContain(signer.keyId);
   });
 
   it("creates a system and shows the key exactly once, with copyable code", async () => {
@@ -431,7 +437,7 @@ describe("the sistemi page", () => {
     expect(response.body).toContain("sigillo_");
     expect(response.body).toContain("sigillo.init(");
     expect(response.body).toContain("nuovo-sistema");
-    expect(response.body).toContain("chiave viene mostrata");
+    expect(response.body).toContain(UI.connect.keyNote);
 
     // The system is real: the ordinary systems listing knows about it too.
     const list = await app.inject({ method: "GET", url: "/ui/sistemi", headers: { cookie } });
@@ -463,8 +469,8 @@ describe("the receipts page: Cosa ha fatto l'AI? for one system", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toContain("call-1");
     expect(response.body).toContain("call-5");
-    expect(response.body).toContain("6 ricevute");
-    expect(response.body).toContain("ha usato lo strumento");
+    expect(response.body).toContain("Tutte<span class=\"count\">6</span>");
+    expect(response.body).toContain("Ha usato «call-1»");
   });
 
   it("filters by action name and by kind", async () => {
@@ -477,14 +483,15 @@ describe("the receipts page: Cosa ha fatto l'AI? for one system", () => {
     });
     expect(byName.body).toContain("call-3");
     expect(byName.body).not.toContain("call-4");
-    expect(byName.body).toContain("1 ricevuta<");
+    expect(byName.body.match(/<a class="row"/g)).toHaveLength(1);
 
     const byKind = await app.inject({
       method: "GET",
       url: `/ui/systems/${SYSTEM}?kind=genesis`,
       headers: { cookie },
     });
-    expect(byKind.body).toContain("1 ricevuta<");
+    expect(byKind.body.match(/<a class="row"/g)).toHaveLength(1);
+    expect(byKind.body).toContain('<span class="row-title">Registro aperto</span>');
   });
 
   it("filters by the time the server received the receipt", async () => {
@@ -534,7 +541,7 @@ describe("the receipts page: Cosa ha fatto l'AI? for one system", () => {
     expect(response.body).toContain("&lt;script&gt;");
   });
 
-  it("keeps every fingerprint out of the list: they are in the inspector, beside the sentence, never in it", async () => {
+  it("keeps every fingerprint out of the list and the title: they are in the inspector's technical details", async () => {
     await store.append(event(9, { input_hash: "a".repeat(64), output_hash: "b".repeat(64) }));
     const cookie = await signIn();
     const body = (await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}`, headers: { cookie } })).body;
@@ -551,16 +558,16 @@ describe("the receipts page: Cosa ha fatto l'AI? for one system", () => {
     }
     // Its own fingerprint, the previous one, and input and output.
     expect(found).toBe(4);
-    const sentence = /<h2 class="insp-sentence">([^<]*)<\/h2>/.exec(body)?.[1] ?? "";
-    expect(sentence).toContain("ha usato lo strumento");
-    expect(sentence).not.toMatch(/[0-9a-f]{16}/);
-    // Input and output only once the technical details are opened.
+    const title = /<h2 class="insp-title" id="dettaglio-titolo">([^<]*)<\/h2>/.exec(body)?.[1] ?? "";
+    expect(title).toBe("Strumento: call-9");
+    // Every fingerprint only once the technical details are opened.
     const details = body.slice(body.indexOf('<details class="tech">'), end);
+    expect(body.slice(start, body.indexOf('<details class="tech">'))).not.toMatch(/[0-9a-f]{64}/);
     expect(details).toContain("a".repeat(64));
     expect(details).toContain("b".repeat(64));
   });
 
-  it("shows an artifact as a readable label alongside the sentence", async () => {
+  it("shows an artifact as a readable label in the inspector, and what it was to the action", async () => {
     await store.append(
       event(9, {
         action: { kind: "tool_call", name: "leggi_curriculum" },
@@ -573,9 +580,8 @@ describe("the receipts page: Cosa ha fatto l'AI? for one system", () => {
       url: `/ui/systems/${SYSTEM}`,
       headers: { cookie },
     });
-    // In the list, the file's label after the agent; in the inspector, the file and what it was to the action.
-    expect(response.body).toContain('<span class="row-sub">planner · curriculum</span>');
-    expect(response.body).toContain('<code>curriculum</code><span class="sub">usato in input</span>');
+    expect(response.body).toContain('<span class="file-name">curriculum<span class="sub">usato in input</span></span>');
+    expect(response.body).toContain('<a href="/ui/verify-document">');
   });
 });
 
@@ -587,7 +593,7 @@ describe("the checkpoints page", () => {
       url: `/ui/systems/${SYSTEM}/checkpoints`,
       headers: { cookie },
     });
-    expect(response.body).toContain("Nessun checkpoint ancora");
+    expect(response.body).toContain(UI.checkpoints.none);
   });
 
   it("shows each checkpoint and whether a timestamp covers it", async () => {
@@ -601,7 +607,7 @@ describe("the checkpoints page", () => {
         headers: { cookie },
       })
     ).body;
-    expect(body).toContain("in attesa di marca temporale");
+    expect(body).toContain(`${UI.checkpoints.waiting}</span>`);
     expect(body).toContain(checkpoint?.checkpoint.root_hash ?? "");
 
     if (checkpoint !== null) {
@@ -619,7 +625,8 @@ describe("the checkpoints page", () => {
         headers: { cookie },
       })
     ).body;
-    expect(body).not.toContain("in attesa di marca temporale");
+    expect(body).not.toContain(`${UI.checkpoints.waiting}</span>`);
+    expect(body).toContain(`${UI.checkpoints.stamped}</span>`);
     expect(body).toContain("freetsa.org");
   });
 });
@@ -695,7 +702,8 @@ describe("the verify-document page", () => {
     expect(response.body).toContain('id="sigillo-doc-file"');
     expect(response.body).toContain('id="sigillo-doc-text"');
     expect(response.body).toContain("<script>");
-    expect(response.body).not.toContain("Risultato");
+    expect(response.body).toContain(UI.verifyDocument.placeholder);
+    expect(response.body).not.toContain('id="sigillo-doc-result"');
   });
 
   it("finds a document that a receipt names, by its fingerprint alone", async () => {
@@ -713,7 +721,7 @@ describe("the verify-document page", () => {
       headers: { cookie },
     });
 
-    expect(response.body).toContain("Risultato");
+    expect(response.body).toContain('id="sigillo-doc-result"');
     expect(response.body).toContain(SYSTEM);
     expect(response.body).toContain("curriculum");
     expect(response.body).toContain("leggi_curriculum");
@@ -734,7 +742,7 @@ describe("the verify-document page", () => {
       url: "/ui/verify-document?sha256=not-a-digest",
       headers: { cookie },
     });
-    expect(garbage.body).not.toContain("Risultato");
+    expect(garbage.body).not.toContain('id="sigillo-doc-result"');
   });
 
   it("escapes a label and an action name in the result, so neither can become markup", async () => {
@@ -775,8 +783,8 @@ describe("the verify-document page", () => {
   it("serves Verifica disabled under a warning, for the script to enable", async () => {
     const cookie = await signIn();
     const body = (await app.inject({ method: "GET", url: "/ui/verify-document", headers: { cookie } })).body;
-    expect(body).toContain('<button type="button" id="sigillo-doc-button" disabled>');
-    expect(body).toContain(`<p class="warn" id="sigillo-doc-inactive">${UI.verifyDocument.scriptInactive.replace(/'/g, "&#39;")}</p>`);
+    expect(body).toContain('<button type="button" id="sigillo-doc-button" class="big" disabled>');
+    expect(body).toContain(`<p class="notice warn" id="sigillo-doc-inactive">${UI.verifyDocument.scriptInactive.replace(/'/g, "&#39;")}</p>`);
   });
 
   it("embeds core's DOCUMENT_TEXT_SOURCE verbatim: the browser runs the reference rule, not a copy", () => {
@@ -786,7 +794,7 @@ describe("the verify-document page", () => {
 
   it("is in the sidebar's tools, marked as the current page when open", async () => {
     const cookie = await signIn();
-    const entry = /<a class="side-item" href="\/ui\/verify-document"( aria-current="page")?>[^]*?verifica documento<\/span><\/a>/;
+    const entry = /<a class="side-item" href="\/ui\/verify-document"( aria-current="page")?>[^]*?Verifica documento<\/span><\/a>/;
     for (const url of ["/ui", "/ui/sistemi", `/ui/systems/${SYSTEM}`]) {
       const body = (await app.inject({ method: "GET", url, headers: { cookie } })).body;
       expect(entry.exec(body)?.[1], url).toBeUndefined();
@@ -852,7 +860,7 @@ describe("the verify-document page", () => {
 describe("managing a system: display name (M1)", () => {
   const form = { "content-type": "application/x-www-form-urlencoded" };
 
-  it("renames from the manage page, and shows the name everywhere with the system_id beside it", async () => {
+  it("renames from the manage page, and shows the name everywhere, the system_id on the manage page", async () => {
     const cookie = await signIn();
     const response = await app.inject({
       method: "POST",
@@ -867,10 +875,11 @@ describe("managing a system: display name (M1)", () => {
     for (const url of ["/ui", "/ui/sistemi", `/ui/systems/${SYSTEM}`, `/ui/systems/${SYSTEM}/checkpoints`, `/ui/systems/${SYSTEM}/manage`]) {
       const body = (await app.inject({ method: "GET", url, headers: { cookie } })).body;
       expect(body, url).toContain("Assistente clienti");
-      expect(body, url).toContain(`<code class="sid">${SYSTEM}</code>`);
     }
+    const manage = (await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}/manage`, headers: { cookie } })).body;
+    expect(manage).toContain(`<code class="keybox">${SYSTEM}</code>`);
     const home = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-    expect(home).toContain(`<option value="${SYSTEM}">Assistente clienti (${SYSTEM})</option>`);
+    expect(home).toContain(`<option value="${SYSTEM}">Assistente clienti</option>`);
   });
 
   it("records the rename in the administrative log, with the address it came from", async () => {
@@ -884,8 +893,10 @@ describe("managing a system: display name (M1)", () => {
     const [entry] = store.adminLog();
     expect(entry).toMatchObject({ action: "system.rename", system_id: SYSTEM, ts: NOW });
     expect(entry?.actor).toMatch(/^web /);
-    const body = (await app.inject({ method: "GET", url: "/ui/sistemi", headers: { cookie } })).body;
-    expect(body).toContain("nome cambiato: da nessun nome a «Primo»");
+    for (const url of ["/ui/impostazioni", "/ui/impostazioni/registro"]) {
+      const body = (await app.inject({ method: "GET", url, headers: { cookie } })).body;
+      expect(body, url).toContain("nome cambiato: da nessun nome a «Primo»");
+    }
   });
 
   it("refuses a name it cannot store, and says why, without changing anything", async () => {
@@ -948,22 +959,21 @@ describe("managing a system: archiving (M2)", () => {
 
     const home = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
     expect(home).not.toContain(`href="/ui/systems/${SYSTEM}"`);
-    expect(home).toContain("Un sistema archiviato non è mostrato");
     // Still offered for an evidence file.
-    expect(home).toContain(`<optgroup label="archiviati"><option value="${SYSTEM}">`);
+    expect(home).toContain(`<optgroup label="${UI.home.archivedGroup}"><option value="${SYSTEM}">`);
 
     const active = (await app.inject({ method: "GET", url: "/ui/sistemi", headers: { cookie } })).body;
     expect(active).not.toContain(`href="/ui/systems/${SYSTEM}"`);
-    expect(active).toContain('<a href="/ui/sistemi?vista=archiviati"><span class="cap">archiviati</span><span class="count">1</span></a>');
+    expect(active).toContain('<a href="/ui/sistemi?vista=archiviati">Archiviati<span class="count">1</span></a>');
     for (const view of ["archiviati", "tutti"]) {
       const body = (await app.inject({ method: "GET", url: `/ui/sistemi?vista=${view}`, headers: { cookie } })).body;
-      expect(body, view).toContain(`<a href="/ui/systems/${SYSTEM}">`);
+      expect(body, view).toContain(`<a class="line" href="/ui/systems/${SYSTEM}">`);
     }
 
     const unarchived = await app.inject({ method: "POST", url: `/ui/systems/${SYSTEM}/unarchive`, headers: { cookie } });
     expect(unarchived.statusCode).toBe(303);
     const back = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-    expect(back).toContain(`<a href="/ui/systems/${SYSTEM}" class="sys-row">`);
+    expect(back).toContain(`<a class="line" href="/ui/systems/${SYSTEM}">`);
     expect(store.adminLog().map((entry) => entry.action)).toEqual(["system.unarchive", "system.archive"]);
   });
 
@@ -972,8 +982,8 @@ describe("managing a system: archiving (M2)", () => {
     const cookie = await signIn();
     const history = await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}`, headers: { cookie } });
     expect(history.statusCode).toBe(200);
-    expect(history.body).toContain("6 ricevute");
-    expect(history.body).toContain('<span class="badge">archiviato</span>');
+    expect(history.body).toContain('Tutte<span class="count">6</span>');
+    expect(history.body).toContain(`<span class="pill" data-chain="archived">${STATE_ICONS.archived}${UI.systemsPage.archivedBadge}</span>`);
     const exported = await app.inject({ method: "POST", url: `/ui/systems/${SYSTEM}/export`, headers: { cookie } });
     expect(exported.statusCode).toBe(200);
     expect(exported.headers["content-type"]).toContain("application/zip");
@@ -984,8 +994,9 @@ describe("managing a system: archiving (M2)", () => {
     await store.append(event(1, { ts_received: "2026-03-29T15:30:00.000Z" }));
     const cookie = await signIn();
     const home = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-    expect(home).toContain(`<a href="/ui/systems/${SYSTEM}" class="sys-row">`);
-    expect(home).toContain(UI.home.archivedActive.replace(/'/g, "&#39;"));
+    expect(home).toContain(`<a class="line" href="/ui/systems/${SYSTEM}">`);
+    expect(home).toContain("Ha ricevuto azioni dopo l&#39;archiviazione");
+    expect(home).toContain('data-chain="archived"');
   });
 });
 
@@ -1020,9 +1031,9 @@ describe("managing a system: archiving never hides a broken chain", () => {
     try {
       const cookie = await signIn(freshApp);
       const home = (await freshApp.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-      expect(home).toContain(`<a href="/ui/systems/${SYSTEM}" class="sys-row">`);
-      expect(home).toContain('class="status-word red">rosso<');
-      expect(home).toContain(UI.home.archivedRed);
+      expect(home).toContain(`<a class="line" href="/ui/systems/${SYSTEM}">`);
+      expect(home).toContain(`<span class="pill red" data-chain="red">`);
+      expect(home).toContain("La verifica è fallita");
     } finally {
       await freshApp.close();
     }
@@ -1041,7 +1052,7 @@ describe("managing a system: deleting (M3)", () => {
     const cookie = await signIn();
     const body = (await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}/manage`, headers: { cookie } })).body;
     expect(body).not.toContain(`action="/ui/systems/${SYSTEM}/delete"`);
-    expect(body).toContain("5 azioni registrate oltre all&#39;apertura");
+    expect(body).toContain(UI.manage.deleteRefused(6));
   });
 
   it("refuses on the server a system with recorded actions, even when asked directly with the right confirmation", async () => {
@@ -1053,7 +1064,7 @@ describe("managing a system: deleting (M3)", () => {
       payload: `confirm=${SYSTEM}`,
     });
     expect(response.statusCode).toBe(409);
-    expect(response.body).toContain("non si può eliminare");
+    expect(response.body).toContain(UI.manage.deleteRefused(6));
     expect(store.readChain(SYSTEM)).toHaveLength(6);
     expect(store.adminLog()).toEqual([]);
   });
@@ -1062,7 +1073,7 @@ describe("managing a system: deleting (M3)", () => {
     const cookie = await signIn();
     const manage = (await app.inject({ method: "GET", url: `/ui/systems/${EMPTY}/manage`, headers: { cookie } })).body;
     expect(manage).toContain(`action="/ui/systems/${EMPTY}/delete"`);
-    expect(manage).toContain(`scrivi l&#39;identificativo esatto: ${EMPTY}`);
+    expect(manage).toContain(`placeholder="${UI.manage.deleteConfirmLabel(EMPTY)}"`);
 
     for (const payload of ["", "confirm=", "confirm=si", `confirm=${EMPTY.toUpperCase()}`, `confirm=${EMPTY}%20`]) {
       const response = await app.inject({
@@ -1095,8 +1106,9 @@ describe("managing a system: deleting (M3)", () => {
     expect(entry?.actor).toMatch(/^web /);
 
     const page = (await app.inject({ method: "GET", url: `/ui/sistemi?eliminato=${EMPTY}`, headers: { cookie } })).body;
-    expect(page).toContain(`Il sistema ${EMPTY} è stato eliminato`);
-    expect(page).toContain(`${EMPTY} eliminato`);
+    expect(page).toContain(UI.systemsPage.deleted(EMPTY));
+    const settings = (await app.inject({ method: "GET", url: "/ui/impostazioni", headers: { cookie } })).body;
+    expect(settings).toContain(`${EMPTY} eliminato`);
     expect((await app.inject({ method: "GET", url: `/ui/systems/${EMPTY}`, headers: { cookie } })).statusCode).toBe(404);
   });
 
@@ -1191,16 +1203,16 @@ describe("the typefaces", () => {
 describe("the shell: sidebar and sign-in (Interfaccia B, B1)", () => {
   const sidebarOf = (body: string): string => /<div class="sidebar" id="menu">([^]*?)<main id="main"/.exec(body)?.[1] ?? "";
 
-  it("lists each system shown on the main page with its real chain state, as an icon and a word, and its receipts", async () => {
+  it("lists each system shown on the main page with its real chain state, as a light and a word, and its receipts", async () => {
     healthMonitor.check();
     const cookie = await signIn();
     const side = sidebarOf((await app.inject({ method: "GET", url: "/ui/sistemi", headers: { cookie } })).body);
     // Not anchored yet: the monitor says yellow, and so does the sidebar.
     expect(healthMonitor.statusFor(SYSTEM, new Date(NOW)).status).toBe("yellow");
     expect(side).toContain(
-      `<a class="side-item" href="/ui/systems/${SYSTEM}"><span class="dot yellow" aria-hidden="true">`,
+      `<a class="side-item" href="/ui/systems/${SYSTEM}"><span class="light yellow" aria-hidden="true"></span>`,
     );
-    expect(side).toContain(`<span class="sr">giallo: </span><span class="side-label">${SYSTEM}</span><span class="side-count">6</span>`);
+    expect(side).toContain(`<span class="sr">${UI.chain.yellow}: </span><span class="side-label">${SYSTEM}</span><span class="side-count">6</span>`);
   });
 
   it("follows the chain check, not a fixed word: a tampered chain is red in the sidebar", async () => {
@@ -1229,28 +1241,28 @@ describe("the shell: sidebar and sign-in (Interfaccia B, B1)", () => {
     try {
       const cookie = await signIn(freshApp);
       const side = sidebarOf((await freshApp.inject({ method: "GET", url: "/ui/persone", headers: { cookie } })).body);
-      expect(side).toContain('<span class="dot red" aria-hidden="true">');
-      expect(side).toContain('<span class="sr">rosso: </span>');
+      expect(side).toContain('<span class="light red" aria-hidden="true"></span>');
+      expect(side).toContain(`<span class="sr">${UI.chain.red}: </span>`);
     } finally {
       await freshApp.close();
     }
   });
 
-  it("has the register, the systems with a + to create one, the archived and all systems, the tools, the key and a POST sign-out", async () => {
+  it("has the register, the systems with a + to create one, all systems, the tools, the settings, the account and a POST sign-out", async () => {
     await store.createSystem("vecchio", "2026-03-29T15:00:00.000Z");
     await store.archiveSystem("vecchio", { actor: "test", ts: NOW });
     const cookie = await signIn();
     const side = sidebarOf((await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body);
     expect(side).toContain('<a class="side-item" href="/ui" aria-current="page">');
-    expect(side).toContain(`<a class="side-add" href="/ui/sistemi#crea" aria-label="${UI.systemsPage.createTitle}">`);
-    // An archived system is not in the list, only counted under "archiviati".
+    expect(side).toContain(`<a class="side-add" href="/ui/sistemi/nuovo" aria-label="${UI.nav.newSystem}">`);
+    // An archived system is not in the list: it is on the systems page.
     expect(side).not.toContain('href="/ui/systems/vecchio"');
-    expect(side).toMatch(/href="\/ui\/sistemi\?vista=archiviati">[^]*?archiviati<\/span><span class="side-count">1<\/span>/);
-    expect(side).toContain('href="/ui/sistemi?vista=tutti"');
+    expect(side).toContain('<a class="side-item" href="/ui/sistemi">');
     expect(side).toContain(UI.nav.allSystems);
     expect(side).toContain('href="/ui/persone"');
-    expect(side).toContain(`${UI.brand.signingKey} <code>${signer.keyId}</code>`);
-    expect(side).toMatch(/<form method="post" action="\/ui\/logout"><button type="submit" class="side-item">/);
+    expect(side).toContain('href="/ui/impostazioni"');
+    expect(side).toContain(`<strong>${UI.settings.operator}</strong>`);
+    expect(side).toMatch(/<form method="post" action="\/ui\/logout"><button type="submit" class="icon-button" aria-label="[^"]+"/);
   });
 
   it("marks the system being looked at, and the systems views, as the current entry", async () => {
@@ -1259,9 +1271,10 @@ describe("the shell: sidebar and sign-in (Interfaccia B, B1)", () => {
       [`/ui/systems/${SYSTEM}`, `href="/ui/systems/${SYSTEM}" aria-current="page"`],
       [`/ui/systems/${SYSTEM}/manage`, `href="/ui/systems/${SYSTEM}" aria-current="page"`],
       ["/ui/sistemi", 'href="/ui/sistemi" aria-current="page"'],
-      ["/ui/sistemi?vista=archiviati", 'href="/ui/sistemi?vista=archiviati" aria-current="page"'],
-      ["/ui/sistemi?vista=tutti", 'href="/ui/sistemi?vista=tutti" aria-current="page"'],
+      ["/ui/sistemi?vista=archiviati", 'href="/ui/sistemi" aria-current="page"'],
+      ["/ui/sistemi?vista=tutti", 'href="/ui/sistemi" aria-current="page"'],
       ["/ui/persone", 'href="/ui/persone" aria-current="page"'],
+      ["/ui/impostazioni", 'href="/ui/impostazioni" aria-current="page"'],
     ] as const) {
       const side = sidebarOf((await app.inject({ method: "GET", url, headers: { cookie } })).body);
       expect(side, url).toContain(marked);
@@ -1272,19 +1285,20 @@ describe("the shell: sidebar and sign-in (Interfaccia B, B1)", () => {
   it("opens the sidebar on a phone as a menu, with a link and :target, and no script", async () => {
     const cookie = await signIn();
     const body = (await app.inject({ method: "GET", url: "/ui", headers: { cookie } })).body;
-    expect(body).toContain('<a class="menu-open" href="#menu">');
+    expect(body).toContain(`<a class="menu-open" href="#menu" aria-label="${UI.nav.menu}">`);
     expect(body).toContain('<div class="sidebar" id="menu">');
-    expect(body).toContain('<a class="menu-close" href="#main">');
+    expect(body).toContain(`<a class="menu-close" href="#main" aria-label="${UI.nav.close}">`);
     expect(STYLE).toContain(".sidebar:target {");
     expect(body).not.toContain("<script");
   });
 
-  it("splits the sign-in page: who this is on the left, the password on the right", async () => {
+  it("puts the sign-in in the middle, with nothing beside it but the seal and a title", async () => {
     const body = (await app.inject({ method: "GET", url: "/ui/login" })).body;
-    expect(body).toContain(UI.login.pitch);
-    for (const question of [UI.home.q1, UI.home.q2, UI.home.q3]) expect(body).toContain(escapeHtml(question));
-    expect(body).toContain('<form method="post" action="/ui/login" class="login-form">');
-    expect(body).toContain('<input type="password" name="password" autocomplete="current-password" autofocus required>');
+    expect(body).toContain(`<h1>${UI.login.title}</h1>`);
+    expect(body).toContain('<form method="post" action="/ui/login">');
+    expect(body).toContain(
+      `<label><span class="sr">${UI.login.label}</span><input type="password" name="password" autocomplete="current-password" autofocus required placeholder="${UI.login.placeholder}"></label>`,
+    );
     expect(body).not.toContain('role="alert"');
     expect(body).not.toContain('required aria-invalid="true"');
   });
@@ -1297,7 +1311,7 @@ describe("the shell: sidebar and sign-in (Interfaccia B, B1)", () => {
       payload: "password=wrong",
     });
     expect(response.statusCode).toBe(401);
-    expect(response.body).toContain('autofocus required aria-invalid="true" aria-describedby="login-error">');
+    expect(response.body).toContain(`autofocus required placeholder="${UI.login.placeholder}" aria-invalid="true" aria-describedby="login-error">`);
     expect(response.body).toContain(`<p class="field-error" id="login-error" role="alert">`);
     expect(response.body).toContain(escapeHtml(UI.login.wrong));
   });

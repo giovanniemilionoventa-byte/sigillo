@@ -352,7 +352,7 @@ details.search form { display: grid; grid-template-columns: minmax(0, 2fr) minma
 .facts .sub { display: block; font-size: 12px; font-weight: 400; color: var(--secondary); }
 .facts .ok { color: var(--ok); }
 .facts .wait { color: var(--warn); }
-.hash-full { display: block; font-family: var(--mono); font-size: 11.5px; line-height: 1.5; word-break: break-all; color: var(--label); }
+.hash-full, .prints .hash { display: block; font-family: var(--mono); font-size: 11.5px; line-height: 1.5; word-break: break-all; color: var(--label); }
 .file-row { display: flex; align-items: center; gap: 10px; }
 .file-row > svg { width: 18px; height: 18px; color: var(--link); }
 .file-row .file-name { flex: 1; min-width: 0; }

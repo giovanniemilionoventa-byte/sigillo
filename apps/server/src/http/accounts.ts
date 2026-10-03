@@ -282,12 +282,14 @@ ${authField(t.email, 'type="email" name="email" autocomplete="email" required')}
 ${authField(t.companyLabel, 'type="text" name="name" maxlength="128" autocomplete="organization" autofocus required')}
 <button type="submit" class="primary">${escape(t.companySubmit)}</button>
 </form>`;
-  const companyPage = (extra: { error?: string }): string => accountPage(t.companyTitle, extra, companyForm, { back: false });
+  // Who is signing up, as a chip above the field, so a person with two addresses knows which one this company goes to.
+  const companyPage = (email: string, extra: { error?: string }): string =>
+    accountPage(t.companyTitle, extra, `<p class="chip">${escape(email)}</p>\n${companyForm}`, { back: false });
 
   app.get(SIGNUP_PATH, async (request, reply) => {
     const ticket = ticketOf(request);
     if (ticket === null) return login(reply, { error: t.expired }, 401);
-    return html(reply, companyPage({}));
+    return html(reply, companyPage(ticket.email, {}));
   });
 
   app.post(SIGNUP_PATH, async (request, reply) => {
@@ -303,7 +305,7 @@ ${authField(t.companyLabel, 'type="text" name="name" maxlength="128" autocomplet
       });
     } catch (error) {
       if (!(error instanceof StorageError)) throw error;
-      return html(reply, companyPage({ error: error.message }), 400);
+      return html(reply, companyPage(ticket.email, { error: error.message }), 400);
     }
     request.log.info({ action: "user.register", organization: organization.organization_id }, "an organization was requested");
     return reply
