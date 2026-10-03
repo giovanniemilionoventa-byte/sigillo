@@ -1180,6 +1180,21 @@ export class ReceiptStore {
     return Object.fromEntries(rows.map((row) => [row.kind, row.count]));
   }
 
+  /**
+   * How many receipts of each outcome the same filters let through, the
+   * opening of the register aside: the figures at the top of the main page.
+   * An outcome with none is absent.
+   */
+  countReceiptsByOutcome(query: ReceiptFilter): Record<string, number> {
+    const { where, parameters } = this.historyFilter(query);
+    const rows = this.read
+      .prepare(
+        `SELECT outcome, COUNT(*) AS count FROM receipts WHERE ${where} AND action_kind <> 'genesis' GROUP BY outcome`,
+      )
+      .all(parameters) as { outcome: string; count: number }[];
+    return Object.fromEntries(rows.map((row) => [row.outcome, row.count]));
+  }
+
   /** One receipt by its position in its chain, or null: the receipt the history's inspector shows. */
   receiptAt(systemId: string, seq: number): Receipt | null {
     const row = this.read

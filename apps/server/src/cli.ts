@@ -179,7 +179,7 @@ program
     const organizationMonthlyReceipts = positiveInteger(
       "SIGILLO_ORG_MONTHLY_RECEIPTS",
       process.env["SIGILLO_ORG_MONTHLY_RECEIPTS"],
-      100_000,
+      10_000,
     );
     const tsa = tsaFromOptions(options.tsaUrl);
 

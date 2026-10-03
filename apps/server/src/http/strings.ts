@@ -13,302 +13,272 @@ import type { Receipt } from "@sigillo/core";
 
 export const UI = {
   nav: {
-    registro: "registro",
-    sistemi: "sistemi",
-    persone: "persone",
-    clienti: "clienti",
-    verificaDocumento: "verifica documento",
-    esci: "esci",
-    label: "sezioni",
+    registro: "Registro",
+    sistemi: "Sistemi",
+    persone: "Persone",
+    clienti: "Clienti",
+    verificaDocumento: "Verifica documento",
+    impostazioni: "Impostazioni",
+    esci: "Esci",
+    label: "Sezioni",
     allSystems: "Tutti i sistemi",
     tools: "Strumenti",
     menu: "Menu",
     close: "Chiudi",
+    newSystem: "Nuovo sistema",
   },
   brand: {
-    tagline: "registro probatorio per agenti AI",
     skip: "Vai al contenuto",
-    signingKey: "Ricevute e sigilli firmati con la chiave",
   },
+  // The operator's own way in, at /ui/admin when customers have accounts.
   login: {
+    title: "Accedi a sigillo",
+    adminTitle: "Accesso amministratore",
     label: "Password amministratore",
+    placeholder: "Password",
     submit: "Accedi",
     // The same words for a wrong password and for a lockout, on purpose: see
     // the login handler in ui.ts.
-    wrong:
-      "Accesso non riuscito. Controlla la password; dopo troppi tentativi sbagliati l'accesso resta sospeso per qualche minuto.",
-    lead: "Inserisci la password amministratore per aprire il registro.",
-    restricted: "Accesso riservato all'amministratore di questa installazione.",
-    pitch: "Tre domande, una risposta sola: il registro.",
-    // The three questions (UI.home.q1-q3) as the login page explains them.
-    points: {
-      q1: "Ogni registro viene verificato: integro, da controllare o non supera la verifica.",
-      q2: "Strumenti, modelli, passi e decisioni, una ricevuta firmata per azione.",
-      q3: "Un fascicolo .zip con ricevute, checkpoint e marche temporali.",
-    },
+    wrong: "Password non corretta. Dopo troppi tentativi l'accesso resta sospeso per qualche minuto.",
   },
   // Signing in, signing up and the rest of a customer's account (auth/firebase.ts).
   account: {
-    google: "Accedi con Google",
-    orEmail: "oppure con la tua email",
-    email: "Email",
+    google: "Continua con Google",
+    or: "oppure",
+    email: "Indirizzo email",
     password: "Password",
+    passwordNew: "Password (almeno 10 caratteri)",
     passwordRepeat: "Ripeti la password",
+    continueEmail: "Continua con email",
+    passwordTitle: "Inserisci la password",
+    change: "Cambia",
     signIn: "Accedi",
-    lead: "Accedi al registro della tua azienda.",
     toSignUp: "Crea un account",
+    haveAccount: "Hai già un account?",
     toReset: "Password dimenticata?",
     toLogin: "Torna all'accesso",
-    operator: "Accesso amministratore",
     wrong: "Email o password non corrette. Dopo troppi tentativi l'accesso resta sospeso per qualche minuto.",
     unavailable: "Il servizio di accesso non risponde. Riprova tra qualche minuto.",
     googleFailed: "L'accesso con Google non è riuscito. Riprova.",
     disabled: "Questo account è stato disattivato.",
     tooMany: "Troppi tentativi da questo indirizzo. Riprova tra qualche minuto.",
-    unverified: (email: string) =>
-      `Prima di entrare devi confermare l'indirizzo ${email}: ti abbiamo appena mandato di nuovo il link. Aprilo, poi accedi.`,
+    unverifiedTitle: "Conferma l'indirizzo",
+    unverified: (email: string) => `Ti abbiamo mandato di nuovo il link a ${email}. Aprilo, poi accedi.`,
     signUpTitle: "Crea un account",
-    signUpLead: "Con email e password. Dopo la conferma dell'indirizzo indicherai il nome della tua azienda.",
-    signUpSubmit: "Crea l'account",
-    passwordRule: "Almeno 10 caratteri.",
+    signUpSubmit: "Crea account",
     passwordShort: "La password deve avere almeno 10 caratteri.",
     passwordMismatch: "Le due password non coincidono.",
     emailInvalid: "Questo indirizzo email non sembra valido.",
     emailExists: "Esiste già un account con questa email: accedi, oppure recupera la password.",
-    signedUp: (email: string) =>
-      `Account creato. Ti abbiamo mandato un link a ${email}: aprilo per confermare l'indirizzo, poi accedi.`,
-    resetTitle: "Password dimenticata",
-    resetLead: "Scrivi la tua email: se ha un account, riceverai un link per sceglierne una nuova.",
+    checkMailTitle: "Controlla la posta",
+    signedUp: (email: string) => `Abbiamo mandato un link a ${email}. Aprilo per confermare l'indirizzo.`,
+    resetTitle: "Nuova password",
     resetSubmit: "Mandami il link",
     resetSent: "Se l'indirizzo ha un account, il link è in arrivo. Controlla anche la posta indesiderata.",
-    companyTitle: "La tua azienda",
-    companyLead: (email: string) =>
-      `Sei entrato come ${email}. Come si chiama l'azienda per cui userai sigillo? Il suo spazio sarà attivo appena lo approviamo.`,
+    companyTitle: "Come si chiama la tua azienda?",
     companyLabel: "Nome dell'azienda",
-    companySubmit: "Richiedi l'accesso",
+    companySubmit: "Continua",
     expired: "La richiesta è scaduta: accedi di nuovo.",
     continueTitle: "Accesso in corso",
-    continueLead: "Un attimo: ti stiamo portando dentro.",
     continueLink: "Continua",
-    waitingTitle: "In attesa di approvazione",
-    waiting: (name: string) =>
-      `Lo spazio di ${name} è stato richiesto e attende la nostra approvazione. Riceverai conferma dal team di sigillo; poi potrai accedere da qui.`,
+    waitingTitle: "Quasi fatto",
+    waiting: (name: string) => `Lo spazio di ${name} è in attesa di approvazione. Ti scriviamo appena è pronto.`,
   },
   organizations: {
     title: "Clienti",
-    eyebrow: "Amministrazione",
     heading: "Clienti",
-    intro:
-      "Le aziende che usano questa installazione. Un cliente in attesa non può entrare finché non lo approvi; ognuno vede soltanto i propri sistemi.",
     none: "Nessun cliente ancora.",
+    columns: { name: "Azienda", state: "Stato", systems: "Sistemi" },
     waiting: "In attesa",
-    approvedOn: "Approvato il",
+    active: "Attivo",
+    since: (when: string): string => `dal ${when}`,
     approve: "Approva",
-    members: "Persone",
-    systems: "Sistemi",
-    noMembers: "Nessuna persona: creato dall'amministratore.",
+    people: (count: number): string => `${count} ${count === 1 ? "persona" : "persone"}`,
+    noMembers: "Creato dall'amministratore",
     approved: (name: string) => `${name} è approvato: le sue persone possono entrare.`,
   },
   home: {
-    title: "sigillo",
-    heading: "Il registro",
-    q1: "È tutto a posto?",
-    q2: "Cosa ha fatto l'AI?",
-    q3: "Mi prepari le prove?",
-    noSystems: "Nessun sistema ancora. Creane uno nella pagina «sistemi».",
-    recentActivity: "Ultime azioni",
-    // The main page's title: the situation in one sentence, by the worst state shown.
+    heading: "Registro",
+    welcome: "Benvenuto in sigillo",
+    steps: {
+      account: "Account creato",
+      create: "Crea il primo sistema",
+      connect: "Collega il tuo agente",
+      receive: "Ricevi la prima ricevuta",
+      done: "Fatto",
+      createButton: "Crea sistema",
+      connectButton: "Collega",
+    },
+    // The one line at the top of the main page: the situation, by the worst state shown.
     summary: {
-      none: "Nessun sistema scrive ancora in questo registro.",
-      green: (count: number): string => (count === 1 ? "Il registro è integro." : `Tutti i ${count} registri sono integri.`),
+      green: "Tutto a posto. Nessuna alterazione.",
       yellow: (count: number): string =>
-        `Nessuna alterazione trovata; ${count === 1 ? "un sistema è" : `${count} sistemi sono`} da controllare.`,
+        `Nessuna alterazione. ${count === 1 ? "Un sistema da controllare" : `${count} sistemi da controllare`}.`,
       red: (count: number): string =>
         count === 1 ? "Un registro non supera la verifica." : `${count} registri non superano la verifica.`,
-      lead: (count: number): string =>
-        `Tre domande su ${count === 1 ? "un sistema" : `${count} sistemi`}: se il registro è intatto, cosa ha fatto l'AI, e come preparare le prove.`,
+      why: "Perché?",
+      open: "Apri",
     },
-    systemsCount: (count: number): string => `${count} ${count === 1 ? "sistema" : "sistemi"}`,
-    actionsCount: (count: number): string => `${count} ${count === 1 ? "azione" : "azioni"}`,
+    tiles: { today: "Azioni oggi", blocked: "Bloccate", failed: "Fallite", lastSeal: "Ultimo sigillo" },
+    systems: "Sistemi",
+    recent: "Ultime azioni",
+    noActions: "Nessuna azione ancora.",
+    evidence: "Fascicolo delle prove",
     chooseSystem: "Sistema",
     fromDate: "Dal",
     toDate: "Al",
-    wholeChain: "Lascia vuoto per l'intero registro.",
-    generate: "Genera fascicolo",
-    generateHint: "Uno .zip con le ricevute, i checkpoint, le marche temporali e il rapporto.",
+    generate: "Scarica fascicolo",
     disclose: {
-      summary: "Divulgazioni facoltative",
+      summary: "Includi nomi o contenuti",
       hint:
-        "Di norma il fascicolo non nomina nessuno e non apre nessuna impronta: le ricevute portano solo pseudonimi e impronte con sale. Compila questi campi solo se chi lo riceve deve sapere di più, e solo per ciò che serve.",
-      subjectsLabel: "Nomina le persone dietro questi pseudonimi (psn_…, separati da spazi)",
-      openingsLabel: "Includi i nonce delle impronte di queste ricevute (numeri, per esempio 4 7-9)",
-      openingsHint:
-        "Con un nonce, chi ha il contenuto può dimostrare che l'impronta è sua; ma chi ha il fascicolo può anche provare a indovinare un contenuto breve, come un punteggio o un esito.",
+        "Di norma il fascicolo non nomina nessuno e non apre nessuna impronta. Compila questi campi solo se chi lo riceve deve sapere di più.",
+      subjectsLabel: "Persone da nominare (psn_…, separati da spazi)",
+      openingsLabel: "Ricevute di cui includere i nonce (per esempio 4 7-9)",
     },
     checkpointNow: "Sigilla adesso",
-    checkpointHint:
-      "Normalmente non serve: ogni sistema viene sigillato da solo a intervalli regolari. " +
-      "Usa questo se non vuoi aspettare.",
-    archivedHidden: (count: number): string =>
-      `${count === 1 ? "Un sistema archiviato non è mostrato" : `${count} sistemi archiviati non sono mostrati`} qui: li trovi nella pagina «sistemi».`,
-    archivedShownBecause: "archiviato, ma mostrato qui perché",
+    checkpointDone: "Fatto: ogni sistema con azioni nuove è stato sigillato.",
+    archivedGroup: "Archiviati",
+    archivedBadge: "Archiviato",
     archivedRed: "la verifica è fallita",
     archivedActive: "ha ricevuto azioni dopo l'archiviazione",
-    archivedGroup: "archiviati",
-    checkpointDone:
-      "Fatto: ogni sistema con azioni nuove è stato sigillato. Se uno resta giallo, il motivo è scritto " +
-      "accanto: la marca temporale non ancora arrivata (riprova tra poco), oppure nessuna nuova azione " +
-      "da tempo, che sigillare non cambia.",
+    quotaFull: (limit: string, resume: string): string =>
+      `Limite di ${limit} ricevute raggiunto: le nuove azioni non vengono registrate fino al ${resume}.`,
+    quotaNear: (used: string, limit: string): string => `Hai usato ${used} ricevute su ${limit} questo mese.`,
   },
-  status: {
-    green: "verde",
-    yellow: "giallo",
-    red: "rosso",
-  },
-  // A system's chain, in the header of its pages: the same check as the
-  // traffic lights of the main page, in three words.
+  // A system's chain in three words: the main page, the systems, a system's header.
   chain: {
-    green: "Registro integro",
+    green: "Integro",
     yellow: "Da controllare",
     red: "Verifica fallita",
   },
   system: {
     tabsLabel: "Sezioni del sistema",
-    receipts: (count: number): string => `${count} ${count === 1 ? "ricevuta" : "ricevute"}`,
+    evidence: "Fascicolo",
   },
   exportSheet: {
-    title: (name: string): string => `Genera il fascicolo di ${name}`,
-    period: "Periodo",
+    title: (name: string): string => `Fascicolo di ${name}`,
     cancel: "Annulla",
+    submit: "Scarica .zip",
   },
   notFound: {
-    title: "non trovato",
-    heading: "Non trovato",
-    system: (systemId: string): string => `Nessun sistema chiamato ${systemId}.`,
+    title: "Pagina non trovata",
+    heading: "Pagina non trovata",
+    back: "Torna al registro",
   },
   systemsPage: {
-    title: "sistemi",
+    title: "Sistemi",
     heading: "Sistemi",
-    eyebrow: "chi scrive nel registro",
-    existing: "Sistemi esistenti",
-    views: { attivi: "attivi", archiviati: "archiviati", tutti: "tutti" },
+    views: { attivi: "Attivi", archiviati: "Archiviati", tutti: "Tutti" },
     noneInView: {
       attivi: "Nessun sistema attivo.",
       archiviati: "Nessun sistema archiviato.",
       tutti: "Nessun sistema ancora.",
     },
-    archivedBadge: "archiviato",
-    receipts: (count: number): string => `${count} ${count === 1 ? "ricevuta" : "ricevute"}`,
-    onlyGenesis: "solo l'apertura del registro",
-    lastActivity: "ultima attività",
-    history: "cronologia",
-    manage: "gestisci",
-    columns: { system: "Sistema", state: "Stato", receipts: "Ricevute", last: "Ultima ricevuta", manage: "Gestisci" },
-    active: "attivo",
+    columns: { system: "Sistema", state: "Stato", receipts: "Ricevute", last: "Ultima azione", archived: "Archiviato" },
+    archivedBadge: "Archiviato",
     // How the latest action reached sigillo, from the receipt's source.type.
     connection: {
-      sdk: "collegato con l'SDK",
-      otlp: "collegato con OpenTelemetry",
-      api: "collegato con l'API nativa",
-      none: "nessuna azione ancora",
+      sdk: "SDK Python",
+      otlp: "OpenTelemetry",
+      api: "API HTTP",
+      none: "Non ancora collegato",
     },
-    createTitle: "Crea un nuovo sistema",
-    newSystem: "Nuovo sistema",
-    nameLabel: "Identificativo del sistema",
-    namePlaceholder: "acme-support-bot",
-    displayNameLabel: "Nome mostrato (facoltativo)",
-    idHint:
-      "L'identificativo entra in ogni ricevuta, chiave ed export e non cambierà mai. Il nome mostrato si potrà scegliere e cambiare dopo, in «gestisci».",
-    submit: "Crea sistema e chiave",
-    createdTitle: "Sistema creato",
-    tokenWarning:
-      "Questo è l'unico momento in cui la chiave viene mostrata. Copiala ora: non potrà essere recuperata di nuovo.",
-    howToConnect: "Come collegare un chatbot o un agente",
-    howToConnectIntro:
-      "Tre modi reali per mandare qui le azioni di un agente. Usa quello più comodo per il tuo codice: non serve usarli tutti e tre.",
-    connectPython: {
-      title: "1. SDK Python",
-      hint:
-        "La via più rapida per un agente già scritto con LangChain, CrewAI, o un client OpenAI diretto (anche verso un server compatibile locale, come Ollama o vLLM). instrument accetta 'langchain', 'crewai' e 'openai': ciascuno richiede il proprio pacchetto opzionale (pip install -e 'sdk-python[langchain,crewai,openai]'); quello mancante viene saltato con un avviso, non un errore. Dettagli in sdk-python/README.md.",
-    },
-    connectOtlp: {
-      title: "2. Endpoint OTLP diretto",
-      hint:
-        "Per chi emette già tracce OpenTelemetry, in qualsiasi linguaggio: punta il suo esportatore OTLP/HTTP a questo indirizzo, con la chiave come intestazione Bearer. Non serve nessuna libreria di sigillo. Esempio minimo con curl, senza nessuna libreria OpenTelemetry, solo per mostrare il formato:",
-    },
-    connectNative: {
-      title: "3. Endpoint nativo per ricevute",
-      hint:
-        "Per codice senza OpenTelemetry: una richiesta JSON per ogni ricevuta, in qualsiasi linguaggio che sappia fare una chiamata HTTP.",
-    },
-    connectMore: "Tutti e tre i modi sono documentati con altri esempi in docs/API.md.",
-    deleted: (systemId: string): string =>
-      `Il sistema ${systemId} è stato eliminato. L'operazione è scritta nel registro amministrativo.`,
-    adminLogTitle: "Registro amministrativo",
-    adminLogHint:
-      "Rinomine, archiviazioni ed eliminazioni di sistemi, cancellazioni di interessati e di nonce: chi, quando, cosa. È fuori dalle catene, e come loro non si modifica.",
-    adminLogEmpty: "Nessuna operazione ancora.",
+    newTitle: "Nuovo sistema",
+    displayNameLabel: "Nome",
+    displayNamePlaceholder: "Assistente vendite",
+    nameLabel: "Identificativo",
+    namePlaceholder: "assistente-vendite",
+    submit: "Crea sistema",
+    nameRequired: "Scrivi un nome o un identificativo.",
+    exists: "Esiste già un sistema con questo identificativo.",
+    deleted: (systemId: string): string => `${systemId} è stato eliminato.`,
+  },
+  // A new system's key, or a new key for one, and the three ways to connect an agent.
+  connect: {
+    ready: (name: string): string => `${name} è pronto`,
+    newKey: (name: string): string => `Nuova chiave per ${name}`,
+    keyLabel: "Chiave del sistema",
+    keyNote: "La vedi solo ora: copiala e conservala.",
+    heading: "Collega il tuo agente",
+    title: (name: string): string => `Collega ${name}`,
+    ways: { python: "SDK Python", otel: "OpenTelemetry", api: "API HTTP" },
+    recommended: "Consigliato",
+    keyPlaceholder: "<la-chiave-del-sistema>",
+    waiting: "In attesa della prima ricevuta…",
+    check: "Controlla",
+    arrived: (when: string): string => `Prima ricevuta arrivata: ${when}`,
+    goToSystem: "Vai al sistema",
   },
   people: {
-    title: "persone",
+    title: "Persone",
     heading: "Persone",
-    eyebrow: "per conto di chi ha agito l'AI",
-    intro:
-      "Le ricevute non contengono nomi: al posto di chi ha ordinato un'azione c'è uno pseudonimo (psn_…). Quale persona c'è dietro ciascuno è scritto in una tabella a parte, fuori dal registro, che si può cancellare.",
     searchLabel: "Identificativo della persona",
+    searchPlaceholder: "cliente-4821",
     searchSubmit: "Cerca",
-    notFound:
-      "Nessuno pseudonimo per questo identificativo: la persona non compare in nessuna ricevuta, oppure è già stata cancellata.",
-    tokenLabel: "Pseudonimo",
-    receipts: (count: number): string =>
-      count === 0
-        ? "Nessuna ricevuta con questo pseudonimo."
-        : `${count} ${count === 1 ? "ricevuta" : "ricevute"} con questo pseudonimo, dalla più recente`,
-    eraseTitle: "Cancella l'interessato",
-    eraseHint:
-      "Elimina la corrispondenza tra questa persona e il suo pseudonimo. Le ricevute restano valide e verificabili, ma nessuno potrà più collegarle a lei; se tornasse, avrebbe uno pseudonimo nuovo. Nel registro amministrativo resta solo lo pseudonimo. L'operazione non si annulla. I backup fatti prima conservano la corrispondenza finché non vengono sostituiti.",
-    eraseConfirm: (token: string): string => `Per confermare, scrivi lo pseudonimo esatto: ${token}`,
+    notFound: "Nessuna ricevuta per questa persona.",
+    receipts: (count: number): string => `${count} ${count === 1 ? "ricevuta" : "ricevute"}`,
+    eraseTitle: "Cancella la persona",
+    eraseHint: "Le ricevute restano valide, ma non si potranno più collegare a lei.",
+    eraseConfirm: (token: string): string => `Scrivi ${token} per confermare`,
     eraseSubmit: "Cancella definitivamente",
-    erased: (token: string): string =>
-      `Fatto: le ricevute con lo pseudonimo ${token} non sono più collegabili a nessuna persona. L'operazione è nel registro amministrativo.`,
+    erased: (token: string): string => `Fatto: ${token} non è più collegabile a nessuna persona.`,
     confirmMismatch: "Il testo scritto non corrisponde allo pseudonimo: niente è stato cancellato.",
     legacy: (count: number): string =>
-      `Attenzione: ${count} ${count === 1 ? "ricevuta scritta" : "ricevute scritte"} prima delle ricevute senza nomi (versione 4, ottobre 2026) ${count === 1 ? "contiene" : "contengono"} questo identificativo in chiaro. Le ricevute non si possono modificare, quindi nessuna cancellazione le raggiunge: restano nel registro e in ogni export.`,
+      `${count} ${count === 1 ? "ricevuta scritta" : "ricevute scritte"} prima di ottobre 2026 ${count === 1 ? "contiene" : "contengono"} questo identificativo in chiaro, e nessuna cancellazione le raggiunge.`,
   },
   manage: {
-    nameTitle: "Nome mostrato",
-    nameLabel: "Nome",
-    nameHint: (systemId: string): string =>
-      `È solo un'etichetta per questa interfaccia. L'identificativo ${systemId} resta lo stesso in ricevute, chiavi ed export, e un fascicolo già esportato conserva il nome che aveva. Lascia vuoto per mostrare l'identificativo.`,
-    nameSubmit: "Salva il nome",
+    nameTitle: "Nome",
+    nameLabel: "Nome mostrato",
+    nameSubmit: "Salva",
     renamed: "Nome salvato.",
-    archiveTitle: "Archiviazione",
-    archiveHint:
-      "Un sistema archiviato esce dalla pagina principale e dall'elenco dei sistemi attivi. Il suo registro resta intero: consultabile, esportabile e verificabile. Le sue chiavi API smettono di funzionare, quindi l'agente non può scrivere nuove ricevute; si può riattivare in ogni momento, senza rigenerare le chiavi.",
-    archiveSubmit: "Archivia",
+    idTitle: "Identificativo",
+    keyTitle: "Chiave",
+    keyLabel: "Chiave attuale",
+    noKey: "Nessuna chiave attiva",
+    newKey: "Nuova chiave",
+    newKeyConfirm: "La chiave attuale smette di funzionare subito.",
+    newKeySubmit: "Crea nuova chiave",
+    connect: "Come collegare l'agente",
+    archiveTitle: "Archivia",
+    archiveSubmit: "Archivia sistema",
     archived: "Sistema archiviato.",
-    archivedOn: "Archiviato il",
+    archivedOn: (when: string): string => `Archiviato il ${when}.`,
     unarchiveSubmit: "Riattiva",
     unarchived: "Sistema riattivato.",
-    deleteTitle: "Eliminazione",
-    deleteAllowed:
-      "Questo sistema ha solo la ricevuta di apertura del registro: nessuna azione è mai stata registrata. Si può eliminare per davvero, con i suoi sigilli e le sue chiavi API. L'operazione non si annulla, viene scritta nel registro amministrativo, e l'identificativo non potrà essere riusato.",
-    deleteConfirmLabel: (systemId: string): string => `Per confermare, scrivi l'identificativo esatto: ${systemId}`,
+    deleteTitle: "Elimina",
+    deleteConfirmLabel: (systemId: string): string => `Scrivi ${systemId} per confermare`,
     deleteSubmit: "Elimina definitivamente",
     deleteRefused: (receipts: number): string =>
-      `Questo sistema non si può eliminare: il suo registro contiene ${receipts - 1} ${receipts - 1 === 1 ? "azione registrata" : "azioni registrate"} oltre all'apertura. Le prove registrate non si cancellano, da nessuna parte e con nessuna conferma. Se non serve più, archivialo.`,
-    confirmMismatch:
-      "Il testo scritto non corrisponde all'identificativo del sistema: niente è stato eliminato.",
+      `Contiene ${receipts - 1} ${receipts - 1 === 1 ? "azione registrata" : "azioni registrate"}: si può solo archiviare.`,
+    confirmMismatch: "Il testo scritto non corrisponde all'identificativo del sistema: niente è stato eliminato.",
+  },
+  settings: {
+    title: "Impostazioni",
+    heading: "Impostazioni",
+    account: "Account",
+    operator: "Amministratore",
+    operatorDetail: "Accesso con la password dell'installazione",
+    organization: "Organizzazione",
+    systems: (count: number): string => `${count} ${count === 1 ? "sistema" : "sistemi"}`,
+    quota: (used: string, limit: string): string => `${used} di ${limit} ricevute questo mese`,
+    noLimit: (used: string): string => `${used} ricevute questo mese`,
+    appearance: "Aspetto",
+    themes: { light: "Chiaro", dark: "Scuro", system: "Automatico" },
+    themeLabel: "Tema",
+    adminLog: "Registro amministrativo",
+    adminLogAll: "Vedi tutto",
+    adminLogEmpty: "Nessuna operazione ancora.",
+    signingKey: "Chiave di firma",
   },
   history: {
-    anchored: "Ancorata",
+    anchored: "Sigillata",
     anchorPending: "In attesa",
-    noMatches: "Nessuna ricevuta corrisponde ai filtri scelti.",
+    noMatches: "Nessuna ricevuta.",
     searchButton: "Cerca",
-    searchTitle: "Cerca e filtra",
-    fromLabel: "dal (ricevuto)",
-    toLabel: "al",
-    nameLabel: "nome azione",
+    searchTitle: "Cerca",
+    fromLabel: "Dal",
+    toLabel: "Al",
+    nameLabel: "Nome azione",
     // The filter by kind, one segment each, with "Tutte" first.
     filterLabel: "Filtra per tipo",
     allKinds: "Tutte",
@@ -319,108 +289,104 @@ export const UI = {
       decision: "Decisioni",
       genesis: "Apertura",
     },
-    shown: (count: number, capped: boolean): string =>
-      `${count} ricevut${count === 1 ? "a" : "e"}${capped ? " (le 200 più recenti)" : ""}`,
     listLabel: "Ricevute",
     clearFilters: "Togli i filtri",
-    noMatchesHint: "Prova un altro tipo o togli il periodo.",
-    dayLocal: (day: string): string => `${day} · ora italiana`,
-    back: "Torna all'elenco",
+    capped: "Le 200 più recenti",
+    back: "Cronologia",
   },
   // The inspector: the receipt chosen in the history, in full.
   inspector: {
     label: "Dettaglio della ricevuta",
     receiptNo: (seq: number): string => `Ricevuta n. ${seq}`,
-    genesisNote:
-      "È la prima ricevuta del registro: da qui parte la catena. Non c'è una ricevuta precedente, quindi l'impronta precedente è tutta a zeri.",
-    whoWhen: "Chi e quando",
-    kind: "Tipo",
+    genesisNote: "La prima ricevuta: da qui parte la catena.",
     agent: "Agente",
     onBehalfOf: "Per conto di",
     model: "Modello",
-    received: "Ricevuta il",
+    when: "Quando",
     source: "Arrivata da",
     sources: {
-      sdk: "SDK",
-      otlp: "OpenTelemetry (OTLP)",
-      api: "API nativa",
-      genesis: "sigillo, alla creazione del sistema",
+      sdk: "SDK Python",
+      otlp: "OpenTelemetry",
+      api: "API HTTP",
+      genesis: "sigillo",
     },
     files: "File",
     verifyFile: "Verifica",
-    chain: "Catena",
+    seal: "Sigillo",
+    sealedAt: (when: string): string => `Sigillata ${when}`,
+    sealWaiting: "In attesa",
+    technical: "Dettagli tecnici",
     fingerprint: "Impronta",
-    linkedTo: "Collegata a",
-    first: "Nessuna: è la prima",
-    anchoring: "Ancoraggio",
-    anchoredNote: "Sigillata in un checkpoint con marca temporale.",
-    seeCheckpoints: "Vedi checkpoint",
-    showTechnical: "Mostra firma, chiave e impronte complete",
-    hideTechnical: "Nascondi i dettagli tecnici",
+    linkedTo: (seq: number): string => `Collegata alla ricevuta n. ${seq}`,
+    first: "Prima ricevuta: nessuna precedente",
     signature: "Firma",
     key: "Chiave",
+    timestamp: "Marca temporale",
     inputHash: "Impronta input",
     outputHash: "Impronta output",
     promptHash: "Impronta del prompt",
     replyHash: "Impronta della risposta",
-    receivedIso: "Ricevuto (ISO)",
-    eventIso: "Avvenuto (ISO, dichiarato dall'agente)",
+    receivedIso: "Ricevuta (UTC)",
+    eventIso: "Avvenuta (UTC, dichiarato dall'agente)",
     version: "Versione del formato",
   },
-  // Where a receipt stands with its anchoring, in words (also on the verify page).
+  // Where a receipt stands with its anchoring, in words (the inspector, the verify page).
   anchoring: {
-    notCovered: "non ancora coperto da un checkpoint",
-    waiting: "checkpoint scritto, marca temporale in attesa",
-    unreadable: "con marca temporale (ora attestata non leggibile dal token)",
-    at: (when: string): string => `con marca temporale del ${when}`,
+    notCovered: "Non ancora sigillata",
+    waiting: "Sigillata, marca temporale in attesa",
+    unreadable: "Con marca temporale (ora non leggibile dal token)",
+    at: (when: string): string => `Marca temporale del ${when}`,
   },
   checkpoints: {
-    title: "checkpoint",
-    none: "Nessun checkpoint ancora.",
-    explain:
-      "Ogni checkpoint sigilla tutte le ricevute scritte fino a quel momento; la marca temporale di un'autorità esterna dice quando esistevano.",
-    waiting: "in attesa di marca temporale",
-    genTimeUnreadable: "ora attestata non leggibile dal token",
-    receivedAt: "ricevuta dal server il",
-    covered: "ricevute coperte",
-    written: "Scritto il",
+    title: "Sigilli",
+    none: "Nessun sigillo ancora.",
+    sealed: (count: number): string => `${count} ${count === 1 ? "ricevuta sigillata" : "ricevute sigillate"}`,
+    stamped: "Marca temporale",
+    waiting: "In attesa",
+    written: "Scritto",
     root: "Radice Merkle",
-    stamped: "Marca temporale ricevuta",
     attested: "Ora attestata dall'autorità",
+    authority: "Autorità",
+    genTimeUnreadable: "non leggibile dal token",
   },
   verifyDocument: {
-    title: "verifica un documento",
-    heading: "Verifica un documento",
-    eyebrow: "è quello che ha usato l'AI?",
-    privacyNote: "Il documento non lascia il tuo computer: calcoliamo solo le sue impronte.",
+    title: "Verifica documento",
+    heading: "Verifica documento",
+    privacyNote: "Il documento non lascia il tuo computer.",
     textLabel: "oppure incolla il testo",
-    textNote:
-      "Per un testo contano le parole, non l'impaginazione: spazi, a capo e caratteri invisibili in più o in meno non cambiano il risultato. Per un PDF o un'immagine carica il file: lì conta ogni byte.",
     submit: "Verifica",
     // Shown until the page's script runs, and so left on screen when the
     // browser does not run it (a CSP that no longer matches, say): the button
     // stays disabled then, instead of doing nothing without a word (session 6).
     scriptInactive:
-      "Il calcolo dell'impronta non è attivo in questa pagina: il browser non ha eseguito lo script che lo fa, quindi il pulsante Verifica è disattivato. Ricarica la pagina; se il messaggio resta, chi gestisce sigillo deve aggiornare con deploy/update.sh, che riavvia anche Caddy (docs/DEPLOY-PRODUZIONE.md, 6.3).",
-    computeFailed:
-      "Non è stato possibile calcolare l'impronta del documento scelto. Il risultato che era sulla pagina è stato tolto, perché riguardava un tentativo precedente e non questo documento. Se il file è stato modificato, spostato o salvato di nuovo dopo averlo scelto, sceglilo di nuovo e premi Verifica.",
+      "Il browser non ha eseguito il calcolo dell'impronta, quindi Verifica è disattivato. Ricarica la pagina; se resta così, chi gestisce sigillo deve aggiornare con deploy/update.sh.",
+    computeFailed: "Non è stato possibile leggere il documento scelto. Sceglilo di nuovo e premi Verifica.",
     browserError: "Errore del browser",
     resultTitle: "Risultato",
+    placeholder: "Il risultato apparirà qui.",
     searchedFingerprint: "Impronta esatta (SHA-256)",
     textFingerprint: "Impronta del testo (sigillo-text/1)",
     noTextFingerprint: "nessuna: non è un testo in UTF-8",
     fromFile: "Calcolate dal browser sul file scelto.",
-    fromText: "Calcolate dal browser sul testo incollato nella casella.",
-    noMatch:
-      "Nessuna azione registrata ha usato questo documento, né una sua copia che differisca solo per spazi o a capo.",
+    fromText: "Calcolate dal browser sul testo incollato.",
+    noMatch: "Nessuna azione registrata ha usato questo documento.",
     noMatchHint:
-      "Un testo registrato prima di questa versione di sigillo si trova solo se coincide byte per byte, a meno del modo di andare a capo. Per un PDF o un'immagine conta ogni byte. Puoi confrontare l'impronta esatta qui sopra con quella del file: Get-FileHash su Windows, sha256sum su Linux, shasum -a 256 su Mac.",
-    seeReceipt: "vedi la ricevuta",
+      "Un testo registrato prima della versione 3 si trova solo se coincide byte per byte, a meno del modo di andare a capo. Per un PDF o un'immagine conta ogni byte. Puoi confrontare l'impronta esatta con quella del file: Get-FileHash su Windows, sha256sum su Linux, shasum -a 256 su Mac.",
+    match: {
+      bytes: "Identico",
+      text: "Stesso testo",
+      lines: "Identico, a capo a parte",
+      json: "Stesso contenuto",
+      "json-lines": "Stesso contenuto, a capo a parte",
+    },
+    usedBy: (system: string, when: string, action: string): string => `Usato da ${system} ${when}, nell'azione ${action}.`,
+    seeReceipt: "Vedi la ricevuta",
     found: "Trovato nel registro",
-    notFound: "Non trovato nel registro",
+    notFound: "Non trovato",
+    technical: "Dettagli tecnici",
     documentLabel: "Documento da verificare",
     dropTitle: "Trascina qui un file",
-    dropHint: "oppure sceglilo dal computer",
+    dropHint: "oppure sceglilo",
     notModified: "Non è stato modificato",
   },
 } as const;
@@ -581,25 +547,17 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "system.assign": "assegnato a un'organizzazione",
 };
 
-/** One line of the administrative log, for the systems page. */
-export function describeAdminEntry(entry: {
-  ts: string;
-  action: string;
-  system_id: string;
-  actor: string;
-  detail: Record<string, unknown>;
-}): string {
+/** What one entry of the administrative log did, without its time or who did it. */
+export function describeAdminAction(entry: { action: string; system_id: string; detail: Record<string, unknown> }): string {
   const what = ADMIN_ACTIONS[entry.action] ?? entry.action;
+  if (entry.action === "subject.erase") return `${what}: pseudonimo ${String(entry.detail["token"])}`;
+  if (entry.action === "organization.create" || entry.action === "organization.approve" || entry.action === "user.register") {
+    return `${what}: ${String(entry.detail["organization_id"])}`;
+  }
   let extra = "";
   if (entry.action === "system.rename") {
     const name = (value: unknown): string => (typeof value === "string" ? `«${value}»` : "nessun nome");
     extra = `: da ${name(entry.detail["from"])} a ${name(entry.detail["to"])}`;
-  }
-  if (entry.action === "subject.erase") {
-    return `${formatTs(entry.ts)} — ${what}: pseudonimo ${String(entry.detail["token"])} (${entry.actor})`;
-  }
-  if (entry.action === "organization.create" || entry.action === "organization.approve" || entry.action === "user.register") {
-    return `${formatTs(entry.ts)} — ${what}: ${String(entry.detail["organization_id"])} (${entry.actor})`;
   }
   if (entry.action === "system.assign") {
     const whose = (value: unknown): string => (typeof value === "string" ? value : "solo l'operatore");
@@ -609,7 +567,23 @@ export function describeAdminEntry(entry: {
     const seqs = Array.isArray(entry.detail["seqs"]) ? entry.detail["seqs"].join(", ") : "";
     extra = ` per le ricevute ${seqs} (${String(entry.detail["erased"])})`;
   }
-  return `${formatTs(entry.ts)} — ${entry.system_id} ${what}${extra} (${entry.actor})`;
+  return `${entry.system_id} ${what}${extra}`;
+}
+
+/** Who did it, as the log names them: "web <address>" or "web <email> (<organization>)" loses its "web ". */
+export function adminActor(actor: string): string {
+  return actor.replace(/^web /, "");
+}
+
+/** One line of the administrative log, whole: when, what, who. */
+export function describeAdminEntry(entry: {
+  ts: string;
+  action: string;
+  system_id: string;
+  actor: string;
+  detail: Record<string, unknown>;
+}): string {
+  return `${formatTs(entry.ts)} — ${describeAdminAction(entry)} (${entry.actor})`;
 }
 
 const KIND_LABELS: Record<Receipt["action"]["kind"], string> = {
@@ -753,6 +727,80 @@ export function formatDay(iso: string): string {
 /** The time of a server timestamp, in Italian time, to the second: "12:40:13". */
 export function formatTime(iso: string): string {
   return localTime(iso)?.time ?? iso;
+}
+
+/** The calendar day of an instant in Italian time, as "2026-10-01"; null for a time that does not parse. */
+export function localDate(iso: string): string | null {
+  const local = localTime(iso);
+  if (local === null) return null;
+  return `${local.year}-${String(local.month).padStart(2, "0")}-${String(local.day).padStart(2, "0")}`;
+}
+
+/** The calendar day before `date` ("2026-10-01" gives "2026-09-30"). */
+function dayBefore(date: string): string {
+  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
+}
+
+/** "Oggi", "Ieri", or null, for the day of `iso` seen from `now`, both in Italian time. */
+function relativeDay(iso: string, now: Date): "Oggi" | "Ieri" | null {
+  const day = localDate(iso);
+  const today = localDate(now.toISOString());
+  if (day === null || today === null) return null;
+  if (day === today) return "Oggi";
+  return day === dayBefore(today) ? "Ieri" : null;
+}
+
+/**
+ * When something happened, as a person says it: "Oggi, 14:44", "Ieri,
+ * 09:12", "29 set 2026, 18:03". Italian time, to the minute; the exact time
+ * stays in the technical details.
+ */
+export function formatWhen(iso: string, now: Date): string {
+  const local = localTime(iso);
+  if (local === null) return iso;
+  const time = local.time.slice(0, 5);
+  const relative = relativeDay(iso, now);
+  if (relative !== null) return `${relative}, ${time}`;
+  return `${local.day} ${MONTHS[local.month - 1]} ${local.year}, ${time}`;
+}
+
+/** The same in the middle of a sentence: "oggi alle 14:44", "il 29 set 2026 alle 18:03". */
+export function formatWhenInline(iso: string, now: Date): string {
+  const local = localTime(iso);
+  if (local === null) return iso;
+  const time = local.time.slice(0, 5);
+  const relative = relativeDay(iso, now);
+  if (relative !== null) return `${relative.toLowerCase()} alle ${time}`;
+  return `il ${local.day} ${MONTHS[local.month - 1]} ${local.year} alle ${time}`;
+}
+
+/** A day of the history, as its heading: "Oggi · giovedì 1 ottobre", "martedì 29 settembre 2026". */
+export function formatDayHeading(iso: string, now: Date): string {
+  const local = localTime(iso);
+  if (local === null) return iso;
+  const relative = relativeDay(iso, now);
+  const day = `${WEEKDAYS[local.weekday]} ${local.day} ${MONTH_NAMES[local.month - 1]}`;
+  return relative === null ? `${day} ${local.year}` : `${relative} · ${day}`;
+}
+
+/** A date alone, as "1 ott 2026". */
+export function formatDate(iso: string): string {
+  const local = localTime(iso);
+  if (local === null) return iso;
+  return `${local.day} ${MONTHS[local.month - 1]} ${local.year}`;
+}
+
+/** The time of an instant in Italian time, to the minute: "14:44". */
+export function formatClock(iso: string): string {
+  return localTime(iso)?.time.slice(0, 5) ?? iso;
+}
+
+const NUMBER = new Intl.NumberFormat("it-IT", { useGrouping: "always" });
+
+/** A count as Italians write it: "10.000". */
+export function formatCount(value: number): string {
+  return NUMBER.format(value);
 }
 
 /** The one word for an outcome, as the receipt sentences already use it. */

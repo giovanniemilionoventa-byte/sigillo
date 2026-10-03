@@ -30,37 +30,56 @@ import {
   systemHeader,
   type SystemTab,
 } from "./history.js";
-import { escape, homeRows, loginPage, page, pageHead, shellFor, type PageOptions } from "./layout.js";
 import {
+  escape,
+  homeRows,
+  loginPage,
+  operatorLoginPage,
+  page,
+  pageHead,
+  shellFor,
+  type Account,
+  type PageOptions,
+} from "./layout.js";
+import {
+  adminLogPage,
   checkpointsPage,
+  connectPage,
   homePage,
-  organizationsPage,
   managePage,
+  newSystemPage,
   notFoundPage,
+  organizationsPage,
   peoplePage,
+  settingsPage,
   sistemiPage,
-  systemCreatedPage,
   verifyDocumentResult,
+  type Quota,
   type SystemsView,
+  type Theme,
 } from "./pages.js";
 import { systemTitle, UI } from "./strings.js";
 import { ICONS, STATE_ICONS } from "./style.js";
 
 /**
- * The operator's view: server-rendered HTML, no framework and no build step,
- * except the one inline script on the "verifica un documento" page.
+ * The web view: server-rendered HTML, no framework and no build step, except
+ * the one inline script on the "verifica un documento" page.
  *
  * It answers three questions, in order — è tutto a posto? cosa ha fatto
  * l'AI? mi prepari le prove? — plus the secondary pages: the systems, with
- * creating one (and its first key) and managing one (its name, archiving it,
- * deleting it while its chain is still empty), and checking a document by
- * fingerprint. It never writes a receipt; besides creating a system and
- * those labels, its only write is running, on request, the same checkpoint
- * the server already does on a timer — sooner, not instead. The look is in
- * style.ts.
+ * creating one (and its key) and managing one (its name, a new key, archiving
+ * it, deleting it while its chain is still empty), connecting an agent,
+ * checking a document by fingerprint, and the settings. It never writes a
+ * receipt; besides systems, keys and labels, its only writes are running, on
+ * request, the same checkpoint the server already does on a timer — sooner,
+ * not instead — and remembering the reader's light or dark theme in a cookie.
+ * The look is in style.ts.
  */
 
 const COOKIE = "sigillo_session";
+/** The theme the reader chose in Impostazioni: "light" or "dark"; absent, the system's. Not a secret, not a session. */
+const THEME_COOKIE = "sigillo_theme";
+const THEME_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
 
 /** Who signed in, and the store as they may see it (tenancy.ts). */
 interface Session {
@@ -96,6 +115,12 @@ export interface UiOptions {
    * email sign-in, sign-up, and the organizations they ask for. Without it
    * the view has the operator's password and nothing else.
    */
+  /**
+   * How many receipts an organization's systems together may receive in a
+   * calendar month (server.ts, organizationMonthlyReceipts): shown to its
+   * members in Impostazioni and, near and at the limit, on the main page.
+   */
+  organizationMonthlyReceipts?: number;
   accounts?: {
     firebase: FirebaseAuth;
     /** This installation's address as browsers reach it, e.g. https://sigillo.example.com. */
@@ -201,14 +226,12 @@ function verifyDocumentForm(): string {
   const t = UI.verifyDocument;
   // The ids are the script's: it reads the file and the text, enables the
   // button, and shows or hides the two notices by them.
-  return `<section class="block" aria-label="${escape(t.documentLabel)}">
-<p class="warn" id="sigillo-doc-inactive">${escape(t.scriptInactive)}</p>
-<div class="card padded">
-<label class="drop">${ICONS.doc}<strong>${escape(t.dropTitle)}</strong><span class="muted">${escape(t.dropHint)}</span><input type="file" id="sigillo-doc-file"></label>
-<label class="text-field"><span class="or">${escape(t.textLabel)}</span><textarea id="sigillo-doc-text" rows="6" cols="60"></textarea></label>
-<p class="hint">${escape(t.textNote)}</p>
-<button type="button" id="sigillo-doc-button" disabled>${escape(t.submit)}</button>
-</div>
+  return `<section aria-label="${escape(t.documentLabel)}">
+<p class="notice warn" id="sigillo-doc-inactive">${escape(t.scriptInactive)}</p>
+<label class="drop"><span class="tile-icon blue" aria-hidden="true">${ICONS.upload}</span><strong>${escape(t.dropTitle)}</strong><span class="muted">${escape(t.dropHint)}</span><input type="file" id="sigillo-doc-file"></label>
+<label><span class="or">${escape(t.textLabel)}</span><textarea id="sigillo-doc-text" rows="6" cols="60"></textarea></label>
+<button type="button" id="sigillo-doc-button" class="big" disabled>${escape(t.submit)}</button>
+<p class="privacy">${ICONS.lock}<span>${escape(t.privacyNote)}</span></p>
 <p class="notice bad" id="sigillo-doc-failed" role="alert" hidden>${STATE_ICONS.bad}<span>${escape(t.computeFailed)} ${escape(t.browserError)}: <span id="sigillo-doc-error"></span>.</span></p>
 <script>${VERIFY_DOCUMENT_SCRIPT}</script>
 </section>`;
@@ -238,6 +261,26 @@ function fingerprintsFromQuery(query: Record<string, unknown>): DocumentFingerpr
   };
 }
 
+/** An identifier made from a name, for a system created with a name alone: "Assistente vendite" is "assistente-vendite". */
+export function identifierFrom(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .slice(0, 64)
+    .replace(/-+$/, "");
+}
+
+/** The first instant of the calendar month (UTC) `at` falls in, and of the next one: a quota's month. */
+function monthBounds(at: Date): { start: string; next: string } {
+  return {
+    start: new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1)).toISOString(),
+    next: new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + 1, 1)).toISOString(),
+  };
+}
+
 
 export function registerUi(app: FastifyInstance, options: UiOptions): void {
   // Every system, every organization's. Never handed to a page as it is: a
@@ -248,19 +291,26 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   const loginThrottle = new AttemptThrottle(options.loginLimits ?? DEFAULT_LOGIN_LIMITS);
   const cookieSecure = options.cookieSecure ?? "auto";
 
-  const cookieFrom = (request: FastifyRequest): string | undefined => {
+  const cookieNamed = (request: FastifyRequest, cookieName: string): string | undefined => {
     const header = request.headers.cookie;
     if (typeof header !== "string") return undefined;
     for (const part of header.split(";")) {
       const [name, ...rest] = part.trim().split("=");
-      if (name === COOKIE) return rest.join("=");
+      if (name === cookieName) return rest.join("=");
     }
     return undefined;
   };
+  const cookieFrom = (request: FastifyRequest): string | undefined => cookieNamed(request, COOKIE);
 
   const cookieAttributes = (request: FastifyRequest): string => {
     const secure = cookieSecure === "auto" ? request.protocol === "https" : cookieSecure;
     return `HttpOnly; SameSite=Strict; Path=/${secure ? "; Secure" : ""}`;
+  };
+
+  /** The theme the reader chose, from its cookie: anything but "light" or "dark" is the system's. */
+  const themeOf = (request: FastifyRequest): Theme => {
+    const value = cookieNamed(request, THEME_COOKIE);
+    return value === "light" || value === "dark" ? value : "system";
   };
 
   /**
@@ -301,9 +351,6 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     return `${COOKIE}=${session.value}; ${cookieAttributes(request)}; Max-Age=${session.maxAgeSeconds}`;
   };
 
-  /** The sign-in page shows the customers' way in when there is one. */
-  const accountsPage = options.accounts === undefined ? undefined : {};
-
   /** The viewer and the store as they may see it, or null after redirecting to the sign-in page. */
   const requireSession = (request: FastifyRequest, reply: FastifyReply): Session | null => {
     const viewer = viewerOf(request);
@@ -322,9 +369,16 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     request.url === "/ui" || request.url.startsWith("/ui/") || request.url.startsWith("/ui?");
 
   // Nothing behind the password is worth keeping in a cache, and one page
-  // shows an API key the only time it exists.
-  app.addHook("onSend", async (request, reply) => {
-    if (isUi(request)) void reply.header("cache-control", "no-store");
+  // shows an API key the only time it exists. And every page of the view
+  // carries the theme its reader chose, on <html>, where the stylesheet
+  // looks for it (style.ts): one place, rather than in every page's code.
+  app.addHook("onSend", async (request, reply, payload) => {
+    if (!isUi(request)) return payload;
+    void reply.header("cache-control", "no-store");
+    const theme = themeOf(request);
+    if (theme === "system" || typeof payload !== "string") return payload;
+    if (!String(reply.getHeader("content-type") ?? "").startsWith("text/html")) return payload;
+    return payload.replace('<html lang="it">', `<html lang="it" data-theme="${theme}">`);
   });
 
   // SameSite=Strict already keeps the cookie off cross-site requests in
@@ -365,11 +419,22 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
 
   app.get("/", async (_request, reply) => reply.redirect("/ui", 302));
 
-  app.get("/ui/login", async (request, reply) =>
-    viewerOf(request) !== null
-      ? reply.redirect("/ui", 302)
-      : html(reply, loginPage(undefined, accountsPage)),
-  );
+  // Signing in. With customers' accounts, /ui/login is theirs (Google, or an
+  // email and then its password) and the operator's password has its own
+  // address, /ui/admin; without them, /ui/login is the operator's password.
+
+  const operatorTitle = options.accounts === undefined ? UI.login.title : UI.login.adminTitle;
+  const operatorLogin = (message?: string): string => operatorLoginPage(message, operatorTitle);
+
+  app.get("/ui/login", async (request, reply) => {
+    if (viewerOf(request) !== null) return reply.redirect("/ui", 302);
+    return html(reply, options.accounts === undefined ? operatorLogin() : loginPage());
+  });
+
+  app.get("/ui/admin", async (request, reply) => {
+    if (viewerOf(request) !== null) return reply.redirect("/ui", 302);
+    return html(reply, operatorLogin());
+  });
 
   app.post("/ui/login", async (request, reply) => {
     const client = request.ip;
@@ -380,7 +445,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     // apart from a guess that was wrong, and no guess made during one can be
     // learned to be right.
     if (loginThrottle.isLocked(client, now)) {
-      return html(reply, loginPage(UI.login.wrong, accountsPage), 401);
+      return html(reply, operatorLogin(UI.login.wrong), 401);
     }
 
     const body = request.body as { password?: unknown } | undefined;
@@ -394,7 +459,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
 
     if (!correct) {
       loginThrottle.recordFailure(client, now);
-      return html(reply, loginPage(UI.login.wrong, accountsPage), 401);
+      return html(reply, operatorLogin(UI.login.wrong), 401);
     }
 
     loginThrottle.recordSuccess(client);
@@ -425,12 +490,39 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   });
 
   const keyId = options.signerKey.key_id;
+
+  /** Who is signed in, as the sidebar and the settings name them. */
+  const accountOf = (viewer: Viewer): Account => {
+    if (viewer.kind === "operator") return { name: UI.settings.operator, detail: UI.settings.operatorDetail };
+    const organization = allSystems.organization(viewer.organizationId);
+    const member = viewer.userId === undefined ? null : allSystems.userByUid(viewer.userId);
+    return { name: organization?.name ?? viewer.organizationId, detail: member?.email ?? "" };
+  };
+
   /** A page in the shell; the sidebar is read fresh, with the same health as the main page's traffic lights. */
-  const render = (session: Session, pageOptions: PageOptions): string =>
-    page(
+  const render = (session: Session, pageOptions: PageOptions): string => {
+    const operator = session.viewer.kind === "operator";
+    return page(
       pageOptions,
-      shellFor(session.store, options.healthMonitor, options.now(), keyId, session.viewer.kind === "operator"),
+      shellFor(session.store, options.healthMonitor, options.now(), {
+        operator,
+        account: accountOf(session.viewer),
+        waiting: operator ? allSystems.listOrganizations().filter((organization) => organization.approved_at === null).length : 0,
+      }),
     );
+  };
+
+  /** An organization's use of its monthly quota; null for the operator, whose systems have none. */
+  const quotaOf = (viewer: Viewer): Quota | null => {
+    const limit = options.organizationMonthlyReceipts;
+    if (viewer.kind !== "organization" || limit === undefined) return null;
+    const month = monthBounds(options.now());
+    return { used: allSystems.receiptsSince(viewer.organizationId, month.start), limit, resume: month.next };
+  };
+
+  /** Where agents send their actions, as the snippets of the connect page write it. */
+  const endpointFor = (request: FastifyRequest): string =>
+    options.accounts?.publicUrl.replace(/\/+$/, "") ?? `${request.protocol}://${request.headers.host ?? "localhost"}`;
 
   /**
    * Who is acting, for the administrative log: the operator by address (one
@@ -449,16 +541,14 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     if (session === null) return reply;
     const { store } = session;
     const query = request.query as { checkpoint?: string };
-    const justCheckpointed = query.checkpoint === "1";
+    const now = options.now();
+    const { records, shown } = homeRows(store, options.healthMonitor, now);
     return html(
       reply,
       render(session, {
         title: UI.home.heading,
         current: "registro",
-        body: (() => {
-          const { records, rows, shown } = homeRows(store, options.healthMonitor, options.now());
-          return homePage(store, records, rows, shown, justCheckpointed);
-        })(),
+        body: homePage({ store, records, shown, justCheckpointed: query.checkpoint === "1", quota: quotaOf(session.viewer), now }),
       }),
     );
   });
@@ -492,8 +582,14 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   const renderSistemi = (session: Session, view: SystemsView, extra: { notice?: string; error?: string } = {}): string =>
     render(session, {
       title: UI.systemsPage.title,
-      current: view === "attivi" ? "sistemi" : view,
-      body: sistemiPage(session.store, view, extra),
+      current: "sistemi",
+      body: sistemiPage(
+        session.store,
+        view,
+        extra,
+        (systemId) => options.healthMonitor.statusFor(systemId, options.now()).status,
+        options.now(),
+      ),
     });
 
   app.get("/ui/sistemi", async (request, reply) => {
@@ -510,19 +606,33 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     return html(reply, renderSistemi(session, systemsView(query.vista), deleted === undefined ? {} : { notice: deleted }));
   });
 
+  const renderNewSystem = (session: Session, extra: { error?: string } = {}, values: { system_id?: string; display_name?: string } = {}): string =>
+    render(session, { title: UI.systemsPage.newTitle, current: "sistemi", body: newSystemPage(extra, values) });
+
+  app.get("/ui/sistemi/nuovo", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    return html(reply, renderNewSystem(session));
+  });
+
   app.post("/ui/sistemi", async (request, reply) => {
     const session = requireSession(request, reply);
     if (session === null) return reply;
     const { store } = session;
     const body = request.body as { system_id?: unknown; display_name?: unknown } | undefined;
-    const typed = typeof body?.system_id === "string" ? body.system_id.trim() : "";
     const displayName = typeof body?.display_name === "string" ? body.display_name : "";
+    const given = typeof body?.system_id === "string" ? body.system_id.trim() : "";
+    // A name alone is enough: the identifier follows from it.
+    const typed = given === "" ? identifierFrom(displayName) : given;
     // An organization's systems are named `<organization_id>.<name>`: two
     // organizations never compete for an identifier, and no refusal ("already
     // exists") can tell one about another's systems.
     const prefix = session.viewer.kind === "organization" ? `${session.viewer.organizationId}.` : "";
     const name = prefix !== "" && typed.startsWith(prefix) ? typed.slice(prefix.length) : typed;
     const systemId = name === "" ? "" : `${prefix}${name}`;
+    const refuse = (error: string): FastifyReply =>
+      html(reply, renderNewSystem(session, { error }, { system_id: given, display_name: displayName }), 400);
+    if (systemId === "") return refuse(UI.systemsPage.nameRequired);
 
     try {
       // Checked before the chain is opened: a genesis cannot be taken back
@@ -535,17 +645,18 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
       // On the write queue: see ReceiptStore.exclusive.
       const issued = await store.exclusive(() => keys.issue(systemId, options.now().toISOString()));
       const record = store.systemRecord(systemId);
+      if (record === null) throw new StorageError(`unknown system ${systemId}`);
       return html(
         reply,
         render(session, {
-          title: UI.systemsPage.title,
-          current: "sistemi",
-          body: systemCreatedPage(record, systemId, issued.token),
+          title: UI.connect.ready(systemTitle(record)),
+          current: `system:${systemId}`,
+          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now() }),
         }),
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return html(reply, renderSistemi(session, "attivi", { error: message }), 400);
+      return refuse(/already exists/.test(message) ? UI.systemsPage.exists : message);
     }
   });
 
@@ -558,11 +669,10 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const fingerprints = fingerprintsFromQuery(query);
     const from = query["from"] === "file" || query["from"] === "text" ? query["from"] : undefined;
 
-    const body = `${pageHead({ eyebrow: UI.verifyDocument.eyebrow, h1: UI.verifyDocument.heading })}
-<p class="pill-note">${ICONS.lock}${escape(UI.verifyDocument.privacyNote)}</p>
-<div class="split even verify">
+    const body = `${pageHead(UI.verifyDocument.heading)}
+<div class="cols even">
 ${verifyDocumentForm()}
-${fingerprints === null ? "" : verifyDocumentResult(store, fingerprints, from, store.findDocument(fingerprints))}
+${verifyDocumentResult(store, fingerprints, from, fingerprints === null ? [] : store.findDocument(fingerprints), options.now())}
 </div>`;
     return html(
       reply,
@@ -574,12 +684,8 @@ ${fingerprints === null ? "" : verifyDocumentResult(store, fingerprints, from, s
     );
   });
 
-  const notFound = (session: Session, reply: FastifyReply, systemId: string): FastifyReply =>
-    html(
-      reply,
-      render(session, { title: UI.notFound.title, body: notFoundPage(systemId) }),
-      404,
-    );
+  const notFound = (session: Session, reply: FastifyReply): FastifyReply =>
+    html(reply, render(session, { title: UI.notFound.title, body: notFoundPage() }), 404);
 
   /** A page about one system that is not its history: header and tabs, the page, the evidence sheet. */
   const systemPage = (session: Session, record: SystemRecord, tab: SystemTab, title: string, body: string): string =>
@@ -601,7 +707,7 @@ ${exportSheet(record)}`,
 
     const { systemId } = request.params as { systemId: string };
     const record = store.systemRecord(systemId);
-    if (record === null) return notFound(session, reply, systemId);
+    if (record === null) return notFound(session, reply);
 
     const query = historyQuery(request.query as Record<string, unknown>);
     const filters = { systemId, ...storeRange(query), ...(query.name === undefined ? {} : { name: query.name }) };
@@ -632,6 +738,7 @@ ${exportSheet(record)}`,
           selected,
           explicit: asked !== null,
           anchoredBelow: anchoredSize(store, systemId),
+          now: options.now(),
         }),
       }),
     );
@@ -644,18 +751,50 @@ ${exportSheet(record)}`,
 
     const { systemId } = request.params as { systemId: string };
     const record = store.systemRecord(systemId);
-    if (record === null) return notFound(session, reply, systemId);
+    if (record === null) return notFound(session, reply);
     return html(
       reply,
-      systemPage(session, record, "checkpoints", `${systemTitle(record)} — ${UI.checkpoints.title}`, checkpointsPage(store, systemId)),
+      systemPage(
+        session,
+        record,
+        "checkpoints",
+        `${systemTitle(record)} — ${UI.checkpoints.title}`,
+        checkpointsPage(store, systemId, options.now()),
+      ),
     );
   });
 
-  // Managing one system: its label, whether it is archived, and — for a
-  // chain that never recorded anything — deleting it.
+  // Connecting an agent, after the key was shown: the same three ways, and
+  // whether the first action has arrived.
+  app.get("/ui/systems/:systemId/collega", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
+    const { systemId } = request.params as { systemId: string };
+    const record = store.systemRecord(systemId);
+    if (record === null) return notFound(session, reply);
+    const firstReceipt = record.receipts > 1 ? store.receiptAt(systemId, 1) : null;
+    return html(
+      reply,
+      render(session, {
+        title: UI.connect.title(systemTitle(record)),
+        current: `system:${systemId}`,
+        body: connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now() }),
+      }),
+    );
+  });
+
+  // Managing one system: its label, its key, whether it is archived, and —
+  // for a chain that never recorded anything — deleting it.
+
+  const activeKeys = (systemId: string): string[] =>
+    keys
+      .list(systemId)
+      .filter((key) => key.revokedAt === null)
+      .map((key) => key.keyId);
 
   const renderManage = (session: Session, record: SystemRecord, extra: { notice?: string; error?: string } = {}): string =>
-    systemPage(session, record, "manage", `${systemTitle(record)} — ${UI.systemsPage.manage}`, managePage(record, extra));
+    systemPage(session, record, "manage", `${systemTitle(record)} — ${UI.settings.title}`, managePage(record, extra, activeKeys(record.system_id)));
 
   const DONE: Record<string, string> = {
     nome: UI.manage.renamed,
@@ -669,7 +808,7 @@ ${exportSheet(record)}`,
     const { store } = session;
     const { systemId } = request.params as { systemId: string };
     const record = store.systemRecord(systemId);
-    if (record === null) return notFound(session, reply, systemId);
+    if (record === null) return notFound(session, reply);
     const done = (request.query as { fatto?: string }).fatto;
     const notice = done === undefined ? undefined : DONE[done];
     return html(reply, renderManage(session, record, notice === undefined ? {} : { notice }));
@@ -684,7 +823,7 @@ ${exportSheet(record)}`,
     const { store } = session;
     const { systemId } = request.params as { systemId: string };
     const record = store.systemRecord(systemId);
-    if (record === null) return notFound(session, reply, systemId);
+    if (record === null) return notFound(session, reply);
     const body = request.body as { display_name?: unknown } | undefined;
     const displayName = typeof body?.display_name === "string" ? body.display_name : "";
     try {
@@ -696,12 +835,38 @@ ${exportSheet(record)}`,
     return reply.redirect(manageUrl(systemId, "nome"), 303);
   });
 
+  // A new key: every key the system had stops working at once, and the new
+  // one is shown this once, with the ways to use it.
+  app.post("/ui/systems/:systemId/key", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
+    const { systemId } = request.params as { systemId: string };
+    const record = store.systemRecord(systemId);
+    if (record === null) return notFound(session, reply);
+    const at = options.now().toISOString();
+    // On the write queue: see ReceiptStore.exclusive.
+    const issued = await store.exclusive(() => {
+      for (const old of activeKeys(systemId)) keys.revoke(old, at);
+      return keys.issue(systemId, at);
+    });
+    request.log.info({ system: systemId, action: "key.rotate", key: issued.keyId }, "a system was given a new key");
+    return html(
+      reply,
+      render(session, {
+        title: UI.connect.newKey(systemTitle(record)),
+        current: `system:${systemId}`,
+        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now() }),
+      }),
+    );
+  });
+
   app.post("/ui/systems/:systemId/archive", async (request, reply) => {
     const session = requireSession(request, reply);
     if (session === null) return reply;
     const { store } = session;
     const { systemId } = request.params as { systemId: string };
-    if (!store.hasSystem(systemId)) return notFound(session, reply, systemId);
+    if (!store.hasSystem(systemId)) return notFound(session, reply);
     await store.archiveSystem(systemId, adminRequest(request, session.viewer));
     return reply.redirect(manageUrl(systemId, "archiviato"), 303);
   });
@@ -711,7 +876,7 @@ ${exportSheet(record)}`,
     if (session === null) return reply;
     const { store } = session;
     const { systemId } = request.params as { systemId: string };
-    if (!store.hasSystem(systemId)) return notFound(session, reply, systemId);
+    if (!store.hasSystem(systemId)) return notFound(session, reply);
     await store.unarchiveSystem(systemId, adminRequest(request, session.viewer));
     return reply.redirect(manageUrl(systemId, "riattivato"), 303);
   });
@@ -722,7 +887,7 @@ ${exportSheet(record)}`,
     const { store } = session;
     const { systemId } = request.params as { systemId: string };
     const record = store.systemRecord(systemId);
-    if (record === null) return notFound(session, reply, systemId);
+    if (record === null) return notFound(session, reply);
 
     // The exact system_id, typed out: not a "sei sicuro?" a thumb can tap.
     const body = request.body as { confirm?: unknown } | undefined;
@@ -743,6 +908,65 @@ ${exportSheet(record)}`,
     options.healthMonitor.forget(systemId);
     request.log.info({ system: systemId, action: "system.delete" }, "an empty system was deleted");
     return reply.redirect(`/ui/sistemi?eliminato=${encodeURIComponent(systemId)}`, 303);
+  });
+
+  // The settings: who is signed in, the organization's quota, the theme, the
+  // administrative log and the signing key.
+
+  app.get("/ui/impostazioni", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store, viewer } = session;
+    const organization =
+      viewer.kind === "organization"
+        ? {
+            name: allSystems.organization(viewer.organizationId)?.name ?? viewer.organizationId,
+            systems: store.listSystemRecords().length,
+            used: allSystems.receiptsSince(viewer.organizationId, monthBounds(options.now()).start),
+            limit: options.organizationMonthlyReceipts ?? null,
+          }
+        : null;
+    return html(
+      reply,
+      render(session, {
+        title: UI.settings.title,
+        current: "impostazioni",
+        body: settingsPage({
+          account: accountOf(viewer),
+          organization,
+          theme: themeOf(request),
+          log: store.adminLog(8),
+          keyId,
+          now: options.now(),
+          extra: {},
+        }),
+      }),
+    );
+  });
+
+  app.post("/ui/impostazioni/tema", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const body = request.body as { theme?: unknown } | undefined;
+    const theme = body?.theme === "light" || body?.theme === "dark" ? body.theme : null;
+    const cookie =
+      theme === null
+        ? `${THEME_COOKIE}=; ${cookieAttributes(request)}; Max-Age=0`
+        : `${THEME_COOKIE}=${theme}; ${cookieAttributes(request)}; Max-Age=${THEME_MAX_AGE_SECONDS}`;
+    return reply.header("set-cookie", cookie).redirect("/ui/impostazioni", 303);
+  });
+
+  app.get("/ui/impostazioni/registro", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    return html(
+      reply,
+      render(session, {
+        title: UI.settings.adminLog,
+        current: "impostazioni",
+        body: adminLogPage(session.store.adminLog(500), options.now()),
+      }),
+    );
   });
 
   // The customers: the operator's alone.
@@ -785,7 +1009,7 @@ ${exportSheet(record)}`,
     render(session, {
       title: UI.people.title,
       current: "persone",
-      body: peoplePage(session.store, search, extra),
+      body: peoplePage(session.store, search, extra, options.now()),
     });
 
   app.get("/ui/persone", async (request, reply) => {

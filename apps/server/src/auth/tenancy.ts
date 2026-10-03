@@ -93,6 +93,10 @@ export function storeFor(store: ReceiptStore, viewer: Viewer): ReceiptStore {
       require(query.systemId);
       return store.countReceiptsByKind(query);
     },
+    countReceiptsByOutcome: (query: Parameters<ReceiptStore["countReceiptsByOutcome"]>[0]) => {
+      require(query.systemId);
+      return store.countReceiptsByOutcome(query);
+    },
     // A deletion is only ever shown for a system this organization had; for
     // any other identifier, as if there had been none.
     deletionOf: (systemId: string) => {

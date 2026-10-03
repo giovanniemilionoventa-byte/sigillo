@@ -583,7 +583,8 @@ beside it and remains the only way to the operator's pages.
   A member's session names their uid and is checked against `users` on every
   request, so one moved or removed is out at once.
 - **Monthly quota.** Each organization may write `SIGILLO_ORG_MONTHLY_RECEIPTS`
-  receipts per calendar month (UTC, genesis receipts not counted); past it, its
+  receipts per calendar month (UTC, genesis receipts not counted; 10,000 unless
+  set otherwise); past it, its
   systems get `429` with `Retry-After` until the month ends. A batch that starts
   below the limit is written whole. The operator's systems have no limit.
 

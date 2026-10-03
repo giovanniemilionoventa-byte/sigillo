@@ -348,12 +348,32 @@ describe("customers' accounts in the web view", () => {
     return created;
   }
 
-  it("offers Google, email, sign-up and reset on the sign-in page, and keeps the operator's password", async () => {
+  it("offers Google, email and sign-up on the sign-in page, and keeps the operator's password on a page of its own", async () => {
     const page = (await app.inject({ method: "GET", url: "/ui/login" })).body;
-    for (const expected of ['href="/ui/login/google"', 'action="/ui/login/email"', 'href="/ui/registrati"', 'href="/ui/password"', 'action="/ui/login"']) {
+    for (const expected of ['href="/ui/login/google"', 'action="/ui/login/email"', 'href="/ui/registrati"']) {
       expect(page).toContain(expected);
     }
+    // The public page says nothing of the operator.
+    expect(page).not.toContain('action="/ui/login"');
     expect(page).not.toMatch(/<script[^>]+src=/);
+
+    const admin = (await app.inject({ method: "GET", url: "/ui/admin" })).body;
+    expect(admin).toContain('<form method="post" action="/ui/login"');
+    expect(admin).toContain('type="password" name="password"');
+  });
+
+  it("asks the address first, then the password on a second step, with the reset beside it", async () => {
+    const step = await form("/ui/login/email", { email: "anna@rossi.it" });
+    expect(step.statusCode).toBe(200);
+    expect(step.headers["set-cookie"]).toBeUndefined();
+    expect(step.body).toContain('<input type="hidden" name="email" value="anna@rossi.it">');
+    expect(step.body).toContain('type="password" name="password"');
+    expect(step.body).toContain('href="/ui/password"');
+    expect(fake.calls).toEqual([]);
+
+    const invalid = await form("/ui/login/email", { email: "not an address" });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.body).toContain('action="/ui/login/email"');
   });
 
   it("sends an unverified address its link again and keeps it out", async () => {
@@ -529,6 +549,35 @@ describe("customers' accounts in the web view", () => {
     expect(refused.headers["retry-after"]).toBe(String(30 * 86400 - 10 * 3600));
     expect(store.readChain("acme.bot")).toHaveLength(4); // the genesis, which does not count, and three
     for (let index = 0; index < 4; index += 1) expect((await write(operator)).statusCode).toBe(201);
+  });
+
+  it("shows an organization its month: a bar in the settings, a warning near the limit, an alert at it", async () => {
+    const member = `sigillo_session=${sessions.issue({ kind: "organization", organizationId: "acme" }, Date.parse(NOW)).value}`;
+    const page = async (url: string): Promise<string> => (await app.inject({ method: "GET", url, headers: { cookie: member } })).body;
+    const acme = keys.issue("acme.bot", "2026-10-01T09:00:00.000Z").token;
+    const write = () =>
+      app.inject({
+        method: "POST",
+        url: "/api/v1/receipts",
+        headers: { authorization: `Bearer ${acme}` },
+        payload: { actor: { agent: "planner" }, action: { kind: "tool_call", name: "x" }, outcome: "ok" },
+      });
+
+    let settings = await page("/ui/impostazioni");
+    expect(settings).toContain('<strong>Acme S.p.A.</strong>');
+    expect(settings).toContain('role="progressbar" aria-valuemin="0" aria-valuemax="3" aria-valuenow="0"');
+    expect(settings).toContain(UI.settings.quota("0", "3"));
+    expect(await page("/ui")).not.toContain('class="notice');
+
+    for (let index = 0; index < 3; index += 1) expect((await write()).statusCode).toBe(201);
+    settings = await page("/ui/impostazioni");
+    expect(settings).toContain('<div class="meter red" role="progressbar" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3">');
+    expect(await page("/ui")).toContain(`<p class="notice bad" role="alert">`);
+    expect(await page("/ui")).toContain(escape(UI.home.quotaFull("3", "1 nov 2026")));
+
+    const refused = await write();
+    expect(refused.statusCode).toBe(429);
+    expect(refused.json()).toMatchObject({ error: expect.stringContaining("no receipt is written until 2026-11-01") });
   });
 });
 

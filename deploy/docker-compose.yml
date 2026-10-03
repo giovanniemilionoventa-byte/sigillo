@@ -140,7 +140,7 @@ services:
       SIGILLO_FIREBASE_PROJECT_ID: ${SIGILLO_FIREBASE_PROJECT_ID:-}
       SIGILLO_PUBLIC_URL: https://${SIGILLO_DOMAIN}
       # Receipts each customer organization may write per calendar month (UTC).
-      SIGILLO_ORG_MONTHLY_RECEIPTS: ${SIGILLO_ORG_MONTHLY_RECEIPTS:-100000}
+      SIGILLO_ORG_MONTHLY_RECEIPTS: ${SIGILLO_ORG_MONTHLY_RECEIPTS:-10000}
     healthcheck:
       # /healthz also asks the signer: 503 while the server cannot sign.
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

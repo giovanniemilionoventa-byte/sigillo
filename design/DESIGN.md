@@ -14,6 +14,14 @@ The reference mockups are in `design/proposta-b/mockups/` (read
 `design/proposta-b/README.md` first: they are canvas templates, not code).
 Direction "B" replaces direction "Registro" (paper and ink, session 13).
 
+Since session 24 the screens follow the "semplice" proposal
+(`design/proposta-semplice/`, one HTML mockup per screen): the same tokens
+and the same three panes, with no grey subtitle or helper sentence under
+titles, four figures on the main page, a coloured light per system in the
+sidebar, times said as people say them ("Oggi, 14:44"), and every technical
+value (fingerprints, signature, ISO times) behind "Dettagli tecnici". Where
+that proposal and a section below disagree, the proposal wins.
+
 ## Identity
 
 A clear, quiet desktop application, the kind a client already knows how to
@@ -27,8 +35,11 @@ on the right. White ground, grey sidebar, one blue for actions.
 ## Colour
 
 Every value below is a CSS custom property in `style.ts`, light and dark.
-The theme follows the operating system (`prefers-color-scheme`), as it always
-has: no in-page switch.
+The theme follows the operating system (`prefers-color-scheme`) unless the
+reader picks one in Impostazioni → Aspetto: the choice is a cookie, and the
+server writes it on `<html>` as `data-theme="light"` or `"dark"` (the CSP
+allows no script to do it). The dark values apply under the media query
+unless `data-theme="light"`, and always under `data-theme="dark"`.
 
 | token | role | light | dark |
 |---|---|---|---|
@@ -58,6 +69,7 @@ has: no in-page switch.
 | `ok` / `ok-fill` | green state, word and badge | `#1B6E30` / `#E3F3E7` | `#5FD17F` / `#1D3524` |
 | `warn` / `warn-fill` | yellow state | `#8A5A00` / `#FBF0D9` | `#F0B84A` / `#3A2E12` |
 | `bad` / `bad-fill` | red state | `#B3261E` / `#FBE4E2` | `#FF8A80` / `#44221F` |
+| `code` / `on-code` | the snippets of the connect page | `#1D1D1F` / `#E5E5EA` | `#0E0E10` / `#E5E5EA` |
 | `danger` | destructive button | `#B3261E` | `#B3261E` |
 | `kind-tool` / fill | icon of a tool call | `#0066CC` / `#E5F0FC` | `#6CB2FF` / `#1B3149` |
 | `kind-model` / fill | icon of a model call | `#0B6B6B` / `#E2F4F4` | `#4FD1C7` / `#11393A` |

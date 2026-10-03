@@ -128,17 +128,18 @@ function formsOf(body: string): string[] {
 }
 
 describe("every form keeps its action, method and field names", () => {
-  it("on every page, exactly the forms the view had before direction B, plus the history's search", async () => {
+  it("on every page, exactly the forms it should have, each with its action, method and fields", async () => {
     const pages: [string, string[]][] = [
       [
         "/ui",
         [
           "post /ui/logout []",
-          "post /ui/checkpoint []",
           "post /ui/export [system_id from to subjects openings]",
+          "post /ui/checkpoint []",
         ],
       ],
-      ["/ui/sistemi", ["post /ui/logout []", "post /ui/sistemi [system_id display_name]"]],
+      ["/ui/sistemi", ["post /ui/logout []"]],
+      ["/ui/sistemi/nuovo", ["post /ui/logout []", "post /ui/sistemi [display_name system_id]"]],
       [
         `/ui/systems/${SYSTEM}`,
         [
@@ -157,6 +158,7 @@ describe("every form keeps its action, method and field names", () => {
           "post /ui/logout []",
           `post /ui/systems/${SYSTEM}/rename [display_name]`,
           `post /ui/systems/${SYSTEM}/archive []`,
+          `post /ui/systems/${SYSTEM}/key []`,
           `post /ui/systems/${SYSTEM}/export [from to subjects openings]`,
         ],
       ],
@@ -167,11 +169,14 @@ describe("every form keeps its action, method and field names", () => {
           `post /ui/systems/${EMPTY}/rename [display_name]`,
           `post /ui/systems/${EMPTY}/archive []`,
           `post /ui/systems/${EMPTY}/delete [confirm]`,
+          `post /ui/systems/${EMPTY}/key []`,
           `post /ui/systems/${EMPTY}/export [from to subjects openings]`,
         ],
       ],
       ["/ui/persone", ["post /ui/logout []", "post /ui/persone [identifier]"]],
       ["/ui/verify-document", ["post /ui/logout []"]],
+      // The sign-out is there twice: in the sidebar, and in the account's block.
+      ["/ui/impostazioni", ["post /ui/logout []", "post /ui/logout []", "post /ui/impostazioni/tema []"]],
     ];
     for (const [url, forms] of pages) {
       expect(formsOf(await get(url)), url).toEqual(forms);
@@ -185,11 +190,14 @@ describe("every form keeps its action, method and field names", () => {
     expect(formsOf(await get(`/ui/systems/${EMPTY}/manage`))).toContain(`post /ui/systems/${EMPTY}/unarchive []`);
     const login = (await app.inject({ method: "GET", url: "/ui/login" })).body;
     expect(formsOf(login)).toEqual(["post /ui/login [password]"]);
+    const admin = (await app.inject({ method: "GET", url: "/ui/admin" })).body;
+    expect(formsOf(admin)).toEqual(["post /ui/login [password]"]);
   });
 
   it("carries no script anywhere but on 'verifica un documento', and there exactly the one the CSP allows", async () => {
     for (const url of ["/ui", "/ui/sistemi", "/ui/sistemi?vista=tutti", `/ui/systems/${SYSTEM}`, `/ui/systems/${SYSTEM}?ricevuta=1`,
-      `/ui/systems/${SYSTEM}/checkpoints`, `/ui/systems/${SYSTEM}/manage`, "/ui/persone"]) {
+      `/ui/systems/${SYSTEM}/checkpoints`, `/ui/systems/${SYSTEM}/manage`, "/ui/persone", "/ui/impostazioni", "/ui/impostazioni/registro",
+      "/ui/sistemi/nuovo", `/ui/systems/${SYSTEM}/collega`]) {
       const body = await get(url);
       expect(body, url).not.toContain("<script");
       expect(body, url).not.toMatch(/\son[a-z]+=/);
@@ -204,22 +212,27 @@ describe("every form keeps its action, method and field names", () => {
 });
 
 describe("the main page (Registro)", () => {
-  it("puts the first two questions in the main column and the evidence as a panel on the right", async () => {
+  it("says the situation in one line, then four figures, the systems and the evidence", async () => {
     const main = mainOf(await get("/ui"));
-    const split = main.slice(main.indexOf('<div class="split">'));
-    expect(split.indexOf('<h2 id="q1">')).toBeLessThan(split.indexOf('<h2 id="q2">'));
-    expect(split).toMatch(/<section class="block side-panel" aria-labelledby="q3">\s*<h2 id="q3">/);
-    expect(main).toContain(`<a href="/ui/systems/${SYSTEM}" class="sys-row">`);
+    // The empty chain has no checkpoint yet: one system to look at, so the line says yellow and links to it.
+    expect(main).toContain(`<div class="status yellow" role="status" data-status="yellow">`);
+    expect(main).toContain(`<span>${UI.home.summary.yellow(1)}</span><a href="/ui/systems/${EMPTY}">${UI.home.summary.why}</a>`);
+    const tiles = [...main.matchAll(/<div class="card tile[^"]*"><strong>([^<]+)<\/strong><span>([^<]+)<\/span><\/div>/g)].map((match) => [match[2], match[1]]);
+    expect(tiles).toEqual([
+      [UI.home.tiles.today, "3"],
+      [UI.home.tiles.blocked, "1"],
+      [UI.home.tiles.failed, "0"],
+      [UI.home.tiles.lastSeal, "15:00"],
+    ]);
     // The state, from the chain check: anchored and recent, so green.
-    expect(main).toContain('class="status-word green">verde<');
-    // The empty chain has no checkpoint yet: one system to look at, so the title says yellow.
-    expect(main).toContain(`<h1>${UI.home.summary.yellow(1)}</h1>`);
+    expect(main).toContain(`<a class="line" href="/ui/systems/${SYSTEM}"><span class="line-text">Assistente clienti</span><span class="pill green" data-chain="green">`);
+    expect(main).toContain('<form method="post" action="/ui/export" class="fields">');
   });
 
   it("lists recent actions with their outcome only when it is not completed", async () => {
     const main = mainOf(await get("/ui"));
-    expect(main).toContain(`<a href="/ui/systems/${SYSTEM}?ricevuta=3#r-3" class="activity">`);
-    expect(main).toContain(`<span class="pill yellow" data-outcome="blocked">${STATE_ICONS.warn}bloccato</span>`);
+    expect(main).toContain(`<a class="line" href="/ui/systems/${SYSTEM}?ricevuta=3#r-3">`);
+    expect(main).toContain(`<span class="pill yellow" data-outcome="blocked">${STATE_ICONS.warn}Bloccato</span>`);
     expect(main).not.toContain('data-outcome="ok"');
   });
 
@@ -232,31 +245,41 @@ describe("the systems page", () => {
   it("offers the active, archived and all systems as links with their counts, and a button to create one", async () => {
     await store.archiveSystem(EMPTY, { actor: "test", ts: NOW });
     const main = mainOf(await get("/ui/sistemi?vista=tutti"));
-    expect(main).toContain('<a href="/ui/sistemi?vista=attivi"><span class="cap">attivi</span><span class="count">1</span></a>');
-    expect(main).toContain('<a href="/ui/sistemi?vista=archiviati"><span class="cap">archiviati</span><span class="count">1</span></a>');
-    expect(main).toContain('<a href="/ui/sistemi?vista=tutti" aria-current="page"><span class="cap">tutti</span><span class="count">2</span></a>');
-    expect(main).toContain(`<a class="button primary" href="#crea">`);
-    expect(main).toContain(`<h2 class="section-title" id="crea">${UI.systemsPage.createTitle}</h2>`);
-    expect(main).toContain(`<span class="system-name"><a href="/ui/systems/${SYSTEM}">Assistente clienti</a></span>`);
-    expect(main).toContain(UI.systemsPage.connection.sdk.replace("'", "&#39;"));
-    expect(main).toContain(UI.manage.archivedOn);
+    expect(main).toContain('<a href="/ui/sistemi?vista=attivi">Attivi<span class="count">1</span></a>');
+    expect(main).toContain('<a href="/ui/sistemi?vista=archiviati">Archiviati<span class="count">1</span></a>');
+    expect(main).toContain('<a href="/ui/sistemi?vista=tutti" aria-current="page">Tutti<span class="count">2</span></a>');
+    expect(main).toContain(`<a class="button primary" href="/ui/sistemi/nuovo">`);
+    expect(main).toContain(`<a class="line" href="/ui/systems/${SYSTEM}"><span class="cell-main"><strong>Assistente clienti</strong><span>${UI.systemsPage.connection.sdk}</span></span>`);
+    expect(main).toContain(UI.systemsPage.connection.none);
+    expect(main).toContain(`data-chain="archived"`);
   });
 
-  it("shows a new system's key once, inside the shell, with the three ways to use it", async () => {
+  it("shows a new system's key once, inside the shell, with the three ways to use it, one shown at a time", async () => {
     const created = await post("/ui/sistemi", "system_id=nuovo&display_name=Il%20nuovo");
     expect(created.status).toBe(200);
     const main = mainOf(created.body);
-    expect(main).toMatch(/<div class="token-box">sigillo_[0-9a-f]{16}_[0-9a-f]{64}<\/div>/);
-    expect(main).toContain("<h1>Il nuovo</h1>");
-    expect(main).toContain('<code class="sid">nuovo</code>');
-    expect(main.match(/<pre class="code">/g)).toHaveLength(3);
+    const token = /<code class="keybox">(sigillo_[0-9a-f]{16}_[0-9a-f]{64})<\/code>/.exec(main)?.[1] ?? "";
+    expect(token).not.toBe("");
+    expect(main).toContain(`<h1>${UI.connect.ready("Il nuovo")}</h1>`);
+    // Each way carries the key and the identifier; CSS shows only the one whose radio is checked.
+    for (const way of ["python", "otel", "api"]) {
+      const snippet = new RegExp(`<pre class="code ${way}">([^]*?)</pre>`).exec(main)?.[1] ?? "";
+      expect(snippet, way).toContain(token);
+    }
+    expect(main).toContain('<input type="radio" name="way" id="way-python" class="sr" checked>');
+    expect(main).toContain('system_id=&quot;nuovo&quot;');
+    expect(main).toContain(`href="/ui/systems/nuovo/collega"`);
     expect(created.body).toContain('<div class="sidebar" id="menu">');
+    // Only the name is needed: the identifier is made from it.
+    const named = mainOf((await post("/ui/sistemi", "display_name=Assistente%20vendite")).body);
+    expect(named).toContain('system_id=&quot;assistente-vendite&quot;');
   });
 
   it("says why a system could not be created, as an alert, in the same page", async () => {
     const refused = await post("/ui/sistemi", `system_id=${SYSTEM}`);
     expect(refused.status).toBe(400);
     expect(mainOf(refused.body)).toContain('<p class="notice bad" role="alert">');
+    expect(mainOf(refused.body)).toContain('<form method="post" action="/ui/sistemi"');
   });
 });
 
@@ -265,21 +288,22 @@ describe("a system's checkpoints and management", () => {
     await store.append(event("45", { action: { kind: "decision", name: "fine" } }));
     await store.createCheckpoint(SYSTEM);
     const main = mainOf(await get(`/ui/systems/${SYSTEM}/checkpoints`));
-    const sizes = [...main.matchAll(/<span class="cp-size">(\d+)<\/span>/g)].map((match) => Number(match[1]));
+    const sizes = [...main.matchAll(/<span class="line-text">(\d+) ricevute sigillate/g)].map((match) => Number(match[1]));
     expect(sizes).toEqual([5, 4]);
-    expect(main).toContain(`<span class="stamp yellow">${STATE_ICONS.warn}${UI.checkpoints.waiting}</span>`);
-    expect(main).toContain(`<span class="stamp green">${STATE_ICONS.ok}${UI.checkpoints.stamped}</span>`);
+    expect(main).toContain(`<span class="pill yellow">${STATE_ICONS.warn}${UI.checkpoints.waiting}</span>`);
+    expect(main).toContain(`<span class="pill green">${STATE_ICONS.ok}${UI.checkpoints.stamped}</span>`);
     expect(main).toContain(UI.checkpoints.attested.replace("'", "&#39;"));
     expect(main).toContain("<code>https://freetsa.org/tsr</code>");
-    expect(main).toContain('<form method="post" action="/ui/checkpoint">');
+    expect(main).toContain('<form method="post" action="/ui/checkpoint" class="section">');
   });
 
   it("refuses deletion with recorded actions in a note, and offers it for an empty chain", async () => {
     const full = mainOf(await get(`/ui/systems/${SYSTEM}/manage`));
-    expect(full).toContain('<p class="note"><svg');
-    expect(full).toContain("3 azioni registrate oltre all&#39;apertura");
+    expect(full).toContain('<p class="lockline"><svg');
+    expect(full).toContain("Contiene 3 azioni registrate");
+    expect(full).not.toContain("/delete");
     const empty = mainOf(await get(`/ui/systems/${EMPTY}/manage`));
-    expect(empty).toContain('<button type="submit" class="danger">');
+    expect(empty).toContain(`<form method="post" action="/ui/systems/${EMPTY}/delete"`);
   });
 
   it("confirms a rename as a status and shows a refusal as an alert", async () => {
@@ -303,10 +327,11 @@ describe("verifying a document", () => {
   it("opens the receipt a match comes from, and says it was found", async () => {
     const main = mainOf(await get(`/ui/verify-document?sha256=${"c".repeat(64)}`));
     expect(main).toContain(`<h3>${UI.verifyDocument.found}</h3>`);
-    expect(main).toContain(`<a href="/ui/systems/${SYSTEM}?ricevuta=2#r-2"><span class="cap">${UI.verifyDocument.seeReceipt}</span></a>`);
+    expect(main).toContain(`<a href="/ui/systems/${SYSTEM}?ricevuta=2#r-2">${UI.verifyDocument.seeReceipt} ›</a>`);
+    expect(main).toContain(`<span class="pill green">${UI.verifyDocument.match.bytes}</span>`);
     const missed = mainOf(await get(`/ui/verify-document?sha256=${"d".repeat(64)}`));
     expect(missed).toContain(`<h3>${UI.verifyDocument.notFound}</h3>`);
-    expect(missed).toContain(`<span class="state-disc small yellow" aria-hidden="true">${STATE_ICONS.warn}</span>`);
+    expect(missed).toContain(`<span class="tile-icon red" aria-hidden="true">${STATE_ICONS.bad}</span>`);
   });
 });
 
@@ -315,9 +340,9 @@ describe("the people page", () => {
     const found = await post("/ui/persone", `identifier=${PERSON}`);
     const main = mainOf(found.body);
     const token = store.readChain(SYSTEM)[1]?.actor.on_behalf_of ?? "";
-    expect(main).toContain(`<code>${token}</code>`);
-    expect(main).toContain(`<li class="person-receipt"><a href="/ui/systems/${SYSTEM}?ricevuta=1#r-1">`);
-    expect(main).toContain(`<section class="card padded side-panel" aria-labelledby="persona-cancella">`);
+    expect(main).toContain(`<code class="muted">${token}</code>`);
+    expect(main).toContain(`<li class="person-receipt"><a class="line" href="/ui/systems/${SYSTEM}?ricevuta=1#r-1">`);
+    expect(main).toContain(`<section class="card padded" aria-labelledby="persona-cancella">`);
     expect(main).toContain(`value="${PERSON}"`);
   });
 
@@ -334,7 +359,6 @@ describe("not found", () => {
       const body = await get(url, 404);
       expect(body, url).toContain('<div class="sidebar" id="menu">');
       expect(body, url).toContain(`<h1>${UI.notFound.heading}</h1>`);
-      expect(body, url).toContain(UI.notFound.system("mai-creato"));
       expect(body, url).toContain(`<title>${UI.notFound.title} — sigillo</title>`);
     }
   });

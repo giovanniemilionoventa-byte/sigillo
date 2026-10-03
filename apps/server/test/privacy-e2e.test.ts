@@ -398,8 +398,8 @@ describe("a chain started before version 4", () => {
     expect(store.legacyReceiptsNaming("someone.else")).toBe(0);
 
     const found = await post("/ui/persone", { identifier: PERSON });
-    expect(found.body).toContain("Attenzione: 1 ricevuta scritta prima delle ricevute senza nomi");
-    expect((await post("/ui/persone", { identifier: "someone.else" })).body).not.toContain("Attenzione:");
+    expect(found.body).toContain("1 ricevuta scritta prima di ottobre 2026 contiene questo identificativo in chiaro");
+    expect((await post("/ui/persone", { identifier: "someone.else" })).body).not.toContain("prima di ottobre 2026");
 
     const erased = await serverCli("subject", "erase", "--identifier", PERSON);
     expect(erased.code, erased.stderr).toBe(0);
@@ -411,7 +411,7 @@ describe("a chain started before version 4", () => {
     expect(again.code).toBe(1);
     expect(again.stderr).toContain("nothing to erase");
     expect(again.stderr).toContain("WARNING: 1 receipt(s)");
-    expect((await post("/ui/persone", { identifier: PERSON })).body).toContain("Attenzione: 1 ricevuta");
+    expect((await post("/ui/persone", { identifier: PERSON })).body).toContain("1 ricevuta scritta prima di ottobre 2026");
   }, 60_000);
 
   it("keeps its v2 receipts valid, with v4 receipts after them, in the same export", async () => {

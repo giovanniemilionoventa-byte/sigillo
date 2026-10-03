@@ -279,7 +279,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     void reply
       .code(429)
       .header("retry-after", String(Math.max(1, Math.ceil((nextMonth - at.getTime()) / 1000))))
-      .send({ error: `this organization has reached its limit of ${limit} receipts this month` });
+      .send({
+        error: `this organization has reached its limit of ${limit} receipts this month: no receipt is written until ${new Date(nextMonth).toISOString().slice(0, 10)}`,
+      });
     return true;
   };
 
@@ -320,6 +322,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.ui.cookieSecure === undefined ? {} : { cookieSecure: options.ui.cookieSecure }),
       ...(options.ui.sessions === undefined ? {} : { sessions: options.ui.sessions }),
       ...(options.ui.accounts === undefined ? {} : { accounts: options.ui.accounts }),
+      ...(options.organizationMonthlyReceipts === undefined
+        ? {}
+        : { organizationMonthlyReceipts: options.organizationMonthlyReceipts }),
     });
   }
 
