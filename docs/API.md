@@ -75,7 +75,7 @@ events unless the agents are stopped or hold them.
 A system that belongs to a customer organization over its **monthly limit**
 (`SIGILLO_ORG_MONTHLY_RECEIPTS` receipts per calendar month, UTC) gets `429`
 with `Retry-After` set to the start of next month and
-`{"error":"this organization has reached its limit of N receipts this month"}`,
+`{"error":"this organization has reached its limit of N receipts this month: no receipt is written until YYYY-MM-01"}`,
 on both endpoints, after its key is checked. Nothing is written.
 
 ## `POST /v1/traces` — OpenTelemetry ingest

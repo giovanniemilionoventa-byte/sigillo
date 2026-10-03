@@ -1,22 +1,22 @@
 import { GENESIS_PREV_HASH, receiptHashHex, type Receipt } from "@sigillo/core";
 import type { SystemHealth } from "../health/chain-health.js";
 import type { ReceiptStore, SystemRecord } from "../storage/store.js";
-import { chainStamp, escape, kindIcon, outcomePill, systemPath } from "./layout.js";
+import { archivedPill, capital, chainPill, escape, kindIcon, outcomePill, systemPath } from "./layout.js";
 import {
   actionKindLabel,
   artifactRoleWords,
-  describeReceipt,
-  formatDay,
-  formatTime,
+  formatClock,
+  formatDayHeading,
   formatTs,
+  formatWhen,
+  formatWhenInline,
   localDayRange,
   modelWhere,
-  receiptSubtitle,
   receiptTitle,
   systemTitle,
   UI,
 } from "./strings.js";
-import { ICONS, STATE_ICONS } from "./style.js";
+import { ICONS } from "./style.js";
 
 /**
  * One system's pages: the header and tabs they share, the evidence sheet,
@@ -108,25 +108,19 @@ export function timestampStatus(store: ReceiptStore, systemId: string, seq: numb
 
 export type SystemTab = "history" | "checkpoints" | "manage";
 
-/** The header of every page about one system, its tabs, and the evidence sheet its button opens. */
+/** The header of every page about one system, its tabs, and the button that opens its evidence sheet. */
 export function systemHeader(record: SystemRecord, health: SystemHealth, tab: SystemTab): string {
   const path = systemPath(record.system_id);
   const tabLink = (name: SystemTab, href: string, label: string): string =>
-    `<a href="${href}"${name === tab ? ' aria-current="page"' : ""}><span class="cap">${escape(label)}</span></a>`;
-  const archived = record.archived_at === null ? "" : ` <span class="badge">${escape(UI.systemsPage.archivedBadge)}</span>`;
+    `<a href="${href}"${name === tab ? ' aria-current="page"' : ""}>${escape(label)}</a>`;
   return `<header class="sys-head">
-<div class="sys-title-row">
-<div class="sys-title">
-<h1>${escape(systemTitle(record))}${archived}</h1>
-<p class="sys-meta"><code class="sid">${escape(record.system_id)}</code><span aria-hidden="true">·</span><span>${escape(UI.system.receipts(record.receipts))}</span><span aria-hidden="true">·</span>${chainStamp(health.status)}</p>
-${health.status === "green" ? "" : `<p class="sys-health">${escape(health.message)}</p>`}
-</div>
-<a class="button primary" href="#fascicolo">${ICONS.download}${escape(UI.home.generate)}</a>
-</div>
+<div class="titleline"><h1>${escape(systemTitle(record))}</h1>${chainPill(health.status)}${record.archived_at === null ? "" : archivedPill()}
+<span class="end"><a class="button primary" href="#fascicolo">${ICONS.download}<span class="label-long">${escape(UI.system.evidence)}</span></a></span></div>
+${health.status === "green" ? "" : `<p class="sys-health ${health.status}">${escape(health.message)}</p>`}
 <nav class="tabs" aria-label="${escape(UI.system.tabsLabel)}">
-${tabLink("history", path, UI.systemsPage.history)}
+${tabLink("history", path, UI.history.back)}
 ${tabLink("checkpoints", `${path}/checkpoints`, UI.checkpoints.title)}
-${tabLink("manage", `${path}/manage`, UI.systemsPage.manage)}
+${tabLink("manage", `${path}/manage`, UI.settings.title)}
 </nav>
 </header>`;
 }
@@ -136,32 +130,29 @@ export function discloseFields(): string {
   const t = UI.home.disclose;
   return `<details class="fold"><summary>${ICONS.chevronRight}<span>${escape(t.summary)}</span></summary>
 <div class="fold-body">
-<p class="hint">${escape(t.hint)}</p>
+<p>${escape(t.hint)}</p>
 <label>${escape(t.subjectsLabel)}<input type="text" name="subjects" autocomplete="off" spellcheck="false"></label>
 <label>${escape(t.openingsLabel)}<input type="text" name="openings" autocomplete="off" inputmode="numeric"></label>
-<p class="hint">${escape(t.openingsHint)}</p>
 </div>
 </details>`;
 }
 
 /**
- * "Genera fascicolo" as a sheet over the page, opened by the header's link
- * to #fascicolo and closed by "Annulla": :target, no script. The form is the
+ * The evidence file as a sheet over the page, opened by the header's link to
+ * #fascicolo and closed by "Annulla": :target, no script. The form is the
  * one this page always had (POST /ui/systems/:id/export), with the period.
  */
 export function exportSheet(record: SystemRecord): string {
   const t = UI.exportSheet;
   return `<section class="sheet-layer" id="fascicolo" aria-labelledby="fascicolo-title">
 <div class="sheet">
-<div class="sheet-head"><span class="icon-tile blue" aria-hidden="true">${ICONS.download}</span><div><h2 id="fascicolo-title">${escape(t.title(systemTitle(record)))}</h2><p>${escape(UI.home.generateHint)}</p></div></div>
 <form method="post" action="${systemPath(record.system_id)}/export">
 <div class="sheet-body">
-<p class="group">${escape(t.period)}</p>
+<h2 id="fascicolo-title">${escape(t.title(systemTitle(record)))}</h2>
 <div class="fields-row"><label>${escape(UI.home.fromDate)}<input type="date" name="from"></label><label>${escape(UI.home.toDate)}<input type="date" name="to"></label></div>
-<p class="hint">${escape(UI.home.wholeChain)}</p>
 ${discloseFields()}
 </div>
-<div class="sheet-foot"><a class="button" href="#main">${escape(t.cancel)}</a><button type="submit" class="primary">${ICONS.download}${escape(UI.home.generate)}</button></div>
+<div class="sheet-foot"><a class="button" href="#main">${escape(t.cancel)}</a><button type="submit" class="primary">${ICONS.download}${escape(t.submit)}</button></div>
 </form>
 </div>
 </section>`;
@@ -170,28 +161,25 @@ ${discloseFields()}
 /** One receipt as a row of the list: a link that selects it. */
 function receiptRow(receipt: Receipt, href: string, current: boolean): string {
   return `<li><a class="row" id="r-${receipt.seq}" href="${escape(href)}"${current ? ' aria-current="true"' : ""}>
-<span class="row-time">${escape(formatTime(receipt.ts_received))}</span>
+<span class="row-time">${escape(formatClock(receipt.ts_received))}</span>
 ${kindIcon(receipt.action.kind)}<span class="sr">${escape(actionKindLabel(receipt.action.kind))}: </span>
-<span class="row-text"><span class="row-title">${escape(receiptTitle(receipt))}</span><span class="row-sub">${escape(receiptSubtitle(receipt))}</span></span>
+<span class="row-title">${escape(receiptTitle(receipt))}</span>
 ${receipt.outcome === "ok" ? "" : outcomePill(receipt.outcome)}
-<span class="row-seq">n. ${receipt.seq}</span>
 </a></li>`;
 }
 
 /** The list, a day at a time, newest first. */
-function receiptList(systemId: string, receipts: Receipt[], query: HistoryQuery, selected: number | null): string {
+function receiptList(systemId: string, receipts: Receipt[], query: HistoryQuery, selected: number | null, now: Date): string {
   const days: { day: string; rows: string[] }[] = [];
   for (const receipt of receipts) {
-    const day = formatDay(receipt.ts_received);
+    const day = formatDayHeading(receipt.ts_received, now);
     const href = historyUrl(systemId, query, { ricevuta: String(receipt.seq) }, `#r-${receipt.seq}`);
     const row = receiptRow(receipt, href, receipt.seq === selected);
     const last = days[days.length - 1];
     if (last !== undefined && last.day === day) last.rows.push(row);
     else days.push({ day, rows: [row] });
   }
-  return days
-    .map(({ day, rows }) => `<h3 class="day">${escape(UI.history.dayLocal(day))}</h3>\n<ol class="rows">${rows.join("\n")}</ol>`)
-    .join("\n");
+  return days.map(({ day, rows }) => `<h3 class="day">${escape(day)}</h3>\n<ol class="rows">${rows.join("\n")}</ol>`).join("\n");
 }
 
 /** One label/value line of the inspector. */
@@ -199,13 +187,22 @@ function fact(label: string, value: string, stack = false): string {
   return `<div${stack ? ' class="stack"' : ""}><dt>${escape(label)}</dt><dd>${value}</dd></div>`;
 }
 
-/** The selected receipt, in full: the sentence, who and when, files, its place in the chain, and its signature. */
+/** What a receipt is, in a few words: "Strumento: rimborsa_pagamento", "Modello: llama3.1:8b". */
+export function receiptHeading(receipt: Receipt): string {
+  if (receipt.action.kind === "genesis") return receiptTitle(receipt);
+  const model = receipt.v !== 1 ? receipt.model : undefined;
+  const name = receipt.action.kind === "llm_call" && model !== undefined ? model.name : receipt.action.name;
+  return `${capital(actionKindLabel(receipt.action.kind))}: ${name}`;
+}
+
+/** The selected receipt: who, when, files, whether it is sealed, and everything technical folded away. */
 function inspector(
   store: ReceiptStore,
   record: SystemRecord,
   receipt: Receipt,
   query: HistoryQuery,
   anchoredBelow: number,
+  now: Date,
 ): string {
   const t = UI.inspector;
   const systemId = record.system_id;
@@ -213,52 +210,43 @@ function inspector(
   const model = receipt.v !== 1 ? receipt.model : undefined;
   const artifacts = receipt.v !== 1 ? (receipt.artifacts ?? []) : [];
 
-  const who = [fact(t.kind, `<span class="cap">${escape(actionKindLabel(receipt.action.kind))}</span>`)];
+  const who: string[] = [];
   if (!genesis) who.push(fact(t.agent, escape(receipt.actor.agent)));
   if (receipt.actor.on_behalf_of !== undefined) {
     who.push(fact(t.onBehalfOf, `<a href="/ui/persone">${escape(receipt.actor.on_behalf_of)}</a>`));
   }
   if (model !== undefined) {
     const where = modelWhere(model.provider);
-    who.push(fact(t.model, `<code>${escape(model.name)}</code>${where === null ? "" : `<span class="sub">${escape(where)}</span>`}`));
+    who.push(fact(t.model, `${escape(model.name)}${where === null ? "" : `<span class="sub">${escape(where)}</span>`}`));
   }
-  who.push(fact(t.received, escape(formatTs(receipt.ts_received))));
+  who.push(fact(t.when, escape(formatWhen(receipt.ts_received, now))));
   who.push(fact(t.source, escape(genesis ? t.sources.genesis : t.sources[receipt.source.type])));
 
   const files =
     artifacts.length === 0
       ? ""
-      : `<h3 class="group-label">${escape(t.files)}</h3>
-<ul class="facts">${artifacts
+      : `<ul class="facts" aria-label="${escape(t.files)}">${artifacts
           .map(
             (artifact) =>
-              `<li class="file-row">${ICONS.doc}<span class="file-name"><code>${escape(artifact.label)}</code><span class="sub">${escape(artifactRoleWords(artifact.role))}</span></span><a href="/ui/verify-document">${escape(t.verifyFile)}</a></li>`,
+              `<li class="file-row">${ICONS.doc}<span class="file-name">${escape(artifact.label)}<span class="sub">${escape(artifactRoleWords(artifact.role))}</span></span><a href="/ui/verify-document">${escape(t.verifyFile)}</a></li>`,
           )
           .join("")}</ul>`;
 
   const anchored = receipt.seq < anchoredBelow;
+  const seal = anchored
+    ? `<span class="ok">${escape(t.sealedAt(sealTime(store, systemId, receipt.seq, now)))}</span>`
+    : `<span class="wait">${escape(t.sealWaiting)}</span>`;
+
   const previous =
     receipt.seq === 0
       ? `${escape(t.first)}<code class="hash-full">${escape(receipt.prev_hash)}</code>`
-      : `<a href="${escape(historyUrl(systemId, query, { ricevuta: String(receipt.seq - 1) }, `#r-${receipt.seq - 1}`))}">${escape(t.receiptNo(receipt.seq - 1))}</a><code class="hash-full">${escape(receipt.prev_hash)}</code>`;
-  const chain = [
-    fact(t.fingerprint, `<code class="hash-full">${escape(receiptHashHex(receipt))}</code>`, true),
-    fact(t.linkedTo, previous, true),
-    fact(
-      t.anchoring,
-      anchored
-        ? `<span class="stamp green">${STATE_ICONS.ok}${escape(UI.history.anchored)}</span>`
-        : `<span class="stamp yellow">${STATE_ICONS.warn}${escape(UI.history.anchorPending)}</span>`,
-    ),
-    `<div class="note-row"><span>${
-      anchored ? escape(t.anchoredNote) : `<span class="cap">${escape(timestampStatus(store, systemId, receipt.seq))}</span>`
-    }</span><a href="${systemPath(systemId)}/checkpoints">${escape(t.seeCheckpoints)}</a></div>`,
-  ];
-
+      : `<a href="${escape(historyUrl(systemId, query, { ricevuta: String(receipt.seq - 1) }, `#r-${receipt.seq - 1}`))}">${escape(t.linkedTo(receipt.seq - 1))}</a><code class="hash-full">${escape(receipt.prev_hash)}</code>`;
   const llm = receipt.action.kind === "llm_call";
   const technical = [
-    fact(t.signature, `<code class="hash-full">${escape(receipt.sig)}</code>`, true),
-    fact(t.key, `<code>${escape(receipt.key_id)}</code>`),
+    fact(t.fingerprint, `<code class="hash-full">${escape(receiptHashHex(receipt))}</code>`, true),
+    fact(UI.inspector.receiptNo(receipt.seq), previous, true),
+    fact(t.signature, `<code class="hash-full">Ed25519 · ${escape(receipt.key_id)}</code><code class="hash-full">${escape(receipt.sig)}</code>`, true),
+    fact(t.timestamp, `${escape(timestampStatus(store, systemId, receipt.seq))} · <a href="${systemPath(systemId)}/checkpoints">${escape(UI.checkpoints.title)}</a>`, true),
   ];
   if (receipt.input_hash !== null) {
     technical.push(fact(llm ? t.promptHash : t.inputHash, `<code class="hash-full">${escape(receipt.input_hash)}</code>`, true));
@@ -266,23 +254,28 @@ function inspector(
   if (receipt.output_hash !== null) {
     technical.push(fact(llm ? t.replyHash : t.outputHash, `<code class="hash-full">${escape(receipt.output_hash)}</code>`, true));
   }
-  technical.push(fact(t.receivedIso, `<code>${escape(receipt.ts_received)}</code>`));
-  technical.push(fact(t.eventIso, `<code>${escape(receipt.ts_event)}</code>`));
+  technical.push(fact(t.receivedIso, `<code>${escape(receipt.ts_received)}</code>`, true));
+  technical.push(fact(t.eventIso, `<code>${escape(receipt.ts_event)}</code>`, true));
   technical.push(fact(t.version, `<code>v${receipt.v}</code>`));
 
   return `<a class="back" href="${escape(historyUrl(systemId, query, { ricevuta: undefined }, `#r-${receipt.seq}`))}">${ICONS.chevronLeft}${escape(UI.history.back)}</a>
-<div class="insp-top"><p class="insp-no" id="dettaglio-titolo">${escape(t.receiptNo(receipt.seq))}</p>${outcomePill(receipt.outcome, true)}</div>
-${kindIcon(receipt.action.kind, "large")}
-<h2 class="insp-sentence">${escape(describeReceipt(receipt))}</h2>
+<div class="insp-top">${kindIcon(receipt.action.kind, "large")}${outcomePill(receipt.outcome)}</div>
+<h2 class="insp-title" id="dettaglio-titolo">${escape(receiptHeading(receipt))}</h2>
 ${genesis && receipt.prev_hash === GENESIS_PREV_HASH ? `<p class="insp-note">${escape(t.genesisNote)}</p>` : ""}
-<h3 class="group-label">${escape(t.whoWhen)}</h3>
 <dl class="facts">${who.join("")}</dl>
 ${files}
-<h3 class="group-label">${escape(t.chain)}</h3>
-<dl class="facts">${chain.join("")}</dl>
-<details class="tech"><summary><span class="when-closed">${escape(t.showTechnical)}</span><span class="when-open">${escape(t.hideTechnical)}</span></summary>
+<dl class="facts">${fact(t.seal, seal)}</dl>
+<details class="tech"><summary>${ICONS.chevronRight}<span>${escape(t.technical)}</span></summary>
 <dl class="facts">${technical.join("")}</dl>
 </details>`;
+}
+
+/** When the first checkpoint with a timestamp that covers `seq` was written, as the inspector says it. */
+function sealTime(store: ReceiptStore, systemId: string, seq: number, now: Date): string {
+  const covering = store
+    .readCheckpoints(systemId)
+    .find((entry) => entry.checkpoint.tree_size > seq && store.readTimestamps(entry.id).length > 0);
+  return covering === undefined ? "" : formatWhenInline(covering.checkpoint.ts, now);
 }
 
 export interface HistoryView {
@@ -298,6 +291,7 @@ export interface HistoryView {
   selected: Receipt | null;
   explicit: boolean;
   anchoredBelow: number;
+  now: Date;
 }
 
 /** The history of one system: header, filters, the list, and the inspector beside it. */
@@ -312,43 +306,46 @@ export function historyPage(view: HistoryView): string {
     `<a href="${escape(historyUrl(systemId, query, { kind: kind === "" ? undefined : kind, ricevuta: undefined }))}"${
       kind === currentKind ? ' aria-current="page"' : ""
     }>${escape(label)}<span class="count">${count}</span></a>`;
-  const segments = [segment("", t.allKinds, all), ...KINDS.map((kind) => segment(kind, t.kinds[kind], counts[kind] ?? 0))].join("");
+  // A kind with nothing in it is not offered, unless it is the one chosen.
+  const segments = [
+    segment("", t.allKinds, all),
+    ...KINDS.filter((kind) => (counts[kind] ?? 0) > 0 || kind === currentKind).map((kind) => segment(kind, t.kinds[kind], counts[kind] ?? 0)),
+  ].join("");
 
   const filtered = query.name !== undefined || query.from !== undefined || query.to !== undefined;
   const dateValue = (value: string | undefined): string => (value !== undefined && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : "");
-  const search = `<details class="search"${filtered ? " open" : ""}><summary>${ICONS.search}<span>${escape(t.searchTitle)}</span></summary>
+  const search = `<details class="search"${filtered ? " open" : ""}><summary aria-label="${escape(t.searchTitle)}" title="${escape(t.searchTitle)}">${ICONS.search}</summary>
 <form method="get" action="${systemPath(systemId)}">
 ${query.kind === undefined ? "" : `<input type="hidden" name="kind" value="${escape(query.kind)}">`}
-<label><span class="cap">${escape(t.nameLabel)}</span><input type="text" name="name" value="${escape(query.name ?? "")}" autocomplete="off" spellcheck="false"></label>
-<label><span class="cap">${escape(t.fromLabel)}</span><input type="date" name="from" value="${escape(dateValue(query.from))}"></label>
-<label><span class="cap">${escape(t.toLabel)}</span><input type="date" name="to" value="${escape(dateValue(query.to))}"></label>
-<button type="submit">${escape(t.searchButton)}</button>
+<label>${escape(t.nameLabel)}<input type="text" name="name" value="${escape(query.name ?? "")}" autocomplete="off" spellcheck="false"></label>
+<label>${escape(t.fromLabel)}<input type="date" name="from" value="${escape(dateValue(query.from))}"></label>
+<label>${escape(t.toLabel)}<input type="date" name="to" value="${escape(dateValue(query.to))}"></label>
+<button type="submit" class="primary">${escape(t.searchButton)}</button>
 </form>
-${
-  filtered
-    ? `<p class="filter-line"><a href="${escape(historyUrl(systemId, query, { name: undefined, from: undefined, to: undefined, ricevuta: undefined }))}">${escape(t.clearFilters)}</a></p>`
-    : ""
-}
 </details>`;
+  const clear = filtered
+    ? `<p class="filter-line"><a href="${escape(historyUrl(systemId, query, { name: undefined, from: undefined, to: undefined, ricevuta: undefined }))}">${escape(t.clearFilters)}</a></p>`
+    : "";
 
   const list =
     receipts.length === 0
-      ? `<div class="empty-state"><strong>${escape(t.noMatches)}</strong><p>${escape(t.noMatchesHint)}</p></div>`
-      : receiptList(systemId, receipts, query, selected?.seq ?? null);
+      ? `<div class="empty-state">${escape(t.noMatches)}</div>`
+      : receiptList(systemId, receipts, query, selected?.seq ?? null, view.now);
 
   return `<section class="studio-list" aria-label="${escape(t.listLabel)}">
 ${systemHeader(record, view.health, "history")}
 <div class="toolbar">
 <nav class="segmented" aria-label="${escape(t.filterLabel)}">${segments}</nav>
-<h2 class="list-count">${escape(t.shown(receipts.length, receipts.length === HISTORY_LIMIT))}</h2>
-</div>
 ${search}
+</div>
+${clear}
 <div class="rows-scroll" id="elenco">
 ${list}
+${receipts.length === HISTORY_LIMIT ? `<p class="empty-state">${escape(t.capped)}</p>` : ""}
 </div>
 </section>
 <aside class="inspector" id="dettaglio" aria-label="${escape(UI.inspector.label)}">
-${selected === null ? "" : inspector(view.store, record, selected, query, view.anchoredBelow)}
+${selected === null ? "" : inspector(view.store, record, selected, query, view.anchoredBelow, view.now)}
 </aside>
 ${exportSheet(record)}`;
 }

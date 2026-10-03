@@ -28,7 +28,9 @@ function declaredColours(block: string): Map<string, string> {
 }
 
 const lightBlock = /:root \{([^}]*)\}/.exec(STYLE)?.[1] ?? "";
-const darkBlock = /@media \(prefers-color-scheme: dark\) \{\s*:root \{([^}]*)\}/.exec(STYLE)?.[1] ?? "";
+const darkBlock = /@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \{([^}]*)\}/.exec(STYLE)?.[1] ?? "";
+/** The same dark tokens, for a reader who chose the dark theme in Impostazioni. */
+const chosenDarkBlock = /:root\[data-theme="dark"\] \{([^}]*)\}/.exec(STYLE)?.[1] ?? "";
 
 function luminance(hex: string): number {
   const channels = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255);
@@ -59,6 +61,7 @@ const PAIRS: [foreground: string, backgrounds: string[], required: number][] = [
   ["kind-step", ["kind-step-fill"], 3],
   ["kind-decision", ["kind-decision-fill"], 3],
   ["kind-genesis", ["kind-genesis-fill"], 3],
+  ["on-code", ["code"], 4.5],
 ];
 
 describe("the stylesheet and design/tokens.json", () => {
@@ -72,6 +75,12 @@ describe("the stylesheet and design/tokens.json", () => {
       expect(Object.fromEntries(declared)).toEqual(Object.fromEntries(expected));
     });
   }
+
+  it("applies the dark tokens both when the system asks for dark and when the reader chose it", () => {
+    expect(declaredColours(chosenDarkBlock).size).toBeGreaterThan(30);
+    expect(Object.fromEntries(declaredColours(chosenDarkBlock))).toEqual(Object.fromEntries(declaredColours(darkBlock)));
+    expect(STYLE).toContain(':root[data-theme="light"] { color-scheme: light; }');
+  });
 
   it("gives every token a dark value", () => {
     expect(Object.keys(tokens.color.dark).sort()).toEqual(Object.keys(tokens.color.light).sort());

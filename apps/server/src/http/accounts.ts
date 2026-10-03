@@ -5,7 +5,8 @@ import type { UiSessions } from "../auth/sessions.js";
 import type { AttemptThrottle } from "../auth/throttle.js";
 import type { Viewer } from "../auth/tenancy.js";
 import { StorageError, type ReceiptStore } from "../storage/store.js";
-import { accountPage, escape, loginPage } from "./layout.js";
+import { accountPage, authField, escape, loginPage, passwordStepPage } from "./layout.js";
+import { GOOGLE_LOGO } from "./style.js";
 import { UI } from "./strings.js";
 
 /**
@@ -64,7 +65,7 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
   };
 
   const login = (reply: FastifyReply, extra: { notice?: string; error?: string }, status = 200): FastifyReply =>
-    html(reply, loginPage(undefined, extra), status);
+    html(reply, loginPage(extra), status);
 
   const failure = (error: unknown): string => {
     if (!(error instanceof FirebaseError)) throw error;
@@ -95,8 +96,8 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
     void reply.header("set-cookie", cookie);
     if (!fromGoogle) return reply.redirect(location, 303);
     const link = `<meta http-equiv="refresh" content="0; url=${escape(location)}">
-<p><a class="button primary wide" href="${escape(location)}">${escape(t.continueLink)}</a></p>`;
-    return html(reply, accountPage(t.continueTitle, t.continueLead, {}, link));
+<a class="button primary" href="${escape(location)}">${escape(t.continueLink)}</a>`;
+    return html(reply, accountPage(t.continueTitle, {}, link, { back: false }));
   };
 
   /**
@@ -115,7 +116,7 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
       } catch (error) {
         return login(reply, { error: failure(error) }, 503);
       }
-      return login(reply, { notice: t.unverified(identity.email) }, 403);
+      return html(reply, accountPage(t.unverifiedTitle, {}, "", { icon: "mail", message: t.unverified(identity.email) }), 403);
     }
     const user = store.userByUid(identity.uid);
     if (user === null) {
@@ -125,56 +126,62 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
     }
     const organization = store.organization(user.organization_id);
     if (organization === null || organization.approved_at === null) {
-      return html(reply, accountPage(t.waitingTitle, t.waiting(organization?.name ?? user.organization_id), {}), 403);
+      return html(reply, waitingPage(organization?.name ?? user.organization_id), 403);
     }
     const viewer: Viewer = { kind: "organization", organizationId: organization.organization_id, userId: user.uid };
     return goOn(reply, "/ui", context.sessionCookie(request, viewer), fromGoogle);
   };
 
-  // Email and password.
+  /** Told to wait: the organization asked for, not yet approved. */
+  const waitingPage = (name: string): string => accountPage(t.waitingTitle, {}, "", { icon: "clock", message: t.waiting(name) });
+
+  // Email and password: the address first, then, on the next page, its
+  // password. The first step asks Firebase nothing, so it cannot tell anyone
+  // whether an address has an account.
 
   app.post("/ui/login/email", async (request, reply) => {
-    const client = request.ip;
-    const at = nowMs();
-    if (context.loginThrottle.isLocked(client, at)) return login(reply, { error: t.wrong }, 401);
     const body = request.body as { email?: unknown; password?: unknown } | undefined;
     const email = typeof body?.email === "string" ? body.email.trim() : "";
-    const password = typeof body?.password === "string" ? body.password : "";
+    if (!EMAIL.test(email)) return login(reply, { error: t.emailInvalid }, 400);
+    if (body === undefined || !("password" in body)) return html(reply, passwordStepPage(email));
+    const client = request.ip;
+    const at = nowMs();
+    const refuse = (error: string, status: number): FastifyReply => html(reply, passwordStepPage(email, { error }), status);
+    if (context.loginThrottle.isLocked(client, at)) return refuse(t.wrong, 401);
+    const password = typeof body.password === "string" ? body.password : "";
     let identity: FirebaseIdentity;
     try {
       identity = await firebase.signInWithPassword(email, password);
     } catch (error) {
       const message = failure(error);
       if (message === t.wrong) context.loginThrottle.recordFailure(client, at);
-      return login(reply, { error: message }, message === t.unavailable ? 503 : 401);
+      return refuse(message, message === t.unavailable ? 503 : 401);
     }
     context.loginThrottle.recordSuccess(client);
     return signedIn(request, reply, identity, false);
   });
 
-  const signUpForm = (email = ""): string => `<form method="post" action="/ui/registrati" class="fields">
-<label>${escape(t.email)}
-  <input type="email" name="email" value="${escape(email)}" autocomplete="email" required>
-</label>
-<label>${escape(t.password)}
-  <input type="password" name="password" autocomplete="new-password" minlength="${MIN_PASSWORD}" required>
-</label>
-<label>${escape(t.passwordRepeat)}
-  <input type="password" name="password_again" autocomplete="new-password" minlength="${MIN_PASSWORD}" required>
-</label>
-<p class="hint">${escape(t.passwordRule)}</p>
+  const signUpForm = (email = ""): string => `<a class="button" href="${GOOGLE_PATH}">${GOOGLE_LOGO}${escape(t.google)}</a>
+<div class="or">${escape(t.or)}</div>
+<form method="post" action="/ui/registrati">
+${authField(t.email, `type="email" name="email" value="${escape(email)}" autocomplete="email" required`)}
+${authField(t.password, `type="password" name="password" autocomplete="new-password" minlength="${MIN_PASSWORD}" required`, { placeholder: t.passwordNew })}
+${authField(t.passwordRepeat, `type="password" name="password_again" autocomplete="new-password" minlength="${MIN_PASSWORD}" required`)}
 <button type="submit" class="primary">${escape(t.signUpSubmit)}</button>
-</form>`;
+</form>
+<p class="auth-foot"><span class="muted">${escape(t.haveAccount)}</span><a href="/ui/login">${escape(t.signIn)}</a></p>`;
 
-  app.get("/ui/registrati", async (_request, reply) => html(reply, accountPage(t.signUpTitle, t.signUpLead, {}, signUpForm())));
+  const signUpPage = (extra: { error?: string }, email = ""): string =>
+    accountPage(t.signUpTitle, extra, signUpForm(email), { back: false });
+
+  app.get("/ui/registrati", async (_request, reply) => html(reply, signUpPage({})));
 
   app.post("/ui/registrati", async (request, reply) => {
     const body = request.body as { email?: unknown; password?: unknown; password_again?: unknown } | undefined;
     const email = typeof body?.email === "string" ? body.email.trim() : "";
     const password = typeof body?.password === "string" ? body.password : "";
     const again = typeof body?.password_again === "string" ? body.password_again : "";
-    const refuse = (error: string, status = 400): FastifyReply =>
-      html(reply, accountPage(t.signUpTitle, t.signUpLead, { error }, signUpForm(email)), status);
+    const refuse = (error: string, status = 400): FastifyReply => html(reply, signUpPage({ error }, email), status);
     if (!EMAIL.test(email)) return refuse(t.emailInvalid);
     if ([...password].length < MIN_PASSWORD) return refuse(t.passwordShort);
     if (password !== again) return refuse(t.passwordMismatch);
@@ -190,17 +197,16 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
       if (error instanceof FirebaseError && error.code === "INVALID_EMAIL") return refuse(t.emailInvalid);
       return refuse(failure(error), 503);
     }
-    return html(reply, accountPage(t.signUpTitle, t.signedUp(email), {}));
+    return html(reply, accountPage(t.checkMailTitle, {}, "", { icon: "mail", message: t.signedUp(email) }));
   });
 
-  const resetForm = `<form method="post" action="/ui/password" class="fields">
-<label>${escape(t.email)}
-  <input type="email" name="email" autocomplete="email" required>
-</label>
+  const resetForm = `<form method="post" action="/ui/password">
+${authField(t.email, 'type="email" name="email" autocomplete="email" required')}
 <button type="submit" class="primary">${escape(t.resetSubmit)}</button>
 </form>`;
+  const resetPage = (extra: { error?: string }): string => accountPage(t.resetTitle, extra, resetForm);
 
-  app.get("/ui/password", async (_request, reply) => html(reply, accountPage(t.resetTitle, t.resetLead, {}, resetForm)));
+  app.get("/ui/password", async (_request, reply) => html(reply, resetPage({})));
 
   app.post("/ui/password", async (request, reply) => {
     const body = request.body as { email?: unknown } | undefined;
@@ -208,7 +214,7 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
     const client = request.ip;
     const at = nowMs();
     if (context.requestThrottle.isLocked(client, at)) {
-      return html(reply, accountPage(t.resetTitle, t.resetLead, { error: t.tooMany }, resetForm), 429);
+      return html(reply, resetPage({ error: t.tooMany }), 429);
     }
     context.requestThrottle.recordFailure(client, at);
     // The same answer whether the address has an account or not, and whether
@@ -218,11 +224,11 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
         await firebase.sendPasswordReset(email);
       } catch (error) {
         if (error instanceof FirebaseError && error.code === "UNAVAILABLE") {
-          return html(reply, accountPage(t.resetTitle, t.resetLead, { error: t.unavailable }, resetForm), 503);
+          return html(reply, resetPage({ error: t.unavailable }), 503);
         }
       }
     }
-    return html(reply, accountPage(t.resetTitle, t.resetSent, {}));
+    return html(reply, accountPage(t.checkMailTitle, {}, "", { icon: "mail", message: t.resetSent }));
   });
 
   // Google: to Google and back, the code exchanged here.
@@ -272,17 +278,16 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
     return typeof parsed.uid === "string" && typeof parsed.email === "string" ? { uid: parsed.uid, email: parsed.email } : null;
   };
 
-  const companyForm = `<form method="post" action="${SIGNUP_PATH}" class="fields">
-<label>${escape(t.companyLabel)}
-  <input type="text" name="name" maxlength="128" autocomplete="organization" required>
-</label>
+  const companyForm = `<form method="post" action="${SIGNUP_PATH}">
+${authField(t.companyLabel, 'type="text" name="name" maxlength="128" autocomplete="organization" autofocus required')}
 <button type="submit" class="primary">${escape(t.companySubmit)}</button>
 </form>`;
+  const companyPage = (extra: { error?: string }): string => accountPage(t.companyTitle, extra, companyForm, { back: false });
 
   app.get(SIGNUP_PATH, async (request, reply) => {
     const ticket = ticketOf(request);
     if (ticket === null) return login(reply, { error: t.expired }, 401);
-    return html(reply, accountPage(t.companyTitle, t.companyLead(ticket.email), {}, companyForm));
+    return html(reply, companyPage({}));
   });
 
   app.post(SIGNUP_PATH, async (request, reply) => {
@@ -298,13 +303,13 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
       });
     } catch (error) {
       if (!(error instanceof StorageError)) throw error;
-      return html(reply, accountPage(t.companyTitle, t.companyLead(ticket.email), { error: error.message }, companyForm), 400);
+      return html(reply, companyPage({ error: error.message }), 400);
     }
     request.log.info({ action: "user.register", organization: organization.organization_id }, "an organization was requested");
     return reply
       .header("set-cookie", `${SIGNUP_COOKIE}=; ${context.cookieAttributes(request).replace("Path=/", `Path=${SIGNUP_PATH}`)}; Max-Age=0`)
       .code(200)
       .type("text/html; charset=utf-8")
-      .send(accountPage(t.waitingTitle, t.waiting(organization.name), {}));
+      .send(waitingPage(organization.name));
   });
 }

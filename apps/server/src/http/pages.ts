@@ -1,139 +1,190 @@
-import type { DocumentFingerprints } from "@sigillo/core";
-import type { DocumentMatch, ReceiptStore, SystemRecord } from "../storage/store.js";
+import type { DocumentFingerprints, Receipt } from "@sigillo/core";
+import type { AdminLogEntry, DocumentMatch, ReceiptStore, SystemRecord } from "../storage/store.js";
 import type { ChainStatus } from "../health/chain-health.js";
-import { discloseFields, timestampStatus } from "./history.js";
+import { discloseFields } from "./history.js";
 import {
   archivedButShown,
+  archivedPill,
+  chainPill,
   escape,
+  initials,
   kindIcon,
   notices,
   outcomePill,
   pageHead,
-  semaphore,
   STATE_ICON,
   systemPath,
   worstStatus,
+  type Account,
   type SystemRow,
 } from "./layout.js";
-import { describeAdminEntry, describeDocumentMatch, describeReceipt, formatTs, systemTitle, UI } from "./strings.js";
+import {
+  adminActor,
+  describeAdminAction,
+  describeDocumentMatch,
+  formatClock,
+  formatCount,
+  formatDate,
+  formatTs,
+  formatWhen,
+  formatWhenInline,
+  localDate,
+  localDayRange,
+  receiptTitle,
+  systemTitle,
+  UI,
+} from "./strings.js";
 import { ICONS, STATE_ICONS } from "./style.js";
 
 /**
- * The pages of the operator's view other than a system's history: the main
- * page with its three questions, the systems, managing one, its checkpoints,
- * a new system's key, the people, the result of checking a document, and
- * "not found". Each returns what goes inside <main>; layout.ts puts it in the
- * shell and ui.ts decides which one a request gets.
+ * The pages of the web view other than a system's history: the main page,
+ * the first steps, the systems, a new one, connecting an agent, managing a
+ * system, its seals, the people, the customers, the settings, the result of
+ * checking a document, and "not found". Each returns what goes inside
+ * <main>; layout.ts puts it in the shell and ui.ts decides which one a
+ * request gets.
  */
 
 /** A link to one receipt, opened in its system's history. */
-function receiptPath(systemId: string, seq: number): string {
+export function receiptPath(systemId: string, seq: number): string {
   return `${systemPath(systemId)}?ricevuta=${seq}#r-${seq}`;
 }
 
-/** The main page's title and subtitle: the situation in one sentence. */
-export function homeSummary(shown: SystemRow[]): { h1: string; lead: string; status: ChainStatus | null } {
-  const t = UI.home.summary;
-  if (shown.length === 0) return { h1: t.none, lead: UI.home.noSystems, status: null };
-  const count = (status: ChainStatus): number => shown.filter(({ health }) => health.status === status).length;
-  const worst = worstStatus(shown.map(({ health }) => health.status));
-  const h1 = worst === "red" ? t.red(count("red")) : worst === "yellow" ? t.yellow(count("yellow")) : t.green(shown.length);
-  return { h1, lead: t.lead(shown.length), status: worst };
+const chevron = ICONS.chevronRight.replace("<svg ", '<svg class="chevron" ');
+
+/** A short time for a list: "14:44" today, "Ieri" or "29 set" before. */
+function listTime(iso: string, now: Date): string {
+  const when = formatWhen(iso, now);
+  if (when.startsWith("Oggi, ")) return formatClock(iso);
+  if (when.startsWith("Ieri, ")) return "Ieri";
+  return when.replace(/ \d{4}, .*$/, "");
 }
 
-/** The checkpoint button and what it says, on the main page and a system's checkpoints. */
-function checkpointNow(extra = ""): string {
-  const t = UI.home;
-  return `<div class="actions">
-<form method="post" action="/ui/checkpoint"><button type="submit">${ICONS.seal}${escape(t.checkpointNow)}</button></form>
-<p class="hint">${escape(t.checkpointHint)}${extra}</p>
+/** An organization's use of its monthly quota, when it has one. */
+export interface Quota {
+  used: number;
+  limit: number;
+  /** The first day of next month, when writes resume. */
+  resume: string;
+}
+
+/** The quota as a notice: at 90% a warning, at the limit an alert. Nothing below. */
+export function quotaNotice(quota: Quota | null): string {
+  if (quota === null || quota.used < quota.limit * 0.9) return "";
+  if (quota.used >= quota.limit) {
+    return `<p class="notice bad" role="alert">${STATE_ICONS.bad}<span>${escape(UI.home.quotaFull(formatCount(quota.limit), formatDate(quota.resume)))}</span></p>`;
+  }
+  return `<p class="notice warn" role="status">${STATE_ICONS.warn}<span>${escape(UI.home.quotaNear(formatCount(quota.used), formatCount(quota.limit)))}</span></p>`;
+}
+
+/** The main page's one line: the situation, by the worst state shown, and where to look. */
+export function homeStatus(shown: SystemRow[]): string {
+  const t = UI.home.summary;
+  if (shown.length === 0) return "";
+  const worst = worstStatus(shown.map(({ health }) => health.status));
+  const first = shown.find(({ health }) => health.status === worst);
+  const count = shown.filter(({ health }) => health.status === worst).length;
+  const words = worst === "red" ? t.red(count) : worst === "yellow" ? t.yellow(count) : t.green;
+  const link =
+    worst === "green" || first === undefined
+      ? ""
+      : `<a href="${systemPath(first.record.system_id)}">${escape(worst === "red" ? t.open : t.why)}</a>`;
+  return `<div class="status ${worst}" role="status" data-status="${worst}">${STATE_ICON[worst]}<span>${escape(words)}</span>${link}</div>`;
+}
+
+/** The four figures: actions today, blocked and failed today, the last seal. */
+function tiles(store: ReceiptStore, shown: SystemRow[], now: Date): string {
+  const t = UI.home.tiles;
+  const today = localDate(now.toISOString());
+  const from = today === null ? undefined : localDayRange(today).from;
+  const totals: Record<string, number> = {};
+  let lastSeal: string | null = null;
+  for (const { record } of shown) {
+    const counts = store.countReceiptsByOutcome({ systemId: record.system_id, ...(from === undefined ? {} : { from }) });
+    for (const [outcome, count] of Object.entries(counts)) totals[outcome] = (totals[outcome] ?? 0) + count;
+    const latest = store.latestCheckpoint(record.system_id);
+    if (latest !== null && (lastSeal === null || latest.checkpoint.ts > lastSeal)) lastSeal = latest.checkpoint.ts;
+  }
+  const all = Object.values(totals).reduce((sum, count) => sum + count, 0);
+  const blocked = totals["blocked"] ?? 0;
+  const failed = totals["error"] ?? 0;
+  const tile = (value: string, label: string, state = ""): string =>
+    `<div class="card tile${state === "" ? "" : ` ${state}`}"><strong>${escape(value)}</strong><span>${escape(label)}</span></div>`;
+  return `<div class="tiles">
+${tile(formatCount(all), t.today)}
+${tile(formatCount(blocked), t.blocked, blocked > 0 ? "yellow" : "")}
+${tile(formatCount(failed), t.failed, failed > 0 ? "red" : "")}
+${tile(lastSeal === null ? "—" : listTime(lastSeal, now), t.lastSeal)}
 </div>`;
 }
 
-/**
- * The main page: è tutto a posto? and cosa ha fatto l'AI? in the main
- * column, mi prepari le prove? as a panel on the right.
- */
-export function homePage(
-  store: ReceiptStore,
-  records: SystemRecord[],
-  rows: SystemRow[],
-  shown: SystemRow[],
-  justCheckpointed: boolean,
-): string {
+/** The first steps, for an account with no system yet, or with systems that never received an action. */
+export function firstSteps(records: SystemRecord[]): string {
+  const t = UI.home.steps;
+  const created = records.length > 0;
+  const step = (done: boolean, icon: string, tile: string, title: string, end: string, later = false): string =>
+    `<li><div class="line${later ? " later" : ""}"><span class="tile-icon ${done ? "green" : tile}" aria-hidden="true">${done ? STATE_ICONS.ok : icon}</span><span class="line-text">${escape(title)}</span>${
+      done ? `<span class="pill green">${STATE_ICONS.ok}${escape(t.done)}</span>` : end
+    }</div></li>`;
+  const first = records[0];
+  return `${pageHead(UI.home.welcome)}
+<ol class="card lines steps">
+${step(true, "", "green", t.account, "")}
+${step(created, ICONS.plus, "blue", t.create, `<a class="button primary" href="/ui/sistemi/nuovo">${escape(t.createButton)}</a>`)}
+${step(
+  false,
+  ICONS.code,
+  created ? "blue" : "grey",
+  t.connect,
+  first === undefined ? "" : `<a class="button primary" href="${systemPath(first.system_id)}/collega">${escape(t.connectButton)}</a>`,
+  !created,
+)}
+${step(false, ICONS.seal, "grey", t.receive, "", true)}
+</ol>`;
+}
+
+/** The main page: the situation, four figures, the systems, the latest actions, and the evidence file. */
+export function homePage(view: {
+  store: ReceiptStore;
+  records: SystemRecord[];
+  shown: SystemRow[];
+  justCheckpointed: boolean;
+  quota: Quota | null;
+  now: Date;
+}): string {
+  const { store, records, shown, now } = view;
   const t = UI.home;
-  const summary = homeSummary(shown);
-  const hidden = rows.length - shown.length;
-
-  const head = `<header class="page-head">
-<p class="eyebrow">${escape(t.heading)}</p>
-<div class="headline">${
-    summary.status === null ? "" : `<span class="state-disc ${summary.status}" aria-hidden="true">${STATE_ICON[summary.status]}</span>`
-  }<h1>${escape(summary.h1)}</h1></div>
-<p class="lead">${escape(summary.lead)}</p>
-</header>
-${justCheckpointed ? notices({ notice: t.checkpointDone }) : ""}`;
-
-  if (records.length === 0) return `${head}<p class="empty">${escape(t.noSystems)}</p>`;
+  const top = `${view.justCheckpointed ? notices({ notice: t.checkpointDone }) : ""}${quotaNotice(view.quota)}`;
+  if (records.length === 0 || records.every((record) => record.receipts <= 1)) {
+    return `${top}${firstSteps(records)}`;
+  }
 
   const systems = shown
     .map(({ record, health }) => {
-      const why = archivedButShown(record, health.status);
-      const sid = record.display_name === null ? "" : `<code class="sid">${escape(record.system_id)}</code> · `;
-      return `<li><a href="${systemPath(record.system_id)}" class="sys-row">
-<span class="sys-row-text"><span class="sys-row-name">${escape(systemTitle(record))}${
-        why === null ? "" : ` <span class="badge">${escape(UI.systemsPage.archivedBadge)}</span>`
-      }</span>
-<span class="sys-row-meta">${sid}${escape(health.message)}${why === null ? "" : ` <em>(${escape(t.archivedShownBecause)} ${escape(why)})</em>`}</span></span>
-${semaphore(health.status)}${ICONS.chevronRight.replace("<svg ", '<svg class="chevron" ')}
-</a></li>`;
+      const archived = archivedButShown(record, health.status) === null ? "" : archivedPill();
+      return `<li><a class="line" href="${systemPath(record.system_id)}"><span class="line-text">${escape(systemTitle(record))}</span>${archived}${chainPill(health.status)}${chevron}</a></li>`;
     })
     .join("\n");
-  const hiddenNote =
-    hidden === 0
-      ? ""
-      : ` ${escape(t.archivedHidden(hidden))} <a href="/ui/sistemi?vista=archiviati">${escape(UI.systemsPage.views.archiviati)}</a>`;
-
-  const q1 = `<section class="block" aria-labelledby="q1">
-<div class="block-head"><h2 id="q1">${escape(t.q1)}</h2>${
-    shown.length === 0 ? "" : `<span class="block-meta">${escape(t.systemsCount(shown.length))}</span>`
-  }</div>
-${shown.length === 0 ? "" : `<ul class="card card-list">${systems}</ul>`}
-${checkpointNow(hiddenNote)}
-</section>`;
 
   const recent = shown
-    .flatMap(({ record }) => store.searchReceipts({ systemId: record.system_id, limit: 5 }).map((receipt) => ({ record, receipt })))
+    .flatMap(({ record }) => store.searchReceipts({ systemId: record.system_id, limit: 6 }).map((receipt) => ({ record, receipt })))
     .sort((a, b) => (a.receipt.ts_received < b.receipt.ts_received ? 1 : -1))
-    .slice(0, 8);
+    .slice(0, 6);
   const activity = recent
-    .map(({ record, receipt }) => {
-      const [day, time] = formatTs(receipt.ts_received).split(", ");
-      return `<li><a href="${receiptPath(record.system_id, receipt.seq)}" class="activity">
-<span class="activity-time">${escape((time ?? "").slice(0, 5))}<span>${escape((day ?? "").replace(/ \d{4}$/, ""))}</span></span>
-${kindIcon(receipt.action.kind, "small")}
-<span class="activity-text"><span class="activity-who">${escape(systemTitle(record))} · n. ${receipt.seq}</span><span class="activity-what">${escape(describeReceipt(receipt))}</span></span>
-${receipt.outcome === "ok" ? "" : outcomePill(receipt.outcome)}
-</a></li>`;
-    })
+    .map(
+      ({ record, receipt }) =>
+        `<li><a class="line" href="${receiptPath(record.system_id, receipt.seq)}"><span class="line-time">${escape(listTime(receipt.ts_received, now))}</span>${kindIcon(receipt.action.kind)}<span class="line-text">${escape(receiptTitle(receipt))}</span><span class="line-aside system">${escape(systemTitle(record))}</span>${
+          receipt.outcome === "ok" ? "" : outcomePill(receipt.outcome)
+        }</a></li>`,
+    )
     .join("\n");
-  const q2 = `<section class="block" aria-labelledby="q2">
-<div class="block-head"><h2 id="q2">${escape(t.q2)}</h2>${
-    recent.length === 0 ? "" : `<span class="block-meta">${escape(t.recentActivity)} · ${escape(t.actionsCount(recent.length))}</span>`
-  }</div>
-${recent.length === 0 ? `<p class="empty card">${escape(t.noSystems)}</p>` : `<ol class="card card-list">${activity}</ol>`}
-</section>`;
 
-  const option = (record: SystemRecord): string =>
-    `<option value="${escape(record.system_id)}">${escape(
-      record.display_name === null ? record.system_id : `${record.display_name} (${record.system_id})`,
-    )}</option>`;
+  const option = (record: SystemRecord): string => `<option value="${escape(record.system_id)}">${escape(systemTitle(record))}</option>`;
   const active = records.filter((record) => record.archived_at === null);
   const archived = records.filter((record) => record.archived_at !== null);
-  const q3 = `<section class="block side-panel" aria-labelledby="q3">
-<h2 id="q3">${escape(t.q3)}</h2>
+  const evidence = `<section aria-labelledby="fascicolo-titolo">
+<h2 id="fascicolo-titolo">${escape(t.evidence)}</h2>
 <div class="card padded">
-<p class="muted">${escape(t.generateHint)}</p>
 <form method="post" action="/ui/export" class="fields">
 <label>${escape(t.chooseSystem)}
   <select name="system_id">${active.map(option).join("")}${
@@ -141,27 +192,37 @@ ${recent.length === 0 ? `<p class="empty card">${escape(t.noSystems)}</p>` : `<o
   }</select>
 </label>
 <div class="fields-row"><label>${escape(t.fromDate)}<input type="date" name="from"></label><label>${escape(t.toDate)}<input type="date" name="to"></label></div>
-<p class="hint">${escape(t.wholeChain)}</p>
 ${discloseFields()}
 <button type="submit" class="primary wide">${ICONS.download}${escape(t.generate)}</button>
 </form>
 </div>
+<form method="post" action="/ui/checkpoint" class="section"><button type="submit" class="wide">${ICONS.seal}${escape(t.checkpointNow)}</button></form>
 </section>`;
 
-  return `${head}
-<div class="split">
+  return `${pageHead(t.heading)}
+${top}${homeStatus(shown)}
+${tiles(store, shown, now)}
+<div class="cols">
 <div>
-${q1}
-${q2}
+<section class="section" aria-labelledby="sistemi-titolo"><h2 id="sistemi-titolo">${escape(t.systems)}</h2>
+<ul class="card lines">${systems}</ul></section>
+<section class="section" aria-labelledby="azioni-titolo"><h2 id="azioni-titolo">${escape(t.recent)}</h2>
+${recent.length === 0 ? `<p class="card empty">${escape(t.noActions)}</p>` : `<ol class="card lines">${activity}</ol>`}</section>
 </div>
-${q3}
+${evidence}
 </div>`;
 }
 
 export type SystemsView = "attivi" | "archiviati" | "tutti";
 
-/** The systems: the active, archived or all of them, how to connect an agent, creating one, and the administrative log. */
-export function sistemiPage(store: ReceiptStore, view: SystemsView, extra: { notice?: string; error?: string }): string {
+/** The systems: the active, archived or all of them, as a table, and the button to create one. */
+export function sistemiPage(
+  store: ReceiptStore,
+  view: SystemsView,
+  extra: { notice?: string; error?: string },
+  statusOf: (systemId: string) => ChainStatus,
+  now: Date,
+): string {
   const t = UI.systemsPage;
   const records = store.listSystemRecords();
   const inView = records.filter((record) =>
@@ -170,10 +231,10 @@ export function sistemiPage(store: ReceiptStore, view: SystemsView, extra: { not
   const count = (candidate: SystemsView): number =>
     candidate === "tutti" ? records.length : records.filter((record) => (candidate === "archiviati") === (record.archived_at !== null)).length;
 
-  const views = `<nav class="segmented" aria-label="${escape(t.existing)}">${(["attivi", "archiviati", "tutti"] as const)
+  const views = `<nav class="segmented views" aria-label="${escape(t.heading)}">${(["attivi", "archiviati", "tutti"] as const)
     .map(
       (candidate) =>
-        `<a href="/ui/sistemi?vista=${candidate}"${candidate === view ? ' aria-current="page"' : ""}><span class="cap">${escape(t.views[candidate])}</span><span class="count">${count(candidate)}</span></a>`,
+        `<a href="/ui/sistemi?vista=${candidate}"${candidate === view ? ' aria-current="page"' : ""}>${escape(t.views[candidate])}<span class="count">${count(candidate)}</span></a>`,
     )
     .join("")}</nav>`;
 
@@ -181,193 +242,193 @@ export function sistemiPage(store: ReceiptStore, view: SystemsView, extra: { not
     const latest = store.searchReceipts({ systemId: record.system_id, limit: 1 })[0];
     return latest === undefined || latest.action.kind === "genesis" ? t.connection.none : t.connection[latest.source.type];
   };
-  const label = (name: keyof typeof t.columns): string => `<span class="cell-label">${escape(t.columns[name])}:</span>`;
-
+  const archivedView = view === "archiviati";
+  const rows = inView
+    .map((record) => {
+      const state = record.archived_at === null ? chainPill(statusOf(record.system_id)) : archivedPill();
+      const when = archivedView
+        ? record.archived_at === null
+          ? "—"
+          : formatDate(record.archived_at)
+        : record.receipts <= 1 || record.last_received === null
+          ? "—"
+          : formatWhen(record.last_received, now);
+      return `<li><a class="line" href="${systemPath(record.system_id)}"><span class="cell-main"><strong>${escape(systemTitle(record))}</strong><span>${escape(connection(record))}</span></span><span>${state}</span><span class="num">${formatCount(record.receipts)}</span><span class="when">${escape(when)}</span></a></li>`;
+    })
+    .join("\n");
   const list =
     inView.length === 0
-      ? `<p class="empty">${escape(t.noneInView[view])}</p>`
-      : `<div class="systems-grid systems-head" aria-hidden="true">${(["system", "state", "receipts", "last", "manage"] as const)
-          .map((name) => `<span>${escape(t.columns[name])}</span>`)
-          .join("")}</div>
-<ul class="systems-list">${inView
-          .map((record) => {
-            const path = systemPath(record.system_id);
-            const state =
-              record.archived_at === null
-                ? `<span class="stamp green"><span class="dot" aria-hidden="true">${STATE_ICONS.ok}</span><span class="status-word">${escape(t.active)}</span></span>`
-                : `<span class="stamp archived"><span class="dot" aria-hidden="true">${STATE_ICONS.archived}</span><span class="status-word">${escape(t.archivedBadge)}</span></span>` +
-                  `<span class="archived-on">${escape(UI.manage.archivedOn)} ${escape(formatTs(record.archived_at))}</span>`;
-            return `<li class="systems-grid">
-<span><span class="system-name"><a href="${path}">${escape(systemTitle(record))}</a></span><span class="connection">${
-              record.display_name === null ? "" : `<code class="sid">${escape(record.system_id)}</code> · `
-            }${escape(connection(record))}</span></span>
-<span>${label("state")}${state}</span>
-<span>${label("receipts")}<span class="num">${record.receipts}</span> <span class="sr">${escape(record.receipts <= 1 ? t.onlyGenesis : t.receipts(record.receipts))}</span></span>
-<span class="when">${label("last")}${record.last_received === null ? "—" : escape(formatTs(record.last_received))}</span>
-<span class="links"><a href="${path}"><span class="cap">${escape(t.history)}</span></a><a href="${path}/manage"><span class="cap">${escape(t.manage)}</span></a></span>
-</li>`;
-          })
-          .join("\n")}</ul>`;
+      ? `<p class="card empty">${escape(t.noneInView[view])}</p>`
+      : `<ul class="card lines table">
+<li class="line head" aria-hidden="true"><span>${escape(t.columns.system)}</span><span>${escape(t.columns.state)}</span><span class="num">${escape(t.columns.receipts)}</span><span class="when">${escape(archivedView ? t.columns.archived : t.columns.last)}</span></li>
+${rows}</ul>`;
 
-  const ways = [
-    [ICONS.code, t.connectPython],
-    [ICONS.link, t.connectOtlp],
-    [ICONS.doc, t.connectNative],
-  ] as const;
-  const connect = `<h2 class="section-title">${escape(t.howToConnect)}</h2>
-<p class="section-hint">${escape(t.howToConnectIntro)}</p>
-<div class="ways">${ways
-    .map(
-      ([glyph, way]) =>
-        `<div class="card way"><span class="icon-tile blue" aria-hidden="true">${glyph}</span><h3>${escape(way.title)}</h3><p>${escape(way.hint)}</p></div>`,
-    )
-    .join("")}</div>
-<p class="hint">${escape(t.connectMore)}</p>`;
-
-  const log = store.adminLog(20);
-  const adminLog =
-    log.length === 0
-      ? `<p class="empty card">${escape(t.adminLogEmpty)}</p>`
-      : `<ul class="card log">${log.map((entry) => `<li>${escape(describeAdminEntry(entry))}</li>`).join("")}</ul>`;
-
-  return `${pageHead({
-    eyebrow: t.eyebrow,
-    h1: t.heading,
-    action: `<a class="button primary" href="#crea">${ICONS.plus}${escape(t.newSystem)}</a>`,
-  })}
+  return `${pageHead(t.heading, `<a class="button primary" href="/ui/sistemi/nuovo">${ICONS.plus}${escape(UI.nav.newSystem)}</a>`)}
 ${notices(extra)}
 ${views}
-<div class="card systems-card">
-${list}
-</div>
-${connect}
-<h2 class="section-title" id="crea">${escape(t.createTitle)}</h2>
-<div class="card padded">
-<form method="post" action="/ui/sistemi" class="create-grid">
-  <label>${escape(t.nameLabel)}
-    <input type="text" name="system_id" placeholder="${escape(t.namePlaceholder)}" autocapitalize="off" autocomplete="off" spellcheck="false" required>
-  </label>
-  <label>${escape(t.displayNameLabel)}
-    <input type="text" name="display_name" maxlength="128">
-  </label>
-  <button type="submit" class="primary">${ICONS.key}${escape(t.submit)}</button>
-</form>
-<p class="hint">${escape(t.idHint)}</p>
-</div>
-<h2 class="section-title">${escape(t.adminLogTitle)}</h2>
-<p class="section-hint">${escape(t.adminLogHint)}</p>
-${adminLog}`;
+${list}`;
 }
 
-/** The page after creating a system: its key, shown this once, and three ways to use it. */
-export function systemCreatedPage(record: SystemRecord | null, systemId: string, token: string): string {
+/** Creating a system: its name, and the identifier, which may be left to follow from the name. */
+export function newSystemPage(extra: { error?: string }, values: { system_id?: string; display_name?: string } = {}): string {
   const t = UI.systemsPage;
-  const pythonCode = [
-    "pip install -e 'sdk-python[langchain]'   # o [crewai], [openai], o più insieme",
-    "python3 -c \"",
-    "import sigillo",
-    "sigillo.init(",
-    "    endpoint='https://<il-tuo-dominio>',",
-    `    api_key='${token}',`,
-    `    system_id='${systemId}',`,
-    "    instrument=['langchain'],   # 'crewai' e 'openai' sono altrettanto reali",
-    ")\"",
-  ].join("\n");
-
-  const otlpCode = [
-    `curl -X POST https://<il-tuo-dominio>/v1/traces \\`,
-    `  -H "Authorization: Bearer ${token}" \\`,
-    `  -H "Content-Type: application/json" \\`,
-    "  -d '{",
-    '    "resourceSpans": [{ "scopeSpans": [{ "spans": [{',
-    `      "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",`,
-    `      "spanId": "00f067aa0ba902b7",`,
-    `      "name": "azione",`,
-    `      "startTimeUnixNano": "1712000000000000000",`,
-    `      "endTimeUnixNano": "1712000000500000000",`,
-    `      "status": { "code": "STATUS_CODE_OK" },`,
-    '      "attributes": [',
-    '        { "key": "gen_ai.operation.name", "value": { "stringValue": "execute_tool" } },',
-    `        { "key": "gen_ai.tool.name", "value": { "stringValue": "azione" } },`,
-    `        { "key": "gen_ai.agent.name", "value": { "stringValue": "${systemId}" } }`,
-    "      ]",
-    "    }] }] }]",
-    "  }'",
-  ].join("\n");
-
-  const nativeCode = [
-    `curl -X POST https://<il-tuo-dominio>/api/v1/receipts \\`,
-    `  -H "Authorization: Bearer ${token}" \\`,
-    `  -H "Content-Type: application/json" \\`,
-    "  -d '{",
-    '    "actor": { "agent": "agente" },',
-    '    "action": { "kind": "decision", "name": "azione" },',
-    '    "outcome": "ok"',
-    "  }'",
-  ].join("\n");
-
-  const way = (title: string, hint: string, code: string): string =>
-    `<section class="card created-way"><h3>${escape(title)}</h3><p>${escape(hint)}</p><pre class="code">${escape(code)}</pre></section>`;
-
-  return `${pageHead({ eyebrow: t.createdTitle, h1: record === null ? systemId : systemTitle(record) })}
-<p><code class="sid">${escape(systemId)}</code></p>
-<p class="notice bad" role="status">${STATE_ICONS.warn}<strong>${escape(t.tokenWarning)}</strong></p>
-<div class="token-box">${escape(token)}</div>
-<h2 class="section-title">${escape(t.howToConnect)}</h2>
-<p class="section-hint">${escape(t.howToConnectIntro)}</p>
-${way(t.connectPython.title, t.connectPython.hint, pythonCode)}
-${way(t.connectOtlp.title, t.connectOtlp.hint, otlpCode)}
-${way(t.connectNative.title, t.connectNative.hint, nativeCode)}
-<p class="hint">${escape(t.connectMore)}</p>
-<p class="actions"><a class="button primary" href="${systemPath(systemId)}/manage"><span class="cap">${escape(t.manage)}</span></a><a class="button" href="/ui/sistemi"><span class="cap">${escape(UI.nav.sistemi)}</span></a></p>`;
+  return `<div class="narrow">${pageHead(t.newTitle)}
+${notices(extra)}
+<form method="post" action="/ui/sistemi" class="card padded fields">
+<label>${escape(t.displayNameLabel)}
+  <input type="text" name="display_name" value="${escape(values.display_name ?? "")}" maxlength="128" placeholder="${escape(t.displayNamePlaceholder)}" autofocus>
+</label>
+<label>${escape(t.nameLabel)}
+  <input type="text" name="system_id" value="${escape(values.system_id ?? "")}" class="mono" placeholder="${escape(t.namePlaceholder)}" autocapitalize="off" autocomplete="off" spellcheck="false">
+</label>
+<button type="submit" class="primary big">${escape(t.submit)}</button>
+</form></div>`;
 }
 
-/** Managing one system: its label, whether it is archived, and — for a chain that never recorded anything — deleting it. */
-export function managePage(record: SystemRecord, extra: { notice?: string; error?: string }): string {
+/** The three ways to connect an agent, with the key in each snippet, or a placeholder where it is not shown. */
+function connectWays(systemId: string, endpoint: string, token: string | null): string {
+  const t = UI.connect;
+  const key = token ?? t.keyPlaceholder;
+  const python = [
+    "# pip install -e 'sdk-python[langchain]'   (o [crewai], [openai])",
+    "import sigillo",
+    "",
+    "sigillo.init(",
+    `    endpoint="${endpoint}",`,
+    `    api_key="${key}",`,
+    `    system_id="${systemId}",`,
+    '    instrument=["langchain"],',
+    ")",
+  ].join("\n");
+  const otel = [
+    "# L'esportatore OTLP/HTTP del tuo agente, puntato a sigillo",
+    `OTEL_EXPORTER_OTLP_ENDPOINT="${endpoint}"`,
+    `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20${key}"`,
+    `OTEL_SERVICE_NAME="${systemId}"`,
+  ].join("\n");
+  const api = [
+    `curl -X POST ${endpoint}/api/v1/receipts \\`,
+    `  -H "Authorization: Bearer ${key}" \\`,
+    '  -H "Content-Type: application/json" \\',
+    `  -d '{"actor": {"agent": "agente"},`,
+    `       "action": {"kind": "decision", "name": "azione"},`,
+    `       "outcome": "ok"}'`,
+  ].join("\n");
+  const way = (id: string, tile: string, icon: string, label: string, tag = ""): string =>
+    `<label class="way" for="way-${id}"><span class="tile-icon ${tile}" aria-hidden="true">${icon}</span>${escape(label)}${tag === "" ? "" : `<small>${escape(tag)}</small>`}</label>`;
+  return `<input type="radio" name="way" id="way-python" class="sr" checked>
+<input type="radio" name="way" id="way-otel" class="sr">
+<input type="radio" name="way" id="way-api" class="sr">
+<div class="ways">
+${way("python", "blue", ICONS.python, t.ways.python, t.recommended)}
+${way("otel", "teal", ICONS.otel, t.ways.otel)}
+${way("api", "purple", ICONS.code, t.ways.api)}
+</div>
+<pre class="code python">${escape(python)}</pre>
+<pre class="code otel">${escape(otel)}</pre>
+<pre class="code api">${escape(api)}</pre>`;
+}
+
+/**
+ * Connecting an agent: right after creating a system or giving it a new key,
+ * with the key shown this once; or later, from the system's settings, without
+ * it. Until the first action arrives the later page looks again by itself
+ * every ten seconds (a refresh, not a script).
+ */
+export function connectPage(view: {
+  record: SystemRecord;
+  endpoint: string;
+  token: string | null;
+  mode: "created" | "newKey" | "connect";
+  firstReceipt: Receipt | null;
+  now: Date;
+}): string {
+  const t = UI.connect;
+  const { record, token, mode } = view;
+  const name = systemTitle(record);
+  const title = mode === "created" ? t.ready(name) : mode === "newKey" ? t.newKey(name) : t.title(name);
+  const path = systemPath(record.system_id);
+  const key =
+    token === null
+      ? ""
+      : `<p class="label">${escape(t.keyLabel)}</p>
+<code class="keybox">${escape(token)}</code>
+<p class="key-note" role="status">${STATE_ICONS.warn}<span>${escape(t.keyNote)}</span></p>`;
+  const arrived = view.firstReceipt;
+  const wait =
+    arrived !== null
+      ? `<div class="card wait-line green" role="status">${STATE_ICONS.ok}<span>${escape(t.arrived(formatWhen(arrived.ts_received, view.now)))}</span><a class="button primary end" href="${path}">${escape(t.goToSystem)}</a></div>`
+      : mode === "newKey"
+        ? `<p class="section"><a class="button primary" href="${path}">${escape(t.goToSystem)}</a></p>`
+        : `${mode === "connect" ? '<meta http-equiv="refresh" content="10">' : ""}<div class="card wait-line" role="status"><span class="spinner" aria-hidden="true"></span><span>${escape(t.waiting)}</span><a class="end" href="${path}/collega">${escape(t.check)}</a></div>`;
+  return `<div class="narrow">${pageHead(title)}
+${key}
+${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
+${connectWays(record.system_id, view.endpoint, token)}
+${wait}
+</div>`;
+}
+
+/** A system's settings: its name, identifier and key, connecting it, archiving it, and deleting it while its chain is empty. */
+export function managePage(record: SystemRecord, extra: { notice?: string; error?: string }, keyIds: string[]): string {
   const t = UI.manage;
   const path = systemPath(record.system_id);
   const deletable = record.receipts <= 1;
+  const block = (tile: string, glyph: string, title: string, body: string): string =>
+    `<section class="card block"><span class="tile-icon ${tile}" aria-hidden="true">${glyph}</span><div><h2>${escape(title)}</h2>${body}</div></section>`;
 
   const archive =
     record.archived_at === null
       ? `<form method="post" action="${path}/archive"><button type="submit">${ICONS.archive}${escape(t.archiveSubmit)}</button></form>`
-      : `<p><strong>${escape(t.archivedOn)} ${escape(formatTs(record.archived_at))}.</strong></p>
+      : `<p>${escape(t.archivedOn(formatDate(record.archived_at)))}</p>
 <form method="post" action="${path}/unarchive"><button type="submit" class="primary">${escape(t.unarchiveSubmit)}</button></form>`;
 
   const removal = deletable
-    ? `<p class="card-text">${escape(t.deleteAllowed)}</p>
-<form method="post" action="${path}/delete" class="fields-inline">
-  <label>${escape(t.deleteConfirmLabel(record.system_id))}
-    <input type="text" name="confirm" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+    ? `<form method="post" action="${path}/delete" class="inline">
+  <label><span class="sr">${escape(t.deleteConfirmLabel(record.system_id))}</span>
+    <input type="text" name="confirm" placeholder="${escape(t.deleteConfirmLabel(record.system_id))}" autocomplete="off" autocapitalize="off" spellcheck="false" required>
   </label>
   <button type="submit" class="danger">${ICONS.trash}${escape(t.deleteSubmit)}</button>
 </form>`
-    : `<p class="note">${ICONS.lock}<span>${escape(t.deleteRefused(record.receipts))}</span></p>`;
+    : `<p class="lockline">${ICONS.lock}<span>${escape(t.deleteRefused(record.receipts))}</span></p>`;
 
-  const card = (tile: string, glyph: string, title: string, body: string): string =>
-    `<section class="card manage-card"><span class="icon-tile ${tile}" aria-hidden="true">${glyph}</span><div><h2>${escape(title)}</h2>${body}</div></section>`;
+  const current = keyIds.length === 0 ? t.noKey : keyIds.map((id) => `sigillo_${id}_••••`).join(", ");
+  const keySheet = `<section class="sheet-layer" id="nuova-chiave" aria-labelledby="nuova-chiave-titolo">
+<div class="sheet"><form method="post" action="${path}/key">
+<div class="sheet-body"><h2 id="nuova-chiave-titolo">${escape(t.newKey)}</h2><p>${escape(t.newKeyConfirm)}</p></div>
+<div class="sheet-foot"><a class="button" href="#main">${escape(UI.exportSheet.cancel)}</a><button type="submit" class="primary">${ICONS.key}${escape(t.newKeySubmit)}</button></div>
+</form></div>
+</section>`;
 
   return `${notices(extra)}
-<div class="stack-cards">
-${card(
+<div class="blocks">
+${block(
   "blue",
   ICONS.tag,
   t.nameTitle,
-  `<p class="card-text">${escape(t.nameHint(record.system_id))}</p>
-<form method="post" action="${path}/rename" class="fields-inline">
-  <label>${escape(t.nameLabel)}
-    <input type="text" name="display_name" value="${escape(record.display_name ?? "")}" maxlength="128">
+  `<form method="post" action="${path}/rename" class="inline">
+  <label><span class="sr">${escape(t.nameLabel)}</span>
+    <input type="text" name="display_name" value="${escape(record.display_name ?? "")}" maxlength="128" placeholder="${escape(record.system_id)}">
   </label>
   <button type="submit" class="primary">${escape(t.nameSubmit)}</button>
 </form>`,
 )}
-${card("grey", ICONS.archive, t.archiveTitle, `<p class="card-text">${escape(t.archiveHint)}</p>${archive}`)}
-${card("red", ICONS.trash, t.deleteTitle, removal)}
-</div>`;
+${block("grey", ICONS.code, t.idTitle, `<code class="keybox">${escape(record.system_id)}</code>`)}
+${block(
+  "grey",
+  ICONS.key,
+  t.keyTitle,
+  `<div class="inline"><code class="keybox" aria-label="${escape(t.keyLabel)}">${escape(current)}</code><a class="button" href="#nuova-chiave">${escape(t.newKey)}</a></div>
+<p class="section"><a href="${path}/collega">${escape(t.connect)}</a></p>`,
+)}
+${block("grey", ICONS.archive, t.archiveTitle, archive)}
+${block("red", ICONS.trash, t.deleteTitle, removal)}
+</div>
+${keySheet}`;
 }
 
-/** A system's checkpoints, newest first, each with its timestamp or the wait for one. */
-export function checkpointsPage(store: ReceiptStore, systemId: string): string {
+/** A system's seals, newest first: how many receipts each covers, and its timestamp or the wait for one. */
+export function checkpointsPage(store: ReceiptStore, systemId: string, now: Date): string {
   const t = UI.checkpoints;
   const checkpoints = store.readCheckpoints(systemId).slice().reverse();
   const items = checkpoints
@@ -375,28 +436,24 @@ export function checkpointsPage(store: ReceiptStore, systemId: string): string {
       const tokens = store.readTimestamps(stored.id);
       const stamp =
         tokens.length === 0
-          ? `<span class="stamp yellow">${STATE_ICONS.warn}${escape(t.waiting)}</span>`
-          : tokens
-              .map(
-                (token) =>
-                  `<span class="stamp green">${STATE_ICONS.ok}${escape(t.stamped)}</span>
-<span class="cp-time">${escape(token.genTime === undefined ? t.genTimeUnreadable : formatTs(token.genTime))}</span>
-<span class="cp-caption">${escape(t.attested)}</span>
-<span class="cp-tsa"><code>${escape(token.tsaUrl)}</code> · ${escape(t.receivedAt)} ${escape(formatTs(token.obtainedAt))}</span>`,
-              )
-              .join("");
-      return `<li>
-<div><span class="cp-size">${stored.checkpoint.tree_size}</span><span class="cp-caption">${escape(t.covered)}</span></div>
-<div><span class="cp-caption">${escape(t.written)}</span><span class="cp-value">${escape(formatTs(stored.checkpoint.ts))}</span>
-<span class="cp-caption cp-gap">${escape(t.root)}</span><code class="hash-full">${escape(stored.checkpoint.root_hash)}</code></div>
-<div>${stamp}</div>
-</li>`;
+          ? `<span class="pill yellow">${STATE_ICONS.warn}${escape(t.waiting)}</span>`
+          : `<span class="pill green">${STATE_ICONS.ok}${escape(t.stamped)}</span>`;
+      const facts = [
+        `<div><dt>${escape(t.written)}</dt><dd>${escape(formatTs(stored.checkpoint.ts))}</dd></div>`,
+        `<div class="stack"><dt>${escape(t.root)}</dt><dd><code class="hash-full">${escape(stored.checkpoint.root_hash)}</code></dd></div>`,
+        ...tokens.map(
+          (token) =>
+            `<div><dt>${escape(t.attested)}</dt><dd>${escape(token.genTime === undefined ? t.genTimeUnreadable : formatTs(token.genTime))}</dd></div>
+<div><dt>${escape(t.authority)}</dt><dd><code>${escape(token.tsaUrl)}</code></dd></div>`,
+        ),
+      ];
+      return `<li><details class="tech"><summary class="line"><span class="tile-icon green" aria-hidden="true">${ICONS.seal}</span><span class="line-text">${escape(t.sealed(stored.checkpoint.tree_size))} <span class="muted">${escape(formatWhen(stored.checkpoint.ts, now))}</span></span>${stamp}</summary>
+<dl class="facts">${facts.join("")}</dl></details></li>`;
     })
     .join("\n");
 
-  return `<div class="info-line">${ICONS.info}<p>${escape(t.explain)}</p></div>
-${checkpoints.length === 0 ? `<p class="empty card">${escape(t.none)}</p>` : `<div class="card"><ol class="checkpoints" reversed>${items}</ol></div>`}
-${checkpointNow()}`;
+  return `${checkpoints.length === 0 ? `<p class="card empty">${escape(t.none)}</p>` : `<ol class="card lines seals">${items}</ol>`}
+<form method="post" action="/ui/checkpoint" class="section"><button type="submit">${ICONS.seal}${escape(UI.home.checkpointNow)}</button></form>`;
 }
 
 /** The people page: search by identifier, through the subjects table, and the erasure of what it finds. */
@@ -404,14 +461,15 @@ export function peoplePage(
   store: ReceiptStore,
   search: { identifier: string; token: string | null } | null,
   extra: { notice?: string; error?: string },
+  now: Date,
 ): string {
   const t = UI.people;
   const legacy = search === null ? 0 : store.legacyReceiptsNaming(search.identifier);
   const legacyNotice =
-    legacy === 0 ? "" : `<p class="notice warn" role="status">${ICONS.info}<span>${escape(t.legacy(legacy))}</span></p>\n`;
+    legacy === 0 ? "" : `<p class="notice warn" role="status">${STATE_ICONS.warn}<span>${escape(t.legacy(legacy))}</span></p>\n`;
   let result = "";
   if (search !== null && search.token === null) {
-    result = `<p class="notice" role="status">${ICONS.info}<span>${escape(t.notFound)}</span></p>`;
+    result = `<p class="card empty" role="status">${escape(t.notFound)}</p>`;
   } else if (search !== null && search.token !== null) {
     const token = search.token;
     const receipts = store.receiptsOnBehalfOf(token, 500);
@@ -419,22 +477,18 @@ export function peoplePage(
     const items = receipts
       .map((receipt) => {
         const record = records.get(receipt.system_id);
-        return `<li class="person-receipt"><a href="${receiptPath(receipt.system_id, receipt.seq)}">${kindIcon(receipt.action.kind, "small")}<span class="activity-text"><span class="activity-who">${escape(
+        return `<li><a class="line" href="${receiptPath(receipt.system_id, receipt.seq)}">${kindIcon(receipt.action.kind)}<span class="line-text">${escape(receiptTitle(receipt))}</span><span class="line-aside">${escape(
           record === undefined ? receipt.system_id : systemTitle(record),
-        )} · n. ${receipt.seq} · ${escape(formatTs(receipt.ts_received))}</span><span class="activity-what">${escape(describeReceipt(receipt))}</span></span>${
-          receipt.outcome === "ok" ? "" : outcomePill(receipt.outcome)
-        }${ICONS.chevronRight.replace("<svg ", '<svg class="chevron" ')}</a></li>`;
+        )} · ${escape(formatWhen(receipt.ts_received, now))}</span>${receipt.outcome === "ok" ? "" : outcomePill(receipt.outcome)}${chevron}</a></li>`;
       })
       .join("\n");
-    result = `<div class="split person-result">
-<section class="card padded" aria-labelledby="persona-ricevute">
-<div class="token-head"><span class="state-disc small neutral" aria-hidden="true">${ICONS.people}</span><div><p class="eyebrow">${escape(t.tokenLabel)}</p><code>${escape(token)}</code></div></div>
-<h2 class="group-label" id="persona-ricevute">${escape(t.receipts(receipts.length))}</h2>
-${receipts.length === 0 ? "" : `<ol class="person-receipts">${items}</ol>`}
+    result = `<div class="cols">
+<section aria-labelledby="persona-ricevute"><h2 id="persona-ricevute">${escape(t.receipts(receipts.length))} <code class="muted">${escape(token)}</code></h2>
+${receipts.length === 0 ? "" : `<ol class="card lines">${items}</ol>`}
 </section>
-<section class="card padded side-panel" aria-labelledby="persona-cancella">
-<div class="token-head"><span class="icon-tile red" aria-hidden="true">${ICONS.trash}</span><h2 id="persona-cancella">${escape(t.eraseTitle)}</h2></div>
-<p class="hint erase-hint">${escape(t.eraseHint)}</p>
+<section class="card padded" aria-labelledby="persona-cancella">
+<h2 id="persona-cancella" class="danger-title">${ICONS.trash}${escape(t.eraseTitle)}</h2>
+<p>${escape(t.eraseHint)}</p>
 <form method="post" action="/ui/persone/cancella" class="fields">
   <input type="hidden" name="token" value="${escape(token)}">
   <label>${escape(t.eraseConfirm(token))}
@@ -445,12 +499,11 @@ ${receipts.length === 0 ? "" : `<ol class="person-receipts">${items}</ol>`}
 </section>
 </div>`;
   }
-  return `${pageHead({ eyebrow: t.eyebrow, h1: t.heading })}
-<p class="intro">${escape(t.intro)}</p>
+  return `${pageHead(t.heading)}
 ${notices(extra)}
-<form method="post" action="/ui/persone" class="fields-inline person-search">
-  <label>${escape(t.searchLabel)}
-    <input type="text" name="identifier" value="${escape(search?.identifier ?? "")}" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+<form method="post" action="/ui/persone" class="inline narrow section-gap">
+  <label><span class="sr">${escape(t.searchLabel)}</span>
+    <input type="text" name="identifier" value="${escape(search?.identifier ?? "")}" placeholder="${escape(t.searchPlaceholder)}" autocomplete="off" autocapitalize="off" spellcheck="false" required>
   </label>
   <button type="submit" class="primary">${ICONS.search}${escape(t.searchSubmit)}</button>
 </form>
@@ -460,11 +513,15 @@ ${legacyNotice}${result}`;
 /** What the store found for a document's fingerprints, beside the form that computed them. */
 export function verifyDocumentResult(
   store: ReceiptStore,
-  fingerprints: DocumentFingerprints,
+  fingerprints: DocumentFingerprints | null,
   from: "file" | "text" | undefined,
   matches: DocumentMatch[],
+  now: Date,
 ): string {
   const t = UI.verifyDocument;
+  if (fingerprints === null) {
+    return `<section aria-label="${escape(t.resultTitle)}"><div class="card placeholder">${escape(t.placeholder)}</div></section>`;
+  }
   // The fingerprints the browser computed, shown either way: the exact one,
   // set beside Get-FileHash or sha256sum, tells at once whether the page was
   // given the same bytes the agent read. Which input they were computed on,
@@ -472,46 +529,55 @@ export function verifyDocumentResult(
   const source = from === undefined ? "" : `<p>${escape(from === "file" ? t.fromFile : t.fromText)}</p>`;
   const textLine =
     fingerprints.text === null
-      ? `<p>${escape(t.textFingerprint)}: <span class="muted">${escape(t.noTextFingerprint)}</span></p>`
-      : `<p>${escape(t.textFingerprint)}: <span class="hash text-hash">${escape(fingerprints.text)}</span></p>`;
-  const searched = `<div class="result-prints"><p>${escape(t.searchedFingerprint)}: <span class="hash">${escape(fingerprints.bytes)}</span></p>${textLine}${source}</div>`;
+      ? `<p>${escape(t.textFingerprint)}: ${escape(t.noTextFingerprint)}</p>`
+      : `<p>${escape(t.textFingerprint)}: <code class="hash-full text-hash">${escape(fingerprints.text)}</code></p>`;
+
+  const names = new Map(store.listSystemRecords().map((record) => [record.system_id, record]));
+  const sentences = matches.map((match) => {
+    const record = names.get(match.system_id);
+    return `<p data-match-sentence="${escape(match.kind)}">${escape(describeDocumentMatch({ ...match, display_name: record?.display_name ?? null }))}</p>`;
+  });
+  const technical = `<details class="tech"><summary>${ICONS.chevronRight}<span>${escape(t.technical)}</span></summary>
+<div class="card padded prints">
+${sentences.join("\n")}
+<p>${escape(t.searchedFingerprint)}: <code class="hash-full">${escape(fingerprints.bytes)}</code></p>
+${textLine}
+${source}
+</div>
+</details>`;
 
   let found: string;
   if (matches.length === 0) {
-    found = `<div class="result-head"><span class="state-disc small yellow" aria-hidden="true">${STATE_ICONS.warn}</span><div>
+    found = `<div class="result"><span class="tile-icon red" aria-hidden="true">${STATE_ICONS.bad}</span><div>
 <h3>${escape(t.notFound)}</h3>
-<p><strong>${escape(t.noMatch)}</strong></p>
-<p class="hint">${escape(t.noMatchHint)}</p>
+<p>${escape(t.noMatch)}</p>
 </div></div>`;
   } else {
-    const names = new Map(store.listSystemRecords().map((record) => [record.system_id, record.display_name]));
     const items = matches
       .map((match) => {
-        const sentence = describeDocumentMatch({ ...match, display_name: names.get(match.system_id) ?? null });
-        return `<li data-match="${escape(match.kind)}">${escape(sentence)}<span class="match-links"><a href="${receiptPath(match.system_id, match.seq)}"><span class="cap">${escape(t.seeReceipt)}</span></a><span class="muted">${escape(timestampStatus(store, match.system_id, match.seq))}</span></span></li>`;
+        const record = names.get(match.system_id);
+        const system = record === undefined ? match.system_id : systemTitle(record);
+        return `<li data-match="${escape(match.kind)}"><p>${escape(t.usedBy(system, formatWhenInline(match.ts_received, now), match.action_name))} <span class="pill green">${escape(t.match[match.kind])}</span></p><a href="${receiptPath(match.system_id, match.seq)}">${escape(t.seeReceipt)} ›</a></li>`;
       })
       .join("\n");
-    found = `<div class="result-head"><span class="state-disc small green" aria-hidden="true">${STATE_ICONS.ok}</span><div>
+    found = `<div class="result"><span class="tile-icon green" aria-hidden="true">${STATE_ICONS.ok}</span><div>
 <h3>${escape(t.found)}</h3>
-<ul class="result-matches">${items}</ul>
+<ul class="matches">${items}</ul>
 </div></div>`;
   }
-  return `<section id="sigillo-doc-result" class="block" aria-labelledby="sigillo-doc-result-title">
-<h2 id="sigillo-doc-result-title">${escape(t.resultTitle)}</h2>
-<div class="card padded">
-${found}
-${searched}
-</div>
+  return `<section id="sigillo-doc-result" aria-labelledby="sigillo-doc-result-title">
+<h2 id="sigillo-doc-result-title" class="sr">${escape(t.resultTitle)}</h2>
+<div class="card">${found}</div>
+${technical}
 </section>`;
 }
 
-/** No system by that identifier. */
-export function notFoundPage(systemId: string): string {
-  return `${pageHead({ h1: UI.notFound.heading })}
-<p class="notice" role="status">${ICONS.info}<span>${escape(UI.notFound.system(systemId))}</span></p>
-<p class="actions"><a class="button" href="/ui/sistemi?vista=tutti">${escape(UI.nav.allSystems)}</a></p>`;
+/** A page that is not there: a system by an identifier nobody has, or one this viewer cannot see. */
+export function notFoundPage(): string {
+  return `<div class="lost"><div class="tile-icon grey" aria-hidden="true">${ICONS.search}</div>
+<h1>${escape(UI.notFound.heading)}</h1>
+<a class="button primary" href="/ui">${escape(UI.notFound.back)}</a></div>`;
 }
-
 
 /** The operator's list of customers: who waits, who is in, who signs in for each, and how many systems each has. */
 export function organizationsPage(store: ReceiptStore, extra: { notice?: string; error?: string }): string {
@@ -524,21 +590,90 @@ export function organizationsPage(store: ReceiptStore, extra: { notice?: string;
     .map((organization) => {
       const members = store.usersOf(organization.organization_id);
       const count = systems.filter((record) => record.organization_id === organization.organization_id).length;
+      const who =
+        members.length === 0
+          ? t.noMembers
+          : [members[0]?.email ?? "", members.length > 1 ? t.people(members.length) : ""].filter((part) => part !== "").join(" · ");
       const state =
         organization.approved_at === null
-          ? `<form method="post" action="/ui/clienti/${escape(encodeURIComponent(organization.organization_id))}/approva"><span class="pill yellow">${STATE_ICONS.warn}${escape(t.waiting)}</span> <button type="submit" class="primary">${escape(t.approve)}</button></form>`
-          : `<span class="pill green">${STATE_ICONS.ok}${escape(t.approvedOn)} ${escape(formatTs(organization.approved_at))}</span>`;
-      const who = members.length === 0 ? escape(t.noMembers) : members.map((member) => escape(member.email)).join(", ");
-      return `<li class="card padded" data-organization="${escape(organization.organization_id)}">
-<h2>${escape(organization.name)} <code>${escape(organization.organization_id)}</code></h2>
-${state}
-<p>${escape(t.members)}: ${who}</p>
-<p>${escape(t.systems)}: ${count}</p>
-</li>`;
+          ? `<span class="pill yellow">${STATE_ICONS.warn}${escape(t.waiting)}</span>`
+          : `<span class="pill green">${STATE_ICONS.ok}${escape(t.active)}</span>`;
+      const end =
+        organization.approved_at === null
+          ? `<form method="post" action="/ui/clienti/${escape(encodeURIComponent(organization.organization_id))}/approva"><button type="submit" class="primary">${escape(t.approve)}</button></form>`
+          : escape(t.since(formatDate(organization.approved_at)));
+      return `<li class="line" data-organization="${escape(organization.organization_id)}"><span class="cell-main"><strong>${escape(organization.name)}</strong><span>${escape(who)}</span></span><span>${state}</span><span class="num">${count}</span><span class="when">${end}</span></li>`;
     })
     .join("\n");
-  return `${pageHead({ eyebrow: t.eyebrow, h1: t.heading })}
-<p class="intro">${escape(t.intro)}</p>
+  return `${pageHead(t.heading)}
 ${notices(extra)}
-${organizations.length === 0 ? `<p class="empty card">${escape(t.none)}</p>` : `<ul class="organizations">${items}</ul>`}`;
+${
+  organizations.length === 0
+    ? `<p class="card empty">${escape(t.none)}</p>`
+    : `<ul class="card lines table organizations">
+<li class="line head" aria-hidden="true"><span>${escape(t.columns.name)}</span><span>${escape(t.columns.state)}</span><span class="num">${escape(t.columns.systems)}</span><span class="when"></span></li>
+${items}</ul>`
+}`;
 }
+
+export type Theme = "light" | "dark" | "system";
+
+/** One entry of the administrative log as a line: when, what, who. */
+function adminLine(entry: AdminLogEntry, now: Date): string {
+  return `<li class="line"><span class="line-time">${escape(listTime(entry.ts, now))}</span><span class="line-text" title="${escape(formatTs(entry.ts))}">${escape(describeAdminAction(entry))}</span><span class="line-aside">${escape(adminActor(entry.actor))}</span></li>`;
+}
+
+/** The settings: who is signed in, the organization and its quota, the look, the administrative log, the signing key. */
+export function settingsPage(view: {
+  account: Account;
+  organization: { name: string; systems: number; used: number; limit: number | null } | null;
+  theme: Theme;
+  log: AdminLogEntry[];
+  keyId: string;
+  now: Date;
+  extra: { notice?: string; error?: string };
+}): string {
+  const t = UI.settings;
+  const { account, organization } = view;
+  const quota =
+    organization === null
+      ? ""
+      : `<section class="section" aria-labelledby="organizzazione"><h2 id="organizzazione">${escape(t.organization)}</h2>
+<div class="card padded"><div class="spread"><strong>${escape(organization.name)}</strong><span class="muted">${escape(t.systems(organization.systems))}</span></div>
+${
+  organization.limit === null
+    ? `<p class="muted section">${escape(t.noLimit(formatCount(organization.used)))}</p>`
+    : `<div class="meter${organization.used >= organization.limit ? " red" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="${organization.limit}" aria-valuenow="${Math.min(organization.used, organization.limit)}"><span style="width: ${Math.min(100, Math.round((organization.used / organization.limit) * 100))}%"></span></div>
+<p class="muted">${escape(t.quota(formatCount(organization.used), formatCount(organization.limit)))}</p>`
+}</div></section>`;
+  const themes = (["light", "dark", "system"] as const)
+    .map(
+      (theme) =>
+        `<button type="submit" name="theme" value="${theme}"${theme === view.theme ? ' aria-pressed="true"' : ' aria-pressed="false"'}>${escape(t.themes[theme])}</button>`,
+    )
+    .join("");
+  return `<div class="narrow">${pageHead(t.heading)}
+${notices(view.extra)}
+<section aria-labelledby="account"><h2 id="account">${escape(t.account)}</h2>
+<div class="card"><div class="line"><span class="avatar large" aria-hidden="true">${escape(initials(account.name))}</span><span class="who"><strong>${escape(account.name)}</strong><span>${escape(account.detail)}</span></span>
+<form method="post" action="/ui/logout"><button type="submit">${ICONS.logout}${escape(UI.nav.esci)}</button></form></div></div></section>
+${quota}
+<section class="section" aria-labelledby="aspetto"><h2 id="aspetto">${escape(t.appearance)}</h2>
+<form method="post" action="/ui/impostazioni/tema" class="segmented" aria-label="${escape(t.themeLabel)}">${themes}</form></section>
+<section class="section" aria-labelledby="registro-amministrativo"><h2 id="registro-amministrativo">${escape(t.adminLog)}${
+    view.log.length === 0 ? "" : `<a class="end" href="/ui/impostazioni/registro">${escape(t.adminLogAll)}</a>`
+  }</h2>
+${view.log.length === 0 ? `<p class="card empty">${escape(t.adminLogEmpty)}</p>` : `<ol class="card lines log">${view.log.map((entry) => adminLine(entry, view.now)).join("\n")}</ol>`}</section>
+<section class="section" aria-labelledby="chiave-firma"><h2 id="chiave-firma">${escape(t.signingKey)}</h2>
+<div class="card"><div class="line"><span class="tile-icon grey" aria-hidden="true">${ICONS.key}</span><code class="line-text keyid">${escape(view.keyId)}</code></div></div></section>
+</div>`;
+}
+
+/** The whole administrative log, newest first. */
+export function adminLogPage(log: AdminLogEntry[], now: Date): string {
+  const t = UI.settings;
+  return `<div class="narrow">${pageHead(t.adminLog)}
+${log.length === 0 ? `<p class="card empty">${escape(t.adminLogEmpty)}</p>` : `<ol class="card lines log">${log.map((entry) => adminLine(entry, now)).join("\n")}</ol>`}
+</div>`;
+}
+

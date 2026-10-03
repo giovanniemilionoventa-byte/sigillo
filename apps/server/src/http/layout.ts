@@ -2,13 +2,13 @@ import type { Receipt } from "@sigillo/core";
 import type { ChainHealthMonitor, ChainStatus, SystemHealth } from "../health/chain-health.js";
 import type { ReceiptStore, SystemRecord } from "../storage/store.js";
 import { outcomeWord, systemTitle, UI } from "./strings.js";
-import { ICONS, KIND_ICONS, SEAL_SVG, STATE_ICONS, STYLE } from "./style.js";
+import { GOOGLE_LOGO, ICONS, KIND_ICONS, SEAL_SVG, STATE_ICONS, STYLE } from "./style.js";
 
 /**
- * What every page of the operator's view shares: the document around it, the
- * sidebar, and the small pieces each page is built from (a state, an outcome,
- * the kind of an action). The pages themselves are in pages.ts and
- * history.ts; the routes in ui.ts.
+ * What every page of the web view shares: the document around it, the
+ * sidebar, the sign-in pages' frame, and the small pieces each page is built
+ * from (a state, an outcome, the kind of an action). The pages themselves are
+ * in pages.ts and history.ts; the routes in ui.ts.
  */
 
 /** Everything that reaches HTML goes through here. */
@@ -26,15 +26,19 @@ export function systemPath(systemId: string): string {
   return `/ui/systems/${escape(encodeURIComponent(systemId))}`;
 }
 
+/** A word with its first letter in capitals: "bloccato" is "Bloccato" at the start of a pill. */
+export function capital(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
 /** Which entry of the sidebar a page belongs to. */
 export type NavCurrent =
   | "registro"
   | "sistemi"
-  | "archiviati"
-  | "tutti"
   | "persone"
   | "clienti"
   | "verifica"
+  | "impostazioni"
   | `system:${string}`;
 
 /** A system as the sidebar and the main page show it: its record and its chain's health. */
@@ -43,14 +47,23 @@ export interface SystemRow {
   health: SystemHealth;
 }
 
+/** Who is signed in, as the foot of the sidebar and the settings show it. */
+export interface Account {
+  /** The organization's name, or "Amministratore". */
+  name: string;
+  /** The member's email, or how the operator signs in. */
+  detail: string;
+}
+
 /** What the sidebar needs, read once per page. */
 export interface Shell {
-  keyId: string;
-  /** Whether the operator is looking: only then are the people pages offered (ui.ts, requireOperator). */
+  /** Whether the operator is looking: only then are the people and customers pages offered (ui.ts, requireOperator). */
   operator: boolean;
   /** The systems the main page shows, in the same order. */
   systems: SystemRow[];
-  archivedCount: number;
+  account: Account;
+  /** Customers waiting for the operator's approval, beside "Clienti". */
+  waiting: number;
 }
 
 /**
@@ -77,11 +90,10 @@ export function shellFor(
   store: ReceiptStore,
   healthMonitor: ChainHealthMonitor,
   now: Date,
-  keyId: string,
-  operator: boolean,
+  viewer: { operator: boolean; account: Account; waiting: number },
 ): Shell {
-  const { records, shown } = homeRows(store, healthMonitor, now);
-  return { keyId, operator, systems: shown, archivedCount: records.filter((record) => record.archived_at !== null).length };
+  const { shown } = homeRows(store, healthMonitor, now);
+  return { ...viewer, systems: shown };
 }
 
 /** The worst state among the systems shown: one red makes the page red. */
@@ -91,14 +103,19 @@ export function worstStatus(statuses: ChainStatus[]): ChainStatus {
 
 export const STATE_ICON: Record<ChainStatus, string> = { green: STATE_ICONS.ok, yellow: STATE_ICONS.warn, red: STATE_ICONS.bad };
 
-/** A traffic light: icon of its own shape, word, colour. */
-export function semaphore(status: ChainStatus): string {
-  return `<span class="stamp ${status}"><span class="dot ${status}" aria-hidden="true">${STATE_ICON[status]}</span><span class="status-word ${status}">${escape(UI.status[status])}</span></span>`;
+/** A chain's state as a pill: "Integro", "Da controllare", "Verifica fallita", each with an icon of its own shape. */
+export function chainPill(status: ChainStatus): string {
+  return `<span class="pill ${status}" data-chain="${status}">${STATE_ICON[status]}${escape(UI.chain[status])}</span>`;
 }
 
-/** A chain's state in the header of a system: icon, and "Registro integro" / "Da controllare" / "Verifica fallita". */
-export function chainStamp(status: ChainStatus): string {
-  return `<span class="stamp ${status}" data-chain="${status}"><span class="dot ${status}" aria-hidden="true">${STATE_ICON[status]}</span>${escape(UI.chain[status])}</span>`;
+/** An archived system, as a pill. */
+export function archivedPill(): string {
+  return `<span class="pill" data-chain="archived">${STATE_ICONS.archived}${escape(UI.systemsPage.archivedBadge)}</span>`;
+}
+
+/** A chain's state as a coloured dot, with its words for a screen reader: the sidebar's. */
+export function stateLight(status: ChainStatus): string {
+  return `<span class="light ${status}" aria-hidden="true"></span><span class="sr">${escape(UI.chain[status])}: </span>`;
 }
 
 export const OUTCOME_STATE: Record<Receipt["outcome"], { css: ChainStatus; icon: string }> = {
@@ -109,13 +126,13 @@ export const OUTCOME_STATE: Record<Receipt["outcome"], { css: ChainStatus; icon:
 };
 
 /** An outcome as a pill: icon, word, the state's fill. */
-export function outcomePill(outcome: Receipt["outcome"], large = false): string {
+export function outcomePill(outcome: Receipt["outcome"]): string {
   const state = OUTCOME_STATE[outcome];
-  return `<span class="pill ${state.css}${large ? " large" : ""}" data-outcome="${outcome}">${state.icon}${escape(outcomeWord(outcome))}</span>`;
+  return `<span class="pill ${state.css}" data-outcome="${outcome}">${state.icon}${escape(capital(outcomeWord(outcome)))}</span>`;
 }
 
 /** The kind of an action as an icon in a rounded square; the word is said elsewhere. */
-export function kindIcon(kind: Receipt["action"]["kind"], size: "" | "small" | "large" = ""): string {
+export function kindIcon(kind: Receipt["action"]["kind"], size: "" | "large" = ""): string {
   return `<span class="kind ${kind}${size === "" ? "" : ` ${size}`}" aria-hidden="true">${KIND_ICONS[kind]}</span>`;
 }
 
@@ -131,13 +148,9 @@ export function notices(extra: { notice?: string; error?: string }): string {
   );
 }
 
-/** The heading of an ordinary page: a small line above, the title, a lead, and an action on the right. */
-export function pageHead(head: { eyebrow?: string; h1: string; lead?: string; action?: string }): string {
-  const text = `${head.eyebrow === undefined ? "" : `<p class="eyebrow">${escape(head.eyebrow)}</p>`}
-<h1>${escape(head.h1)}</h1>`;
-  return `<header class="page-head">${
-    head.action === undefined ? text : `<div class="page-head-row"><div>${text}</div>${head.action}</div>`
-  }${head.lead === undefined ? "" : `<p class="lead">${escape(head.lead)}</p>`}</header>`;
+/** The heading of an ordinary page: the title, and an action on the right. */
+export function pageHead(h1: string, action = ""): string {
+  return `<header class="page-head"><h1>${escape(h1)}</h1>${action === "" ? "" : `<div class="end">${action}</div>`}</header>`;
 }
 
 export interface PageOptions {
@@ -150,6 +163,10 @@ export interface PageOptions {
   body: string;
 }
 
+/**
+ * The start of every document. The theme the reader chose, if any, is added to
+ * <html> on the way out (ui.ts, the onSend hook), so no page has to carry it.
+ */
 function documentStart(title: string): string {
   return `<!doctype html>
 <html lang="it"><head>
@@ -160,37 +177,48 @@ function documentStart(title: string): string {
 </head>`;
 }
 
+/** Up to two letters for an avatar: "Acme S.r.l." is "AS", "mario.rossi@acme.it" is "MR". */
+export function initials(name: string): string {
+  const words = name
+    .replace(/@.*$/, "")
+    .split(/[\s._-]+/)
+    .filter((word) => /^\p{L}/u.test(word));
+  return words
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join("");
+}
+
 function sidebar(shell: Shell, current: NavCurrent | undefined): string {
   const here = (name: NavCurrent): string => (current === name ? ' aria-current="page"' : "");
   const item = (href: string, name: NavCurrent, glyph: string, label: string, count?: number): string =>
-    `<a class="side-item" href="${href}"${here(name)}>${glyph}<span class="side-label cap">${escape(label)}</span>${
-      count === undefined ? "" : `<span class="side-count">${count}</span>`
+    `<a class="side-item" href="${href}"${here(name)}>${glyph}<span class="side-label">${escape(label)}</span>${
+      count === undefined || count === 0 ? "" : `<span class="side-count">${count}</span>`
     }</a>`;
 
   const systems = shell.systems
-    .map(({ record, health }) => {
-      const status = health.status;
-      return `<li><a class="side-item" href="${systemPath(record.system_id)}"${here(`system:${record.system_id}`)}><span class="dot ${status}" aria-hidden="true">${STATE_ICON[status]}</span><span class="sr">${escape(UI.status[status])}: </span><span class="side-label">${escape(systemTitle(record))}</span><span class="side-count">${record.receipts}</span></a></li>`;
-    })
+    .map(
+      ({ record, health }) =>
+        `<li><a class="side-item" href="${systemPath(record.system_id)}"${here(`system:${record.system_id}`)}>${stateLight(health.status)}<span class="side-label">${escape(systemTitle(record))}</span><span class="side-count">${record.receipts}</span></a></li>`,
+    )
     .join("");
 
   return `<div class="sidebar" id="menu"><div class="sidebar-inner">
-<div class="side-top"><a class="brand" href="/ui">${SEAL_SVG}<span><span class="wordmark">sigillo</span><span class="tagline">${escape(UI.brand.tagline)}</span></span></a><a class="menu-close" href="#main">${ICONS.close}${escape(UI.nav.close)}</a></div>
+<div class="side-top"><a class="brand" href="/ui">${SEAL_SVG}<span>sigillo</span></a><a class="menu-close" href="#main" aria-label="${escape(UI.nav.close)}">${ICONS.close}</a></div>
 <nav class="side-nav" aria-label="${escape(UI.nav.label)}">
 ${item("/ui", "registro", ICONS.home, UI.nav.registro)}
-<div class="side-head"><a class="cap" href="/ui/sistemi"${here("sistemi")}>${escape(UI.nav.sistemi)}</a><a class="side-add" href="/ui/sistemi#crea" aria-label="${escape(UI.systemsPage.createTitle)}">${ICONS.plus}</a></div>
+<div class="side-head"><a href="/ui/sistemi">${escape(UI.nav.sistemi)}</a><a class="side-add" href="/ui/sistemi/nuovo" aria-label="${escape(UI.nav.newSystem)}">${ICONS.plus}</a></div>
 ${systems === "" ? "" : `<ul class="side-list">${systems}</ul>`}
-${item("/ui/sistemi?vista=archiviati", "archiviati", `<span class="dot archived" aria-hidden="true">${STATE_ICONS.archived}</span>`, UI.systemsPage.views.archiviati, shell.archivedCount)}
-${item("/ui/sistemi?vista=tutti", "tutti", ICONS.list, UI.nav.allSystems)}
+${item("/ui/sistemi", "sistemi", ICONS.list, UI.nav.allSystems)}
 <p class="side-head">${escape(UI.nav.tools)}</p>
 ${item("/ui/verify-document", "verifica", ICONS.docCheck, UI.nav.verificaDocumento)}
 ${shell.operator ? item("/ui/persone", "persone", ICONS.people, UI.nav.persone) : ""}
-${shell.operator ? item("/ui/clienti", "clienti", ICONS.folder, UI.nav.clienti) : ""}
+${shell.operator ? item("/ui/clienti", "clienti", ICONS.building, UI.nav.clienti, shell.waiting) : ""}
+<div class="side-spacer"></div>
+${item("/ui/impostazioni", "impostazioni", ICONS.gear, UI.nav.impostazioni)}
 </nav>
-<div class="side-foot">
-<p class="side-key">${ICONS.key}<span>${escape(UI.brand.signingKey)} <code>${escape(shell.keyId)}</code></span></p>
-<form method="post" action="/ui/logout"><button type="submit" class="side-item">${ICONS.logout}<span class="cap">${escape(UI.nav.esci)}</span></button></form>
-</div>
+<div class="account"><span class="avatar" aria-hidden="true">${escape(initials(shell.account.name))}</span><span class="who"><strong>${escape(shell.account.name)}</strong><span>${escape(shell.account.detail)}</span></span>
+<form method="post" action="/ui/logout"><button type="submit" class="icon-button" aria-label="${escape(UI.nav.esci)}" title="${escape(UI.nav.esci)}">${ICONS.logout}</button></form></div>
 </div></div>`;
 }
 
@@ -199,7 +227,7 @@ export function page(options: PageOptions, shell: Shell): string {
   return `${documentStart(`${options.title} — sigillo`)}<body>
 <a class="skip" href="#main">${escape(UI.brand.skip)}</a>
 <div class="app">
-<header class="topbar"><a class="brand" href="/ui">${SEAL_SVG}<span><span class="wordmark">sigillo</span></span></a><a class="menu-open" href="#menu">${ICONS.menu}${escape(UI.nav.menu)}</a></header>
+<header class="topbar"><a class="brand" href="/ui">${SEAL_SVG}<span>sigillo</span></a><a class="menu-open" href="#menu" aria-label="${escape(UI.nav.menu)}">${ICONS.menu}</a></header>
 ${sidebar(shell, options.current)}
 <main id="main" class="${options.mainClass ?? "content"}">
 ${options.body}
@@ -208,98 +236,116 @@ ${options.body}
 </body></html>`;
 }
 
-/** The sign-in pages' frame: who this is on the left, the form on the right. */
-function loginShell(main: string): string {
-  const t = UI.login;
-  const point = (tile: string, glyph: string, title: string, text: string): string =>
-    `<li><span class="icon-tile ${tile}" aria-hidden="true">${glyph}</span><span><strong>${escape(title)}</strong><span class="muted">${escape(text)}</span></span></li>`;
-  return `${documentStart("sigillo")}<body>
-<div class="login">
-<aside class="login-id">
-<div class="login-brand">${SEAL_SVG}<span><span class="wordmark">sigillo</span><span class="tagline">${escape(UI.brand.tagline)}</span></span></div>
-<h2 class="login-pitch">${escape(t.pitch)}</h2>
-<ul class="login-points">
-${point("green", ICONS.seal, UI.home.q1, t.points.q1)}
-${point("blue", ICONS.list, UI.home.q2, t.points.q2)}
-${point("purple", ICONS.folder, UI.home.q3, t.points.q3)}
-</ul>
-</aside>
-<main class="login-main" id="main">
-${main}
-</main>
-</div>
-</body></html>`;
-}
-
 /** A message on a sign-in page: an error is announced, a notice is not. */
-function loginMessage(extra: { notice?: string; error?: string }, id = "login-error"): string {
+function authMessage(extra: { notice?: string; error?: string }): string {
   if (extra.error !== undefined) {
-    return `<p class="field-error" id="${id}" role="alert">${STATE_ICONS.bad}<span>${escape(extra.error)}</span></p>`;
+    return `<p class="field-error" id="login-error" role="alert">${STATE_ICONS.bad}<span>${escape(extra.error)}</span></p>`;
   }
-  return extra.notice === undefined ? "" : `<p class="notice" role="status">${ICONS.info}<span>${escape(extra.notice)}</span></p>`;
+  return extra.notice === undefined ? "" : `<p class="message" role="status">${escape(extra.notice)}</p>`;
 }
 
-/** The operator's password form. */
-function passwordForm(message: string | undefined, standalone: boolean): string {
-  const t = UI.login;
-  const failed = message !== undefined;
-  const autofocus = standalone;
-  return `<form method="post" action="/ui/login" class="${standalone ? "login-form" : "fields"}">
-${standalone ? `<h1>${escape(t.submit)}</h1>\n<p class="lead">${escape(t.lead)}</p>` : ""}
-<label>${escape(t.label)}
-  <input type="password" name="password" autocomplete="current-password"${autofocus ? " autofocus" : ""} required${
-    failed ? ' aria-invalid="true" aria-describedby="login-error"' : ""
-  }>
-</label>
-${failed ? loginMessage({ error: message }) : ""}
-<button type="submit" class="primary">${escape(t.submit)}</button>
-<p class="login-note">${escape(t.restricted)}</p>
-</form>`;
+/** A field with its label for a screen reader and its placeholder for the eye. */
+export function authField(
+  label: string,
+  attributes: string,
+  options: { placeholder?: string; failed?: boolean } = {},
+): string {
+  return `<label><span class="sr">${escape(label)}</span><input ${attributes} placeholder="${escape(options.placeholder ?? label)}"${
+    options.failed === true ? ' aria-invalid="true" aria-describedby="login-error"' : ""
+  }></label>`;
 }
 
 /**
- * The sign-in page. Without customer accounts, the operator's password and
- * nothing else, as it always was. With them (auth/firebase.ts), Google and
- * email first, and the operator's password folded away underneath.
+ * The frame of every sign-in page: one column in the middle, the seal (or
+ * an icon that says what the page is about), a title, and what the page
+ * holds. Nothing beside it.
  */
-export function loginPage(message?: string, accounts?: { notice?: string; error?: string }): string {
-  if (accounts === undefined) return loginShell(passwordForm(message, true));
-  const t = UI.account;
-  return loginShell(`<div class="login-form">
-<h1>${escape(t.signIn)}</h1>
-<p class="lead">${escape(t.lead)}</p>
-${loginMessage(accounts)}
-<a class="button primary wide" href="/ui/login/google">${escape(t.google)}</a>
-<p class="login-note">${escape(t.orEmail)}</p>
-<form method="post" action="/ui/login/email" class="fields">
-<label>${escape(t.email)}
-  <input type="email" name="email" autocomplete="email" required>
-</label>
-<label>${escape(t.password)}
-  <input type="password" name="password" autocomplete="current-password" required>
-</label>
-<button type="submit" class="primary">${escape(t.signIn)}</button>
-</form>
-<p class="login-note"><a href="/ui/registrati">${escape(t.toSignUp)}</a> · <a href="/ui/password">${escape(t.toReset)}</a></p>
-<details${message === undefined ? "" : " open"}>
-<summary>${escape(t.operator)}</summary>
-${passwordForm(message, false)}
-</details>
-</div>`);
+export function authPage(
+  title: string,
+  body: string,
+  options: { icon?: "mail" | "clock"; message?: string; head?: string } = {},
+): string {
+  const icon =
+    options.icon === "mail"
+      ? `<div class="tile-icon blue" aria-hidden="true">${ICONS.mail}</div>`
+      : options.icon === "clock"
+        ? `<div class="tile-icon yellow" aria-hidden="true">${ICONS.clock}</div>`
+        : SEAL_SVG;
+  return `${documentStart(`${title} — sigillo`)}<body>
+<main class="auth" id="main"><div class="auth-box">
+${icon}
+<h1>${escape(title)}</h1>
+${options.message === undefined ? "" : `<p class="message">${escape(options.message)}</p>`}
+${options.head ?? ""}${body}
+</div></main>
+</body></html>`;
 }
 
-/** One of the account pages: a title, a sentence, an optional message, a form or nothing, the way back. */
+/** The operator's password form, alone on its page. */
+export function operatorLoginPage(message: string | undefined, title: string): string {
+  const failed = message !== undefined;
+  return authPage(
+    title,
+    `<form method="post" action="/ui/login">
+${authField(UI.login.label, 'type="password" name="password" autocomplete="current-password" autofocus required', { placeholder: UI.login.placeholder, failed })}
+${failed ? authMessage({ error: message }) : ""}
+<button type="submit" class="primary">${escape(UI.login.submit)}</button>
+</form>`,
+  );
+}
+
+/**
+ * The customers' sign-in page: Google, or an email address and then, on the
+ * next page, its password. The operator's password is not here: it has its
+ * own address (ui.ts, /ui/admin).
+ */
+export function loginPage(extra: { notice?: string; error?: string } = {}): string {
+  const t = UI.account;
+  return authPage(
+    UI.login.title,
+    `${authMessage(extra)}
+<a class="button" href="/ui/login/google">${GOOGLE_LOGO}${escape(t.google)}</a>
+<div class="or">${escape(t.or)}</div>
+<form method="post" action="/ui/login/email">
+${authField(t.email, 'type="email" name="email" autocomplete="email" required')}
+<button type="submit" class="primary">${escape(t.continueEmail)}</button>
+</form>
+<p class="auth-foot"><a href="/ui/registrati">${escape(t.toSignUp)}</a></p>`,
+  );
+}
+
+/** The second step of the email sign-in: the address chosen, its password. */
+export function passwordStepPage(email: string, extra: { notice?: string; error?: string } = {}): string {
+  const t = UI.account;
+  const failed = extra.error !== undefined;
+  return authPage(
+    t.passwordTitle,
+    `<form method="post" action="/ui/login/email">
+<input type="hidden" name="email" value="${escape(email)}">
+${authField(t.password, 'type="password" name="password" autocomplete="current-password" autofocus required', { failed })}
+${authMessage(extra)}
+<button type="submit" class="primary">${escape(t.signIn)}</button>
+</form>
+<p class="auth-foot"><a href="/ui/password">${escape(t.toReset)}</a></p>`,
+    { head: `<p class="chip">${escape(email)} <a href="/ui/login">${escape(t.change)}</a></p>\n` },
+  );
+}
+
+/** One of the other account pages: a title, a message if any, a form or nothing, the way back. */
 export function accountPage(
   title: string,
-  lead: string,
   extra: { notice?: string; error?: string },
   form = "",
+  options: { icon?: "mail" | "clock"; message?: string; back?: boolean } = {},
 ): string {
-  return loginShell(`<div class="login-form">
-<h1>${escape(title)}</h1>
-<p class="lead">${escape(lead)}</p>
-${loginMessage(extra)}
+  return authPage(
+    title,
+    `${authMessage(extra)}
 ${form}
-<p class="login-note"><a href="/ui/login">${escape(UI.account.toLogin)}</a></p>
-</div>`);
+${options.back === false ? "" : `<p class="auth-foot"><a href="/ui/login">${escape(UI.account.toLogin)}</a></p>`}`,
+    {
+      ...(options.icon === undefined ? {} : { icon: options.icon }),
+      ...(options.message === undefined ? {} : { message: options.message }),
+    },
+  );
 }

@@ -214,9 +214,9 @@ politica di sicurezza dei contenuti di Caddy resta quella di prima.
    ```
 
 5. (Facoltativo) il limite mensile per cliente, `SIGILLO_ORG_MONTHLY_RECEIPTS`
-   (100.000 se non lo cambi). Oltre il limite i sistemi di quel cliente
-   ricevono `429` fino al primo del mese dopo; i sistemi dell'operatore non
-   hanno limite.
+   (10.000 se non lo cambi). Oltre il limite i sistemi di quel cliente
+   ricevono `429` fino al primo del mese dopo, e il cliente lo vede scritto nel
+   registro e in **Impostazioni**; i sistemi dell'operatore non hanno limite.
 
 Come funziona per il cliente: entra con Google, oppure crea un account con
 email e password e conferma l'indirizzo dal link che riceve. Al primo accesso
