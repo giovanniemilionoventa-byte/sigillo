@@ -248,3 +248,125 @@ describe.skipIf(process.platform === "win32")("deploy/update.sh", () => {
     expect(calls).toEqual(["git -C .. pull --ff-only"]);
   });
 });
+
+/**
+ * deploy/backup-offsite.sh, run for real by bash, with `docker` standing in
+ * for the server container (a directory of backups) and `rclone` for the
+ * remote (another directory). What is checked is the script's own logic:
+ * that the local backup runs whether or not a remote is configured, that the
+ * newest copy is what is uploaded, that the remote keeps one copy per day for
+ * the days asked, and that an upload cut short leaves nothing behind. The
+ * encryption itself is rclone's, and 6.1 has the script check it on the
+ * server with `--check`.
+ */
+describe.skipIf(process.platform === "win32")("deploy/backup-offsite.sh", () => {
+  function runOffsite(options: {
+    configured: boolean;
+    onRemote?: string[];
+    keepDays?: number;
+    streamFails?: boolean;
+  }): { status: number | null; stdout: string; stderr: string; remote: Map<string, Buffer> | undefined; newest: Buffer } {
+    const root = mkdtempSync(join(tmpdir(), "sigillo-offsite-"));
+    try {
+      mkdirSync(join(root, "deploy"));
+      cpSync(join(DEPLOY, "backup-offsite.sh"), join(root, "deploy", "backup-offsite.sh"));
+      const container = join(root, "container");
+      const remote = join(root, "remote");
+      mkdirSync(container);
+      mkdirSync(remote);
+      for (const name of options.onRemote ?? []) writeFileSync(join(remote, name), "old");
+      writeFileSync(join(container, "sigillo-20261001T100000Z.db"), "older copy");
+      const bin = join(root, "bin");
+      mkdirSync(bin);
+      writeFileSync(
+        join(bin, "docker"),
+        `#!/bin/bash\n` +
+          `case "$*" in\n` +
+          `*/app/backup.sh) printf 'newest copy' > "${container}/sigillo-20261003T120000Z.db"; touch -d '+1 minute' "${container}/sigillo-20261003T120000Z.db" ;;\n` +
+          `*"sh -c"*) ls -1t "${container}"/sigillo-*.db | head -n 1 ;;\n` +
+          `*" cat "*) ${options.streamFails ? `head -c 4 "\${@: -1}"; exit 1` : `cat "\${@: -1}"`} ;;\n` +
+          `esac\n`,
+        { mode: 0o755 },
+      );
+      writeFileSync(
+        join(bin, "rclone"),
+        `#!/bin/bash\n` +
+          `path() { echo "${remote}/\${1#*:}"; }\n` +
+          `case "$1" in\n` +
+          `listremotes) ${options.configured ? "echo sigillo-backup:" : "true"} ;;\n` +
+          `lsf) ls -1 "${remote}" | grep '^sigillo-.*\\.db\\.gz$' ;;\n` +
+          `rcat) cat > "$(path "$2")" ;;\n` +
+          `deletefile) rm "$(path "$2")" ;;\n` +
+          `*) exit 2 ;;\n` +
+          `esac\n`,
+        { mode: 0o755 },
+      );
+      const result = spawnSync("/bin/bash", [join(root, "deploy", "backup-offsite.sh")], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH ?? ""}`,
+          ...(options.keepDays === undefined ? {} : { SIGILLO_OFFSITE_KEEP_DAYS: String(options.keepDays) }),
+        },
+      });
+      const files = new Map(
+        execFileSync("ls", ["-1", remote], { encoding: "utf8" })
+          .split("\n")
+          .filter(Boolean)
+          .map((name) => [name, readFileSync(join(remote, name))] as const),
+      );
+      return {
+        status: result.status,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        remote: options.configured ? files : undefined,
+        newest: readFileSync(join(container, "sigillo-20261003T120000Z.db")),
+      };
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("still makes the local backup, and says so, when no remote is configured", () => {
+    const { status, stdout, newest } = runOffsite({ configured: false });
+    expect(status).toBe(0);
+    expect(newest.toString()).toBe("newest copy");
+    expect(stdout).toContain("off-site copy: not configured");
+  });
+
+  it("uploads the newest copy, compressed", () => {
+    const { status, remote, stdout } = runOffsite({ configured: true });
+    expect(status).toBe(0);
+    expect([...(remote?.keys() ?? [])]).toEqual(["sigillo-20261003T120000Z.db.gz"]);
+    const uploaded = remote?.get("sigillo-20261003T120000Z.db.gz") ?? Buffer.alloc(0);
+    expect(execFileSync("gzip", ["-dc"], { input: uploaded }).toString()).toBe("newest copy");
+    expect(stdout).toContain("off-site copies in sigillo-backup:: 1");
+  });
+
+  it("keeps the newest copy of each day, for the newest days asked", () => {
+    const { status, remote } = runOffsite({
+      configured: true,
+      keepDays: 3,
+      onRemote: [
+        "sigillo-20261003T080000Z.db.gz",
+        "sigillo-20261002T230000Z.db.gz",
+        "sigillo-20261002T220000Z.db.gz",
+        "sigillo-20260920T100000Z.db.gz",
+        "sigillo-20260901T100000Z.db.gz",
+      ],
+    });
+    expect(status).toBe(0);
+    expect([...(remote?.keys() ?? [])]).toEqual([
+      "sigillo-20260920T100000Z.db.gz",
+      "sigillo-20261002T230000Z.db.gz",
+      "sigillo-20261003T120000Z.db.gz",
+    ]);
+  });
+
+  it("fails, and removes what it uploaded, when the copy cannot be read whole", () => {
+    const failed = runOffsite({ configured: true, streamFails: true, onRemote: ["sigillo-20261002T230000Z.db.gz"] });
+    expect(failed.status).toBe(1);
+    expect(failed.stderr).toContain("off-site copy: upload of sigillo-20261003T120000Z.db.gz");
+    expect([...(failed.remote?.keys() ?? [])]).toEqual(["sigillo-20261002T230000Z.db.gz"]);
+  });
+});

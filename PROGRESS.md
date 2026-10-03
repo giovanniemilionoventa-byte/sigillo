@@ -3184,6 +3184,32 @@ l'account e la scelta chiaro/scuro, e un limite di 10.000 ricevute al mese.
 **Da fare sul server**: il `.env` di produzione copiato dal vecchio `.env.example` ha
 `SIGILLO_ORG_MONTHLY_RECEIPTS=100000`; per avere 10.000 va cambiato lì.
 
+### Sessione 25 — 2026-10-03 — la copia dei backup su Google Drive
+
+Richiesta del committente (thread "Backup su Google Drive"): poter mandare i backup fuori dal
+server, su Google Drive. Fino a oggi le copie stavano solo sullo stesso disco del database.
+
+- **`deploy/backup-offsite.sh`**, sull'host, sostituisce nel cron la chiamata diretta a
+  `backup.sh`: fa il backup locale come prima e poi, se rclone ha un collegamento
+  `sigillo-backup`, comprime l'ultima copia e la carica, senza scriverla una seconda volta sul
+  disco. Senza collegamento si ferma dopo il backup locale e lo scrive nel log.
+- **Cifrata**: `sigillo-backup` è un collegamento `crypt` di rclone sopra Google Drive, con una
+  password che il committente salva fuori dal server. `--check` chiede quella password e scarica
+  l'ultima copia usando solo lei: è il modo di sapere che la password salvata è quella giusta.
+  Provato con rclone 1.75 vero: senza `--obscure` alla creazione rclone salva la password in una
+  forma che poi non riconosce, e `--check` lo scopre (la guida lo dice).
+- **Su Drive** resta la copia dell'ultima ora e una per ciascuno dei 30 giorni prima, contati
+  per giorni che hanno una copia, così un upload che smette di girare non cancella le ultime buone.
+  Accesso di rclone al Drive limitato a `drive.file` (solo i file che crea lui), cestino saltato
+  (`use_trash=false`) perché i file cancellati nel cestino occupano spazio per 30 giorni.
+- **Guida**: `DEPLOY-PRODUZIONE.md` 6.1 (sei passi), 6.2 (ripristino da Drive), checklist.
+  Test in `deploy-config.test.ts` con `docker` e `rclone` sostituiti: backup locale senza Drive,
+  upload dell'ultima copia, quali copie restano, e un upload interrotto che non lascia file a metà.
+- **rclone** è uno strumento installato sul server, non una dipendenza di un pacchetto: aggiunto
+  in `CLAUDE.md` su richiesta del committente (backup su Drive).
+
+**Da fare sul server**: i passi di 6.1 "Copia su Google Drive", e cambiare la riga del cron.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
