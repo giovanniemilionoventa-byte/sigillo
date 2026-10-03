@@ -35,6 +35,7 @@ const { ApiKeyStore } = await import(serverModule("src/auth/api-keys.ts"));
 const { Checkpointer } = await import(serverModule("src/checkpoint/checkpointer.ts"));
 const { ChainHealthMonitor } = await import(serverModule("src/health/chain-health.ts"));
 const { buildServer } = await import(serverModule("src/http/server.ts"));
+const { UiSessions } = await import(serverModule("src/auth/sessions.ts"));
 const { createTestSigner } = await import(serverModule("test/helpers/signer.ts"));
 const { createLocalTsa } = await import(serverModule("test/helpers/local-tsa.ts"));
 
@@ -96,8 +97,8 @@ mkdirSync(outputDirectory, { recursive: true });
 
 const directory = mkdtempSync(join(tmpdir(), "sigillo-shots-"));
 const databasePath = join(directory, "sigillo.db");
-// The checkpoints' time is the signer's own: the same moment the checkpointer below used to give.
-const signer = createTestSigner({ now: () => new Date(at(50)) });
+// The checkpoints are signed now, as the local authority stamps them: the demo is then sealed in time, and green.
+const signer = createTestSigner();
 const store = ReceiptStore.open(databasePath, signer);
 const keys = ApiKeyStore.open(databasePath);
 const tsa = createLocalTsa();
@@ -193,17 +194,33 @@ await checkpointer.runOnce();
 await store.createSystem("prova-per-errore-2", at(56));
 await store.deleteEmptySystem("prova-per-errore-2", { ...admin, ts: at(57) });
 
+// A customer, approved, with one system just created and nothing sent yet:
+// what a newcomer sees. And one waiting for the operator, for "Clienti".
+await store.registerOrganization({ uid: "demoRossi0001", email: "anna@rossitrasporti.it" }, "Rossi Trasporti S.r.l.", admin);
+const rossi = store.userByUid("demoRossi0001")?.organization_id ?? "";
+await store.approveOrganization(rossi, admin);
+await store.createSystem("rossi-assistente", at(60), rossi);
+await store.renameSystem("rossi-assistente", "Assistente spedizioni", admin);
+await store.registerOrganization({ uid: "demoBianchi001", email: "giulia@studiobianchi.it" }, "Studio Bianchi", admin);
+
 const healthMonitor = new ChainHealthMonitor(store, signer.publicKey, 24 * 3600_000);
 healthMonitor.check();
 
+// Accounts on, as in production: the sign-in page is the customers' one, and
+// the operator's password is at /ui/admin. Firebase itself is never reached:
+// no page below signs in through it.
+const sessions = new UiSessions();
 const app = buildServer({
   store,
   keys,
+  organizationMonthlyReceipts: 10_000,
   ui: {
     password: "password-di-prova",
     signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
     healthMonitor,
     checkpointer,
+    sessions,
+    accounts: { firebase: {} as never, publicUrl: "https://get-sigillo.eu" },
   },
 });
 const address = await app.listen({ host: "127.0.0.1", port: 0 });
@@ -215,18 +232,28 @@ async function signedInPage(
 ): Promise<{ context: Awaited<ReturnType<typeof browser.newContext>>; page: Awaited<ReturnType<typeof browser.newPage>> }> {
   const context = await browser.newContext(contextOptions);
   const page = await context.newPage();
-  await page.goto(`${address}/ui/login`);
+  await page.goto(`${address}/ui/admin`);
   await page.fill('input[name="password"]', "password-di-prova");
   await Promise.all([page.waitForNavigation(), page.click('button[type="submit"]')]);
   return { context, page };
 }
 
+/** A customer's member, signed in: the session cookie the sign-in would have set. */
+async function customerPage(
+  contextOptions: Parameters<typeof browser.newContext>[0],
+): Promise<{ context: Awaited<ReturnType<typeof browser.newContext>>; page: Awaited<ReturnType<typeof browser.newPage>> }> {
+  const context = await browser.newContext(contextOptions);
+  const session = sessions.issue({ kind: "organization", organizationId: rossi, userId: "demoRossi0001" }, Date.now());
+  await context.addCookies([{ name: "sigillo_session", value: session.value, url: address }]);
+  return { context, page: await context.newPage() };
+}
+
 type Page = Awaited<ReturnType<typeof browser.newPage>>;
 type Action = (page: Page) => Promise<void>;
 
-// Every page of the view, as design/proposta-b/README.md maps the mockups to
-// routes, plus the pages without a mockup. An action reaches a state a plain
-// address cannot: a form posted, a menu opened.
+// Every page of the view, as design/proposta-semplice/README.md maps the
+// mockups to routes. An action reaches a state a plain address cannot: a
+// form posted, a disclosure opened.
 const pages: [name: string, url: string, action?: Action][] = [
   ["01-registro", "/ui"],
   ["02-cronologia", "/ui/systems/acme-support-bot"],
@@ -242,21 +269,34 @@ const pages: [name: string, url: string, action?: Action][] = [
     },
   ],
   ["08-fascicolo", "/ui/systems/acme-support-bot#fascicolo"],
-  ["09-checkpoint", "/ui/systems/selezione-cv/checkpoints"],
-  ["10-gestisci-sistema-con-azioni", "/ui/systems/acme-support-bot/manage"],
-  ["11-gestisci-sistema-vuoto", "/ui/systems/prova-per-errore/manage"],
-  ["12-sistemi", "/ui/sistemi"],
-  ["13-sistemi-archiviati", "/ui/sistemi?vista=archiviati"],
-  ["14-verifica-documento", `/ui/verify-document?sha256=${pasted.bytes}&text=${pasted.text ?? ""}&from=text`],
+  ["09-sigilli", "/ui/systems/selezione-cv/checkpoints"],
+  ["10-impostazioni-sistema-con-azioni", "/ui/systems/acme-support-bot/manage"],
+  ["11-impostazioni-sistema-vuoto", "/ui/systems/prova-per-errore/manage"],
+  ["12-nuova-chiave", "/ui/systems/prova-per-errore/manage#nuova-chiave"],
+  ["13-sistemi", "/ui/sistemi"],
+  ["14-sistemi-archiviati", "/ui/sistemi?vista=archiviati"],
+  ["15-nuovo-sistema", "/ui/sistemi/nuovo"],
+  ["16-collega", "/ui/systems/prova-per-errore/collega"],
+  ["17-verifica-documento", "/ui/verify-document"],
+  ["18-verifica-documento-trovato", `/ui/verify-document?sha256=${pasted.bytes}&text=${pasted.text ?? ""}&from=text`],
   [
-    "15-persone",
+    "19-persone",
     "/ui/persone",
     async (page) => {
       await page.fill('input[name="identifier"]', "cliente-4821");
       await Promise.all([page.waitForNavigation(), page.click('form[action="/ui/persone"] button[type="submit"]')]);
     },
   ],
-  ["16-non-trovato", "/ui/systems/sistema-inesistente"],
+  ["20-clienti", "/ui/clienti"],
+  ["21-impostazioni", "/ui/impostazioni"],
+  ["22-registro-amministrativo", "/ui/impostazioni/registro"],
+  ["23-non-trovato", "/ui/systems/sistema-inesistente"],
+];
+
+/** The same pages as a customer sees them. */
+const customerPages: [name: string, url: string][] = [
+  ["30-cliente-primi-passi", "/ui"],
+  ["31-cliente-impostazioni", "/ui/impostazioni"],
 ];
 
 // Full-page screenshots at 2x would quadruple the pixels of every phone
@@ -279,39 +319,56 @@ async function shoot(page: Page, name: string, fullPage = true): Promise<void> {
 }
 
 for (const [variantName, contextOptions] of variants) {
-  // The sign-in page, before and after a wrong password.
+  // The sign-in pages: the address first, then the password, then a wrong one; and the operator's.
   {
     const context = await browser.newContext(contextOptions);
     const page = await context.newPage();
     await page.goto(`${address}/ui/login`);
     await shoot(page, `00-accesso-${variantName}`, false);
+    await page.fill('input[name="email"]', "anna@rossitrasporti.it");
+    await Promise.all([page.waitForNavigation(), page.click('form[action="/ui/login/email"] button[type="submit"]')]);
+    await shoot(page, `00-accesso-password-${variantName}`, false);
+    await page.goto(`${address}/ui/registrati`);
+    await shoot(page, `00-registrazione-${variantName}`, false);
+    await page.goto(`${address}/ui/admin`);
     await page.fill('input[name="password"]', "password-sbagliata");
     await Promise.all([page.waitForNavigation(), page.click('button[type="submit"]')]);
-    await shoot(page, `00-accesso-errore-${variantName}`, false);
+    await shoot(page, `00-accesso-amministratore-errore-${variantName}`, false);
     await context.close();
   }
-  const { context, page } = await signedInPage(contextOptions);
-  for (const [name, url, action] of pages) {
-    await page.goto(`${address}${url}`);
-    if (action) await action(page);
-    await shoot(page, `${name}-${variantName}`);
+  {
+    const { context, page } = await signedInPage(contextOptions);
+    for (const [name, url, action] of pages) {
+      await page.goto(`${address}${url}`);
+      if (action) await action(page);
+      await shoot(page, `${name}-${variantName}`);
+    }
+    if (variantName === "telefono") {
+      await page.goto(`${address}/ui/systems/acme-support-bot#menu`);
+      await shoot(page, "24-menu-telefono", false);
+    }
+    await context.close();
   }
-  if (variantName === "telefono") {
-    await page.goto(`${address}/ui/systems/acme-support-bot#menu`);
-    await shoot(page, "18-menu-telefono", false);
+  {
+    const { context, page } = await customerPage(contextOptions);
+    for (const [name, url] of customerPages) {
+      await page.goto(`${address}${url}`);
+      await shoot(page, `${name}-${variantName}`);
+    }
+    await context.close();
   }
-  await context.close();
 }
 
 // Last, because it adds a system that every later page would list: the page
 // that shows a new system's key, the only time it is shown.
 for (const [variantName, contextOptions] of variants) {
   const { context, page } = await signedInPage(contextOptions);
-  await page.goto(`${address}/ui/sistemi`);
-  await page.fill('input[name="system_id"]', `nuovo-sistema-${variantName}`);
-  await page.fill('input[name="display_name"]', "Nuovo assistente");
+  await page.goto(`${address}/ui/sistemi/nuovo`);
+  await page.fill('input[name="display_name"]', `Nuovo assistente ${variantName}`);
   await Promise.all([page.waitForNavigation(), page.click('form[action="/ui/sistemi"] button[type="submit"]')]);
-  await shoot(page, `17-sistema-creato-${variantName}`);
+  await shoot(page, `25-sistema-creato-${variantName}`);
+  await page.locator('label[for="way-otel"]').click();
+  await shoot(page, `26-sistema-creato-opentelemetry-${variantName}`);
   await context.close();
 }
 

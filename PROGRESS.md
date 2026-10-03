@@ -28,6 +28,7 @@ Legenda stato: `todo` · `in corso` · `fatto`
 | V1 | Verifica prima del deploy (sola verifica) | fatto | `docs/RAPPORTO-VERIFICA-2026-10-01.md`: PRONTO CON RISERVE, 15 problemi (1 alto, 6 medi, 8 bassi), nessuna correzione al codice. Prova completa in Docker con il compose di produzione, migrazione da un database creato con la versione `30b5e9a`, crash del server e del signer, ripristino e ritorno indietro. Procedura per il VPS in `DEPLOY.md`. Cross-check Python esteso (frontiera di Merkle, ricevute v4 da rifiutare) nella branch `chore/crosscheck-v4`, non unita. 1079 test Node, 50 SDK, 22 demo (sessione 17) |
 | B | Interfaccia B | fatto | Direzione di design "B" a tre colonne (barra laterale, contenuto, dettaglio), solo aspetto e navigazione; milestone B1–B4 nella sezione "Interfaccia B"; 1161 test Node (sessione 18) |
 | R1 | Riserve della verifica pre-rilascio | fatto | Pausa delle scritture durante l'aggiornamento, guardia di versione dello schema, "cancella interessato" onesto sulle ricevute v1–v3, `/healthz` e semaforo coerenti, comandi di sola lettura che non modificano il file, `signer check` (anche in `update.sh`), registro delle ricevute nel signer con recupero completo dopo un ripristino, SDK con impronte con sale; oscuramento delle ricevute v1–v3 non costruito (160 nomi di prova sul VPS, deciso il 2026-10-02); 1194 test Node, 52 SDK, 22 demo (sessione 20) |
+| D2 | Design "semplice" e impostazioni | fatto | Ogni schermata nello stile approvato (`design/proposta-semplice/`), senza sottotitoli grigi; accesso centrato in due passi con Google, accesso amministratore su `/ui/admin`; pagina Impostazioni (account, organizzazione con barra del mese, aspetto chiaro/scuro/automatico, registro amministrativo, chiave di firma); collegamento guidato; nuova chiave per sistema; limite predefinito di 10.000 ricevute al mese per organizzazione; 1270 test Node (sessione 24) |
 
 ## Interfaccia B — fase (dal 2026-10-01)
 
@@ -3147,6 +3148,41 @@ l'errore prima della correzione: la pagina di Google è servita in locale su `ac
 Inoltre `SIGILLO_FIREBASE_API_KEY` sbagliata ora dice quanti caratteri ha e quanti non sono
 ammessi, senza mostrarla. Gli spazi intorno ai valori vengono ignorati. Al primo avvio la chiave
 incollata da una chat aveva caratteri invisibili e il server si fermava senza dire perché.
+
+### Sessione 24 — 2026-10-03 — il design "semplice" in tutta l'app, e le impostazioni
+
+Richiesta del committente (thread "Design della dashboard"): portare nell'app il design approvato
+in `design/proposta-semplice/` su tutte le schermate, con una pagina di impostazioni che contenga
+l'account e la scelta chiaro/scuro, e un limite di 10.000 ricevute al mese.
+
+- **Aspetto**: niente sottotitoli grigi; quattro numeri in cima al registro (azioni oggi,
+  bloccate, fallite, ultimo sigillo) sotto una riga che dice com'è la situazione; un pallino
+  colorato per sistema nella barra laterale; orari detti come si dicono ("Oggi, 14:44");
+  "Sigilli" al posto di "Checkpoint"; i valori tecnici (impronte, firma, ore ISO) dietro
+  "Dettagli tecnici". Le frasi lunghe della verifica di un documento restano, nei dettagli tecnici.
+- **Accesso**: centrato, "Continua con Google", poi l'email, poi la password in un secondo passo.
+  La password dell'amministratore non compare più sulla pagina pubblica: è su `/ui/admin`.
+- **Sistemi**: un nuovo sistema si crea dal solo nome (l'identificativo ne deriva, e resta
+  modificabile sotto "Identificativo"); poi una pagina di collegamento con tre scelte (SDK Python,
+  OpenTelemetry, API HTTP), ognuna con il solo blocco di codice che serve, scelto con CSS, e una
+  riga che diventa verde alla prima ricevuta (la pagina si ricarica da sola ogni 10 secondi, senza
+  script). Nelle impostazioni del sistema, "Nuova chiave" revoca la chiave in uso e ne mostra una
+  nuova, una volta.
+- **Impostazioni** (`/ui/impostazioni`): chi è collegato ed "Esci"; per un cliente la sua
+  organizzazione con la barra delle ricevute del mese; aspetto chiaro/scuro/automatico; il
+  registro amministrativo (intero su `/ui/impostazioni/registro`); la chiave di firma. Il tema
+  è in un cookie e il server lo scrive sulla pagina (`data-theme`), perché la CSP non permette
+  script. Due nuovi token di colore, `code` e `on-code`, per i blocchi di codice, con il loro
+  contrasto controllato da `style.test.ts`.
+- **Limite mensile**: `SIGILLO_ORG_MONTHLY_RECEIPTS` vale ora 10000 per default (era senza
+  limite). Al limite la ricezione risponde 429 dicendo fino a quando; il registro del cliente lo
+  avvisa dal 90%.
+- Nessun cambio al formato delle ricevute, all'export o al verificatore. Screenshot rigenerati
+  in `docs/screenshots/` (94, chiaro, scuro e telefono, più le pagine di accesso e del cliente);
+  istantanee HTML rigenerate.
+
+**Da fare sul server**: il `.env` di produzione copiato dal vecchio `.env.example` ha
+`SIGILLO_ORG_MONTHLY_RECEIPTS=100000`; per avere 10.000 va cambiato lì.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

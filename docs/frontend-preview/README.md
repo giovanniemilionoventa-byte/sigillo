@@ -5,7 +5,7 @@ server ha restituito in un dato momento per ciascuna pagina, con dati di
 esempio realistici (un sistema `acme-support-bot` e uno `selezione-cv`, come
 la demo di selezione CV). Ogni file è completo e autosufficiente: tutto il
 CSS è inline (nessun foglio esterno, coerente con la CSP dell'app), non ci
-sono immagini o font esterni (la direzione B usa i font di sistema) — solo il sigillo e le icone disegnati in SVG, anch'essi
+sono immagini o font esterni (il design usa i font di sistema) — solo il sigillo e le icone disegnati in SVG, anch'essi
 inline. Si aprono **direttamente in un browser**, senza server acceso, con
 un doppio clic o `file://…/00-login.html`.
 
@@ -20,9 +20,9 @@ senza preavviso.
 | file | pagina |
 |---|---|
 | `00-login.html` | accesso (senza sessione) |
-| `01-registro.html` | pagina principale, "le tre domande" |
+| `01-registro.html` | pagina principale |
 | `02-sistemi.html` | elenco dei sistemi |
-| `03-gestisci-selezione-cv.html` | "gestisci" per il sistema `selezione-cv` |
+| `03-gestisci-selezione-cv.html` | impostazioni del sistema `selezione-cv` |
 | `04-cronologia-selezione-cv.html` | cronologia di `selezione-cv`, con ricevute |
 
 ## Per rendere permanente una modifica

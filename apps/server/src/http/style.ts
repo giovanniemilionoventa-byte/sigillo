@@ -160,6 +160,7 @@ h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.015em; line-height: 1
 h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
 h2 .end { margin-left: auto; font-size: 13px; font-weight: 500; letter-spacing: 0; }
 .section + .section { margin-top: 28px; }
+p.section, form.section { margin-top: 12px; }
 .muted { color: var(--secondary); }
 .section-gap { margin-bottom: 22px; }
 .danger-title { color: var(--bad); }
@@ -396,7 +397,7 @@ details.tech .facts { margin-top: 10px; }
 .way .tile-icon { width: 38px; height: 38px; }
 .way small { font-size: 12px; font-weight: 600; color: var(--link); }
 .code { display: none; margin: 0; padding: 20px 22px; border-radius: 14px; background: var(--code); color: var(--on-code);
-  font: 13px/1.65 var(--mono); overflow-x: auto; white-space: pre; }
+  font: 13px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 #way-python:checked ~ .ways [for="way-python"], #way-otel:checked ~ .ways [for="way-otel"],
 #way-api:checked ~ .ways [for="way-api"] { box-shadow: 0 0 0 2px var(--action); }
 #way-python:focus-visible ~ .ways [for="way-python"], #way-otel:focus-visible ~ .ways [for="way-otel"],
@@ -420,7 +421,9 @@ details.tech .facts { margin-top: 10px; }
   border-radius: 14px; background: var(--surface); text-align: center; color: var(--text); font-weight: 400; }
 .drop .tile-icon { width: 44px; height: 44px; margin-bottom: 6px; }
 .drop strong { font-size: 15px; }
-.drop input[type="file"] { max-width: 100%; margin-top: 6px; }
+.drop input[type="file"] { max-width: 100%; margin-top: 6px; padding: 0; border: 0; background: none; font-size: 13px; color: var(--secondary); }
+.drop input[type="file"]::file-selector-button { margin-right: 10px; padding: 7px 14px; border: 1px solid var(--control); border-radius: 10px;
+  background: var(--surface); color: var(--text); font: inherit; font-weight: 500; cursor: pointer; }
 .or { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--secondary); font-size: 13px; font-weight: 400; }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--separator); }
 #sigillo-doc-button { width: 100%; margin-top: 12px; }

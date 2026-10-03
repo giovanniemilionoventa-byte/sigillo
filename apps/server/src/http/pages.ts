@@ -660,7 +660,7 @@ ${
     .join("");
   return `<div class="narrow">${pageHead(t.heading)}
 ${notices(view.extra)}
-<section aria-labelledby="account"><h2 id="account">${escape(t.account)}</h2>
+<section class="section" aria-labelledby="account"><h2 id="account">${escape(t.account)}</h2>
 <div class="card"><div class="line"><span class="avatar large" aria-hidden="true">${escape(initials(account.name))}</span><span class="who"><strong>${escape(account.name)}</strong><span>${escape(account.detail)}</span></span>
 <form method="post" action="/ui/logout"><button type="submit">${ICONS.logout}${escape(UI.nav.esci)}</button></form></div></div></section>
 ${quota}
