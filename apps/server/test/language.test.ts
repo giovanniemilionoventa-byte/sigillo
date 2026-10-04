@@ -142,14 +142,14 @@ describe("the web view, in English and in Italian", () => {
 
   it("answers in English when the browser asks for neither language, and says so on <html>", async () => {
     const page = await get("/ui/login", { "accept-language": "de-DE,de" });
-    expect(page).toContain('<html lang="en">');
+    expect(page).toContain('<html lang="en" data-theme="light">');
     expect(page).toContain("<h1>Sign in to sigillo</h1>");
     expect(page).not.toContain("Accedi");
   });
 
   it("answers in Italian a browser that asks for Italian first", async () => {
     const page = await get("/ui/login", { "accept-language": "it-IT,it;q=0.9,en;q=0.8" });
-    expect(page).toContain('<html lang="it">');
+    expect(page).toContain('<html lang="it" data-theme="light">');
     expect(page).toContain("<h1>Accedi a sigillo</h1>");
   });
 

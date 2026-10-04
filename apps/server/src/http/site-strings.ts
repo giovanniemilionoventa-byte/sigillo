@@ -7,8 +7,7 @@ import type { Language } from "./locale.js";
  */
 
 export interface SiteTexts {
-  nav: { overview: string; pricing: string; connect: string; verify: string };
-  demo: { title: string; note: string };
+  nav: { pricing: string; connect: string; verify: string };
   signIn: string;
   start: string;
   watch: string;
@@ -94,8 +93,7 @@ export interface SiteTexts {
 }
 
 const EN: SiteTexts = {
-  nav: { overview: "Overview", pricing: "Pricing", connect: "How to connect", verify: "Verify" },
-  demo: { title: "Sigillo", note: "A demo with sample data." },
+  nav: { pricing: "Pricing", connect: "How to connect", verify: "Verify" },
   signIn: "Sign in",
   start: "Start free pilot",
   watch: "Watch the demo",
@@ -237,8 +235,7 @@ const EN: SiteTexts = {
 };
 
 const IT: SiteTexts = {
-  nav: { overview: "Presentazione", pricing: "Prezzi", connect: "Come si collega", verify: "Verifica" },
-  demo: { title: "Sigillo", note: "Una demo con dati di esempio." },
+  nav: { pricing: "Prezzi", connect: "Come si collega", verify: "Verifica" },
   signIn: "Accedi",
   start: "Inizia il pilota gratuito",
   watch: "Guarda la demo",

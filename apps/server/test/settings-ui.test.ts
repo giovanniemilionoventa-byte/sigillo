@@ -110,9 +110,9 @@ describe("the settings page", () => {
 });
 
 describe("the theme, chosen without a script", () => {
-  it("is kept in a cookie and written on the page by the server, and follows the system again when asked", async () => {
-    // By default the page follows the system: no attribute, the media query decides.
-    expect((await get("/ui")).body).toContain('<html lang="it">');
+  it("is kept in a cookie and written on the page by the server, and follows the system when asked", async () => {
+    // By default the page is light, whatever the system prefers.
+    expect((await get("/ui")).body).toContain('<html lang="it" data-theme="light">');
 
     const dark = await post("/ui/impostazioni/tema", "theme=dark");
     expect(dark.statusCode).toBe(303);
@@ -131,16 +131,18 @@ describe("the theme, chosen without a script", () => {
     expect((await app.inject({ method: "GET", url: "/ui/login", headers: { cookie: theme } })).body).toContain('data-theme="dark"');
 
     const system = await post("/ui/impostazioni/tema", "theme=system", `${cookie}; ${theme}`);
-    expect(String(system.headers["set-cookie"])).toMatch(/^sigillo_theme=; .*Max-Age=0/);
+    expect(String(system.headers["set-cookie"])).toMatch(/^sigillo_theme=system; /);
+    const followed = String(system.headers["set-cookie"]).split(";")[0] ?? "";
+    expect((await get("/ui", `${cookie}; ${followed}`)).body).toContain('<html lang="it">');
   });
 
-  it("writes only the two values it knows, whatever the cookie says", async () => {
+  it("writes only the values it knows, whatever the cookie says", async () => {
     for (const value of ["blue", "%22%3E%3Cscript%3E", "DARK"]) {
       const body = (await get("/ui", `${cookie}; sigillo_theme=${value}`)).body;
-      expect(body, value).toContain('<html lang="it">');
+      expect(body, value).toContain('<html lang="it" data-theme="light">');
       expect(body, value).not.toContain("<script");
     }
-    expect((await get("/ui", `${cookie}; sigillo_theme=light`)).body).toContain('<html lang="it" data-theme="light">');
+    expect((await get("/ui", `${cookie}; sigillo_theme=dark`)).body).toContain('<html lang="it" data-theme="dark">');
   });
 });
 

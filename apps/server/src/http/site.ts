@@ -4,7 +4,7 @@ import type { Language } from "./locale.js";
 import { SITE_TEXTS, type SiteTexts } from "./site-strings.js";
 import { escape } from "./layout.js";
 import { EVIDENCE_CHECK_SOURCE } from "./evidence-check.js";
-import { SEAL_SVG, STATE_ICONS, STYLE, THEME } from "./style.js";
+import { SEAL_SVG, STATE_ICONS, THEME } from "./style.js";
 
 /**
  * The public site at the root of the domain: what Sigillo is, its demo
@@ -22,7 +22,7 @@ import { SEAL_SVG, STATE_ICONS, STYLE, THEME } from "./style.js";
  */
 
 /** The pages of the site, which the language switch may return to. */
-export const SITE_PATHS = ["/", "/about", "/pricing", "/connect", "/verify", "/privacy"] as const;
+export const SITE_PATHS = ["/", "/pricing", "/connect", "/verify", "/privacy"] as const;
 type SitePath = (typeof SITE_PATHS)[number];
 
 /** Where the console's sign-in and sign-up pages are. */
@@ -153,43 +153,7 @@ export function registerFavicon(app: FastifyInstance): void {
 // The look: the console's tokens, and the few rules of a page that is read
 // rather than worked in.
 
-/**
- * The header of every page of the site, the one with the dashboard included.
- * Its own class names (sh-), so that it can sit above the console's stylesheet
- * (the demo at /) as well as the site's, whose generic names it would clash with.
- */
-const HEADER_STYLE = `
-.sh { position: sticky; top: 0; z-index: 30; background: color-mix(in srgb, var(--canvas) 85%, transparent);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--separator); }
-.sh-bar { display: flex; align-items: center; gap: 28px; height: 60px; max-width: 1040px; margin: 0 auto; padding: 0 24px; }
-.sh-wide .sh-bar { max-width: none; }
-.sh-brand { display: flex; align-items: center; gap: 10px; padding: 0; color: var(--text); font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
-.sh-brand:hover { text-decoration: none; }
-.sh-brand svg { width: 28px; height: 28px; }
-.sh-nav { display: flex; gap: 24px; flex: 1; }
-.sh-nav a { color: var(--text); font-size: 15px; }
-.sh-nav a:hover { text-decoration: none; opacity: 0.7; }
-.sh-nav a[aria-current="page"] { font-weight: 600; }
-.sh-menu-close, .sh-menu-open { display: none; color: var(--text); }
-.sh-menu-close svg, .sh-menu-open svg { width: 24px; height: 24px; }
-.sh-lang { margin: 0; }
-.sh-lang button { border: 0; background: none; color: var(--text); font: 500 15px var(--font); padding: 8px 6px; cursor: pointer; }
-.sh-lang button:hover { text-decoration: underline; }
-.sh-signin { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 18px; border-radius: 999px;
-  background: var(--action); color: var(--on-action); font-size: 15px; font-weight: 500; white-space: nowrap; }
-.sh-signin:hover { text-decoration: none; filter: brightness(0.96); }
-@media (max-width: 760px) {
-  .sh-bar { gap: 12px; }
-  .sh-lang { margin-left: auto; }
-  .sh-menu-open { display: flex; }
-  .sh-nav { display: none; }
-  .sh-nav:target { display: flex; flex-direction: column; gap: 0; position: fixed; inset: 0; z-index: 40; background: var(--canvas); padding: 16px 24px; }
-  .sh-nav:target a { font-size: 20px; padding: 14px 0; border-bottom: 1px solid var(--separator); }
-  .sh-nav:target .sh-menu-close { display: flex; justify-content: flex-end; border: 0; padding: 8px 0; }
-}
-`;
-
-const SITE_STYLE = `${THEME}${HEADER_STYLE}
+const SITE_STYLE = `${THEME}
 * { box-sizing: border-box; }
 html { background: var(--bg); -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--canvas); color: var(--text); font: 400 16px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
@@ -201,6 +165,25 @@ svg { flex: none; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
 .narrow { max-width: 760px; }
+header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--canvas) 85%, transparent);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--separator); }
+.bar { display: flex; align-items: center; gap: 28px; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.brand:hover { text-decoration: none; }
+.brand svg { width: 28px; height: 28px; }
+nav { display: flex; gap: 24px; flex: 1; }
+nav a { color: var(--text); font-size: 15px; }
+nav a[aria-current="page"] { font-weight: 600; }
+.menu-close, .menu-open { display: none; color: var(--text); }
+.menu-close svg, .menu-open svg { width: 24px; height: 24px; }
+.lang { margin: 0; }
+.lang button { border: 0; background: none; color: var(--text); font: 500 15px var(--font); padding: 8px 6px; cursor: pointer; }
+.lang button:hover { text-decoration: underline; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px;
+  border-radius: 999px; font-size: 15px; font-weight: 500; white-space: nowrap; }
+.btn:hover { text-decoration: none; filter: brightness(0.96); }
+.btn.primary { background: var(--action); color: var(--on-action); }
+.btn.plain { background: var(--fill); color: var(--text); }
 .hero { text-align: center; padding: 88px 24px 48px; }
 .hero.short { padding: 72px 24px 40px; }
 .hero h1 { font-size: 52px; line-height: 1.08; letter-spacing: -0.025em; font-weight: 700; max-width: 820px; margin: 0 auto; }
@@ -284,6 +267,13 @@ footer .row { display: flex; gap: 24px; align-items: center; }
 footer .row span { flex: 1; }
 footer a { color: var(--text); }
 @media (max-width: 760px) {
+  .bar { gap: 12px; }
+  .lang { margin-left: auto; }
+  .menu-open { display: flex; }
+  nav { display: none; }
+  nav:target { display: flex; flex-direction: column; gap: 0; position: fixed; inset: 0; z-index: 10; background: var(--canvas); padding: 16px 24px; }
+  nav:target a { font-size: 20px; padding: 14px 0; border-bottom: 1px solid var(--separator); }
+  nav:target .menu-close { display: flex; justify-content: flex-end; border: 0; padding: 8px 0; }
   .hero { padding: 56px 20px 32px; }
   .hero h1 { font-size: 34px; }
   .hero .lead { font-size: 17px; }
@@ -370,22 +360,10 @@ interface PageContext {
   media: Set<string>;
 }
 
-function siteHeader(context: PageContext, wide = false): string {
+function sitePage(context: PageContext, title: string, body: string): string {
   const { t, path, language } = context;
   const link = (href: SitePath, label: string): string =>
     `<a href="${href}"${path === href ? ' aria-current="page"' : ""}>${escape(label)}</a>`;
-  const other = language === "en" ? "it" : "en";
-  return `<header class="sh${wide ? " sh-wide" : ""}"><div class="sh-bar">
-<a class="sh-brand" href="/">${SEAL_SVG}<span>sigillo</span></a>
-<nav class="sh-nav" id="menu"><a class="sh-menu-close" href="#" aria-label="×">${ICON.close}</a>${link("/about", t.nav.overview)}${link("/pricing", t.nav.pricing)}${link("/connect", t.nav.connect)}${link("/verify", t.nav.verify)}</nav>
-<form class="sh-lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="${other}"><input type="hidden" name="back" value="${path ?? "/"}"><button type="submit" aria-label="${escape(t.switchLabel)}" lang="${other}">${escape(t.switchTo)}</button></form>
-<a class="sh-signin" href="${SIGN_IN}">${escape(t.signIn)}</a>
-<a class="sh-menu-open" href="#menu" aria-label="Menu">${ICON.menu}</a>
-</div></header>`;
-}
-
-function sitePage(context: PageContext, title: string, body: string): string {
-  const { t, path, language } = context;
   const contact =
     context.contactEmail === undefined ? "" : `<a href="mailto:${escape(context.contactEmail)}">${escape(t.footer.contact)}</a>`;
   return `<!doctype html>
@@ -400,51 +378,17 @@ function sitePage(context: PageContext, title: string, body: string): string {
 <script src="/site.js" defer></script>${path === "/verify" ? '\n<script src="/verify.js" defer></script>' : ""}
 </head>
 <body>
-${siteHeader(context)}
+<header><div class="wrap bar">
+<a class="brand" href="/">${SEAL_SVG}<span>sigillo</span></a>
+<nav id="menu"><a class="menu-close" href="#" aria-label="×">${ICON.close}</a>${link("/pricing", t.nav.pricing)}${link("/connect", t.nav.connect)}${link("/verify", t.nav.verify)}</nav>
+<form class="lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="${language === "en" ? "it" : "en"}"><input type="hidden" name="back" value="${path ?? "/"}"><button type="submit" aria-label="${escape(t.switchLabel)}" lang="${language === "en" ? "it" : "en"}">${escape(t.switchTo)}</button></form>
+<a class="btn primary" href="${SIGN_IN}">${escape(t.signIn)}</a>
+<a class="menu-open" href="#menu" aria-label="Menu">${ICON.menu}</a>
+</div></header>
 <main>
 ${body}
 </main>
 <footer><div class="wrap row"><span>© 2026 Sigillo · ${escape(t.footer.europe)}</span><a href="/privacy">${escape(t.footer.privacy)}</a>${contact}</div></footer>
-</body>
-</html>`;
-}
-
-/**
- * The first page: the console's own main page, for a demo company with
- * sample data (test/helpers/demo-snapshot.ts makes the two files), under the
- * site's header. It is the console's stylesheet, not the site's, so it looks
- * exactly as the console does after signing in.
- */
-const DEMO_FRAGMENTS: Record<Language, string> = {
-  en: readFileSync(new URL("site/demo-en.html", ASSETS), "utf8"),
-  it: readFileSync(new URL("site/demo-it.html", ASSETS), "utf8"),
-};
-
-const DEMO_STYLE = `
-.demo-note { text-align: center; padding: 9px 16px; background: var(--fill); font-size: 14px; border-bottom: 1px solid var(--separator); }
-.demo-note a { font-weight: 500; margin-left: 6px; }
-.demo .app { min-height: calc(100vh - 60px - 38px); }
-.demo .sidebar-inner { top: 98px; height: calc(100vh - 98px); }
-@media (max-width: 899px) { .demo .sidebar-inner { top: 0; height: auto; } }
-`;
-
-function demoPage(context: PageContext): string {
-  const { t, language } = context;
-  return `<!doctype html>
-<html lang="${language}">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escape(t.home.title)}</title>
-<meta name="description" content="${escape(t.home.lead)}">
-<link rel="icon" href="/favicon.ico" type="image/svg+xml">
-<style>${STYLE}${HEADER_STYLE}${DEMO_STYLE}</style>
-</head>
-<body class="demo">
-${siteHeader(context, true)}
-<div class="demo-note">${escape(t.demo.note)}<a href="${SIGN_UP}">${escape(t.start)}</a><a href="/privacy">${escape(t.footer.privacy)}</a></div>
-<div class="app">
-${DEMO_FRAGMENTS[language]}</div>
 </body>
 </html>`;
 }
@@ -561,8 +505,7 @@ ${contact}
 }
 
 const BODIES: Record<SitePath, { title: (t: SiteTexts) => string; body: (context: PageContext) => string }> = {
-  "/": { title: (t) => t.demo.title, body: () => "" },
-  "/about": { title: (t) => t.home.title, body: homeBody },
+  "/": { title: (t) => t.home.title, body: homeBody },
   "/pricing": { title: (t) => `${t.pricing.title} · Sigillo`, body: pricingBody },
   "/connect": { title: (t) => `${t.connect.title} · Sigillo`, body: connectBody },
   "/verify": { title: (t) => `${t.verify.title} · Sigillo`, body: verifyBody },
@@ -694,7 +637,7 @@ export function registerSite(app: FastifyInstance, options: SiteOptions): void {
       media,
       ...(options.contactEmail === undefined ? {} : { contactEmail: options.contactEmail }),
     };
-    let body = path === "/" ? demoPage(context) : sitePage(context, BODIES[path].title(t), BODIES[path].body(context));
+    let body = sitePage(context, BODIES[path].title(t), BODIES[path].body(context));
     const theme = options.themeOf(request);
     if (theme !== "system") body = body.replace(/^(<!doctype html>\n<html lang="[a-z]+")>/, `$1 data-theme="${theme}">`);
     // The page depends on the language and theme cookies, so no shared cache
