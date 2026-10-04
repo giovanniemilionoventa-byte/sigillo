@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Elena Fontana
+
+Education:
+Degree in Computer Science.
+
+Experience:
+3 years of experience as a backend developer in publishing,
+on content publication and search services.
+
+Technical skills:
+Python, Django, Redis, PostgreSQL, Git.
+
+Availability: one month's notice.

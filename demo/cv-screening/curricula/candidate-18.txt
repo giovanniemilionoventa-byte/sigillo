@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Ilaria Sartori
+
+Education:
+Degree in Computer Science.
+
+Experience:
+1 year of experience as a developer on a local classified ads website,
+mainly on user management.
+
+Technical skills:
+PHP, MySQL, Git.
+
+Availability: two weeks' notice.

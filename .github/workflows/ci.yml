@@ -56,6 +56,8 @@ jobs:
       # the deterministic fake model instead, the same path a contributor's
       # machine takes without Ollama installed.
       - run: python -m unittest discover -s demo/selezione-cv/tests -t demo/selezione-cv -v
+      # Its English edition: every translated CV must score as its Italian original.
+      - run: python -m unittest discover -s demo/cv-screening/tests -t demo/cv-screening -v
 
   vectors:
     name: independent cross-check of the test vectors

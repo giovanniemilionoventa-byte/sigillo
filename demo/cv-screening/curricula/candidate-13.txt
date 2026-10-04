@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Alessio Ferrari
+
+Education:
+Degree in Computer Engineering.
+
+Experience:
+2 years of experience as a backend developer, introducing a
+continuous integration pipeline in the team.
+
+Technical skills:
+Java, Spring, MySQL, Docker, Git, CI/CD.
+
+Availability: two weeks' notice.

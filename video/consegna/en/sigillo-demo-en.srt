@@ -1,147 +1,147 @@
 1
-00:00:00,500 --> 00:00:04,544
+00:00:00,500 --> 00:00:04,552
 Your company uses artificial
 intelligence to read CVs,
 
 2
-00:00:04,694 --> 00:00:08,610
+00:00:04,702 --> 00:00:08,627
 answer customers and make
 small decisions every day.
 
 3
-00:00:08,760 --> 00:00:12,995
+00:00:08,777 --> 00:00:13,021
 But if one day someone asks
 you: “What exactly did it do,
 
 4
-00:00:13,145 --> 00:00:16,617
+00:00:13,171 --> 00:00:16,650
 and how can you prove it?”, could you answer?
 
 5
-00:00:17,667 --> 00:00:24,364
+00:00:17,700 --> 00:00:24,262
 This is sigillo. Every action your AI
 takes is recorded in a way that nobody,
 
 6
-00:00:24,514 --> 00:00:30,211
+00:00:24,412 --> 00:00:29,994
 not even whoever runs the system,
 can change without it showing.
 
 7
-00:00:30,361 --> 00:00:36,212
+00:00:30,144 --> 00:00:35,877
 On the right, an agent screening
 applications for a developer job.
 
 8
-00:00:36,362 --> 00:00:41,444
+00:00:36,027 --> 00:00:41,006
 With every CV, the ledger on
 the left updates by itself.
 
 9
-00:00:41,594 --> 00:00:47,983
+00:00:41,156 --> 00:00:47,417
 And at the top, the answer to the first
 question: all good, no tampering.
 
 10
-00:00:49,033 --> 00:00:55,296
+00:00:48,467 --> 00:00:54,509
 The history, in plain sentences: what the
 agent did, when, and how it turned out.
 
 11
-00:00:55,446 --> 00:01:01,915
+00:00:54,659 --> 00:01:00,901
 The technical details are there, but they
 stay out of sight until you look for them.
 
 12
-00:01:02,065 --> 00:01:07,293
+00:01:01,051 --> 00:01:06,094
 Every action has its own fingerprint,
 linked to the one before it:
 
 13
-00:01:07,443 --> 00:01:11,775
+00:01:06,244 --> 00:01:10,422
 none can vanish or change
 without breaking the chain.
 
 14
-00:01:11,925 --> 00:01:16,050
+00:01:10,572 --> 00:01:14,550
 And you can look at just the tools the agent used.
 
 15
-00:01:17,100 --> 00:01:27,484
+00:01:15,600 --> 00:01:25,739
 Several times a day the ledger is sealed, and an
 external, independent authority adds its timestamp.
 
 16
-00:01:27,634 --> 00:01:36,983
+00:01:25,889 --> 00:01:35,017
 It proves those actions already existed at
 that time: nobody can rewrite them afterwards.
 
 17
-00:01:38,033 --> 00:01:42,226
+00:01:36,067 --> 00:01:40,381
 When an inspector, an auditor or
 a customer asks for evidence,
 
 18
-00:01:42,376 --> 00:01:46,217
+00:01:40,531 --> 00:01:44,483
 one click is enough: sigillo
 prepares the evidence pack.
 
 19
-00:01:47,267 --> 00:01:54,879
+00:01:45,533 --> 00:01:53,156
 And anyone can check it, with a free, public tool
 that does not belong to whoever sells sigillo.
 
 20
-00:01:55,029 --> 00:01:59,047
+00:01:53,306 --> 00:01:57,330
 The check passes: the evidence pack is intact.
 
 21
-00:01:59,197 --> 00:02:03,215
+00:01:57,480 --> 00:02:01,504
 Now let's change a single character in a copy:
 
 22
-00:02:03,365 --> 00:02:08,246
+00:02:01,654 --> 00:02:06,541
 the time of a candidate's
 evaluation, moved by one second.
 
 23
-00:02:08,396 --> 00:02:11,983
+00:02:06,691 --> 00:02:10,283
 The check fails, and says exactly where.
 
 24
-00:02:13,033 --> 00:02:18,811
+00:02:11,333 --> 00:02:16,854
 The same goes for documents. A
 candidate disputes the selection:
 
 25
-00:02:18,961 --> 00:02:24,193
+00:02:17,004 --> 00:02:22,003
 upload their CV. The document
 never leaves your computer.
 
 26
-00:02:24,343 --> 00:02:31,056
+00:02:22,153 --> 00:02:28,569
 Yes: it is exactly the one the AI read.
 Not a similar one: exactly that one.
 
 27
-00:02:31,206 --> 00:02:36,750
+00:02:28,719 --> 00:02:34,017
 One different character, and
 sigillo no longer recognises it.
 
 28
-00:02:37,800 --> 00:02:51,150
+00:02:35,067 --> 00:02:47,417
 The European AI Act asks companies to be
 able to show what their systems have done.
 
 29
-00:02:52,200 --> 00:02:55,791
+00:02:48,467 --> 00:02:52,058
 Sigillo does not tell you whether
 your AI did the right thing:
 
 30
-00:02:55,941 --> 00:02:58,824
+00:02:52,208 --> 00:02:55,091
 it gives you the evidence to check for yourself.
 
 31
-00:02:58,974 --> 00:03:01,150
+00:02:55,241 --> 00:02:57,417
 The pilot is free: get-sigillo.eu.

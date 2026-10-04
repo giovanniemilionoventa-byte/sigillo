@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Martina Lombardi
+
+Education:
+Diploma from a technical institute in computing.
+
+Experience:
+1 year of experience as a developer on an internal shift
+scheduling application for a small chain of shops.
+
+Technical skills:
+JavaScript, Node.js, MongoDB, Git.
+
+Availability: immediate.

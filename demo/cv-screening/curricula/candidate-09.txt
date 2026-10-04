@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Simone Marino
+
+Education:
+Diploma from a technical institute in computing.
+
+Experience:
+1 year of experience as a developer at an accountant's office,
+on a small internal website for managing client files.
+
+Technical skills:
+PHP, SQL, Git.
+
+Availability: immediate.

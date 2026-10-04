@@ -1,0 +1,15 @@
+Application for: Junior Backend Developer
+Name: Riccardo Gatti
+
+Education:
+Accountancy diploma.
+
+Experience:
+Four years as an accountant at a partnership firm, gradually
+taking on reporting tasks.
+
+Technical skills:
+Basic knowledge of SQL for extracting reports; daily use of Git
+for sharing documents with colleagues.
+
+Availability: one month's notice.

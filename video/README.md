@@ -25,8 +25,10 @@ browser asks the console for English, and everything that is the video's own
 subtitles) follows `video/lingua.ts`. The output gets an `-en` suffix
 (`out/scene-en/`, `sigillo-demo-en.mp4`, `sigillo-demo-en.srt`,
 `sigillo-demo-en-subtitled.mp4`) and its own saved state, so the two
-languages never mix. The CVs and the agent's own printed lines stay
-Italian: they are the demo's data and a real program's output.
+languages never mix. The English video also runs the English edition of the
+demo, `demo/cv-screening`: the same agent and CVs, in English (tools
+`read_cv`, `evaluate_candidate`, `send_email`; CVs `candidate-XX.txt`), so
+nothing on screen is Italian.
 
 One scene can be redone alone, from the state it needs:
 `pnpm tsx video/registra.ts scena 3`, then `video/monta.sh` again.

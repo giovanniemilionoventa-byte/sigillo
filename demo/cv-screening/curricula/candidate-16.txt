@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Silvia Testa
+
+Education:
+Degree in Computer Science.
+
+Experience:
+2 years of experience as a backend developer on containerised services
+for a booking platform.
+
+Technical skills:
+Python, Flask, Docker, Kubernetes, PostgreSQL, Git, REST.
+
+Availability: one month's notice.

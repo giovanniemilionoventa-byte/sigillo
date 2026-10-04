@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Nicola Barbieri
+
+Education:
+Commercial technical diploma.
+
+Experience:
+2 years of experience as a developer, self-taught on the backend side,
+on a small invoicing project for the family business.
+
+Technical skills:
+SQL, Git, Linux.
+
+Availability: immediate.
