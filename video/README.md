@@ -79,8 +79,11 @@ really spoken, so the `-voce.srt` is the one to use with the `-voce.mp4`, not th
 old one. The voice track is levelled to -16 LUFS; the picture is copied, not
 encoded again.
 
-The voice is Kokoro's `im_nicola` (Italian) and `bm_george` (English), set in
-`voce.py` (`SIGILLO_TTS_VOICE_IT`, `SIGILLO_TTS_VOICE_EN` change them). It is
+The English voice is Kokoro's `bm_george`, set in `voce.py`
+(`SIGILLO_TTS_VOICE_EN` changes it). The delivered Italian voice is not Kokoro's,
+which sounded too flat: it is the Qwen text-to-speech model, run through
+Higgsfield with `language: it` and an instruction asking for a warm, expressive
+narrator, one wav per line dropped into `out/voce-it/` (see below). It is
 tooling for the video, like ffmpeg and Chromium; no package depends on it.
 Another engine, a studio-grade one for instance, can replace it without
 touching the mixer: `pnpm tsx video/voce.ts it testo` writes
