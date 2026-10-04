@@ -76,6 +76,8 @@ export interface ServerOptions {
     sessions?: UiSessions;
     /** Customers' accounts (ui.ts, UiOptions.accounts). */
     accounts?: UiOptions["accounts"];
+    /** The backups directory, for the daily export in Impostazioni (ui.ts, UiOptions.backupDirectory). */
+    backupDirectory?: string;
   };
 }
 
@@ -322,6 +324,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.ui.cookieSecure === undefined ? {} : { cookieSecure: options.ui.cookieSecure }),
       ...(options.ui.sessions === undefined ? {} : { sessions: options.ui.sessions }),
       ...(options.ui.accounts === undefined ? {} : { accounts: options.ui.accounts }),
+      ...(options.ui.backupDirectory === undefined ? {} : { backupDirectory: options.ui.backupDirectory }),
       ...(options.organizationMonthlyReceipts === undefined
         ? {}
         : { organizationMonthlyReceipts: options.organizationMonthlyReceipts }),

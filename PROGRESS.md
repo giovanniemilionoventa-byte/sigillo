@@ -3201,6 +3201,26 @@ ci si affida ai soli backup locali di `backup.sh` (2 copie sul disco del server)
 - **Da fare sul server**: se il cron è stato cambiato su `backup-offsite.sh`, rimettere la riga
   di `backup.sh` (docs/DEPLOY-PRODUZIONE.md, 6.1) dopo `./update.sh`.
 
+### Sessione 26 — 2026-10-04 — l'esportazione giornaliera
+
+Dopo aver tolto Drive, il committente ha chiesto, al posto di quel backup, che le ricevute si
+scarichino in modo facoltativo ogni giorno alle 23:59.
+
+- **Impostazioni → Esportazione giornaliera**, per ogni account (l'amministratore per i suoi
+  sistemi, ogni cliente per i suoi): Attiva/Spenta, e l'elenco degli ultimi file con "Scarica".
+  Spenta all'inizio.
+- **Cosa fa** (`apps/server/src/backup/daily-export.ts`): un controllo al minuto; dalle 23:59 ora
+  italiana crea, per ogni sistema degli account che l'hanno accesa, un fascicolo con le ricevute
+  di quel giorno (lo stesso di Esporta, per il giorno intero ora italiana). Salta un sistema senza
+  ricevute quel giorno, non rifà un file che c'è, tiene 30 giorni. I file stanno nel volume dei
+  backup (`SIGILLO_BACKUP_DIR`, di nuovo nel compose) in `exports/<organizzazione>/`.
+- **Scelte**: i file restano sul server e si scaricano dalla pagina (niente email: non c'è un
+  servizio per spedirle); chi ha acceso/spento è in `daily-export.json` nel volume, non nel
+  database, quindi nessuna migrazione dello schema. Un cliente scarica solo i file dei suoi
+  sistemi, e un nome di file che non sia uno dei nostri è 404.
+- **Limite noto**: se il server è fermo alle 23:59 quel giorno non viene esportato.
+- Testi in inglese e italiano. Test in `daily-export.test.ts`. Screenshot `21` e `31` rigenerati.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

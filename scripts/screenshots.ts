@@ -19,7 +19,7 @@
  * Run with: pnpm tsx scripts/screenshots.ts [output directory]
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -36,6 +36,7 @@ const { Checkpointer } = await import(serverModule("src/checkpoint/checkpointer.
 const { ChainHealthMonitor } = await import(serverModule("src/health/chain-health.ts"));
 const { buildServer } = await import(serverModule("src/http/server.ts"));
 const { UiSessions } = await import(serverModule("src/auth/sessions.ts"));
+const { setDailyExport, fileNameFor } = await import(serverModule("src/backup/daily-export.ts"));
 const { createTestSigner } = await import(serverModule("test/helpers/signer.ts"));
 const { createLocalTsa } = await import(serverModule("test/helpers/local-tsa.ts"));
 
@@ -210,6 +211,19 @@ healthMonitor.check();
 // the operator's password is at /ui/admin. Firebase itself is never reached:
 // no page below signs in through it.
 const sessions = new UiSessions();
+// The daily export as Impostazioni shows it once it has run: on for the
+// operator and for the first customer, with a few days' files (stand-in
+// bytes: the page only lists them).
+const backupDirectory = join(directory, "backups");
+mkdirSync(backupDirectory);
+setDailyExport(backupDirectory, "", true);
+setDailyExport(backupDirectory, rossi, true);
+for (const [owner, systemId] of [["operator", "acme-support-bot"], [rossi, "rossi-assistente"]] as const) {
+  mkdirSync(join(backupDirectory, "exports", owner), { recursive: true });
+  for (const [index, day] of ["2026-10-02", "2026-10-01", "2026-09-30"].entries()) {
+    writeFileSync(join(backupDirectory, "exports", owner, fileNameFor(systemId, day)), Buffer.alloc(3000 + index * 1500));
+  }
+}
 const app = buildServer({
   store,
   keys,
@@ -221,6 +235,7 @@ const app = buildServer({
     checkpointer,
     sessions,
     accounts: { firebase: {} as never, publicUrl: "https://get-sigillo.eu" },
+    backupDirectory,
   },
 });
 const address = await app.listen({ host: "127.0.0.1", port: 0 });

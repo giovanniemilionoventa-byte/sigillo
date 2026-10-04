@@ -258,6 +258,16 @@ const ui: Strings = {
     adminLogAll: "See all",
     adminLogEmpty: "No operations yet.",
     signingKey: "Signing key",
+    dailyExport: {
+      heading: "Daily export",
+      on: "On",
+      off: "Off",
+      stateOn: "Every day at 23:59",
+      stateOff: "Off.",
+      empty: "No files yet.",
+      download: "Download",
+      size: (bytes: number): string => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`),
+    },
   },
   history: {
     anchored: "Sealed",

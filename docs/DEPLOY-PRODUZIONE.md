@@ -544,6 +544,17 @@ che finisce in `/srv/sigillo-backup.log`. Una persona cancellata resta nei
 backup sul server al massimo per due ore. **La copia fuori dal server, sotto,
 è quella che copre i giorni e le settimane**, e va fatta davvero.
 
+**Esportazione giornaliera (facoltativa).** In Impostazioni, ogni account (tu per i
+tuoi sistemi, ogni cliente per i suoi) può attivare l'esportazione giornaliera:
+ogni giorno alle 23:59, ora italiana, il server salva un file per sistema con le
+ricevute di quel giorno, lo stesso fascicolo verificabile del pulsante Esporta.
+I file stanno sul server, nello stesso volume dei backup
+(`/var/lib/sigillo-backups/exports/`), si scaricano da Impostazioni e si tengono
+per 30 giorni; un sistema senza ricevute quel giorno non ha il file. È spenta
+finché non la si accende. Se il server è fermo alle 23:59, quel giorno non viene
+esportato. Non sostituisce il backup del database: i file stanno sullo stesso
+disco.
+
 Per fare i conti: una ricevuta occupa circa 2 KB nel database (misurato il
 2026-10-02 con ricevute complete di impronte e pseudonimo), quindi 1 GB
 contiene circa mezzo milione di ricevute.

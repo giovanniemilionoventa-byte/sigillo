@@ -266,6 +266,16 @@ const ui = {
     adminLogAll: "Vedi tutto",
     adminLogEmpty: "Nessuna operazione ancora.",
     signingKey: "Chiave di firma",
+    dailyExport: {
+      heading: "Esportazione giornaliera",
+      on: "Attiva",
+      off: "Spenta",
+      stateOn: "Ogni giorno alle 23:59",
+      stateOff: "Spenta.",
+      empty: "Nessun file ancora.",
+      download: "Scarica",
+      size: (bytes: number): string => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1).replace(".", ",")} MB`),
+    },
   },
   history: {
     anchored: "Sigillata",

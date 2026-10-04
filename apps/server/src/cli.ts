@@ -7,6 +7,7 @@ import { Command } from "commander";
 import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw, receiptHashHex } from "@sigillo/core";
 import { ApiKeyStore } from "./auth/api-keys.js";
 import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
+import { DailyExporter } from "./backup/daily-export.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
 import { cookieSecure, firebaseAccounts, ingestPause, port, positiveInteger, readSecret, trustProxy } from "./config.js";
 import { FirebaseAuth } from "./auth/firebase.js";
@@ -176,6 +177,8 @@ program
     const secureCookie = cookieSecure(process.env["SIGILLO_COOKIE_SECURE"]);
     const pause = ingestPause(process.env);
     const accounts = firebaseAccounts(process.env);
+    // Where backup.sh writes its copies; the daily export keeps its files here too.
+    const backupDirectory = process.env["SIGILLO_BACKUP_DIR"] || undefined;
     const organizationMonthlyReceipts = positiveInteger(
       "SIGILLO_ORG_MONTHLY_RECEIPTS",
       process.env["SIGILLO_ORG_MONTHLY_RECEIPTS"],
@@ -254,6 +257,7 @@ program
               checkpointer,
               loginLimits,
               cookieSecure: secureCookie,
+              ...(backupDirectory === undefined ? {} : { backupDirectory }),
               ...(accounts === null
                 ? {}
                 : {
@@ -265,11 +269,22 @@ program
             },
           }),
     });
+    const dailyExporter =
+      backupDirectory === undefined
+        ? undefined
+        : new DailyExporter({
+            store,
+            directory: backupDirectory,
+            now: () => new Date(),
+            onError: (message) => process.stderr.write(`${message}\n`),
+          });
     healthMonitor?.start();
     checkpointer.start();
+    dailyExporter?.start();
 
     const shutdown = (): void => {
       checkpointer.stop();
+      dailyExporter?.stop();
       healthMonitor?.stop();
       void app.close().then(() => {
         keys.close();

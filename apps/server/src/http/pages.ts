@@ -1,6 +1,7 @@
 import type { DocumentFingerprints, Receipt } from "@sigillo/core";
 import type { AdminLogEntry, DocumentMatch, ReceiptStore, SystemRecord } from "../storage/store.js";
 import type { ChainStatus } from "../health/chain-health.js";
+import type { StoredExport } from "../backup/daily-export.js";
 import { discloseFields } from "./history.js";
 import {
   archivedButShown,
@@ -630,6 +631,8 @@ export function settingsPage(view: {
   theme: Theme;
   log: AdminLogEntry[];
   keyId: string;
+  /** The daily export (backup/daily-export.ts): whether it is on for this account, and the files it has. Null where the server keeps none. */
+  dailyExport: { on: boolean; files: StoredExport[]; names: Map<string, string> } | null;
   now: Date;
   extra: { notice?: string; error?: string };
 }): string {
@@ -662,6 +665,7 @@ ${quota}
 <form method="post" action="/ui/impostazioni/tema" class="segmented" aria-label="${escape(t.themeLabel)}">${themes}</form></section>
 <section class="section" aria-labelledby="lingua"><h2 id="lingua">${escape(UI.languageLabel)}</h2>
 ${languageSwitch("segmented", "/ui/impostazioni")}</section>
+${view.dailyExport === null ? "" : dailyExportSection(view.dailyExport)}
 <section class="section" aria-labelledby="registro-amministrativo"><h2 id="registro-amministrativo">${escape(t.adminLog)}${
     view.log.length === 0 ? "" : `<a class="end" href="/ui/impostazioni/registro">${escape(t.adminLogAll)}</a>`
   }</h2>
@@ -669,6 +673,22 @@ ${view.log.length === 0 ? `<p class="card empty">${escape(t.adminLogEmpty)}</p>`
 <section class="section" aria-labelledby="chiave-firma"><h2 id="chiave-firma">${escape(t.signingKey)}</h2>
 <div class="card"><div class="line"><span class="tile-icon grey" aria-hidden="true">${ICONS.key}</span><code class="line-text keyid">${escape(view.keyId)}</code></div></div></section>
 </div>`;
+}
+
+/** The daily export: on or off, and the files it has made, the newest first. Each button saves itself, as the theme's do. */
+function dailyExportSection(view: { on: boolean; files: StoredExport[]; names: Map<string, string> }): string {
+  const t = UI.settings.dailyExport;
+  const lines = view.files
+    .slice(0, 14)
+    .map(
+      (file) =>
+        `<a class="line" href="/ui/impostazioni/esportazioni/${escape(file.fileName)}" download><span class="line-text">${escape(formatDate(`${file.day}T12:00:00Z`))} · ${escape(view.names.get(file.systemId) ?? file.systemId)}</span><span class="line-aside">${escape(t.size(file.bytes))}</span><span class="line-aside">${escape(t.download)}</span></a>`,
+    )
+    .join("\n");
+  return `<section class="section" aria-labelledby="esportazione-giornaliera"><h2 id="esportazione-giornaliera">${escape(t.heading)}</h2>
+<div class="card"><div class="line" data-daily-export="${view.on ? "on" : "off"}"><span class="tile-icon ${view.on ? "green" : "grey"}" aria-hidden="true">${view.on ? STATE_ICONS.ok : ICONS.folder}</span><span class="line-text">${escape(view.on ? t.stateOn : t.stateOff)}</span></div></div>
+<form method="post" action="/ui/impostazioni/esportazione-giornaliera" class="segmented offsite-controls" aria-label="${escape(t.heading)}"><button type="submit" name="enabled" value="on" aria-pressed="${view.on}">${escape(t.on)}</button><button type="submit" name="enabled" value="off" aria-pressed="${!view.on}">${escape(t.off)}</button></form>
+${lines === "" ? (view.on ? `<p class="card empty export-files">${escape(t.empty)}</p>` : "") : `<div class="card lines export-files">${lines}</div>`}</section>`;
 }
 
 /** The whole administrative log, newest first. */
