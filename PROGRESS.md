@@ -3284,6 +3284,17 @@ non solo dal cron del server.
   amministratore) e in `deploy-config.test.ts` (lo script segue la scelta e scrive lo stato nella
   forma che il server legge). Screenshot `21-impostazioni` rigenerati.
 
+### Sessione 28 — 2026-10-04 — il video dimostrativo in inglese
+
+Richiesta del committente: lo stesso video con le schermate e i sottotitoli in inglese, ora che
+la console parla inglese e italiano. Gli script di `video/` scelgono la lingua con
+`SIGILLO_VIDEO_LANG=en`: il browser chiede l'inglese alla console (e al sito vero), e quello che
+è del video (nome del sistema, terminale, strumento `change-one-character`, titoli, parlato in
+`video/parlato.ts`) segue `video/lingua.ts`. Registrazione nuova da zero, con dati veri della demo
+come la prima; consegna in `video/consegna/en/`, versione con sottotitoli impressi compresa.
+Restano in italiano i curricula e le righe stampate dall'agente della demo: sono dati e output
+veri, non testo del video.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

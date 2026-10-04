@@ -49,11 +49,12 @@ import {
   stopStack,
   WORK,
 } from "./lib.js";
+import { LINGUA, T } from "./lingua.js";
 import { PARLATO } from "./parlato.js";
 
-const SCENES = join(OUT, "scene");
+const SCENES = join(OUT, `scene${T.suffix}`);
 const FULL = { width: 1920, height: 1080 };
-const DISPLAY_NAME = "Selezione CV — backend junior";
+const DISPLAY_NAME = T.displayName;
 const cv = (n: number): string => `candidato-${String(n).padStart(2, "0")}.txt`;
 const MORNING = Array.from({ length: 14 }, (_, i) => cv(i + 1));
 const LIVE = Array.from({ length: 6 }, (_, i) => cv(i + 15));
@@ -61,7 +62,7 @@ const LIVE = Array.from({ length: 6 }, (_, i) => cv(i + 15));
 const tokenFile = join(WORK, "token.txt");
 
 async function signedIn(browser: Browser, size = FULL): Promise<{ context: BrowserContext; actor: Actor }> {
-  const context = await browser.newContext({ viewport: size, colorScheme: "light", acceptDownloads: true });
+  const context = await browser.newContext({ viewport: size, colorScheme: "light", locale: T.locale, acceptDownloads: true });
   const actor = await Actor.open(context);
   await actor.page.goto(`${ADDRESS}/ui/login`);
   await actor.page.fill('input[name="password"]', ADMIN_PASSWORD);
@@ -128,7 +129,7 @@ async function sopralluogo(): Promise<void> {
 const consoleOptions = (size = FULL): Parameters<Browser["newContext"]>[0] => ({
   viewport: size,
   colorScheme: "light",
-  locale: "it-IT",
+  locale: T.locale,
   timezoneId: "Europe/Rome",
   acceptDownloads: true,
 });
@@ -172,9 +173,9 @@ async function scena1(): Promise<void> {
     await sleep(7000); // the title sits over these seconds
     await actor.hover(actor.page.locator(".notice, [role=status]").first(), 260);
     await sleep(1800);
-    await actor.hover(actor.page.getByText("Azioni oggi"));
+    await actor.hover(actor.page.getByText(T.label.actionsToday));
     await sleep(1600);
-    await actor.hover(actor.page.locator("a").filter({ hasText: "Integro" }).first(), 200);
+    await actor.hover(actor.page.locator("a").filter({ hasText: T.label.intact }).first(), 200);
     await sleep(2400);
     await recorder.stop();
     recorder.encode(sceneFile("scena-1"));
@@ -196,15 +197,15 @@ async function scena2(): Promise<void> {
     actor.x = 900;
     actor.y = 800;
     await actor.goto(`${ADDRESS}/ui`);
-    const termContext = await browser.newContext({ viewport: right, locale: "it-IT" });
-    const terminal = await Terminal.open(termContext, { fontSize: 14, cwdLabel: "agente", title: "Terminale — l'agente di selezione" });
+    const termContext = await browser.newContext({ viewport: right, locale: T.locale });
+    const terminal = await Terminal.open(termContext, { fontSize: 14, cwdLabel: "agente", title: T.agentTerminal });
     const consoleRec = new Recorder(actor.page, frames("2-console"), left);
     const termRec = new Recorder(terminal.page, frames("2-terminale"), right);
     await consoleRec.start();
     await termRec.start();
     const from = Date.now();
     await sleep(1500);
-    await actor.hover(actor.page.getByText("Azioni oggi"));
+    await actor.hover(actor.page.getByText(T.label.actionsToday));
     await sleep(800);
     for (const cv of LIVE) {
       const folder = join(OUT, "agente", cv.replace(".txt", ""));
@@ -261,11 +262,11 @@ async function scena3(): Promise<void> {
     await sleep(1500);
     const page = actor.page;
     await actor.click(page.locator("a.row").filter({ hasText: "valuta_candidato" }).first(), { fromLeft: 260, navigates: true, after: 2000 });
-    await actor.hover(page.locator("aside, .inspector").locator("text=Quando").first());
+    await actor.hover(page.locator("aside, .inspector").getByText(T.label.when, { exact: true }).first());
     await sleep(1200);
     await actor.click(page.locator("details.tech > summary").first(), { after: 1500 });
     // The receipt's own fingerprint, then its link to the one before it.
-    for (const label of [/^Impronta$/, /^Collegata alla ricevuta/]) {
+    for (const label of [T.label.fingerprint, T.label.linkedTo]) {
       const target = page.locator("details.tech[open]").getByText(label).first();
       if ((await target.count()) > 0) {
         await actor.hover(target);
@@ -273,7 +274,7 @@ async function scena3(): Promise<void> {
       }
     }
     await sleep(800);
-    await actor.click(page.locator("a, button").filter({ hasText: /^Strumenti/ }).first(), { navigates: true, after: 2200 });
+    await actor.click(page.locator("a, button").filter({ hasText: T.label.tools }).first(), { navigates: true, after: 2200 });
     await actor.moveTo(700, 560);
     await sleep(2500);
     await recorder.stop();
@@ -292,11 +293,11 @@ async function scena4(): Promise<void> {
     await recorder.start();
     await sleep(1200);
     const page = actor.page;
-    await actor.click(page.locator("a").filter({ hasText: /^Sigilli$/ }).first(), { navigates: true, after: 1800 });
+    await actor.click(page.locator("a").filter({ hasText: T.label.seals }).first(), { navigates: true, after: 1800 });
     await actor.hover(page.locator(".seals .pill").first());
     await sleep(1500);
     await actor.click(page.locator(".seals summary").first(), { fromLeft: 200, after: 1800 });
-    for (const label of ["Attestat", "Autorit"]) {
+    for (const label of [T.label.attested, T.label.authority]) {
       const target = page.locator(".seals details[open] dt").filter({ hasText: label }).first();
       if ((await target.count()) > 0) {
         await actor.hover(target);
@@ -313,10 +314,10 @@ async function scena4(): Promise<void> {
 function toolsOnPath(): string {
   const bin = join(OUT, "bin");
   mkdirSync(bin, { recursive: true });
-  writeFileSync(join(bin, "sigillo-verify"), `#!/bin/sh\nexec "${process.execPath}" "${VERIFIER}" "$@"\n`, { mode: 0o755 });
+  writeFileSync(join(bin, "sigillo-verify"), `#!/bin/sh\nSIGILLO_VIDEO_LANG=${LINGUA} exec "${process.execPath}" "${VERIFIER}" "$@"\n`, { mode: 0o755 });
   writeFileSync(
-    join(bin, "cambia-un-carattere"),
-    `#!/bin/sh\nexec "${process.execPath}" "${join(ROOT, "video", "cambia-un-carattere.mjs")}" "$@"\n`,
+    join(bin, T.changeTool),
+    `#!/bin/sh\nSIGILLO_VIDEO_LANG=${LINGUA} exec "${process.execPath}" "${join(ROOT, "video", "cambia-un-carattere.mjs")}" "$@"\n`,
     { mode: 0o755 },
   );
   return bin;
@@ -329,7 +330,7 @@ function toolsOnPath(): string {
  * and a copy with one character changed.
  */
 async function scena5(): Promise<void> {
-  const downloads = join(OUT, "Scaricati");
+  const downloads = join(OUT, T.downloads);
   rmSync(downloads, { recursive: true, force: true });
   mkdirSync(downloads, { recursive: true });
   cpSync(join(ROOT, "demo", "selezione-cv", "curricula", "candidato-07.txt"), join(downloads, "candidato-07.txt"));
@@ -347,7 +348,7 @@ async function scena5(): Promise<void> {
       await recorder.start();
       await sleep(1200);
       const page = actor.page;
-      await actor.click(page.locator("a.button, a").filter({ hasText: /^\s*Fascicolo\s*$/ }).first(), { after: 1500 });
+      await actor.click(page.locator("a.button, a").filter({ hasText: T.label.evidence }).first(), { after: 1500 });
       const [download] = await Promise.all([
         page.waitForEvent("download"),
         actor.click(page.locator("#fascicolo button[type=submit]"), { after: 300 }),
@@ -361,8 +362,8 @@ async function scena5(): Promise<void> {
 
     // 5b: the terminal, full screen.
     {
-      const context = await browser.newContext({ viewport: FULL, locale: "it-IT" });
-      const terminal = await Terminal.open(context, { fontSize: 16, cwdLabel: "Scaricati", title: "Terminale — Scaricati" });
+      const context = await browser.newContext({ viewport: FULL, locale: T.locale });
+      const terminal = await Terminal.open(context, { fontSize: 16, cwdLabel: T.downloads, title: T.downloadsTerminal });
       const recorder = new Recorder(terminal.page, frames("5b"), FULL);
       await recorder.start();
       await sleep(1200);
@@ -372,11 +373,11 @@ async function scena5(): Promise<void> {
       await sleep(4000);
       await terminal.clear();
       await sleep(600);
-      await terminal.run(`cambia-un-carattere ${zipName} copia.zip`, downloads, env);
+      await terminal.run(`${T.changeTool} ${zipName} ${T.copyZip}`, downloads, env);
       await sleep(2000);
-      await terminal.run("sigillo-verify copia.zip", downloads, env, verdict);
+      await terminal.run(`sigillo-verify ${T.copyZip}`, downloads, env, verdict);
       await sleep(4000);
-      await terminal.run("cambia-un-carattere candidato-07.txt candidato-07-copia.txt", downloads, env);
+      await terminal.run(`${T.changeTool} candidato-07.txt ${T.copyCv}`, downloads, env);
       await sleep(2000);
       await recorder.stop();
       recorder.encode(sceneFile("scena-5b"));
@@ -393,7 +394,7 @@ async function scena5(): Promise<void> {
       await recorder.start();
       await sleep(1200);
       const page = actor.page;
-      for (const file of ["candidato-07.txt", "candidato-07-copia.txt"]) {
+      for (const file of ["candidato-07.txt", T.copyCv]) {
         // The drop zone is a label around the file field: a click on it opens the file chooser.
         const [chooser] = await Promise.all([page.waitForEvent("filechooser"), actor.click(page.locator("label.drop"), { after: 400 })]);
         await chooser.setFiles(join(downloads, file));
@@ -420,19 +421,19 @@ async function scena6(): Promise<void> {
       const recorder = new Recorder(actor.page, frames("6a"), FULL);
       await recorder.start();
       await sleep(1000);
-      await actor.click(actor.page.locator("a.brand, nav a").filter({ hasText: "Registro" }).first(), { navigates: true, after: 1500 });
+      await actor.click(actor.page.locator("a.brand, nav a").filter({ hasText: T.label.ledger }).first(), { navigates: true, after: 1500 });
       await actor.hover(actor.page.locator(".notice, [role=status]").first(), 260);
       await sleep(2500);
-      await actor.hover(actor.page.getByText("Ultimo sigillo"));
+      await actor.hover(actor.page.getByText(T.label.lastSeal));
       await sleep(2500);
       await recorder.stop();
       recorder.encode(sceneFile("scena-6a"));
     }
     {
       // The public site: get-sigillo.eu, the real one, as anyone reaches it (no account, nothing signed in).
-      const context = await browser.newContext({ viewport: FULL, colorScheme: "light", locale: "it-IT" });
+      const context = await browser.newContext({ viewport: FULL, colorScheme: "light", locale: T.locale });
       await context.route("https://get-sigillo.eu/**", async (route) => {
-        const live = fetchLive(route.request().url());
+        const live = fetchLive(route.request().url(), (await route.request().allHeaders())["accept-language"]);
         await route.fulfill(live);
       });
       const actor = await Actor.open(context);
@@ -460,8 +461,9 @@ async function scena6(): Promise<void> {
  * curl received: the same page, headers and all, only the transport differs.
  * Redirects are passed on, not followed, so the browser takes them itself.
  */
-function fetchLive(url: string): { status: number; headers: Record<string, string>; body: Buffer } {
-  const raw = execFileSync("curl", ["-sS", "--http1.1", "--suppress-connect-headers", "--retry", "4", "--retry-all-errors", "-D", "-", url], { maxBuffer: 32 * 1024 * 1024 });
+function fetchLive(url: string, acceptLanguage: string = T.locale): { status: number; headers: Record<string, string>; body: Buffer } {
+  // The browser's Accept-Language goes along: the site picks its language from it.
+  const raw = execFileSync("curl", ["-sS", "--http1.1", "--suppress-connect-headers", "--retry", "4", "--retry-all-errors", "-H", `Accept-Language: ${acceptLanguage}`, "-D", "-", url], { maxBuffer: 32 * 1024 * 1024 });
   const split = raw.indexOf("\r\n\r\n");
   const head = raw.subarray(0, split).toString("latin1").split("\r\n");
   const status = Number(/^HTTP\/[\d.]+ (\d+)/.exec(head[0] ?? "")?.[1] ?? "502");
@@ -488,8 +490,8 @@ function concat(parts: string[], name: string): void {
 async function titoli(): Promise<void> {
   mkdirSync(SCENES, { recursive: true });
   const browser = await launch();
-  await renderTitle(browser, join(SCENES, "titolo-apertura.png"), "Il registro a prova di manomissione<br>per i tuoi agenti AI", "");
-  await renderTitle(browser, join(SCENES, "titolo-chiusura.png"), "Pilota gratuito · get-sigillo.eu", "");
+  await renderTitle(browser, join(SCENES, "titolo-apertura.png"), T.openingTitle, "");
+  await renderTitle(browser, join(SCENES, "titolo-chiusura.png"), T.closingTitle, "");
   await browser.close();
 }
 
@@ -554,7 +556,7 @@ function sottotitoli(): void {
     return `${pad(Math.floor(ms / 3_600_000))}:${pad(Math.floor(ms / 60_000) % 60)}:${pad(Math.floor(ms / 1000) % 60)},${pad(ms % 1000, 3)}`;
   };
   const out: string[] = [];
-  for (const { clip, lines } of PARLATO) {
+  for (const { clip, lines } of PARLATO[LINGUA]) {
     const [from, to] = span.get(clip) ?? [0, 0];
     const cues = lines.flatMap(cuesOf);
     const start = from + 0.5;
@@ -567,8 +569,8 @@ function sottotitoli(): void {
       t += length;
     }
   }
-  writeFileSync(join(OUT, "sigillo-demo.srt"), out.join("\n"));
-  process.stdout.write(`wrote ${join(OUT, "sigillo-demo.srt")} (${out.length / 4} cues, ${at.toFixed(1)} s of film)\n`);
+  writeFileSync(join(OUT, `sigillo-demo${T.suffix}.srt`), out.join("\n"));
+  process.stdout.write(`wrote ${join(OUT, `sigillo-demo${T.suffix}.srt`)} (${out.length / 4} cues, ${at.toFixed(1)} s of film)\n`);
 }
 
 const scenes: Record<string, () => Promise<void>> = { "1": scena1, "2": scena2, "3": scena3, "4": scena4, "5": scena5, "6": scena6 };

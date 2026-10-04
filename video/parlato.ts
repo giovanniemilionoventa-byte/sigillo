@@ -1,5 +1,5 @@
 /**
- * The narration, scene by scene, in Italian: the words of the voice-over and
+ * The narration, scene by scene, in Italian and in English: the words of the voice-over and
  * the subtitles at once. Adapted from demo/selezione-cv/VIDEO.md to what the
  * recorded scenes actually show, with the same rule: no technical words in
  * what is said.
@@ -8,7 +8,9 @@
  * video/registra.ts sottotitoli` spreads its lines over that clip's real
  * duration, so the subtitles follow the film even after a scene is redone.
  */
-export const PARLATO: { clip: string; lines: string[] }[] = [
+type Parte = { clip: string; lines: string[] };
+
+const IT: Parte[] = [
   {
     clip: "scena-1",
     lines: [
@@ -76,3 +78,73 @@ export const PARLATO: { clip: string; lines: string[] }[] = [
     ],
   },
 ];
+
+/** The same narration in English, for the English video (SIGILLO_VIDEO_LANG=en). */
+const EN: Parte[] = [
+  {
+    clip: "scena-1",
+    lines: [
+      "Your company uses artificial intelligence to read CVs, answer customers and make small decisions every day.",
+      "But if one day someone asks you: \u201cWhat exactly did it do, and how can you prove it?\u201d, could you answer?",
+    ],
+  },
+  {
+    clip: "scena-2",
+    lines: [
+      "This is sigillo. Every action your AI takes is recorded in a way that nobody, not even whoever runs the system, can change without it showing.",
+      "On the right, an agent screening applications for a developer job.",
+      "With every CV, the ledger on the left updates by itself.",
+      "And at the top, the answer to the first question: all good, no tampering.",
+    ],
+  },
+  {
+    clip: "scena-3",
+    lines: [
+      "The history, in plain sentences: what the agent did, when, and how it turned out.",
+      "The technical details are there, but they stay out of sight until you look for them.",
+      "Every action has its own fingerprint, linked to the one before it: none can vanish or change without breaking the chain.",
+      "And you can look at just the tools the agent used.",
+    ],
+  },
+  {
+    clip: "scena-4",
+    lines: [
+      "Several times a day the ledger is sealed, and an external, independent authority adds its timestamp.",
+      "It proves those actions already existed at that time: nobody can rewrite them afterwards.",
+    ],
+  },
+  {
+    clip: "scena-5a",
+    lines: ["When an inspector, an auditor or a customer asks for evidence, one click is enough: sigillo prepares the evidence pack."],
+  },
+  {
+    clip: "scena-5b",
+    lines: [
+      "And anyone can check it, with a free, public tool that does not belong to whoever sells sigillo.",
+      "The check passes: the evidence pack is intact.",
+      "Now let's change a single character in a copy: the time of a candidate's evaluation, moved by one second.",
+      "The check fails, and says exactly where.",
+    ],
+  },
+  {
+    clip: "scena-5c",
+    lines: [
+      "The same goes for documents. A candidate disputes the selection: upload their CV. The document never leaves your computer.",
+      "Yes: it is exactly the one the AI read. Not a similar one: exactly that one.",
+      "One different character, and sigillo no longer recognises it.",
+    ],
+  },
+  {
+    clip: "scena-6a",
+    lines: ["The European AI Act asks companies to be able to show what their systems have done."],
+  },
+  {
+    clip: "scena-6b",
+    lines: [
+      "Sigillo does not tell you whether your AI did the right thing: it gives you the evidence to check for yourself.",
+      "The pilot is free: get-sigillo.eu.",
+    ],
+  },
+];
+
+export const PARLATO: Record<"it" | "en", Parte[]> = { it: IT, en: EN };

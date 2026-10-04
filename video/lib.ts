@@ -20,6 +20,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, write
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { LINGUA, T } from "./lingua.js";
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Locator, type Page } from "playwright-core";
 
 export const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -45,7 +46,7 @@ export const sleep = (ms: number): Promise<void> => new Promise((resolve) => set
  * outside the repository: `pnpm lint` rightly refuses key material anywhere
  * in the tree, ignored or not.
  */
-export const STATE = process.env["SIGILLO_VIDEO_STATE"] ?? join(tmpdir(), "sigillo-video-stato");
+export const STATE = process.env["SIGILLO_VIDEO_STATE"] ?? join(tmpdir(), `sigillo-video-stato${T.suffix}`);
 /** Where the running stack keeps its key, socket, database and signer state. */
 export const WORK = join(STATE, "lavoro");
 
@@ -210,12 +211,13 @@ export function findBrowser(): string {
 }
 
 export async function launch(): Promise<Browser> {
-  // Italian all the way down: the locale option alone leaves the browser's own
-  // controls (a date field's "mm/dd/yyyy", "Choose File") in English.
+  // The video's language all the way down: the locale option alone leaves the
+  // browser's own controls (a date field's "mm/dd/yyyy", "Choose File") in the
+  // process's language.
   return chromium.launch({
     executablePath: findBrowser(),
-    args: ["--hide-scrollbars", "--force-color-profile=srgb", "--lang=it-IT"],
-    env: { ...process.env, LANG: "it_IT.UTF-8", LANGUAGE: "it", LC_ALL: "it_IT.UTF-8" },
+    args: ["--hide-scrollbars", "--force-color-profile=srgb", `--lang=${T.locale}`],
+    env: { ...process.env, LANG: T.posixLocale, LANGUAGE: LINGUA, LC_ALL: T.posixLocale },
   });
 }
 

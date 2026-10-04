@@ -4,11 +4,18 @@
 # short fade at each cut, no audio. H.264, 30 fps, 1920x1080.
 #
 # Run after: pnpm tsx video/registra.ts tutto   (or the scenes one by one, then "titoli")
-# Output:    video/out/sigillo-demo.mp4, sigillo-demo.srt, and sigillo-demo-sottotitolato.mp4 (subtitles burned in)
+# Output:    video/out/sigillo-demo.mp4, sigillo-demo.srt, sigillo-demo-sottotitolato.mp4 (subtitles burned in);
+#            with SIGILLO_VIDEO_LANG=en: sigillo-demo-en.mp4, sigillo-demo-en.srt, sigillo-demo-en-subtitled.mp4
 set -euo pipefail
 
+# SIGILLO_VIDEO_LANG=en joins the English recording (scene-en/, *-en.*) instead of the Italian one.
+LANG_CODE="${SIGILLO_VIDEO_LANG:-it}"
+SUFFIX=""
+[ "$LANG_CODE" = "en" ] && SUFFIX="-en"
+SUB_NAME="sottotitolato"
+[ "$LANG_CODE" = "en" ] && SUB_NAME="subtitled"
 OUT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/out"
-S="$OUT/scene"
+S="$OUT/scene$SUFFIX"
 for n in 1 2 3 4 5 6; do
   [ -f "$S/scena-$n.mp4" ] || { echo "missing $S/scena-$n.mp4: record it with registra.ts" >&2; exit 1; }
 done
@@ -39,15 +46,15 @@ ffmpeg -y -loglevel error \
     [5:v][t6]overlay=shortest=1,$(fades "$D6")[v6];
     [v1][v2][v3][v4][v5][v6]concat=n=6:v=1:a=0,fps=30,format=yuv420p[v]" \
   -map "[v]" -c:v libx264 -preset slow -crf 17 -r 30 -movflags +faststart \
-  "$OUT/sigillo-demo.mp4"
+  "$OUT/sigillo-demo$SUFFIX.mp4"
 
-echo "wrote $OUT/sigillo-demo.mp4 ($(duration "$OUT/sigillo-demo.mp4") s)"
+echo "wrote $OUT/sigillo-demo$SUFFIX.mp4 ($(duration "$OUT/sigillo-demo$SUFFIX.mp4") s)"
 
 # The subtitles, timed on these very scenes.
 cd "$OUT/../.." && pnpm exec tsx video/registra.ts sottotitoli
 
 # The same film with the subtitles burned in, for players that do not load an .srt.
-ffmpeg -y -loglevel error -i "$OUT/sigillo-demo.mp4" \
-  -vf "subtitles=$OUT/sigillo-demo.srt:charenc=UTF-8:force_style='FontName=DejaVu Sans,FontSize=13,PrimaryColour=&H00FFFFFF,BackColour=&H99000000,BorderStyle=4,Outline=0,Shadow=0,MarginV=22,Alignment=2'" \
-  -c:v libx264 -preset slow -crf 17 -pix_fmt yuv420p -movflags +faststart "$OUT/sigillo-demo-sottotitolato.mp4"
-echo "wrote $OUT/sigillo-demo-sottotitolato.mp4"
+ffmpeg -y -loglevel error -i "$OUT/sigillo-demo$SUFFIX.mp4" \
+  -vf "subtitles=$OUT/sigillo-demo$SUFFIX.srt:charenc=UTF-8:force_style='FontName=DejaVu Sans,FontSize=13,PrimaryColour=&H00FFFFFF,BackColour=&H99000000,BorderStyle=4,Outline=0,Shadow=0,MarginV=22,Alignment=2'" \
+  -c:v libx264 -preset slow -crf 17 -pix_fmt yuv420p -movflags +faststart "$OUT/sigillo-demo$SUFFIX-$SUB_NAME.mp4"
+echo "wrote $OUT/sigillo-demo$SUFFIX-$SUB_NAME.mp4"
