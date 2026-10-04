@@ -1,7 +1,6 @@
 import type { DocumentFingerprints, Receipt } from "@sigillo/core";
 import type { AdminLogEntry, DocumentMatch, ReceiptStore, SystemRecord } from "../storage/store.js";
 import type { ChainStatus } from "../health/chain-health.js";
-import { OFFSITE_FREQUENCIES, type OffsiteSettings, type OffsiteState } from "../backup/offsite.js";
 import { discloseFields } from "./history.js";
 import {
   archivedButShown,
@@ -631,8 +630,6 @@ export function settingsPage(view: {
   theme: Theme;
   log: AdminLogEntry[];
   keyId: string;
-  /** The off-site copy of the backups: the operator's only, and only where the server knows the backups directory. */
-  offsite: { settings: OffsiteSettings; state: OffsiteState } | null;
   now: Date;
   extra: { notice?: string; error?: string };
 }): string {
@@ -665,7 +662,6 @@ ${quota}
 <form method="post" action="/ui/impostazioni/tema" class="segmented" aria-label="${escape(t.themeLabel)}">${themes}</form></section>
 <section class="section" aria-labelledby="lingua"><h2 id="lingua">${escape(UI.languageLabel)}</h2>
 ${languageSwitch("segmented", "/ui/impostazioni")}</section>
-${view.offsite === null ? "" : offsiteSection(view.offsite.settings, view.offsite.state, view.now)}
 <section class="section" aria-labelledby="registro-amministrativo"><h2 id="registro-amministrativo">${escape(t.adminLog)}${
     view.log.length === 0 ? "" : `<a class="end" href="/ui/impostazioni/registro">${escape(t.adminLogAll)}</a>`
   }</h2>
@@ -673,41 +669,6 @@ ${view.log.length === 0 ? `<p class="card empty">${escape(t.adminLogEmpty)}</p>`
 <section class="section" aria-labelledby="chiave-firma"><h2 id="chiave-firma">${escape(t.signingKey)}</h2>
 <div class="card"><div class="line"><span class="tile-icon grey" aria-hidden="true">${ICONS.key}</span><code class="line-text keyid">${escape(view.keyId)}</code></div></div></section>
 </div>`;
-}
-
-/** The off-site copy: how it is doing, on or off, and how often while on. Each button saves itself, as the theme's do. */
-function offsiteSection(settings: OffsiteSettings, state: OffsiteState, now: Date): string {
-  const t = UI.settings.offsite;
-  const when = (date: Date): string => formatWhenInline(date.toISOString(), now);
-  const [colour, icon, words] = ((): [string, string, string] => {
-    switch (state.kind) {
-      case "off":
-        return ["grey", ICONS.folder, t.states.off];
-      case "never-ran":
-        return ["yellow", STATE_ICONS.warn, t.states.neverRan];
-      case "not-running":
-        return ["red", STATE_ICONS.bad, t.states.notRunning(when(state.since))];
-      case "not-connected":
-        return ["yellow", STATE_ICONS.warn, t.states.notConnected];
-      case "failed":
-        return ["red", STATE_ICONS.bad, t.states.failed(when(state.at))];
-      case "ok":
-        return ["green", STATE_ICONS.ok, t.states.ok(when(state.at))];
-      case "waiting":
-        return ["yellow", STATE_ICONS.warn, t.states.waiting];
-    }
-  })();
-  const pressed = (yes: boolean): string => `aria-pressed="${yes}"`;
-  const frequencies = OFFSITE_FREQUENCIES.map(
-    (hours) =>
-      `<button type="submit" name="every" value="${hours}" ${pressed(hours === settings.everyHours)}>${escape(t.every(hours))}</button>`,
-  ).join("");
-  return `<section class="section" aria-labelledby="backup-drive"><h2 id="backup-drive">${escape(t.heading)}</h2>
-<div class="card"><div class="line" data-offsite="${state.kind}"><span class="tile-icon ${colour}" aria-hidden="true">${icon}</span><span class="line-text">${escape(words)}</span></div></div>
-<div class="offsite-controls">
-<form method="post" action="/ui/impostazioni/backup" class="segmented" aria-label="${escape(t.heading)}"><button type="submit" name="enabled" value="on" ${pressed(settings.enabled)}>${escape(t.on)}</button><button type="submit" name="enabled" value="off" ${pressed(!settings.enabled)}>${escape(t.off)}</button></form>
-${settings.enabled ? `<form method="post" action="/ui/impostazioni/backup" class="segmented" aria-label="${escape(t.frequencyLabel)}">${frequencies}</form>` : ""}
-</div></section>`;
 }
 
 /** The whole administrative log, newest first. */

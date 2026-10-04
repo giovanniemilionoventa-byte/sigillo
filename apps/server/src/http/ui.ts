@@ -60,15 +60,6 @@ import {
 } from "./pages.js";
 import { currentLanguage, isLanguage, LANGUAGE_COOKIE, languageFor, withLanguage, type Language } from "./locale.js";
 import { systemTitle, UI } from "./strings.js";
-import {
-  isOffsiteFrequency,
-  offsiteState,
-  readOffsiteSettings,
-  readOffsiteStatus,
-  writeOffsiteSettings,
-  type OffsiteSettings,
-  type OffsiteState,
-} from "../backup/offsite.js";
 import { ICONS, STATE_ICONS } from "./style.js";
 
 /**
@@ -131,12 +122,6 @@ export interface UiOptions {
    * members in Impostazioni and, near and at the limit, on the main page.
    */
   organizationMonthlyReceipts?: number;
-  /**
-   * The directory backup.sh writes to, which deploy/backup-offsite.sh shares
-   * (backup/offsite.ts). Given, Impostazioni shows the operator the off-site
-   * copy and lets them turn it on or off and choose how often it is made.
-   */
-  backupDirectory?: string;
   accounts?: {
     firebase: FirebaseAuth;
     /** This installation's address as browsers reach it, e.g. https://sigillo.example.com. */
@@ -978,36 +963,11 @@ ${exportSheet(record)}`,
           theme: themeOf(request),
           log: store.adminLog(8),
           keyId,
-          offsite: offsiteView(viewer),
           now: options.now(),
           extra: {},
         }),
       }),
     );
-  });
-
-  function offsiteView(viewer: Viewer): { settings: OffsiteSettings; state: OffsiteState } | null {
-    const directory = options.backupDirectory;
-    if (directory === undefined || viewer.kind !== "operator") return null;
-    const settings = readOffsiteSettings(directory);
-    return { settings, state: offsiteState(settings, readOffsiteStatus(directory), options.now()) };
-  }
-
-  // One button at a time, from Impostazioni: on, off, or a frequency. What
-  // the other field was stays as it was.
-  app.post("/ui/impostazioni/backup", async (request, reply) => {
-    const session = requireOperator(request, reply);
-    if (session === null) return reply;
-    const directory = options.backupDirectory;
-    if (directory === undefined) return reply.code(404).send();
-    const body = request.body as { enabled?: unknown; every?: unknown } | undefined;
-    const settings = readOffsiteSettings(directory);
-    if (body?.enabled === "on" || body?.enabled === "off") settings.enabled = body.enabled === "on";
-    const every = Number(body?.every);
-    if (isOffsiteFrequency(every)) settings.everyHours = every;
-    writeOffsiteSettings(directory, settings);
-    request.log.info({ action: "offsite.settings", enabled: settings.enabled, every_hours: settings.everyHours }, "off-site backup settings changed");
-    return reply.redirect("/ui/impostazioni", 303);
   });
 
   app.post("/ui/impostazioni/tema", async (request, reply) => {

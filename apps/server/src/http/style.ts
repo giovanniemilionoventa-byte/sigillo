@@ -275,7 +275,6 @@ details.fold > .fold-body { display: flex; flex-direction: column; gap: 12px; pa
 .segmented a:hover, .segmented button:hover { text-decoration: none; background: var(--hover); }
 .segmented [aria-current="page"], .segmented [aria-pressed="true"] { background: var(--segment-on); box-shadow: var(--shadow-segment); }
 .segmented .count { font-size: 12px; color: var(--secondary); font-weight: 400; }
-.offsite-controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .segmented a[aria-current="page"] .count { color: var(--text); }
 
 /* one system: header and tabs */

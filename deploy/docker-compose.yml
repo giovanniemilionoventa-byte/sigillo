@@ -101,7 +101,6 @@ services:
       - admin_password
     environment:
       SIGILLO_DB: /var/lib/sigillo/sigillo.db
-      SIGILLO_BACKUP_DIR: /var/lib/sigillo-backups
       SIGILLO_SIGNER_SOCKET: /run/sigillo/signer.sock
       SIGILLO_HOST: 0.0.0.0
       SIGILLO_PORT: 8080

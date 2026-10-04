@@ -176,9 +176,6 @@ program
     const secureCookie = cookieSecure(process.env["SIGILLO_COOKIE_SECURE"]);
     const pause = ingestPause(process.env);
     const accounts = firebaseAccounts(process.env);
-    // Where backup.sh writes its copies, shared with deploy/backup-offsite.sh:
-    // set, Impostazioni shows the off-site copy and lets the operator switch it.
-    const backupDirectory = process.env["SIGILLO_BACKUP_DIR"] || undefined;
     const organizationMonthlyReceipts = positiveInteger(
       "SIGILLO_ORG_MONTHLY_RECEIPTS",
       process.env["SIGILLO_ORG_MONTHLY_RECEIPTS"],
@@ -257,7 +254,6 @@ program
               checkpointer,
               loginLimits,
               cookieSecure: secureCookie,
-              ...(backupDirectory === undefined ? {} : { backupDirectory }),
               ...(accounts === null
                 ? {}
                 : {

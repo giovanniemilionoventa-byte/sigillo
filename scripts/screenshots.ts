@@ -19,7 +19,7 @@
  * Run with: pnpm tsx scripts/screenshots.ts [output directory]
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -210,16 +210,6 @@ healthMonitor.check();
 // the operator's password is at /ui/admin. Firebase itself is never reached:
 // no page below signs in through it.
 const sessions = new UiSessions();
-// The off-site copy as Impostazioni shows it once it works: on, every 6
-// hours, the last copy made an hour ago (deploy/backup-offsite.sh writes this).
-const backupDirectory = join(directory, "backups");
-mkdirSync(backupDirectory);
-writeFileSync(join(backupDirectory, "offsite-settings.json"), '{"enabled":true,"every_hours":6}\n');
-const lastCopy = Math.floor(Date.now() / 1000) - 3600;
-writeFileSync(
-  join(backupDirectory, "offsite-status.json"),
-  `{"checked":${lastCopy + 3000},"drive":true,"last_success":${lastCopy},"last_failure":null}\n`,
-);
 const app = buildServer({
   store,
   keys,
@@ -231,7 +221,6 @@ const app = buildServer({
     checkpointer,
     sessions,
     accounts: { firebase: {} as never, publicUrl: "https://get-sigillo.eu" },
-    backupDirectory,
   },
 });
 const address = await app.listen({ host: "127.0.0.1", port: 0 });
