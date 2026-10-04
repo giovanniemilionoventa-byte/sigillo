@@ -294,7 +294,9 @@ function monthBounds(at: Date): { start: string; next: string } {
 
 export function registerUi(app: FastifyInstance, options: UiOptions): void {
   // Every system, every organization's. Never handed to a page as it is: a
-  // page gets storeFor(this, the viewer), which for the operator is this.
+  // page gets storeFor(this, the viewer), which for the operator too is only
+  // the operator's own systems. Read whole only for the customers' names,
+  // approval and quota counts (accountOf, quotaOf, the Clienti page).
   const allSystems = options.store;
   const { keys } = options;
   const sessions = options.sessions ?? new UiSessions();
@@ -368,7 +370,8 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
    * the subjects table, which every system shares: one person has one token
    * whichever organization's agent acted for them. Until pseudonyms are kept
    * per organization, those pages are the operator's alone, and to anyone
-   * else they do not exist.
+   * else they do not exist; and even there they reach only the operator's own
+   * systems (tenancy.ts).
    */
   const requireOperator = (request: FastifyRequest, reply: FastifyReply): Session | null => {
     const session = requireSession(request, reply);
@@ -681,6 +684,13 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const refuse = (error: string): FastifyReply =>
       html(reply, renderNewSystem(session, { error }, { system_id: given, display_name: displayName }), 400);
     if (systemId === "") return refuse(UI.systemsPage.nameRequired);
+    // The operator's systems have no prefix, and never take a customer's: an
+    // identifier under an organization's name is refused whether or not that
+    // system exists, so the refusal says nothing about a customer's systems.
+    const under = systemId.split(".")[0] ?? "";
+    if (prefix === "" && systemId.includes(".") && allSystems.organization(under) !== null) {
+      return refuse(UI.systemsPage.exists);
+    }
 
     try {
       // Checked before the chain is opened: a genesis cannot be taken back

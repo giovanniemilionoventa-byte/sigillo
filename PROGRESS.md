@@ -3326,6 +3326,28 @@ progetto).
   `--previous`. Il verificatore di `packages/verifier` non cambia di una riga.
 - **Da fare**: l'email dei Contatti (la riga si mostra solo quando c'è).
 
+### Sessione 31 — 2026-10-04 — l'amministratore non vede più i sistemi dei clienti
+
+Richiesta del proprietario: l'amministratore (accesso con password su `/ui/admin`) vedeva tra i
+propri sistemi anche gli agenti AI dei clienti. Da escludere del tutto.
+
+**Prima.** `storeFor` restituiva all'operatore lo store intero: nella console vedeva e apriva ogni
+sistema di ogni cliente (lista, cronologia con nomi delle azioni, strumenti, esiti e token
+pseudonimi, checkpoint, pagina "collega"), poteva rinominarli, archiviarli, dar loro una chiave
+nuova (che spegneva quella del cliente), esportarne il fascicolo (anche con l'identità delle
+persone e i nonce, se richiesti), trovava documenti nei loro sistemi, vedeva le loro ricevute nella
+pagina "persone" e le loro voci nel registro amministrativo. Mai il contenuto: il server non lo ha
+mai avuto, solo le impronte.
+
+**Dopo.** `storeFor` taglia anche la vista dell'operatore ai sistemi senza organizzazione, con lo
+stesso stand-in chiuso per default delle organizzazioni. La pagina Clienti resta (nome, chi
+accede, approvazione, numero di sistemi, quota). La pagina "persone" trova solo chi i sistemi
+dell'operatore hanno servito, e non cancella chi compare solo da un cliente (per quello resta
+`sigillo-server subject erase`). L'operatore non può creare un sistema col prefisso
+`<organizzazione>.` di un cliente. Test: `apps/server/test/tenancy.test.ts` ("the store as the
+operator sees it", "the web view, signed in as the operator"), più chiave e "collega" nei test
+delle organizzazioni. `docs/SECURITY.md` aggiornato.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
