@@ -145,6 +145,24 @@ describe("the public site", () => {
     expect(italian).toContain('<source src="/media/demo-it.mp4" type="video/mp4">');
   });
 
+  it("sends the two plans that cannot be started yet to an email, and shows the contact on the home page", async () => {
+    const pricing = (await get("/pricing")).body;
+    expect(pricing).toContain('href="/ui/registrati"');
+    expect(pricing).toContain('href="mailto:giovanniemilio.noventa@gmail.com?subject=Sigillo%3A%20Standard"');
+    expect(pricing).toContain('href="mailto:giovanniemilio.noventa@gmail.com?subject=Sigillo%3A%20Custom"');
+    expect(pricing).not.toContain('class="btn plain" href="/ui/login"');
+    for (const [cookie, button, heading] of [
+      ["sigillo_lang=en", "Create an account", "Why Sigillo exists"],
+      ["sigillo_lang=it", "Crea un account", "Perché esiste Sigillo"],
+    ] as const) {
+      const home = (await get("/", { cookie })).body;
+      expect(home).toContain(`>${button}</a>`);
+      expect(home).toContain(heading);
+      expect(home).toContain('<section id="contact">');
+      expect(home).toContain('mailto:giovanniemilio.noventa@gmail.com">');
+    }
+  });
+
   it("says where each command goes, one command per box, with the server's own address", async () => {
     const page = (await get("/connect")).body;
     const t = SITE_TEXTS.en.connect;
