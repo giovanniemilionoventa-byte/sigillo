@@ -3326,7 +3326,16 @@ progetto).
   `--previous`. Il verificatore di `packages/verifier` non cambia di una riga.
 - **Da fare**: l'email dei Contatti (la riga si mostra solo quando c'è).
 
-### Sessione 31 — 2026-10-04 — l'amministratore non vede più i sistemi dei clienti
+### Sessione 31 — 2026-10-04 — la dashboard di esempio alla radice
+
+Chi apre get-sigillo.eu ora vede subito una dashboard con dati di esempio e "Accedi" in alto a destra; la presentazione (video, prezzi, come collegare, verifica) resta nel menu, con "Presentazione" su `/about`.
+
+- La dashboard è la pagina principale della console vera, resa una volta da un archivio vero (firme vere, TSA locale, orologio fisso) e salvata in `apps/server/assets/site/demo-en.html` e `demo-it.html`. Link e moduli portano all'accesso. Nessuna chiave, nessun dato di cliente, nessuna sessione di sola lettura.
+- `apps/server/test/demo-snapshot.test.ts` rigenera i file e fallisce se la console è cambiata: si aggiornano con `pnpm tsx scripts/demo-snapshot.ts`.
+- Il costo per il verificatore: nessuno (non toccato). Circa 250 righe tra aiuto di test, script e codice del sito.
+- Schermate in `/mnt/project-files/design/sito/v4/`.
+
+### Sessione 32 — 2026-10-04 — l'amministratore non vede più i sistemi dei clienti
 
 Richiesta del proprietario: l'amministratore (accesso con password su `/ui/admin`) vedeva tra i
 propri sistemi anche gli agenti AI dei clienti. Da escludere del tutto.
