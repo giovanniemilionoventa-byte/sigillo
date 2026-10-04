@@ -19,6 +19,15 @@ pnpm tsx video/registra.ts tutto               # prepare the data, record the si
 video/monta.sh                                 # join them: video/out/sigillo-demo.mp4 and .srt
 ```
 
+For the English video, set `SIGILLO_VIDEO_LANG=en` for both commands: the
+browser asks the console for English, and everything that is the video's own
+(the system's name, the terminal, the one-character tool, the titles, the
+subtitles) follows `video/lingua.ts`. The output gets an `-en` suffix
+(`out/scene-en/`, `sigillo-demo-en.mp4`, `sigillo-demo-en.srt`,
+`sigillo-demo-en-subtitled.mp4`) and its own saved state, so the two
+languages never mix. The CVs and the agent's own printed lines stay
+Italian: they are the demo's data and a real program's output.
+
 One scene can be redone alone, from the state it needs:
 `pnpm tsx video/registra.ts scena 3`, then `video/monta.sh` again.
 
@@ -33,10 +42,11 @@ scene 6, to `get-sigillo.eu`.
 | `registra.ts` | the scenes, the demo data, the title cards, the subtitles |
 | `lib.ts` | the stack (signer and server from `dist/`), the screen recorder, the pointer, the terminal window |
 | `cambia-un-carattere.mjs` | writes a copy of a fascicolo or a CV with exactly one character changed, and says which (scene 5) |
-| `parlato.ts` | the narration, scene by scene, in Italian: voice-over text and subtitles |
+| `parlato.ts` | the narration, scene by scene, in Italian and English: voice-over text and subtitles |
+| `lingua.ts` | the language of the recording (`SIGILLO_VIDEO_LANG`), and the words on screen that depend on it |
 | `monta.sh` | ffmpeg: titles over scenes 1 and 6, a short fade at each cut, H.264 30 fps, no audio |
 | `out/` | everything produced (ignored by git): `scene/*.mp4` one per scene, `sigillo-demo.mp4`, `sigillo-demo.srt` |
-| `consegna/` | the delivered copy of the recording of 2026-10-04: the six scenes, the joined film, the subtitles |
+| `consegna/` | the delivered copy of the recording of 2026-10-04: the six scenes, the joined film, the subtitles; `consegna/en/` the same in English |
 
 The demo's state (signing key, database, ingest token) lives outside the
 repository, in the system temporary directory (`SIGILLO_VIDEO_STATE` to
