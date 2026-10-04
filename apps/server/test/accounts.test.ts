@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { type Browser, chromium, type Page } from "playwright-core";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect } from "vitest";
+import { it } from "./helpers/italian.js";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { FirebaseAuth, FirebaseError, SECURETOKEN_CERTS } from "../src/auth/firebase.js";
 import { UiSessions } from "../src/auth/sessions.js";
@@ -724,7 +725,7 @@ describe.skipIf(BROWSER_PATH === undefined)("signing in with Google, in a real b
    * another site, as it does for real.
    */
   async function throughGoogle(): Promise<Page> {
-    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const context = await browser.newContext({ ignoreHTTPSErrors: true, locale: "it-IT" });
     context.setDefaultTimeout(5_000);
     const page = await context.newPage();
     await page.goto(`${base}/ui/login`);

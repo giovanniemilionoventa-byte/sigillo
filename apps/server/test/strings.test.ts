@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
+import { it } from "./helpers/italian.js";
 import type { Receipt } from "@sigillo/core";
 import {
   artifactRoleWords,

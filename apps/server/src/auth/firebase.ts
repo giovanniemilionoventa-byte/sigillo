@@ -82,19 +82,23 @@ export class FirebaseAuth {
     return this.verifyIdToken(stringField(reply, "idToken"));
   }
 
-  /** A new email-and-password account; Firebase then sends the address a verification link. */
-  async signUp(email: string, password: string): Promise<void> {
+  /**
+   * A new email-and-password account; Firebase then sends the address a
+   * verification link. `language` ("en", "it") is the email's: Firebase reads
+   * it from X-Firebase-Locale and writes its own template in that language.
+   */
+  async signUp(email: string, password: string, language?: string): Promise<void> {
     const reply = await this.call("accounts:signUp", { email, password, returnSecureToken: true });
-    await this.sendVerification(stringField(reply, "idToken"));
+    await this.sendVerification(stringField(reply, "idToken"), language);
   }
 
-  async sendVerification(idToken: string): Promise<void> {
-    await this.call("accounts:sendOobCode", { requestType: "VERIFY_EMAIL", idToken });
+  async sendVerification(idToken: string, language?: string): Promise<void> {
+    await this.call("accounts:sendOobCode", { requestType: "VERIFY_EMAIL", idToken }, language);
   }
 
   /** Firebase emails a reset link if the address has an account, and says nothing either way. */
-  async sendPasswordReset(email: string): Promise<void> {
-    await this.call("accounts:sendOobCode", { requestType: "PASSWORD_RESET", email });
+  async sendPasswordReset(email: string, language?: string): Promise<void> {
+    await this.call("accounts:sendOobCode", { requestType: "PASSWORD_RESET", email }, language);
   }
 
   /**
@@ -206,12 +210,12 @@ export class FirebaseAuth {
     return keys;
   }
 
-  private async call(method: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  private async call(method: string, body: Record<string, unknown>, language?: string): Promise<Record<string, unknown>> {
     let response;
     try {
       response = await this.fetch(`${IDENTITY_TOOLKIT}/${method}?key=${encodeURIComponent(this.settings.apiKey)}`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...(language === undefined ? {} : { "x-firebase-locale": language }) },
         body: JSON.stringify(body),
       });
     } catch {

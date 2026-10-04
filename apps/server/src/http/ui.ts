@@ -58,6 +58,7 @@ import {
   type SystemsView,
   type Theme,
 } from "./pages.js";
+import { currentLanguage, isLanguage, LANGUAGE_COOKIE, languageFor, withLanguage, type Language } from "./locale.js";
 import { systemTitle, UI } from "./strings.js";
 import { ICONS, STATE_ICONS } from "./style.js";
 
@@ -307,6 +308,29 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     return `HttpOnly; SameSite=Strict; Path=/${secure ? "; Secure" : ""}`;
   };
 
+  /** The reader's language: the one chosen on a sign-in page or in Impostazioni, else the browser's (locale.ts). */
+  const languageOf = (request: FastifyRequest): Language => {
+    const acceptLanguage = request.headers["accept-language"];
+    return languageFor(
+      cookieNamed(request, LANGUAGE_COOKIE),
+      typeof acceptLanguage === "string" ? acceptLanguage : undefined,
+      currentLanguage(),
+    );
+  };
+
+  // Every page of the view is written in its reader's language: each route's
+  // handler runs inside withLanguage, which strings.ts reads. The language
+  // switch of a sign-in page returns to the page it is on when that page was
+  // asked for plainly, and to the sign-in page after a form.
+  app.addHook("onRoute", (route) => {
+    if (!route.url.startsWith("/ui")) return;
+    const handler = route.handler;
+    route.handler = function (this: FastifyInstance, request, reply) {
+      const back = request.method === "GET" && isUi(request) ? request.url : "/ui/login";
+      return withLanguage(languageOf(request), back, () => handler.call(this, request, reply));
+    };
+  });
+
   /** The theme the reader chose, from its cookie: anything but "light" or "dark" is the system's. */
   const themeOf = (request: FastifyRequest): Theme => {
     const value = cookieNamed(request, THEME_COOKIE);
@@ -378,7 +402,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const theme = themeOf(request);
     if (theme === "system" || typeof payload !== "string") return payload;
     if (!String(reply.getHeader("content-type") ?? "").startsWith("text/html")) return payload;
-    return payload.replace('<html lang="it">', `<html lang="it" data-theme="${theme}">`);
+    return payload.replace(/^(<!doctype html>\n<html lang="[a-z]+")>/, `$1 data-theme="${theme}">`);
   });
 
   // SameSite=Strict already keeps the cookie off cross-site requests in
@@ -423,8 +447,8 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   // email and then its password) and the operator's password has its own
   // address, /ui/admin; without them, /ui/login is the operator's password.
 
-  const operatorTitle = options.accounts === undefined ? UI.login.title : UI.login.adminTitle;
-  const operatorLogin = (message?: string): string => operatorLoginPage(message, operatorTitle);
+  const operatorLogin = (message?: string): string =>
+    operatorLoginPage(message, options.accounts === undefined ? UI.login.title : UI.login.adminTitle);
 
   app.get("/ui/login", async (request, reply) => {
     if (viewerOf(request) !== null) return reply.redirect("/ui", 302);
@@ -796,10 +820,11 @@ ${exportSheet(record)}`,
   const renderManage = (session: Session, record: SystemRecord, extra: { notice?: string; error?: string } = {}): string =>
     systemPage(session, record, "manage", `${systemTitle(record)} — ${UI.settings.title}`, managePage(record, extra, activeKeys(record.system_id)));
 
-  const DONE: Record<string, string> = {
-    nome: UI.manage.renamed,
-    archiviato: UI.manage.archived,
-    riattivato: UI.manage.unarchived,
+  // Keys into UI.manage, read when a page is written, in its reader's language.
+  const DONE: Record<string, "renamed" | "archived" | "unarchived"> = {
+    nome: "renamed",
+    archiviato: "archived",
+    riattivato: "unarchived",
   };
 
   app.get("/ui/systems/:systemId/manage", async (request, reply) => {
@@ -810,7 +835,8 @@ ${exportSheet(record)}`,
     const record = store.systemRecord(systemId);
     if (record === null) return notFound(session, reply);
     const done = (request.query as { fatto?: string }).fatto;
-    const notice = done === undefined ? undefined : DONE[done];
+    const key = done !== undefined && Object.hasOwn(DONE, done) ? DONE[done] : undefined;
+    const notice = key === undefined ? undefined : UI.manage[key];
     return html(reply, renderManage(session, record, notice === undefined ? {} : { notice }));
   });
 
@@ -954,6 +980,18 @@ ${exportSheet(record)}`,
         ? `${THEME_COOKIE}=; ${cookieAttributes(request)}; Max-Age=0`
         : `${THEME_COOKIE}=${theme}; ${cookieAttributes(request)}; Max-Age=${THEME_MAX_AGE_SECONDS}`;
     return reply.header("set-cookie", cookie).redirect("/ui/impostazioni", 303);
+  });
+
+  // The language, from a sign-in page or from Impostazioni: no session needed,
+  // since the sign-in pages have the switch too. The way back is a page of the
+  // view, never somewhere else.
+  app.post("/ui/lingua", async (request, reply) => {
+    const body = request.body as { lang?: unknown; back?: unknown } | undefined;
+    const back =
+      typeof body?.back === "string" && /^\/ui(?:[/?][^\\\s]*)?$/.test(body.back) && !body.back.includes("..") ? body.back : "/ui";
+    if (!isLanguage(body?.lang)) return reply.redirect(back, 303);
+    const cookie = `${LANGUAGE_COOKIE}=${body.lang}; ${cookieAttributes(request)}; Max-Age=${THEME_MAX_AGE_SECONDS}`;
+    return reply.header("set-cookie", cookie).redirect(back, 303);
   });
 
   app.get("/ui/impostazioni/registro", async (request, reply) => {

@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { type Browser, chromium, type Page } from "playwright-core";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect } from "vitest";
+import { it } from "./helpers/italian.js";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
@@ -129,7 +130,7 @@ describe.skipIf(BROWSER_PATH === undefined)("verifica un documento, in a real br
 
   /** A brand-new browser context (no cache, no cookies, no history), signed in. */
   async function signedInPage(): Promise<{ page: Page; problems: string[] }> {
-    const context = await browser.newContext();
+    const context = await browser.newContext({ locale: "it-IT" });
     const page = await context.newPage();
     const problems: string[] = [];
     page.on("pageerror", (error) => problems.push(`${error.name}: ${error.message}`));
@@ -279,7 +280,7 @@ describe.skipIf(BROWSER_PATH === undefined)("verifica un documento, in a real br
   });
 
   it("says so, and keeps Verifica disabled, when the browser does not run the script", async () => {
-    const context = await browser.newContext();
+    const context = await browser.newContext({ locale: "it-IT" });
     const page = await context.newPage();
     // A policy whose hash no longer matches the script: what a browser gets
     // when the script changed and Caddy still serves the previous Caddyfile.

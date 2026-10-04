@@ -10,6 +10,7 @@ import {
   escape,
   initials,
   kindIcon,
+  languageSwitch,
   notices,
   outcomePill,
   pageHead,
@@ -23,9 +24,9 @@ import {
   adminActor,
   describeAdminAction,
   describeDocumentMatch,
-  formatClock,
   formatCount,
   formatDate,
+  formatListTime,
   formatTs,
   formatWhen,
   formatWhenInline,
@@ -53,13 +54,6 @@ export function receiptPath(systemId: string, seq: number): string {
 
 const chevron = ICONS.chevronRight.replace("<svg ", '<svg class="chevron" ');
 
-/** A short time for a list: "14:44" today, "Ieri" or "29 set" before. */
-function listTime(iso: string, now: Date): string {
-  const when = formatWhen(iso, now);
-  if (when.startsWith("Oggi, ")) return formatClock(iso);
-  if (when.startsWith("Ieri, ")) return "Ieri";
-  return when.replace(/ \d{4}, .*$/, "");
-}
 
 /** An organization's use of its monthly quota, when it has one. */
 export interface Quota {
@@ -115,7 +109,7 @@ function tiles(store: ReceiptStore, shown: SystemRow[], now: Date): string {
 ${tile(formatCount(all), t.today)}
 ${tile(formatCount(blocked), t.blocked, blocked > 0 ? "yellow" : "")}
 ${tile(formatCount(failed), t.failed, failed > 0 ? "red" : "")}
-${tile(lastSeal === null ? "—" : listTime(lastSeal, now), t.lastSeal)}
+${tile(lastSeal === null ? "—" : formatListTime(lastSeal, now), t.lastSeal)}
 </div>`;
 }
 
@@ -176,7 +170,7 @@ export function homePage(view: {
   const activity = recent
     .map(
       ({ record, receipt }) =>
-        `<li><a class="line" href="${receiptPath(record.system_id, receipt.seq)}"><span class="line-time">${escape(listTime(receipt.ts_received, now))}</span>${kindIcon(receipt.action.kind)}<span class="line-text">${escape(receiptTitle(receipt))}</span><span class="line-aside system">${escape(systemTitle(record))}</span>${
+        `<li><a class="line" href="${receiptPath(record.system_id, receipt.seq)}"><span class="line-time">${escape(formatListTime(receipt.ts_received, now))}</span>${kindIcon(receipt.action.kind)}<span class="line-text">${escape(receiptTitle(receipt))}</span><span class="line-aside system">${escape(systemTitle(record))}</span>${
           receipt.outcome === "ok" ? "" : outcomePill(receipt.outcome)
         }</a></li>`,
     )
@@ -295,7 +289,7 @@ function connectWays(systemId: string, endpoint: string, token: string | null): 
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
   const python = [
-    "# pip install -e 'sdk-python[langchain]'   (o [crewai], [openai])",
+    `# pip install -e 'sdk-python[langchain]'   ${UI.snippet.extras}`,
     "import sigillo",
     "",
     "sigillo.init(",
@@ -306,7 +300,7 @@ function connectWays(systemId: string, endpoint: string, token: string | null): 
     ")",
   ].join("\n");
   const otel = [
-    "# L'esportatore OTLP/HTTP del tuo agente, puntato a sigillo",
+    UI.snippet.otelComment,
     `OTEL_EXPORTER_OTLP_ENDPOINT="${endpoint}"`,
     `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20${key}"`,
     `OTEL_SERVICE_NAME="${systemId}"`,
@@ -315,8 +309,8 @@ function connectWays(systemId: string, endpoint: string, token: string | null): 
     `curl -X POST ${endpoint}/api/v1/receipts \\`,
     `  -H "Authorization: Bearer ${key}" \\`,
     '  -H "Content-Type: application/json" \\',
-    `  -d '{"actor": {"agent": "agente"},`,
-    `       "action": {"kind": "decision", "name": "azione"},`,
+    `  -d '{"actor": {"agent": "${UI.snippet.agent}"},`,
+    `       "action": {"kind": "decision", "name": "${UI.snippet.action}"},`,
     `       "outcome": "ok"}'`,
   ].join("\n");
   const way = (id: string, tile: string, icon: string, label: string, tag = ""): string =>
@@ -626,7 +620,7 @@ export type Theme = "light" | "dark" | "system";
 
 /** One entry of the administrative log as a line: when, what, who. */
 function adminLine(entry: AdminLogEntry, now: Date): string {
-  return `<li class="line"><span class="line-time">${escape(listTime(entry.ts, now))}</span><span class="line-text" title="${escape(formatTs(entry.ts))}">${escape(describeAdminAction(entry))}</span><span class="line-aside">${escape(adminActor(entry.actor))}</span></li>`;
+  return `<li class="line"><span class="line-time">${escape(formatListTime(entry.ts, now))}</span><span class="line-text" title="${escape(formatTs(entry.ts))}">${escape(describeAdminAction(entry))}</span><span class="line-aside">${escape(adminActor(entry.actor))}</span></li>`;
 }
 
 /** The settings: who is signed in, the organization and its quota, the look, the administrative log, the signing key. */
@@ -666,6 +660,8 @@ ${notices(view.extra)}
 ${quota}
 <section class="section" aria-labelledby="aspetto"><h2 id="aspetto">${escape(t.appearance)}</h2>
 <form method="post" action="/ui/impostazioni/tema" class="segmented" aria-label="${escape(t.themeLabel)}">${themes}</form></section>
+<section class="section" aria-labelledby="lingua"><h2 id="lingua">${escape(UI.languageLabel)}</h2>
+${languageSwitch("segmented", "/ui/impostazioni")}</section>
 <section class="section" aria-labelledby="registro-amministrativo"><h2 id="registro-amministrativo">${escape(t.adminLog)}${
     view.log.length === 0 ? "" : `<a class="end" href="/ui/impostazioni/registro">${escape(t.adminLogAll)}</a>`
   }</h2>
