@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect } from "vitest";
 import { it } from "./helpers/italian.js";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
+import { readOffsiteSettings, STATUS_FILE } from "../src/backup/offsite.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { escape } from "../src/http/layout.js";
@@ -250,5 +251,115 @@ describe("countReceiptsByOutcome", () => {
     await append("error", "2026-10-01T12:00:00.000Z");
     expect(store.countReceiptsByOutcome({ systemId: SYSTEM })).toEqual({ ok: 2, blocked: 1, error: 1 });
     expect(store.countReceiptsByOutcome({ systemId: SYSTEM, from: "2026-10-01T10:30:00.000Z" })).toEqual({ blocked: 1, error: 1 });
+  });
+});
+
+describe("the off-site backup, in the settings", () => {
+  async function withBackups(backupDirectory: string): Promise<{ app: FastifyInstance; cookie: string }> {
+    const healthMonitor = new ChainHealthMonitor(store, signer.publicKey, 24 * 60 * 60_000);
+    const backupsApp = buildServer({
+      store,
+      keys,
+      now: () => new Date(NOW),
+      ui: {
+        password: PASSWORD,
+        signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
+        healthMonitor,
+        checkpointer: new Checkpointer({ store, now: () => new Date(NOW) }),
+        backupDirectory,
+      },
+    });
+    await backupsApp.ready();
+    const login = await backupsApp.inject({
+      method: "POST",
+      url: "/ui/login",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      payload: `password=${encodeURIComponent(PASSWORD)}`,
+    });
+    return { app: backupsApp, cookie: String(login.headers["set-cookie"]).split(";")[0] ?? "" };
+  }
+  const seconds = (iso: string): number => Date.parse(iso) / 1000;
+  const status = (fields: object): void =>
+    writeFileSync(join(directory, STATUS_FILE), JSON.stringify({ last_success: null, last_failure: null, ...fields }));
+
+  it("is not there when the server does not know where the backups are", async () => {
+    expect((await get("/ui/impostazioni")).body).not.toContain(UI.settings.offsite.heading);
+    expect((await post("/ui/impostazioni/backup", "enabled=off")).statusCode).toBe(404);
+  });
+
+  it("starts on, every hour, and says the server has not tried yet", async () => {
+    const backups = await withBackups(directory);
+    try {
+      const body = (await backups.app.inject({ method: "GET", url: "/ui/impostazioni", headers: { cookie: backups.cookie } })).body;
+      expect(body).toContain(UI.settings.offsite.heading);
+      expect(body).toContain('data-offsite="never-ran"');
+      expect(body).toContain(`name="enabled" value="on" aria-pressed="true"`);
+      expect(body).toContain(`name="every" value="1" aria-pressed="true"`);
+    } finally {
+      await backups.app.close();
+    }
+  });
+
+  it("saves one choice at a time, keeping the other, and hides the frequency while off", async () => {
+    const backups = await withBackups(directory);
+    const send = (payload: string) =>
+      backups.app.inject({
+        method: "POST",
+        url: "/ui/impostazioni/backup",
+        headers: { cookie: backups.cookie, "content-type": "application/x-www-form-urlencoded" },
+        payload,
+      });
+    try {
+      expect((await send("every=6")).headers["location"]).toBe("/ui/impostazioni");
+      expect(readOffsiteSettings(directory)).toEqual({ enabled: true, everyHours: 6 });
+      await send("enabled=off");
+      expect(readOffsiteSettings(directory)).toEqual({ enabled: false, everyHours: 6 });
+      const off = (await backups.app.inject({ method: "GET", url: "/ui/impostazioni", headers: { cookie: backups.cookie } })).body;
+      expect(off).toContain('data-offsite="off"');
+      expect(off).not.toContain('name="every"');
+      // Anything else is left as it was.
+      await send("every=5&enabled=maybe");
+      expect(readOffsiteSettings(directory)).toEqual({ enabled: false, everyHours: 6 });
+      await send("enabled=on");
+      expect(readOffsiteSettings(directory)).toEqual({ enabled: true, everyHours: 6 });
+      expect(
+        (await backups.app.inject({ method: "POST", url: "/ui/impostazioni/backup", headers: { "content-type": "application/x-www-form-urlencoded" }, payload: "enabled=off" }))
+          .statusCode,
+      ).toBe(302);
+      expect(readOffsiteSettings(directory).enabled).toBe(true);
+    } finally {
+      await backups.app.close();
+    }
+  });
+
+  it("shows what the script last reported, the most urgent first", async () => {
+    const backups = await withBackups(directory);
+    const state = async (): Promise<string> => {
+      const body = (await backups.app.inject({ method: "GET", url: "/ui/impostazioni", headers: { cookie: backups.cookie } })).body;
+      return /data-offsite="([a-z-]+)"/.exec(body)?.[1] ?? "";
+    };
+    try {
+      status({ checked: seconds("2026-10-01T12:00:00Z"), drive: false });
+      expect(await state()).toBe("not-connected");
+      status({ checked: seconds("2026-10-01T12:00:00Z"), drive: true });
+      expect(await state()).toBe("waiting");
+      status({ checked: seconds("2026-10-01T12:00:00Z"), drive: true, last_success: seconds("2026-10-01T12:00:00Z") });
+      expect(await state()).toBe("ok");
+      expect((await backups.app.inject({ method: "GET", url: "/ui/impostazioni", headers: { cookie: backups.cookie } })).body).toContain(
+        UI.settings.offsite.states.ok("oggi alle 14:00"),
+      );
+      status({
+        checked: seconds("2026-10-01T12:00:00Z"),
+        drive: true,
+        last_success: seconds("2026-10-01T11:00:00Z"),
+        last_failure: seconds("2026-10-01T12:00:00Z"),
+      });
+      expect(await state()).toBe("failed");
+      // Three hours of silence: the hourly runs have stopped.
+      status({ checked: seconds("2026-10-01T09:30:00Z"), drive: true, last_success: seconds("2026-10-01T09:30:00Z") });
+      expect(await state()).toBe("not-running");
+    } finally {
+      await backups.app.close();
+    }
   });
 });

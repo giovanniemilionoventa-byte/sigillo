@@ -566,10 +566,14 @@ Deve stampare `wrote … bytes to /var/lib/sigillo-backups/sigillo-….db` e
 
 #### Copia su Google Drive, cifrata
 
-Ogni ora `backup-offsite.sh` comprime l'ultima copia, la **cifra** e la carica
-su Google Drive. Su Drive tiene la copia dell'ultima ora e una per ciascuno dei
-30 giorni prima (`SIGILLO_OFFSITE_KEEP_DAYS` per cambiarli); le più vecchie le
-cancella da solo. Il database contiene i dati dei clienti, quindi esce dal
+`backup-offsite.sh` comprime l'ultima copia, la **cifra** e la carica su Google
+Drive. Su Drive tiene la copia più recente e una per ciascuno dei 30 giorni
+prima (`SIGILLO_OFFSITE_KEEP_DAYS` per cambiarli); le più vecchie le cancella da
+solo. Se la copia è attiva e ogni quanto si fa (ogni ora, 6 ore, 12 ore o una
+volta al giorno) si sceglie dalla pagina web, in **Impostazioni → Backup su
+Google Drive**, entrando come amministratore; lì si vede anche quando è stata
+fatta l'ultima copia, o se qualcosa non va (Drive non collegato, copia non
+riuscita, script che non gira più). All'inizio è attiva, ogni ora. Il database contiene i dati dei clienti, quindi esce dal
 server solo cifrato: chi apre il Drive vede file `sigillo-….db.gz.bin` che non
 si possono leggere senza la password.
 
@@ -637,7 +641,7 @@ $ /srv/sigillo/deploy/backup-offsite.sh
 
 Deve finire con `off-site copy: uploaded sigillo-….db.gz to sigillo-backup:` e
 `off-site copies in sigillo-backup:: 1`. Su Drive compare la cartella
-`sigillo-backup`.
+`sigillo-backup`, e in Impostazioni "Ultima copia oggi alle …".
 
 6. Controlla che la password salvata sia quella giusta:
 

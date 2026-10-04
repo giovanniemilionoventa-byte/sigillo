@@ -10,6 +10,12 @@
 # that remote it stops after the local copy and says so: the off-host copy is
 # optional, the local one is not.
 #
+# Whether the copy is made, and how often (every 1, 6, 12 or 24 hours), is
+# chosen in the web view's Impostazioni, which writes offsite-settings.json in
+# the backups volume. The script reads it on every run, and writes back
+# offsite-status.json, which Impostazioni shows: when it last ran, whether
+# Drive is connected, and when the last copy succeeded or failed.
+#
 # sigillo-backup is meant to be an rclone "crypt" remote over a Google Drive
 # remote (6.1 shows how to make both). The database holds customers' data, so
 # it leaves this host only encrypted, with a password kept in rclone's config
@@ -82,16 +88,64 @@ if [ "${1:-}" = "--check" ]; then
 	exit 0
 fi
 
-docker compose exec -T server /app/backup.sh
+DIR=/var/lib/sigillo-backups
+in_server() {
+	docker compose exec -T server "$@"
+}
 
-if ! configured; then
+in_server /app/backup.sh
+
+# What Impostazioni chose (backup/offsite.ts writes it), and what the last run
+# reported. Missing, they read as the defaults: on, every hour, never copied.
+field() {
+	printf '%s' "$1" | sed -n "s/.*\"$2\":\([a-z0-9]*\).*/\1/p"
+}
+settings=$(in_server cat "$DIR/offsite-settings.json" 2>/dev/null || true)
+status=$(in_server cat "$DIR/offsite-status.json" 2>/dev/null || true)
+enabled=$(field "$settings" enabled)
+every=$(field "$settings" every_hours)
+case "$every" in
+1 | 6 | 12 | 24) ;;
+*) every=1 ;;
+esac
+last_success=$(field "$status" last_success)
+last_failure=$(field "$status" last_failure)
+case "$last_success" in *[!0-9]*) last_success= ;; esac
+case "$last_failure" in *[!0-9]*) last_failure= ;; esac
+now=$(date +%s)
+drive=false
+if configured; then drive=true; fi
+
+# Every run says so, copy or not: Impostazioni turns red when the runs stop.
+report() {
+	printf '{"checked":%s,"drive":%s,"last_success":%s,"last_failure":%s}\n' \
+		"$now" "$drive" "${last_success:-null}" "${last_failure:-null}" |
+		in_server sh -c "cat > $DIR/offsite-status.json.tmp && mv $DIR/offsite-status.json.tmp $DIR/offsite-status.json" ||
+		echo "off-site copy: could not write the status for Impostazioni" >&2
+}
+
+if [ "$enabled" = "false" ]; then
+	echo "off-site copy: turned off in Impostazioni, the backup stays on this host only"
+	report
+	exit 0
+fi
+if [ "$drive" = false ]; then
 	echo "off-site copy: not configured, the backup stays on this host only (docs/DEPLOY-PRODUZIONE.md, 6.1)"
+	report
+	exit 0
+fi
+# Ten minutes early counts as on time: cron's hour is not to the second.
+if [ -n "$last_success" ] && [ $((now - last_success)) -lt $((every * 3600 - 600)) ]; then
+	echo "off-site copy: the last one is less than $every h old"
+	report
 	exit 0
 fi
 
-latest=$(docker compose exec -T server sh -c 'ls -1t /var/lib/sigillo-backups/sigillo-*.db | head -n 1')
+latest=$(in_server sh -c "ls -1t $DIR/sigillo-*.db | head -n 1")
 if [ -z "$latest" ]; then
 	echo "off-site copy: no backup found in the server container" >&2
+	last_failure=$now
+	report
 	exit 1
 fi
 name="$(basename "$latest").gz"
@@ -99,12 +153,16 @@ name="$(basename "$latest").gz"
 # Streamed, so the copy never needs a second time its size on this disk. A
 # stream cut short still leaves a file behind: remove it, so the newest copy
 # on the remote is always a whole one.
-if ! docker compose exec -T server cat "$latest" | gzip -c | rclone rcat "$REMOTE$name"; then
+if ! in_server cat "$latest" | gzip -c | rclone rcat "$REMOTE$name"; then
 	rclone deletefile "$REMOTE$name" 2>/dev/null || true
 	echo "off-site copy: upload of $name to $REMOTE failed" >&2
+	last_failure=$now
+	report
 	exit 1
 fi
 echo "off-site copy: uploaded $name to $REMOTE"
+last_success=$now
+report
 
 # Newest first: the first copy of each day is kept, for the newest $KEEP_DAYS
 # days that have one; every other copy goes.

@@ -1,9 +1,10 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { readOffsiteStatus, STATUS_FILE, writeOffsiteSettings, type OffsiteSettings, type OffsiteStatus } from "../src/backup/offsite.js";
 
 /**
  * The production deployment files, checked as Docker Compose itself reads
@@ -251,21 +252,34 @@ describe.skipIf(process.platform === "win32")("deploy/update.sh", () => {
 
 /**
  * deploy/backup-offsite.sh, run for real by bash, with `docker` standing in
- * for the server container (a directory of backups) and `rclone` for the
- * remote (another directory). What is checked is the script's own logic:
- * that the local backup runs whether or not a remote is configured, that the
- * newest copy is what is uploaded, that the remote keeps one copy per day for
- * the days asked, and that an upload cut short leaves nothing behind. The
- * encryption itself is rclone's, and 6.1 has the script check it on the
- * server with `--check`.
+ * for the server container (a directory in place of the backups volume) and
+ * `rclone` for the remote (another directory). What is checked is the
+ * script's own logic: that the local backup runs whether or not a remote is
+ * configured, that it follows what Impostazioni chose, that the newest copy
+ * is what is uploaded, that the remote keeps one copy per day for the days
+ * asked, that an upload cut short leaves nothing behind, and that what it
+ * reports is what backup/offsite.ts reads. The encryption itself is
+ * rclone's, and 6.1 has the script check it on the server with `--check`.
  */
 describe.skipIf(process.platform === "win32")("deploy/backup-offsite.sh", () => {
+  const NOW = Math.floor(Date.now() / 1000);
+
   function runOffsite(options: {
     configured: boolean;
     onRemote?: string[];
     keepDays?: number;
     streamFails?: boolean;
-  }): { status: number | null; stdout: string; stderr: string; remote: Map<string, Buffer> | undefined; newest: Buffer } {
+    settings?: OffsiteSettings;
+    lastSuccess?: number;
+  }): {
+    status: number | null;
+    stdout: string;
+    stderr: string;
+    remote: string[];
+    uploaded: Buffer | undefined;
+    newest: Buffer;
+    reported: OffsiteStatus | null;
+  } {
     const root = mkdtempSync(join(tmpdir(), "sigillo-offsite-"));
     try {
       mkdirSync(join(root, "deploy"));
@@ -276,15 +290,26 @@ describe.skipIf(process.platform === "win32")("deploy/backup-offsite.sh", () => 
       mkdirSync(remote);
       for (const name of options.onRemote ?? []) writeFileSync(join(remote, name), "old");
       writeFileSync(join(container, "sigillo-20261001T100000Z.db"), "older copy");
+      if (options.settings !== undefined) writeOffsiteSettings(container, options.settings);
+      if (options.lastSuccess !== undefined) {
+        writeFileSync(
+          join(container, STATUS_FILE),
+          `{"checked":${options.lastSuccess},"drive":true,"last_success":${options.lastSuccess},"last_failure":null}\n`,
+        );
+      }
       const bin = join(root, "bin");
       mkdirSync(bin);
+      // `docker compose exec -T server <command>` runs <command> here, with
+      // the volume's path pointing at the stand-in directory.
       writeFileSync(
         join(bin, "docker"),
         `#!/bin/bash\n` +
-          `case "$*" in\n` +
-          `*/app/backup.sh) printf 'newest copy' > "${container}/sigillo-20261003T120000Z.db"; touch -d '+1 minute' "${container}/sigillo-20261003T120000Z.db" ;;\n` +
-          `*"sh -c"*) ls -1t "${container}"/sigillo-*.db | head -n 1 ;;\n` +
-          `*" cat "*) ${options.streamFails ? `head -c 4 "\${@: -1}"; exit 1` : `cat "\${@: -1}"`} ;;\n` +
+          `shift 4\n` +
+          `args=(); for a in "$@"; do args+=("\${a//\\/var\\/lib\\/sigillo-backups/${container}}"); done\n` +
+          `case "\${args[0]}" in\n` +
+          `/app/backup.sh) printf 'newest copy' > "${container}/sigillo-20261003T120000Z.db"; touch -d '+1 minute' "${container}/sigillo-20261003T120000Z.db" ;;\n` +
+          `cat) ${options.streamFails ? `[ "\${args[1]##*.}" = db ] && { head -c 4 "\${args[1]}"; exit 1; }; ` : ""}exec "\${args[@]}" ;;\n` +
+          `*) exec "\${args[@]}" ;;\n` +
           `esac\n`,
         { mode: 0o755 },
       );
@@ -309,18 +334,16 @@ describe.skipIf(process.platform === "win32")("deploy/backup-offsite.sh", () => 
           ...(options.keepDays === undefined ? {} : { SIGILLO_OFFSITE_KEEP_DAYS: String(options.keepDays) }),
         },
       });
-      const files = new Map(
-        execFileSync("ls", ["-1", remote], { encoding: "utf8" })
-          .split("\n")
-          .filter(Boolean)
-          .map((name) => [name, readFileSync(join(remote, name))] as const),
-      );
+      const remoteFiles = readdirSync(remote).sort();
+      const newestName = "sigillo-20261003T120000Z.db.gz";
       return {
         status: result.status,
         stdout: result.stdout,
         stderr: result.stderr,
-        remote: options.configured ? files : undefined,
+        remote: remoteFiles,
+        uploaded: remoteFiles.includes(newestName) ? readFileSync(join(remote, newestName)) : undefined,
         newest: readFileSync(join(container, "sigillo-20261003T120000Z.db")),
+        reported: readOffsiteStatus(container),
       };
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -328,19 +351,46 @@ describe.skipIf(process.platform === "win32")("deploy/backup-offsite.sh", () => 
   }
 
   it("still makes the local backup, and says so, when no remote is configured", () => {
-    const { status, stdout, newest } = runOffsite({ configured: false });
+    const { status, stdout, newest, remote, reported } = runOffsite({ configured: false });
     expect(status).toBe(0);
     expect(newest.toString()).toBe("newest copy");
     expect(stdout).toContain("off-site copy: not configured");
+    expect(remote).toEqual([]);
+    expect(reported).toMatchObject({ drive: false, lastSuccess: null, lastFailure: null });
+    expect(Math.abs((reported?.checked ?? 0) - NOW)).toBeLessThan(60);
   });
 
-  it("uploads the newest copy, compressed", () => {
-    const { status, remote, stdout } = runOffsite({ configured: true });
+  it("uploads the newest copy, compressed, and reports it as Impostazioni reads it", () => {
+    const { status, remote, uploaded, stdout, reported } = runOffsite({ configured: true });
     expect(status).toBe(0);
-    expect([...(remote?.keys() ?? [])]).toEqual(["sigillo-20261003T120000Z.db.gz"]);
-    const uploaded = remote?.get("sigillo-20261003T120000Z.db.gz") ?? Buffer.alloc(0);
-    expect(execFileSync("gzip", ["-dc"], { input: uploaded }).toString()).toBe("newest copy");
+    expect(remote).toEqual(["sigillo-20261003T120000Z.db.gz"]);
+    expect(execFileSync("gzip", ["-dc"], { input: uploaded ?? Buffer.alloc(0) }).toString()).toBe("newest copy");
     expect(stdout).toContain("off-site copies in sigillo-backup:: 1");
+    expect(reported?.drive).toBe(true);
+    expect(reported?.lastSuccess).toBe(reported?.checked);
+    expect(reported?.lastFailure).toBeNull();
+  });
+
+  it("makes no copy when Impostazioni turned it off, and still reports that it ran", () => {
+    const { status, remote, stdout, reported, newest } = runOffsite({
+      configured: true,
+      settings: { enabled: false, everyHours: 1 },
+    });
+    expect(status).toBe(0);
+    expect(newest.toString()).toBe("newest copy");
+    expect(remote).toEqual([]);
+    expect(stdout).toContain("turned off in Impostazioni");
+    expect(reported).toMatchObject({ drive: true, lastSuccess: null });
+  });
+
+  it("waits for the frequency chosen, counting from the last copy that succeeded", () => {
+    const early = runOffsite({ configured: true, settings: { enabled: true, everyHours: 6 }, lastSuccess: NOW - 5 * 3600 });
+    expect(early.status).toBe(0);
+    expect(early.remote).toEqual([]);
+    expect(early.reported?.lastSuccess).toBe(NOW - 5 * 3600);
+    const due = runOffsite({ configured: true, settings: { enabled: true, everyHours: 6 }, lastSuccess: NOW - 6 * 3600 + 300 });
+    expect(due.status).toBe(0);
+    expect(due.remote).toEqual(["sigillo-20261003T120000Z.db.gz"]);
   });
 
   it("keeps the newest copy of each day, for the newest days asked", () => {
@@ -356,17 +406,19 @@ describe.skipIf(process.platform === "win32")("deploy/backup-offsite.sh", () => 
       ],
     });
     expect(status).toBe(0);
-    expect([...(remote?.keys() ?? [])]).toEqual([
+    expect(remote).toEqual([
       "sigillo-20260920T100000Z.db.gz",
       "sigillo-20261002T230000Z.db.gz",
       "sigillo-20261003T120000Z.db.gz",
     ]);
   });
 
-  it("fails, and removes what it uploaded, when the copy cannot be read whole", () => {
+  it("fails, removes what it uploaded and reports the failure, when the copy cannot be read whole", () => {
     const failed = runOffsite({ configured: true, streamFails: true, onRemote: ["sigillo-20261002T230000Z.db.gz"] });
     expect(failed.status).toBe(1);
     expect(failed.stderr).toContain("off-site copy: upload of sigillo-20261003T120000Z.db.gz");
-    expect([...(failed.remote?.keys() ?? [])]).toEqual(["sigillo-20261002T230000Z.db.gz"]);
+    expect(failed.remote).toEqual(["sigillo-20261002T230000Z.db.gz"]);
+    expect(failed.reported?.lastFailure).toBe(failed.reported?.checked);
+    expect(failed.reported?.lastSuccess).toBeNull();
   });
 });
