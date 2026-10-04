@@ -315,8 +315,8 @@ ${failed ? authMessage({ error: message }) : ""}
 
 /**
  * The customers' sign-in page: Google, or an email address and then, on the
- * next page, its password. The operator's password is not here: it has its
- * own address (ui.ts, /ui/admin).
+ * next page, its password. The operator's password has its own page
+ * (ui.ts, /ui/admin), reached from a link at the foot of this one.
  */
 export function loginPage(extra: { notice?: string; error?: string } = {}): string {
   const t = UI.account;
@@ -329,7 +329,7 @@ export function loginPage(extra: { notice?: string; error?: string } = {}): stri
 ${authField(t.email, 'type="email" name="email" autocomplete="email" required')}
 <button type="submit" class="primary">${escape(t.continueEmail)}</button>
 </form>
-<p class="auth-foot"><a href="/ui/registrati">${escape(t.toSignUp)}</a></p>`,
+<p class="auth-foot"><a href="/ui/registrati">${escape(t.toSignUp)}</a><a href="/ui/admin">${escape(t.toAdmin)}</a></p>`,
   );
 }
 
