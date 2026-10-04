@@ -3290,10 +3290,15 @@ Richiesta del committente: lo stesso video con le schermate e i sottotitoli in i
 la console parla inglese e italiano. Gli script di `video/` scelgono la lingua con
 `SIGILLO_VIDEO_LANG=en`: il browser chiede l'inglese alla console (e al sito vero), e quello che
 è del video (nome del sistema, terminale, strumento `change-one-character`, titoli, parlato in
-`video/parlato.ts`) segue `video/lingua.ts`. Registrazione nuova da zero, con dati veri della demo
-come la prima; consegna in `video/consegna/en/`, versione con sottotitoli impressi compresa.
-Restano in italiano i curricula e le righe stampate dall'agente della demo: sono dati e output
-veri, non testo del video.
+`video/parlato.ts`) segue `video/lingua.ts`. Registrazione nuova da zero, con dati veri, come la prima;
+consegna in `video/consegna/en/`, versione con sottotitoli impressi compresa.
+
+Su richiesta del committente anche l'agente è in inglese: nuova demo `demo/cv-screening`, la
+versione inglese di `selezione-cv`. Stesso agente LangGraph con gli strumenti `read_cv`,
+`evaluate_candidate` e `send_email`, gli stessi 20 candidati con i curricula tradotti
+(`candidate-XX.txt`), esiti `interview` / `not_suitable`. `tests/test_parity.py`, aggiunto alla
+CI, controlla che ogni curriculum inglese abbia lo stesso punteggio e lo stesso esito del suo
+originale italiano. Il video inglese usa questa demo: sullo schermo non resta nulla in italiano.
 
 ### Sessione 27 — 2026-10-04 — collegare Google Drive con un solo script
 

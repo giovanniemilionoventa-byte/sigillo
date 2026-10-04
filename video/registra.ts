@@ -55,7 +55,8 @@ import { PARLATO } from "./parlato.js";
 const SCENES = join(OUT, `scene${T.suffix}`);
 const FULL = { width: 1920, height: 1080 };
 const DISPLAY_NAME = T.displayName;
-const cv = (n: number): string => `candidato-${String(n).padStart(2, "0")}.txt`;
+const cv = (n: number): string => `${T.cvPrefix}-${String(n).padStart(2, "0")}.txt`;
+const CV_07 = cv(7);
 const MORNING = Array.from({ length: 14 }, (_, i) => cv(i + 1));
 const LIVE = Array.from({ length: 6 }, (_, i) => cv(i + 15));
 
@@ -198,7 +199,7 @@ async function scena2(): Promise<void> {
     actor.y = 800;
     await actor.goto(`${ADDRESS}/ui`);
     const termContext = await browser.newContext({ viewport: right, locale: T.locale });
-    const terminal = await Terminal.open(termContext, { fontSize: 14, cwdLabel: "agente", title: T.agentTerminal });
+    const terminal = await Terminal.open(termContext, { fontSize: 14, cwdLabel: T.agentFolder, title: T.agentTerminal });
     const consoleRec = new Recorder(actor.page, frames("2-console"), left);
     const termRec = new Recorder(terminal.page, frames("2-terminale"), right);
     await consoleRec.start();
@@ -208,14 +209,14 @@ async function scena2(): Promise<void> {
     await actor.hover(actor.page.getByText(T.label.actionsToday));
     await sleep(800);
     for (const cv of LIVE) {
-      const folder = join(OUT, "agente", cv.replace(".txt", ""));
+      const folder = join(OUT, T.agentFolder, cv.replace(".txt", ""));
       rmSync(folder, { recursive: true, force: true });
       mkdirSync(join(folder, "curricula"), { recursive: true });
-      cpSync(join(ROOT, "demo", "selezione-cv", "agent.py"), join(folder, "agent.py"));
-      cpSync(join(ROOT, "demo", "selezione-cv", "curricula", cv), join(folder, "curricula", cv));
+      cpSync(join(ROOT, "demo", T.demo, "agent.py"), join(folder, "agent.py"));
+      cpSync(join(ROOT, "demo", T.demo, "curricula", cv), join(folder, "curricula", cv));
       // The command shown is the command run: the demo's agent.py, beside a folder holding this one CV.
       const python = process.env["SIGILLO_VIDEO_PYTHON"] ?? "python3";
-      await terminal.run(`python3 ${cv.replace(".txt", "")}/agent.py`, join(OUT, "agente"), {
+      await terminal.run(`python3 ${cv.replace(".txt", "")}/agent.py`, join(OUT, T.agentFolder), {
         PATH: `${join(python, "..")}:${process.env["PATH"] ?? ""}`,
         SIGILLO_ENDPOINT: ADDRESS,
         SIGILLO_API_KEY: token,
@@ -228,7 +229,7 @@ async function scena2(): Promise<void> {
       await sleep(700);
     }
     await sleep(800);
-    await actor.hover(actor.page.locator(".lines a, a.row, li a").filter({ hasText: "invia_email" }).first(), 220);
+    await actor.hover(actor.page.locator(".lines a, a.row, li a").filter({ hasText: T.sendTool }).first(), 220);
     await sleep(2200);
     const to = Date.now();
     await consoleRec.stop();
@@ -261,7 +262,7 @@ async function scena3(): Promise<void> {
     await recorder.start();
     await sleep(1500);
     const page = actor.page;
-    await actor.click(page.locator("a.row").filter({ hasText: "valuta_candidato" }).first(), { fromLeft: 260, navigates: true, after: 2000 });
+    await actor.click(page.locator("a.row").filter({ hasText: T.evaluateTool }).first(), { fromLeft: 260, navigates: true, after: 2000 });
     await actor.hover(page.locator("aside, .inspector").getByText(T.label.when, { exact: true }).first());
     await sleep(1200);
     await actor.click(page.locator("details.tech > summary").first(), { after: 1500 });
@@ -333,7 +334,7 @@ async function scena5(): Promise<void> {
   const downloads = join(OUT, T.downloads);
   rmSync(downloads, { recursive: true, force: true });
   mkdirSync(downloads, { recursive: true });
-  cpSync(join(ROOT, "demo", "selezione-cv", "curricula", "candidato-07.txt"), join(downloads, "candidato-07.txt"));
+  cpSync(join(ROOT, "demo", T.demo, "curricula", CV_07), join(downloads, CV_07));
   const bin = toolsOnPath();
   let zipName = "";
 
@@ -377,7 +378,7 @@ async function scena5(): Promise<void> {
       await sleep(2000);
       await terminal.run(`sigillo-verify ${T.copyZip}`, downloads, env, verdict);
       await sleep(4000);
-      await terminal.run(`${T.changeTool} candidato-07.txt ${T.copyCv}`, downloads, env);
+      await terminal.run(`${T.changeTool} ${CV_07} ${T.copyCv}`, downloads, env);
       await sleep(2000);
       await recorder.stop();
       recorder.encode(sceneFile("scena-5b"));
@@ -394,7 +395,7 @@ async function scena5(): Promise<void> {
       await recorder.start();
       await sleep(1200);
       const page = actor.page;
-      for (const file of ["candidato-07.txt", T.copyCv]) {
+      for (const file of [CV_07, T.copyCv]) {
         // The drop zone is a label around the file field: a click on it opens the file chooser.
         const [chooser] = await Promise.all([page.waitForEvent("filechooser"), actor.click(page.locator("label.drop"), { after: 400 })]);
         await chooser.setFiles(join(downloads, file));

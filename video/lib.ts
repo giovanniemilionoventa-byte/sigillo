@@ -28,7 +28,7 @@ export const OUT = join(ROOT, "video", "out");
 export const SIGNER = join(ROOT, "apps", "signer", "dist", "cli.js");
 export const SERVER = join(ROOT, "apps", "server", "dist", "cli.js");
 export const VERIFIER = join(ROOT, "packages", "verifier", "dist", "cli.js");
-export const SYSTEM_ID = "selezione-cv";
+export const SYSTEM_ID = T.systemId;
 export const PORT = Number(process.env["SIGILLO_VIDEO_PORT"] ?? "8123");
 export const ADDRESS = `http://127.0.0.1:${PORT}`;
 /** A throwaway password for a throwaway local server; never used anywhere else. */
@@ -146,7 +146,7 @@ export function restoreState(name: string): void {
 /**
  * Runs the real demo agent over the given CVs. The agent reads every CV in
  * the `curricula/` folder beside it, so it runs from a copy of
- * demo/selezione-cv/agent.py next to a folder holding just these CVs: the
+ * the demo's agent.py (demo/selezione-cv or demo/cv-screening, video/lingua.ts) next to a folder holding just these CVs: the
  * agent's code is the demo's, unchanged.
  */
 export function agentRun(
@@ -155,11 +155,11 @@ export function agentRun(
   token: string,
   onLine: (line: string) => void = () => {},
 ): Promise<number> {
-  const folder = join(OUT, "agente", name);
+  const folder = join(OUT, T.agentFolder, name);
   rmSync(folder, { recursive: true, force: true });
   mkdirSync(join(folder, "curricula"), { recursive: true });
-  cpSync(join(ROOT, "demo", "selezione-cv", "agent.py"), join(folder, "agent.py"));
-  for (const cv of cvs) cpSync(join(ROOT, "demo", "selezione-cv", "curricula", cv), join(folder, "curricula", cv));
+  cpSync(join(ROOT, "demo", T.demo, "agent.py"), join(folder, "agent.py"));
+  for (const cv of cvs) cpSync(join(ROOT, "demo", T.demo, "curricula", cv), join(folder, "curricula", cv));
   const child = spawn(PYTHON, ["-u", "agent.py"], {
     cwd: folder,
     env: {

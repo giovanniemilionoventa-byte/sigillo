@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Luca Ferraris
+
+Education:
+Bachelor's degree in Computer Science.
+
+Experience:
+2 years of experience as a backend developer at a small software house,
+mainly on internal services and integrations with third-party systems.
+
+Technical skills:
+Python, SQL, Git, Docker, REST, Linux.
+
+Availability: immediate.

@@ -7,9 +7,10 @@
  * title cards, the narration) follows it. The labels below are the console's
  * own words (apps/server/src/http/strings-*.ts), used to find what to point at.
  *
- * What stays Italian in the English video, because it is the demo's data or
- * a real program's output, not the video's: the CVs, and the lines the
- * selezione-cv agent prints.
+ * The demo agent follows it too: the Italian video runs demo/selezione-cv
+ * (tools leggi_curriculum, valuta_candidato, invia_email; candidato-XX.txt),
+ * the English one demo/cv-screening, the same agent and CVs in English
+ * (read_cv, evaluate_candidate, send_email; candidate-XX.txt).
  */
 export type Lingua = "it" | "en";
 
@@ -20,6 +21,11 @@ export const LINGUA: Lingua = raw;
 const TEXT = {
   it: {
     locale: "it-IT",
+    demo: "selezione-cv",
+    systemId: "selezione-cv",
+    cvPrefix: "candidato",
+    evaluateTool: "valuta_candidato",
+    sendTool: "invia_email",
     posixLocale: "it_IT.UTF-8",
     /** Appended to the output names: nothing for Italian, so the first video's paths stay as they were. */
     suffix: "",
@@ -38,6 +44,7 @@ const TEXT = {
       fingerprint: /^Impronta$/,
       linkedTo: /^Collegata alla ricevuta/,
     },
+    agentFolder: "agente",
     downloads: "Scaricati",
     agentTerminal: "Terminale — l'agente di selezione",
     downloadsTerminal: "Terminale — Scaricati",
@@ -49,6 +56,11 @@ const TEXT = {
   },
   en: {
     locale: "en-GB",
+    demo: "cv-screening",
+    systemId: "cv-screening",
+    cvPrefix: "candidate",
+    evaluateTool: "evaluate_candidate",
+    sendTool: "send_email",
     posixLocale: "en_GB.UTF-8",
     suffix: "-en",
     displayName: "CV screening — junior backend",
@@ -66,12 +78,13 @@ const TEXT = {
       fingerprint: /^Fingerprint$/,
       linkedTo: /^Linked to receipt/,
     },
+    agentFolder: "agent",
     downloads: "Downloads",
     agentTerminal: "Terminal — the screening agent",
     downloadsTerminal: "Terminal — Downloads",
     changeTool: "change-one-character",
     copyZip: "copy.zip",
-    copyCv: "candidato-07-copy.txt",
+    copyCv: "candidate-07-copy.txt",
     openingTitle: "The tamper-proof ledger<br>for your AI agents",
     closingTitle: "Free pilot · get-sigillo.eu",
   },
