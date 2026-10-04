@@ -59,6 +59,11 @@ COPY --from=build /out/server ./
 COPY --from=build /out/verifier /verifier
 COPY apps/server/proto ./proto
 COPY apps/server/assets ./assets
+# The public site's demo video and its subtitles, in each language (site.ts).
+COPY video/consegna/en/sigillo-demo-en.mp4 ./assets/video/demo-en.mp4
+COPY video/consegna/en/sigillo-demo-en.srt ./assets/video/demo-en.srt
+COPY video/consegna/sigillo-demo.mp4 ./assets/video/demo-it.mp4
+COPY video/consegna/sigillo-demo.srt ./assets/video/demo-it.srt
 COPY deploy/backup.sh ./backup.sh
 
 # The database, the backups and the socket directory are volumes; the key is

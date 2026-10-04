@@ -59,7 +59,12 @@ const DARK_TOKENS = `
     color-scheme: dark;
 `;
 
-export const STYLE = `
+/**
+ * The colour tokens in both themes, and the theme choice on <html>: the part
+ * of the stylesheet the public site (site.ts) shares with the web view, so
+ * that the two can never drift apart.
+ */
+export const THEME = `
 :root {
   color-scheme: light dark;
   /* design/tokens.json, light theme */
@@ -85,7 +90,9 @@ export const STYLE = `
 }
 :root[data-theme="dark"] {${DARK_TOKENS}}
 :root[data-theme="light"] { color-scheme: light; }
+`;
 
+export const STYLE = `${THEME}
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html { background: var(--bg); -webkit-text-size-adjust: 100%; }

@@ -3292,6 +3292,33 @@ scarichino in modo facoltativo ogni giorno alle 23:59.
 - **Limite noto**: se il server è fermo alle 23:59 quel giorno non viene esportato.
 - Testi in inglese e italiano. Test in `daily-export.test.ts`. Screenshot `21` e `31` rigenerati.
 
+### Sessione 30 — 2026-10-04 — il sito pubblico alla radice del dominio
+
+Il committente ha chiesto il sito di presentazione che viene prima della console (bozze
+approvate nel thread "Sito di presentazione"; schermate in `design/sito/v3` della cartella del
+progetto).
+
+- **Dove** (`apps/server/src/http/site.ts`, testi in `site-strings.ts`): `/`, `/pricing`,
+  `/connect`, `/privacy`. Montato solo dove entrano i clienti (Firebase configurato); senza, `/`
+  porta ancora alla console come prima. La console resta a `/ui`, "Entra" porta a `/ui/login`,
+  "Inizia il pilota gratuito" a `/ui/registrati`.
+- **Lingua e tema** come la console: stesso cookie `sigillo_lang`, stessa regola su
+  Accept-Language, lo switch IT/EN usa `POST /ui/lingua`, che ora accetta di tornare anche alle
+  pagine del sito (e a nient'altro). I colori sono gli stessi token: `THEME` è stato estratto da
+  `STYLE` in `style.ts`, che resta identico byte per byte.
+- **Il video** in inglese o italiano, col lettore del browser e i sottotitoli (SRT servito come
+  WebVTT), da `/media/`. Le richieste a intervalli di byte funzionano (servono a Safari). Il
+  Dockerfile copia i due video da `video/consegna` in `assets/video/`.
+- **Come si collega**: un comando per riquadro, ognuno con "Copia", e una riga che dice dove va
+  (sul server dove gira l'agente). Il pacchetto Python si installa da GitHub finché non è su PyPI;
+  il comando è stato provato in un ambiente pulito.
+- **CSP** (`deploy/Caddyfile`): aggiunti `img-src 'self'`, `media-src 'self'` e `script-src
+  'self'` per l'unico file di script del sito, `/site.js`, che mostra i pulsanti "Copia". Le
+  pagine della console non caricano script esterni. Con le immagini ammesse, i browser chiedono
+  `/favicon.ico`: ora ricevono il sigillo (prima un 404 nascosto dalla CSP).
+- **Da fare**: l'email dei Contatti (la riga si mostra solo quando c'è), e la pagina "Verifica"
+  pubblica che controlla un fascicolo nel browser, in una PR a parte.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

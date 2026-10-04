@@ -63,6 +63,7 @@ import { currentLanguage, isLanguage, LANGUAGE_COOKIE, languageFor, withLanguage
 import { systemTitle, UI } from "./strings.js";
 import { dailyExportPath, isDailyExportOn, listDailyExports, setDailyExport, type StoredExport } from "../backup/daily-export.js";
 import { ICONS, STATE_ICONS } from "./style.js";
+import { registerFavicon, registerSite, SITE_CONTACT_EMAIL, SITE_PATHS } from "./site.js";
 
 /**
  * The web view: server-rendered HTML, no framework and no build step, except
@@ -448,8 +449,23 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   });
 
   registerFonts(app);
+  // Now that the policy lets images from this origin through, every browser
+  // asks for /favicon.ico on every page: it gets the seal, not a 404.
+  registerFavicon(app);
 
-  app.get("/", async (_request, reply) => reply.redirect("/ui", 302));
+  // Where customers sign in, the root of the domain is the public site
+  // (site.ts); an installation run by its operator alone goes straight to the
+  // console, as it always has.
+  if (options.accounts === undefined) {
+    app.get("/", async (_request, reply) => reply.redirect("/ui", 302));
+  } else {
+    registerSite(app, {
+      languageOf,
+      themeOf,
+      endpoint: options.accounts.publicUrl.replace(/\/+$/, ""),
+      ...(SITE_CONTACT_EMAIL === undefined ? {} : { contactEmail: SITE_CONTACT_EMAIL }),
+    });
+  }
 
   // Signing in. With customers' accounts, /ui/login is theirs (Google, or an
   // email and then its password) and the operator's password has its own
@@ -1038,13 +1054,16 @@ ${exportSheet(record)}`,
     return reply.header("set-cookie", cookie).redirect("/ui/impostazioni", 303);
   });
 
-  // The language, from a sign-in page or from Impostazioni: no session needed,
-  // since the sign-in pages have the switch too. The way back is a page of the
-  // view, never somewhere else.
+  // The language, from a sign-in page, from Impostazioni or from the public
+  // site: no session needed, since the sign-in pages have the switch too. The
+  // way back is a page of the view or of the site, never somewhere else.
   app.post("/ui/lingua", async (request, reply) => {
     const body = request.body as { lang?: unknown; back?: unknown } | undefined;
     const back =
-      typeof body?.back === "string" && /^\/ui(?:[/?][^\\\s]*)?$/.test(body.back) && !body.back.includes("..") ? body.back : "/ui";
+      typeof body?.back === "string" &&
+      ((/^\/ui(?:[/?][^\\\s]*)?$/.test(body.back) && !body.back.includes("..")) || (SITE_PATHS as readonly string[]).includes(body.back))
+        ? body.back
+        : "/ui";
     if (!isLanguage(body?.lang)) return reply.redirect(back, 303);
     const cookie = `${LANGUAGE_COOKIE}=${body.lang}; ${cookieAttributes(request)}; Max-Age=${THEME_MAX_AGE_SECONDS}`;
     return reply.header("set-cookie", cookie).redirect(back, 303);
