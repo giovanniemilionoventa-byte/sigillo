@@ -145,11 +145,12 @@ describe("the public site", () => {
     expect(italian).toContain('<source src="/media/demo-it.mp4" type="video/mp4">');
   });
 
-  it("sends the two plans that cannot be started yet to an email, and shows the contact on the home page", async () => {
+  it("sends the two plans that cannot be started yet to Gmail's compose window, and shows the contact on the home page", async () => {
     const pricing = (await get("/pricing")).body;
     expect(pricing).toContain('href="/ui/registrati"');
-    expect(pricing).toContain('href="mailto:giovanniemilio.noventa@gmail.com?subject=Sigillo%3A%20Standard"');
-    expect(pricing).toContain('href="mailto:giovanniemilio.noventa@gmail.com?subject=Sigillo%3A%20Custom"');
+    expect(pricing).toContain('href="https://mail.google.com/mail/?view=cm&amp;fs=1&amp;to=giovanniemilio.noventa%40gmail.com&amp;su=Sigillo%3A%20Standard"');
+    expect(pricing).toContain('&amp;su=Sigillo%3A%20Custom"');
+    expect(pricing).not.toContain("mailto:");
     expect(pricing).not.toContain('class="btn plain" href="/ui/login"');
     for (const [cookie, button, heading] of [
       ["sigillo_lang=en", "Create an account", "Why Sigillo exists"],
@@ -159,7 +160,8 @@ describe("the public site", () => {
       expect(home).toContain(`>${button}</a>`);
       expect(home).toContain(heading);
       expect(home).toContain('<section id="contact">');
-      expect(home).toContain('mailto:giovanniemilio.noventa@gmail.com">');
+      expect(home).toContain("to=giovanniemilio.noventa%40gmail.com");
+      expect(home).not.toContain("mailto:");
     }
   });
 
@@ -184,8 +186,8 @@ describe("the public site", () => {
       const body = (await get(path)).body;
       for (const match of body.matchAll(/(?:src|href|poster|action)="([^"]*)"/g)) {
         const url = match[1] ?? "";
-        // The repository is a link the reader follows, never a resource the page loads.
-        if (url.startsWith("https://github.com/giovanniemilionoventa-byte/sigillo") || url.startsWith("mailto:")) continue;
+        // The repository and the mail window are links the reader follows, never resources the page loads.
+        if (url.startsWith("https://github.com/giovanniemilionoventa-byte/sigillo") || url.startsWith("https://mail.google.com/mail/?view=cm&amp;fs=1&amp;to=")) continue;
         expect(url, `${path}: ${url}`).toMatch(/^(\/|#)/);
       }
     }

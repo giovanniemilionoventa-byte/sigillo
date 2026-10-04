@@ -3363,6 +3363,14 @@ Richieste del proprietario dopo aver visto il sito online: bottone "Crea un acco
 - Pagina iniziale: "Perché esiste Sigillo" (il bisogno), "Come funziona" in quattro passi, "L'AI Act europeo" (dice che Sigillo non rende conforme un sistema da solo), Contatti. In inglese e in italiano.
 - Il verificatore non è toccato.
 
+### Sessione 34 — 2026-10-04 — "Perché esiste" ben strutturato, contatti su Gmail
+
+Il proprietario ha trovato il testo "Perché esiste Sigillo" troppo da appunti e ha chiesto una struttura curata, come le pagine di Google Cloud Console. Ha chiesto anche che i due bottoni di contatto siano uguali e aprano subito Gmail.
+
+- Pagina iniziale: etichetta in alto, titolo e frase centrati, poi tre gruppi di schede con icona (Il problema, Per chi è, Cosa lo rende diverso) e "Cosa chiede l'AI Act" con gli articoli 12, 14 e 26. Contenuti presi da SPEC.md, README.md e docs/SECURITY.md. In italiano e in inglese.
+- Contatti: "Contattaci" nei prezzi e nella sezione Contatti sono lo stesso bottone; i link aprono la finestra di scrittura di Gmail già indirizzata (con l'oggetto), in una nuova scheda, al posto di `mailto:`. L'indirizzo resta scritto nella pagina per chi usa un'altra posta.
+- Il verificatore non è toccato.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
