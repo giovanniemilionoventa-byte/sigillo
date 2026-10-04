@@ -49,6 +49,7 @@ const ui: Strings = {
     haveAccount: "Already have an account?",
     toReset: "Forgot your password?",
     toLogin: "Back to sign-in",
+    toAdmin: "Sign in as administrator",
     wrong: "Wrong email or password. After too many attempts, signing in is paused for a few minutes.",
     unavailable: "The sign-in service is not responding. Try again in a few minutes.",
     googleFailed: "Signing in with Google did not work. Try again.",

@@ -351,10 +351,10 @@ describe("customers' accounts in the web view", () => {
 
   it("offers Google, email and sign-up on the sign-in page, and keeps the operator's password on a page of its own", async () => {
     const page = (await app.inject({ method: "GET", url: "/ui/login" })).body;
-    for (const expected of ['href="/ui/login/google"', 'action="/ui/login/email"', 'href="/ui/registrati"']) {
+    for (const expected of ['href="/ui/login/google"', 'action="/ui/login/email"', 'href="/ui/registrati"', 'href="/ui/admin"']) {
       expect(page).toContain(expected);
     }
-    // The public page says nothing of the operator.
+    // The operator's password is a link away, never a field on this page.
     expect(page).not.toContain('action="/ui/login"');
     expect(page).not.toMatch(/<script[^>]+src=/);
 
