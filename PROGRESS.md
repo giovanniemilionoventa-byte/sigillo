@@ -3371,6 +3371,21 @@ Il proprietario ha trovato il testo "Perché esiste Sigillo" troppo da appunti e
 - Contatti: "Contattaci" nei prezzi e nella sezione Contatti sono lo stesso bottone; i link aprono la finestra di scrittura di Gmail già indirizzata (con l'oggetto), in una nuova scheda, al posto di `mailto:`. L'indirizzo resta scritto nella pagina per chi usa un'altra posta.
 - Il verificatore non è toccato.
 
+### Sessione 35 — 2026-10-04 — il sito rifatto in stile Google Cloud, su una pagina sola
+
+Il committente ha scelto lo stile Google Cloud e una pagina unica (thread "Nuovo design del
+sito"; schermate in `design/sito/v7-google` della cartella del progetto).
+
+- **Una pagina**: la home ha tutte le sezioni con un'ancora ciascuna (`#why`, `#how`, `#ai-act`,
+  `#pricing`, `#connect`, `#contact`) e il menu ci salta sopra. Restano pagine a sé solo
+  `/verify` e `/privacy`; `/pricing` e `/connect` rispondono 301 verso le loro sezioni.
+- **L'aspetto**: fondo bianco, titoli centrati, schede col bordo sottile e un'icona tonda in
+  quattro colori a rotazione, una fascia grigia ogni due sezioni, fascia blu per i contatti, piè
+  di pagina a colonne. I modi di collegarsi sono schede (Python, OpenTelemetry, API HTTP) fatte
+  di pulsanti radio, senza script; ogni comando ha il suo riquadro con "Copia". Il tema scuro
+  resta solo per chi lo sceglie nella console. La console non è toccata.
+- Testi in inglese e italiano rivisti (`site-strings.ts`); test in `site.test.ts`.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

@@ -98,6 +98,19 @@ describe("the public site", () => {
     expect((await operatorOnly.inject({ method: "GET", url: "/pricing" })).statusCode).toBe(404);
   });
 
+  it("is one page with every section, and sends the old pricing and connect pages to their sections", async () => {
+    const home = (await get("/")).body;
+    for (const id of ["why", "how", "ai-act", "pricing", "connect", "contact"]) {
+      expect(home, id).toContain(`<section id="${id}"`);
+      expect(home, id).toContain(`href="/#${id === "contact" ? "why" : id}"`);
+    }
+    for (const [from, to] of [["/pricing", "/#pricing"], ["/connect", "/#connect"]] as const) {
+      const moved = await get(from);
+      expect(moved.statusCode, from).toBe(301);
+      expect(moved.headers.location, from).toBe(to);
+    }
+  });
+
   it("speaks English by default, Italian to a browser that asks for it, and the language chosen in the cookie above both", async () => {
     expect((await get("/")).body).toContain(SITE_TEXTS.en.home.heading);
     expect((await get("/", { "accept-language": "it-IT,it;q=0.9,en;q=0.8" })).body).toContain(escapeHtml(SITE_TEXTS.it.home.heading));
@@ -108,16 +121,16 @@ describe("the public site", () => {
   });
 
   it("switches language through the console's own switch, and comes back to the same page of the site", async () => {
-    const page = (await get("/pricing")).body;
-    expect(page).toContain('<form class="lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="it"><input type="hidden" name="back" value="/pricing">');
+    const page = (await get("/verify")).body;
+    expect(page).toContain('<form class="lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="it"><input type="hidden" name="back" value="/verify">');
     const response = await app.inject({
       method: "POST",
       url: "/ui/lingua",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      payload: "lang=it&back=%2Fpricing",
+      payload: "lang=it&back=%2Fverify",
     });
     expect(response.statusCode).toBe(303);
-    expect(response.headers.location).toBe("/pricing");
+    expect(response.headers.location).toBe("/verify");
     expect(String(response.headers["set-cookie"])).toMatch(/^sigillo_lang=it; /);
     // Anywhere else is still refused.
     for (const back of ["//evil.example", "https://evil.example/", "/pricing/../x", "/media/demo-en.mp4"]) {
@@ -146,27 +159,27 @@ describe("the public site", () => {
   });
 
   it("sends the two plans that cannot be started yet to Gmail's compose window, and shows the contact on the home page", async () => {
-    const pricing = (await get("/pricing")).body;
+    const pricing = (await get("/")).body;
     expect(pricing).toContain('href="/ui/registrati"');
     expect(pricing).toContain('href="https://mail.google.com/mail/?view=cm&amp;fs=1&amp;to=giovanniemilio.noventa%40gmail.com&amp;su=Sigillo%3A%20Standard"');
     expect(pricing).toContain('&amp;su=Sigillo%3A%20Custom"');
     expect(pricing).not.toContain("mailto:");
     expect(pricing).not.toContain('class="btn plain" href="/ui/login"');
     for (const [cookie, button, heading] of [
-      ["sigillo_lang=en", "Create an account", "Why Sigillo exists"],
-      ["sigillo_lang=it", "Crea un account", "Perché esiste Sigillo"],
+      ["sigillo_lang=en", "Start free", "When an AI agent acts, someone must be able to prove what it did"],
+      ["sigillo_lang=it", "Inizia gratis", "Quando un agente AI agisce, qualcuno deve poter provare cosa ha fatto"],
     ] as const) {
       const home = (await get("/", { cookie })).body;
       expect(home).toContain(`>${button}</a>`);
       expect(home).toContain(heading);
-      expect(home).toContain('<section id="contact">');
+      expect(home).toContain('<section id="contact" class="cta">');
       expect(home).toContain("to=giovanniemilio.noventa%40gmail.com");
       expect(home).not.toContain("mailto:");
     }
   });
 
   it("says where each command goes, one command per box, with the server's own address", async () => {
-    const page = (await get("/connect")).body;
+    const page = (await get("/")).body;
     const t = SITE_TEXTS.en.connect;
     expect(page).toContain(escapeHtml(t.installWhere));
     expect(page).toContain(escapeHtml(t.inCodeWhere));
@@ -273,7 +286,7 @@ describe("the site in a browser, under deploy/Caddyfile's policy", () => {
       page.on("console", (message) => {
         if (/Content Security Policy|Refused/.test(message.text())) blocked.push(message.text());
       });
-      await page.goto(`${base}/connect`);
+      await page.goto(`${base}/#connect`);
       const first = page.locator("button.copy").first();
       await expect.poll(() => first.isVisible()).toBe(true);
       await first.click();

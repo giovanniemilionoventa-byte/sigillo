@@ -7,23 +7,31 @@ import { EVIDENCE_CHECK_SOURCE } from "./evidence-check.js";
 import { SEAL_SVG, STATE_ICONS, THEME } from "./style.js";
 
 /**
- * The public site at the root of the domain: what Sigillo is, its demo
- * video, its prices and how an agent connects, for people who have not signed
- * in. The console stays at /ui, one click away ("Sign in").
+ * The public site at the root of the domain, for people who have not signed
+ * in: one long home page (why Sigillo exists, how it works, the AI Act,
+ * prices, how an agent connects, contact) and two pages of their own, Verify
+ * and Privacy. The console stays at /ui, one click away ("Sign in").
  *
  * Mounted only where customers sign in (ui.ts): an installation run by its
  * operator alone keeps sending / straight to the console.
  *
  * Like the web view it is server-rendered, in the
  * reader's language (the same cookie and the same Accept-Language rule as the
- * console, locale.ts) and in the console's colours (THEME, style.ts). The
- * phone menu opens with :target, the video plays in the browser's own player,
- * and the only script, site.js, adds the "Copy" buttons.
+ * console, locale.ts), on the console's theme tokens (THEME, style.ts). The
+ * phone menu opens with :target, the ways to connect are tabs made of radio
+ * buttons, the video plays in the browser's own player, and the only script,
+ * site.js, adds the "Copy" buttons.
  */
 
-/** The pages of the site, which the language switch may return to. */
-export const SITE_PATHS = ["/", "/pricing", "/connect", "/verify", "/privacy"] as const;
+/**
+ * The pages of the site, which the language switch may return to. Pricing and
+ * connecting are sections of the home page; their old addresses lead there.
+ */
+export const SITE_PATHS = ["/", "/verify", "/privacy"] as const;
 type SitePath = (typeof SITE_PATHS)[number];
+
+/** Pages that became sections of the home page, and where they are now. */
+const MOVED: Record<string, string> = { "/pricing": "/#pricing", "/connect": "/#connect" };
 
 /** Where the console's sign-in and sign-up pages are. */
 const SIGN_IN = "/ui/login";
@@ -150,152 +158,223 @@ export function registerFavicon(app: FastifyInstance): void {
 }
 
 // ---------------------------------------------------------------------------
-// The look: the console's tokens, and the few rules of a page that is read
-// rather than worked in.
+// The look: the console's tokens, and a few of the site's own for a page that
+// is read rather than worked in, in the manner of Google Cloud's (chosen by
+// the project owner on 2026-10-04): white ground, centred headings, cards with
+// a thin border and a round icon in one of four colours, a grey band for
+// every other section.
+
+const SITE_TOKENS_DARK = `
+    --page: #161618; --band: #1c1c1e; --line: #3a3a3c; --ink: #f5f5f7; --primary: #8ab4f8; --on-primary: #0b1a33;
+    --blue: #8ab4f8; --blue-fill: #1d2a3f; --green: #81c995; --green-fill: #1b3022;
+    --yellow: #fdd663; --yellow-fill: #3a3016; --red: #f28b82; --red-fill: #3c1f1d;
+    --box: #0e0e10; --on-box: #e8eaed; --box-line: #3a3a3c; --box-k: #8ab4f8; --box-s: #81c995; --box-c: #9aa0a6;
+    --cta: #1d2a3f; --on-cta: #f5f5f7;
+`;
 
 const SITE_STYLE = `${THEME}
+:root {
+  --page: #ffffff; --band: #f8f9fa; --line: #dadce0; --ink: #202124; --primary: #1a73e8; --on-primary: #ffffff;
+  --blue: #1a73e8; --blue-fill: #e8f0fe; --green: #188038; --green-fill: #e6f4ea;
+  --yellow: #b06000; --yellow-fill: #fef7e0; --red: #d93025; --red-fill: #fce8e6;
+  --box: #f8f9fa; --on-box: #202124; --box-line: #dadce0; --box-k: #1967d2; --box-s: #188038; --box-c: #5f6368;
+  --cta: #1a73e8; --on-cta: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {${SITE_TOKENS_DARK}  }
+}
+:root[data-theme="dark"] {${SITE_TOKENS_DARK}}
 * { box-sizing: border-box; }
-html { background: var(--bg); -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--canvas); color: var(--text); font: 400 16px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
-a { color: var(--link); text-decoration: none; }
+html { background: var(--page); -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 400 16px/1.55 var(--font); -webkit-font-smoothing: antialiased; }
+a { color: var(--primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
-:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-h1, h2, h3, p { margin: 0; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+h1, h2, h3, h4, p { margin: 0; }
 svg { flex: none; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
-.narrow { max-width: 760px; }
-header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--canvas) 85%, transparent);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--separator); }
-.bar { display: flex; align-items: center; gap: 28px; height: 60px; }
-.brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+.narrow { max-width: 800px; }
+header { position: sticky; top: 0; z-index: 5; background: var(--page); border-bottom: 1px solid var(--line); }
+.bar { display: flex; align-items: center; gap: 32px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
 .brand:hover { text-decoration: none; }
-.brand svg { width: 28px; height: 28px; }
-nav { display: flex; gap: 24px; flex: 1; }
-nav a { color: var(--text); font-size: 15px; }
-nav a[aria-current="page"] { font-weight: 600; }
-.menu-close, .menu-open { display: none; color: var(--text); }
+.brand svg { width: 30px; height: 30px; }
+nav { display: flex; gap: 4px; flex: 1; }
+nav a { color: var(--ink); font-size: 15px; font-weight: 500; padding: 8px 12px; border-radius: 6px; }
+nav a:hover { text-decoration: none; background: var(--band); }
+nav a[aria-current="page"] { color: var(--primary); }
+.menu-close, .menu-open { display: none; color: var(--ink); }
 .menu-close svg, .menu-open svg { width: 24px; height: 24px; }
+.tools { display: flex; align-items: center; gap: 8px; }
 .lang { margin: 0; }
-.lang button { border: 0; background: none; color: var(--text); font: 500 15px var(--font); padding: 8px 6px; cursor: pointer; }
-.lang button:hover { text-decoration: underline; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px;
-  border-radius: 999px; font-size: 15px; font-weight: 500; white-space: nowrap; }
-.btn:hover { text-decoration: none; filter: brightness(0.96); }
-.btn.primary { background: var(--action); color: var(--on-action); }
-.btn.plain { background: var(--fill); color: var(--text); }
-.hero { text-align: center; padding: 88px 24px 48px; }
-.hero.short { padding: 72px 24px 40px; }
-.hero h1 { font-size: 52px; line-height: 1.08; letter-spacing: -0.025em; font-weight: 700; max-width: 820px; margin: 0 auto; }
-.hero .lead { font-size: 20px; margin: 20px auto 0; max-width: 640px; }
+.lang button { display: flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--ink);
+  font: 500 15px var(--font); padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+.lang button:hover { background: var(--band); }
+.lang svg { width: 18px; height: 18px; }
+.signin { color: var(--ink); font-size: 15px; font-weight: 500; padding: 8px 12px; border-radius: 6px; }
+.signin:hover { text-decoration: none; background: var(--band); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px;
+  border-radius: 6px; font-size: 15px; font-weight: 500; white-space: nowrap; border: 1px solid transparent; }
+.btn:hover { text-decoration: none; filter: brightness(0.95); }
+.btn.small { height: 38px; padding: 0 16px; }
+.btn.primary { background: var(--primary); color: var(--on-primary); }
+.btn.outline { background: var(--page); color: var(--primary); border-color: var(--line); }
+.hero { text-align: center; padding: 80px 24px 56px; }
+.badge { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--blue);
+  background: var(--blue-fill); border-radius: 999px; padding: 6px 14px; margin-bottom: 24px; }
+.badge svg { width: 16px; height: 16px; }
+.hero h1 { font-size: 56px; line-height: 1.1; letter-spacing: -0.025em; font-weight: 600; max-width: 860px; margin: 0 auto; }
+.hero .lead { font-size: 20px; margin: 22px auto 0; max-width: 640px; }
 .ctas { display: flex; gap: 12px; justify-content: center; margin-top: 32px; }
-.video { max-width: 880px; margin: 0 auto; border-radius: 18px; overflow: hidden; background: #111114;
-  box-shadow: 0 24px 60px rgba(0,0,0,0.18); aspect-ratio: 16 / 9; }
+.facts { display: flex; gap: 28px; justify-content: center; flex-wrap: wrap; margin: 28px 0 0; padding: 0; list-style: none; font-size: 15px; }
+.facts li { display: flex; align-items: center; gap: 8px; }
+.facts svg { width: 18px; height: 18px; color: var(--green); }
+.video { max-width: 960px; margin: 0 auto; border-radius: 12px; overflow: hidden; background: #111114;
+  border: 1px solid var(--line); box-shadow: 0 1px 3px rgba(60,64,67,0.15), 0 12px 40px rgba(60,64,67,0.18); aspect-ratio: 16 / 9; }
 .video video, .video img { display: block; width: 100%; height: 100%; object-fit: cover; }
-section { padding: 80px 0; }
-h2 { font-size: 34px; letter-spacing: -0.02em; font-weight: 700; text-align: center; margin-bottom: 40px; }
-.three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-.head { text-align: center; max-width: 720px; margin: 0 auto 8px; }
-.head h2 { margin-bottom: 14px; }
-.eyebrow { display: block; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--brand); margin-bottom: 12px; }
-.sub { font-size: 18px; line-height: 1.5; }
-.group { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
-  margin: 52px 0 20px; }
-.ref { display: inline-block; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--brand); background: var(--fill); border-radius: 999px; padding: 4px 12px; }
-.fine { max-width: 640px; margin: 32px auto 0; text-align: center; font-size: 15px; }
-.two { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
-.card { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow-card); padding: 28px; }
-.card h3 { font-size: 19px; margin: 16px 0 8px; letter-spacing: -0.01em; }
-.ico { width: 40px; height: 40px; border-radius: 10px; background: var(--fill); display: flex; align-items: center;
-  justify-content: center; color: var(--brand); }
-.ico svg { width: 22px; height: 22px; }
-.band { background: var(--surface); border-top: 1px solid var(--separator); border-bottom: 1px solid var(--separator); }
-.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 880px; margin: 0 auto 36px; }
-.step { display: flex; gap: 12px; align-items: baseline; }
-.step b { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--action); color: var(--on-action);
-  display: inline-flex; align-items: center; justify-content: center; font-size: 14px; }
-.code { position: relative; margin: 0 0 24px; }
-pre { background: var(--code); color: var(--on-code); border-radius: 14px; padding: 22px 24px; font: 13.5px/1.7 var(--mono);
-  margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.code .copy { position: absolute; top: 12px; right: 12px; border: 0; border-radius: 999px; padding: 5px 12px;
-  background: rgba(255,255,255,0.14); color: var(--on-code); font: 500 13px var(--font); cursor: pointer; }
-.code .copy:hover { background: rgba(255,255,255,0.24); }
-.code pre { padding-right: 84px; }
-.ways { max-width: 720px; margin: 0 auto; }
-h4 { font-size: 16px; margin: 0 0 4px; }
-.where { margin: 0 0 12px; }
-pre .c { color: #8a8a8e; } pre .k { color: #ff7ab2; } pre .s { color: #fc6a5d; }
-h3.way { font-size: 22px; margin: 16px 0 16px; }
-.more { text-align: center; margin-top: 24px; font-weight: 500; }
-.cta-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
-.cta-row h2 { text-align: left; margin: 0 0 6px; font-size: 28px; }
-.pilot { max-width: 560px; }
-.cta-buttons { display: flex; gap: 12px; }
-.note { margin: 0 0 32px; }
-.center { text-align: center; }
-.plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: stretch; }
+section { padding: 96px 0; scroll-margin-top: 64px; }
+.band { background: var(--band); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.head { text-align: center; max-width: 780px; margin: 0 auto 48px; }
+h2 { font-size: 40px; line-height: 1.15; letter-spacing: -0.02em; font-weight: 600; text-align: center; }
+.head p { font-size: 19px; margin-top: 16px; }
+h3.sub { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; text-align: center; margin: 72px 0 32px; }
+.grid { display: grid; gap: 24px; }
+.grid.three { grid-template-columns: repeat(3, 1fr); }
+.grid.four { grid-template-columns: repeat(4, 1fr); }
+.card { background: var(--page); border: 1px solid var(--line); border-radius: 12px; padding: 28px; }
+.card h3 { font-size: 19px; line-height: 1.3; font-weight: 600; margin: 18px 0 8px; letter-spacing: -0.01em; }
+.ico { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.ico svg { width: 24px; height: 24px; }
+.ico.blue { color: var(--blue); background: var(--blue-fill); }
+.ico.green { color: var(--green); background: var(--green-fill); }
+.ico.yellow { color: var(--yellow); background: var(--yellow-fill); }
+.ico.red { color: var(--red); background: var(--red-fill); }
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; counter-reset: step; }
+.steps .card { position: relative; }
+.num { width: 36px; height: 36px; border-radius: 50%; background: var(--primary); color: var(--on-primary);
+  display: flex; align-items: center; justify-content: center; font-weight: 600; }
+.ref { display: inline-block; font-size: 13px; font-weight: 600; color: var(--blue); background: var(--blue-fill);
+  border-radius: 999px; padding: 4px 12px; }
+.callout { display: flex; gap: 14px; align-items: flex-start; max-width: 860px; margin: 32px auto 0; padding: 18px 22px;
+  border-radius: 12px; background: var(--blue-fill); }
+.callout svg { width: 22px; height: 22px; color: var(--blue); margin-top: 1px; }
+.plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; align-items: stretch; }
 .plan { display: flex; flex-direction: column; gap: 18px; }
-.plan h3 { margin: 0; }
-.plan.now { box-shadow: 0 0 0 2px var(--action); }
-.price { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; }
+.plan h3 { margin: 0; font-size: 22px; }
+.plan.now { border-top: 4px solid var(--primary); }
+.price { font-size: 42px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
 .price small { font-size: 16px; font-weight: 500; }
-.plan ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.plan ul { list-style: none; margin: 0; padding: 18px 0 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; flex: 1; }
 .plan li { display: flex; gap: 10px; }
-.plan li svg { width: 18px; height: 18px; color: var(--ok); margin-top: 3px; }
-.tag { font-size: 13px; font-weight: 600; color: var(--secondary); }
-.now .tag { color: var(--action); }
-.faq { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
-details { background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-card); padding: 18px 22px; }
-summary { font-weight: 600; cursor: pointer; }
+.plan li svg { width: 18px; height: 18px; color: var(--green); margin-top: 3px; }
+.tag { align-self: flex-start; font-size: 13px; font-weight: 600; border-radius: 999px; padding: 4px 12px; color: var(--ink); background: var(--band); border: 1px solid var(--line); }
+.now .tag { color: var(--green); background: var(--green-fill); border-color: transparent; }
+.faq { max-width: 800px; margin: 0 auto; border: 1px solid var(--line); border-radius: 12px; background: var(--page); }
+details { border-top: 1px solid var(--line); padding: 20px 24px; }
+details:first-child { border-top: 0; }
+summary { font-weight: 600; cursor: pointer; font-size: 17px; }
 details p { margin-top: 10px; }
+.flow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 860px; margin: 0 auto 40px; }
+.flow div { display: flex; align-items: center; gap: 12px; font-weight: 500; }
+.tabs { display: flex; flex-wrap: wrap; max-width: 860px; margin: 0 auto; border: 1px solid var(--line); border-radius: 12px; background: var(--page); overflow: hidden; }
+.tabs > label { padding: 16px 24px; font-weight: 600; cursor: pointer; border-bottom: 3px solid transparent; }
+.tabs > label:hover { background: var(--band); }
+.tabs .panel { display: none; order: 1; flex-basis: 100%; padding: 28px; border-top: 1px solid var(--line); }
+#way-python:checked + label, #way-otel:checked + label, #way-api:checked + label { color: var(--primary); border-bottom-color: var(--primary); }
+#way-python:checked ~ .p-python, #way-otel:checked ~ .p-otel, #way-api:checked ~ .p-api { display: block; }
+.tabs input:focus-visible + label { outline: 2px solid var(--primary); outline-offset: -4px; }
+h4 { font-size: 17px; margin: 0 0 4px; }
+.where { margin: 0 0 12px; }
+.code { position: relative; margin: 0 0 24px; }
+.code:last-child { margin-bottom: 0; }
+pre { background: var(--box); color: var(--on-box); border: 1px solid var(--box-line); border-radius: 8px; padding: 18px 20px;
+  font: 13.5px/1.7 var(--mono); margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+pre .c { color: var(--box-c); } pre .k { color: var(--box-k); } pre .s { color: var(--box-s); }
+.code .copy { position: absolute; top: 10px; right: 10px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px;
+  background: var(--page); color: var(--primary); font: 500 13px var(--font); cursor: pointer; }
+.code .copy:hover { background: var(--band); }
+.code pre { padding-right: 88px; }
+.keynote { text-align: center; margin-top: 24px; }
+.cta { background: var(--cta); color: var(--on-cta); text-align: center; padding: 80px 0; }
+.cta h2 { color: var(--on-cta); }
+.cta p { font-size: 19px; margin-top: 14px; }
+.cta .ctas .btn.primary { background: #ffffff; color: #1a73e8; }
+.cta .ctas .btn.outline { background: transparent; color: var(--on-cta); border-color: rgba(255,255,255,0.6); }
+.cta .mail { margin-top: 20px; font-size: 15px; }
+.cta .mail a { color: var(--on-cta); text-decoration: underline; }
 .drop { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; cursor: pointer;
-  border: 2px dashed var(--separator); border-radius: 18px; background: var(--surface); padding: 44px 24px; }
-.drop.over { border-color: var(--action); }
+  border: 2px dashed var(--line); border-radius: 12px; background: var(--page); padding: 48px 24px; }
+.drop.over { border-color: var(--primary); }
 .drop b { font-size: 18px; }
-.drop .ico { width: 56px; height: 56px; border-radius: 14px; }
-.drop .ico svg { width: 28px; height: 28px; }
-.drop:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.drop .ico { width: 64px; height: 64px; }
+.drop .ico svg { width: 30px; height: 30px; }
+.drop:focus-within { outline: 2px solid var(--primary); outline-offset: 2px; }
+.page-head { text-align: center; padding: 72px 24px 40px; }
+.page-head h1 { font-size: 44px; letter-spacing: -0.02em; font-weight: 600; }
+#check { padding-bottom: 72px; }
 #result { margin-top: 24px; }
 .verdict { display: flex; gap: 14px; align-items: flex-start; }
 .verdict svg { width: 32px; height: 32px; margin-top: 2px; }
 .verdict h3 { margin: 0 0 4px; font-size: 22px; }
 .verdict.ok { color: var(--ok); }
 .verdict.bad { color: var(--bad); }
-.verdict p { color: var(--text); }
-#result dl { display: grid; grid-template-columns: auto 1fr; gap: 10px 24px; margin: 22px 0 0; padding-top: 18px;
-  border-top: 1px solid var(--separator); }
+.verdict p { color: var(--ink); }
+#result dl { display: grid; grid-template-columns: auto 1fr; gap: 10px 24px; margin: 22px 0 0; padding-top: 18px; border-top: 1px solid var(--line); }
 #result dt { font-weight: 600; }
 #result dd { margin: 0; }
-#result details { box-shadow: none; padding: 0; margin-top: 18px; }
+#result details { padding: 0; margin-top: 18px; border: 0; }
 #result code { font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
+.more { text-align: center; margin-top: 24px; font-weight: 500; }
 .prose h2 { text-align: left; font-size: 22px; margin: 36px 0 10px; }
 .prose p { margin: 0 0 12px; }
-.prose { padding-bottom: 40px; }
-footer { padding: 32px 0 48px; font-size: 14px; }
-footer .row { display: flex; gap: 24px; align-items: center; }
-footer .row span { flex: 1; }
-footer a { color: var(--text); }
-@media (max-width: 760px) {
-  .bar { gap: 12px; }
-  .lang { margin-left: auto; }
+.prose { padding-bottom: 56px; }
+footer { background: var(--band); border-top: 1px solid var(--line); padding: 56px 0 32px; font-size: 15px; }
+.cols { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 32px; }
+.cols h4 { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+.cols ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.cols a { color: var(--ink); }
+.cols .brand { margin-bottom: 12px; }
+.legal { margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 14px; }
+@media (max-width: 1000px) {
+  nav a { padding: 8px 8px; }
+  .grid.four, .steps { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 860px) {
+  .bar { gap: 8px; }
+  .tools { margin-left: auto; }
+  .signin, .tools .btn { display: none; }
   .menu-open { display: flex; }
   nav { display: none; }
-  nav:target { display: flex; flex-direction: column; gap: 0; position: fixed; inset: 0; z-index: 10; background: var(--canvas); padding: 16px 24px; }
-  nav:target a { font-size: 20px; padding: 14px 0; border-bottom: 1px solid var(--separator); }
+  nav:target { display: flex; flex-direction: column; gap: 0; position: fixed; inset: 0; z-index: 10; background: var(--page); padding: 16px 24px; }
+  nav:target a { font-size: 20px; padding: 14px 0; border-radius: 0; border-bottom: 1px solid var(--line); }
   nav:target .menu-close { display: flex; justify-content: flex-end; border: 0; padding: 8px 0; }
-  .hero { padding: 56px 20px 32px; }
-  .hero h1 { font-size: 34px; }
-  .hero .lead { font-size: 17px; }
+  nav:target .menu-only { display: block; }
+  .hero { padding: 48px 20px 40px; }
+  .hero h1 { font-size: 36px; }
+  .hero .lead { font-size: 18px; }
   .ctas { flex-direction: column; align-items: stretch; }
-  .three, .two, .plans, .steps { grid-template-columns: 1fr; }
-  section { padding: 56px 0; }
-  h2 { font-size: 26px; }
-  .cta-row { flex-direction: column; align-items: flex-start; }
-  pre { font-size: 12px; padding: 18px; }
-  footer .row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .facts { flex-direction: column; align-items: center; gap: 10px; }
+  .grid.three, .grid.four, .steps, .plans, .flow { grid-template-columns: 1fr; }
+  section { padding: 64px 0; }
+  h2 { font-size: 30px; }
+  h3.sub { margin-top: 56px; }
+  .head p { font-size: 17px; }
+  .tabs > label { padding: 14px 16px; }
+  .tabs .panel { padding: 20px; }
+  pre { font-size: 12px; padding: 16px; }
+  .cols { grid-template-columns: 1fr 1fr; }
+  .cols > div:first-child { grid-column: 1 / -1; }
+  .page-head h1 { font-size: 34px; }
+  .card { padding: 20px; }
+  .grid .card:has(> .ico), .steps .card { display: grid; grid-template-columns: 40px 1fr; column-gap: 14px; }
+  .grid .card > .ico, .steps .num { width: 40px; height: 40px; grid-row: span 2; }
+  .grid .card > .ico svg { width: 20px; height: 20px; }
+  .grid .card:has(> .ico) h3, .steps .card h3 { margin: 0 0 4px; align-self: center; }
+  .grid .card:has(> .ico) p, .steps .card p { grid-column: 2; }
+  .grid .card .ref + h3 { margin-top: 12px; }
 }
+.menu-only { display: none; }
 `;
 
 const line = (shape: string): string =>
@@ -313,10 +392,16 @@ const ICON = {
   lock: line('<rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/>'),
   eye: line('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
   shield: line('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>'),
+  clock: line('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  info: line('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),
+  globe: line('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/>'),
   menu: line('<path d="M4 7h16M4 12h16M4 17h16"/>'),
   close: line('<path d="M6 6l12 12M18 6L6 18"/>'),
   check: `<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false" style="fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round"><path d="M4 10.5l4 4 8-9"/></svg>`,
 };
+
+/** The four colours the icons take in turn. */
+const HUES = ["blue", "green", "yellow", "red"] as const;
 
 // ---------------------------------------------------------------------------
 // The snippets, the same three ways the console's connect page shows, with a
@@ -368,7 +453,8 @@ function apiSnippet(endpoint: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// The pages.
+// The pages: one long home page with every section, and two of their own,
+// Verify and Privacy.
 
 interface PageContext {
   language: Language;
@@ -379,12 +465,22 @@ interface PageContext {
   media: Set<string>;
 }
 
+/**
+ * Writing to the address opens Gmail's own compose window, already addressed:
+ * a mailto: link waits on whatever mail program the visitor's computer has,
+ * and most visitors have none set up. The address stays on the page for those
+ * who use another mail service.
+ */
+function mailLink(email: string, subject: string): string {
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subject)}`;
+}
+
 function sitePage(context: PageContext, title: string, body: string): string {
   const { t, path, language } = context;
-  const link = (href: SitePath, label: string): string =>
-    `<a href="${href}"${path === href ? ' aria-current="page"' : ""}>${escape(label)}</a>`;
-  const contact =
-    context.contactEmail === undefined ? "" : `<a href="${escape(mailLink(context.contactEmail, "Sigillo"))}" target="_blank" rel="noopener">${escape(t.footer.contact)}</a>`;
+  const contactHref = context.contactEmail === undefined ? undefined : mailLink(context.contactEmail, "Sigillo");
+  const section = (id: string, label: string): string => `<a href="/#${id}">${escape(label)}</a>`;
+  const verify = `<a href="/verify"${path === "/verify" ? ' aria-current="page"' : ""}>${escape(t.nav.verify)}</a>`;
+  const external = (href: string, label: string): string => `<a href="${escape(href)}" target="_blank" rel="noopener">${escape(label)}</a>`;
   return `<!doctype html>
 <html lang="${language}">
 <head>
@@ -399,17 +495,42 @@ function sitePage(context: PageContext, title: string, body: string): string {
 <body>
 <header><div class="wrap bar">
 <a class="brand" href="/">${SEAL_SVG}<span>sigillo</span></a>
-<nav id="menu"><a class="menu-close" href="#" aria-label="×">${ICON.close}</a>${link("/pricing", t.nav.pricing)}${link("/connect", t.nav.connect)}${link("/verify", t.nav.verify)}</nav>
-<form class="lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="${language === "en" ? "it" : "en"}"><input type="hidden" name="back" value="${path ?? "/"}"><button type="submit" aria-label="${escape(t.switchLabel)}" lang="${language === "en" ? "it" : "en"}">${escape(t.switchTo)}</button></form>
-<a class="btn primary" href="${SIGN_IN}">${escape(t.signIn)}</a>
+<nav id="menu"><a class="menu-close" href="#" aria-label="×">${ICON.close}</a>${section("why", t.nav.why)}${section("how", t.nav.how)}${section("ai-act", t.nav.aiAct)}${section("pricing", t.nav.pricing)}${section("connect", t.nav.connect)}${verify}<a class="menu-only" href="${SIGN_IN}">${escape(t.signIn)}</a></nav>
+<div class="tools">
+<form class="lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="${language === "en" ? "it" : "en"}"><input type="hidden" name="back" value="${path ?? "/"}"><button type="submit" aria-label="${escape(t.switchLabel)}" lang="${language === "en" ? "it" : "en"}">${ICON.globe}${escape(t.switchTo)}</button></form>
+<a class="signin" href="${SIGN_IN}">${escape(t.signIn)}</a>
+<a class="btn primary small" href="${SIGN_UP}">${escape(t.start)}</a>
 <a class="menu-open" href="#menu" aria-label="Menu">${ICON.menu}</a>
+</div>
 </div></header>
 <main>
 ${body}
 </main>
-<footer><div class="wrap row"><span>© 2026 Sigillo · ${escape(t.footer.europe)}</span><a href="/privacy">${escape(t.footer.privacy)}</a>${contact}</div></footer>
+<footer><div class="wrap">
+<div class="cols">
+<div><a class="brand" href="/">${SEAL_SVG}<span>sigillo</span></a><p>${escape(t.footer.europe)}</p></div>
+<div><h4>${escape(t.footer.product)}</h4><ul><li>${section("why", t.nav.why)}</li><li>${section("how", t.nav.how)}</li><li>${section("ai-act", t.nav.aiAct)}</li><li>${section("pricing", t.nav.pricing)}</li></ul></div>
+<div><h4>${escape(t.footer.developers)}</h4><ul><li>${section("connect", t.nav.connect)}</li><li><a href="/verify">${escape(t.nav.verify)}</a></li><li>${external(`${REPOSITORY}/tree/main/packages/verifier`, t.footer.verifier)}</li></ul></div>
+<div><h4>${escape(t.footer.company)}</h4><ul>${contactHref === undefined ? "" : `<li>${external(contactHref, t.footer.contact)}</li>`}<li><a href="/privacy">${escape(t.footer.privacy)}</a></li><li><a href="${SIGN_IN}">${escape(t.signIn)}</a></li></ul></div>
+</div>
+<p class="legal">© 2026 Sigillo</p>
+</div></footer>
 </body>
 </html>`;
+}
+
+/** A centred heading, with an optional sentence under it. */
+function sectionHead(title: string, lead?: string): string {
+  return `<div class="head"><h2>${escape(title)}</h2>${lead === undefined ? "" : `<p>${escape(lead)}</p>`}</div>`;
+}
+
+/** Cards with a round icon each, the colours taken in turn from `start`. */
+function iconCards(points: readonly { title: string; text: string }[], icons: readonly string[], columns: "three" | "four", start = 0): string {
+  return `<div class="grid ${columns}">
+${points
+  .map((point, index) => `<div class="card"><div class="ico ${HUES[(start + index) % HUES.length]}">${icons[index] ?? ""}</div><h3>${escape(point.title)}</h3><p>${escape(point.text)}</p></div>`)
+  .join("\n")}
+</div>`;
 }
 
 function homeBody(context: PageContext): string {
@@ -425,85 +546,56 @@ function homeBody(context: PageContext): string {
       }
 </video>`
     : `<img src="${poster}" alt="${escape(h.videoLabel)}">`;
-  const icons = [ICON.pen, ICON.chain, ICON.doc];
-  return `<div class="wrap hero"><h1>${escape(h.heading)}</h1>
+  const contact =
+    context.contactEmail === undefined
+      ? ""
+      : `<a class="btn outline" href="${escape(mailLink(context.contactEmail, "Sigillo"))}" target="_blank" rel="noopener">${escape(h.contact.action)}</a>`;
+  return `<div class="wrap hero"><span class="badge">${ICON.shield}${escape(h.badge)}</span>
+<h1>${escape(h.heading)}</h1>
 <p class="lead">${escape(h.lead)}</p>
-<div class="ctas"><a class="btn primary" href="${SIGN_UP}">${escape(t.start)}</a><a class="btn plain" href="#demo">${escape(t.watch)}</a></div></div>
+<div class="ctas"><a class="btn primary" href="${SIGN_UP}">${escape(t.start)}</a>${contact}</div>
+<ul class="facts">${h.facts.map((fact) => `<li>${ICON.check}${escape(fact)}</li>`).join("")}</ul></div>
 <div class="wrap" id="demo"><div class="video">${video}</div></div>
 ${whySection(t)}
-<section class="band"><div class="wrap"><h2>${escape(h.what)}</h2><div class="three">
-${h.cards.map((card, index) => `<div class="card"><div class="ico">${icons[index] ?? ""}</div><h3>${escape(card.title)}</h3><p>${escape(card.text)}</p></div>`).join("\n")}
-</div></div></section>
-<section><div class="wrap"><h2>${escape(h.how.title)}</h2><div class="two">
-${h.how.items.map((item, index) => `<div class="card"><div class="ico">${index + 1}</div><h3>${escape(item.title)}</h3><p>${escape(item.text)}</p></div>`).join("\n")}
-</div></div></section>
-<section class="band"><div class="wrap"><h2>${escape(h.connect)}</h2>
-${stepsOf(t)}
-<div class="ways">${pythonSteps(t, context.endpoint)}</div>
-<p class="more"><a href="/connect">${escape(h.allWays)} ›</a></p></div></section>
+${howSection(t)}
 ${aiActSection(t)}
-<section class="band"><div class="wrap cta-row"><div class="pilot"><h2>${escape(h.pilot)}</h2><p>${escape(h.pilotText)}</p></div>
-<div class="cta-buttons"><a class="btn plain" href="/pricing">${escape(h.seePricing)}</a><a class="btn primary" href="${SIGN_UP}">${escape(t.start)}</a></div></div></section>${contactSection(context)}`;
+${pricingSection(context)}
+${connectSection(context)}
+${contactSection(context)}`;
 }
 
-/** A centered heading: a small label, the title, and a sentence under it. */
-/**
- * Writing to the address opens Gmail's own compose window, already addressed:
- * a mailto: link waits on whatever mail program the visitor's computer has,
- * and most visitors have none set up. The address stays on the page for those
- * who use another mail service.
- */
-function mailLink(email: string, subject: string): string {
-  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subject)}`;
-}
-
-function sectionHead(eyebrow: string, title: string, lead: string): string {
-  return `<div class="head"><span class="eyebrow">${escape(eyebrow)}</span><h2>${escape(title)}</h2><p class="sub">${escape(lead)}</p></div>`;
-}
-
-function pointCards(points: readonly { title: string; text: string }[], icons: readonly string[], columns: "three" | "two"): string {
-  return `<div class="${columns}">
-${points.map((point, index) => `<div class="card"><div class="ico">${icons[index] ?? ""}</div><h3>${escape(point.title)}</h3><p>${escape(point.text)}</p></div>`).join("\n")}
-</div>`;
-}
-
-/** Why Sigillo exists: the problem, who it is for, and what makes it different. */
+/** Why Sigillo exists: the problem, and who it is for. */
 function whySection(t: SiteTexts): string {
   const w = t.home.why;
-  return `<section><div class="wrap">${sectionHead(w.eyebrow, w.title, w.lead)}
-<h3 class="group">${escape(w.problemsTitle)}</h3>
-${pointCards(w.problems, [ICON.pen, ICON.search, ICON.flag], "three")}
-<h3 class="group">${escape(w.audienceTitle)}</h3>
-${pointCards(w.audience, [ICON.building, ICON.users, ICON.code], "three")}
-<h3 class="group">${escape(w.differenceTitle)}</h3>
-${pointCards(w.difference, [ICON.lock, ICON.chain, ICON.eye, ICON.shield], "two")}
+  return `<section id="why"><div class="wrap">${sectionHead(w.title, w.lead)}
+${iconCards(w.problems, [ICON.pen, ICON.search, ICON.flag], "three")}
+<h3 class="sub">${escape(w.audienceTitle)}</h3>
+${iconCards(w.audience, [ICON.building, ICON.users, ICON.code], "three")}
+</div></section>`;
+}
+
+/** How it works, in four numbered steps, and what makes it different. */
+function howSection(t: SiteTexts): string {
+  const h = t.home.how;
+  return `<section id="how" class="band"><div class="wrap">${sectionHead(h.title)}
+<div class="steps">
+${h.steps.map((step, index) => `<div class="card"><div class="num">${index + 1}</div><h3>${escape(step.title)}</h3><p>${escape(step.text)}</p></div>`).join("\n")}
+</div>
+<h3 class="sub">${escape(h.differenceTitle)}</h3>
+${iconCards(h.difference, [ICON.lock, ICON.chain, ICON.eye, ICON.shield], "four")}
 </div></section>`;
 }
 
 function aiActSection(t: SiteTexts): string {
   const a = t.home.aiAct;
-  return `<section><div class="wrap">${sectionHead(a.eyebrow, a.title, a.lead)}
-<div class="three">
+  return `<section id="ai-act"><div class="wrap">${sectionHead(a.title, a.lead)}
+<div class="grid three">
 ${a.articles.map((article) => `<div class="card"><span class="ref">${escape(article.ref)}</span><h3>${escape(article.title)}</h3><p>${escape(article.text)}</p></div>`).join("\n")}
 </div>
-<p class="fine">${escape(a.note)}</p></div></section>`;
+<p class="callout">${ICON.info}<span>${escape(a.note)}</span></p></div></section>`;
 }
 
-function contactSection(context: PageContext): string {
-  const { t, contactEmail } = context;
-  if (contactEmail === undefined) return "";
-  const c = t.home.contact;
-  return `
-<section id="contact"><div class="wrap narrow prose"><h2>${escape(c.title)}</h2>
-<p>${escape(c.text)}</p>
-<p><a class="btn primary" href="${escape(mailLink(contactEmail, "Sigillo"))}" target="_blank" rel="noopener">${escape(c.action)}</a> ${escape(contactEmail)}</p></div></section>`;
-}
-
-function stepsOf(t: SiteTexts): string {
-  return `<div class="steps">${t.home.steps.map((step, index) => `<div class="step"><b>${index + 1}</b>${escape(step)}</div>`).join("")}</div>`;
-}
-
-function pricingBody(context: PageContext): string {
+function pricingSection(context: PageContext): string {
   const { t } = context;
   const p = t.pricing;
   // Only the pilot can be started today; the other two ask to be told, by email.
@@ -514,34 +606,48 @@ function pricingBody(context: PageContext): string {
     return `<div class="card plan${now ? " now" : ""}"><span class="tag">${escape(now ? p.now : p.soon)}</span><h3>${escape(plan.name)}</h3>
 <div class="price">${price}</div>
 <ul>${plan.features.map((feature) => `<li>${ICON.check}${escape(feature)}</li>`).join("")}</ul>
-<a class="btn ${now ? "primary" : "plain"}" href="${escape(href)}"${now ? "" : ' target="_blank" rel="noopener"'}>${escape(plan.action)}</a></div>`;
+<a class="btn ${now ? "primary" : "outline"}" href="${escape(href)}"${now ? "" : ' target="_blank" rel="noopener"'}>${escape(plan.action)}</a></div>`;
   });
-  return `<div class="wrap hero short"><h1>${escape(p.title)}</h1></div>
-<div class="wrap plans">
+  return `<section id="pricing" class="band"><div class="wrap">${sectionHead(p.title, p.lead)}
+<div class="plans">
 ${plans.join("\n")}
 </div>
-<section><div class="wrap"><h2>${escape(p.questions)}</h2><div class="faq">
+<h3 class="sub">${escape(p.questions)}</h3>
+<div class="faq">
 ${p.faq.map((item, index) => `<details${index === 0 ? " open" : ""}><summary>${escape(item.q)}</summary><p>${escape(item.a)}</p></details>`).join("\n")}
 </div></div></section>`;
 }
 
-function connectBody(context: PageContext): string {
+/** The three ways to connect an agent, as tabs that need no script (radio buttons and :checked). */
+function connectSection(context: PageContext): string {
   const { t, endpoint } = context;
   const c = t.connect;
-  return `<div class="wrap hero short"><h1>${escape(c.title)}</h1></div>
-<div class="wrap narrow">
-${stepsOf(t)}
-<h3 class="way">${escape(c.ways.python)}</h3>
-${pythonSteps(t, endpoint)}
-<h3 class="way">${escape(c.ways.otel)}</h3>
-<p class="where">${escape(c.otelNote)}</p>
-${codeBox(t, otelSnippet(endpoint))}
-<h3 class="way">${escape(c.ways.api)}</h3>
-<p class="where">${escape(c.apiNote)}</p>
-${codeBox(t, apiSnippet(endpoint))}
-<p class="note">${escape(c.keyNote)}</p>
-<p class="center"><a class="btn primary" href="${SIGN_UP}">${escape(t.start)}</a></p>
-</div>`;
+  const tab = (id: string, label: string, checked: boolean): string =>
+    `<input type="radio" name="way" id="way-${id}" class="sr"${checked ? " checked" : ""}><label for="way-${id}">${escape(label)}</label>`;
+  return `<section id="connect"><div class="wrap">${sectionHead(c.title)}
+<div class="flow">${c.steps.map((step, index) => `<div><span class="num">${index + 1}</span>${escape(step)}</div>`).join("")}</div>
+<div class="tabs">
+${tab("python", c.ways.python, true)}
+${tab("otel", c.ways.otel, false)}
+${tab("api", c.ways.api, false)}
+<div class="panel p-python">${pythonSteps(t, endpoint)}</div>
+<div class="panel p-otel"><p class="where">${escape(c.otelNote)}</p>
+${codeBox(t, otelSnippet(endpoint))}</div>
+<div class="panel p-api"><p class="where">${escape(c.apiNote)}</p>
+${codeBox(t, apiSnippet(endpoint))}</div>
+</div>
+<p class="keynote">${escape(c.keyNote)}</p>
+</div></section>`;
+}
+
+function contactSection(context: PageContext): string {
+  const { t, contactEmail } = context;
+  if (contactEmail === undefined) return "";
+  const c = t.home.contact;
+  return `<section id="contact" class="cta"><div class="wrap"><h2>${escape(c.title)}</h2>
+<p>${escape(c.text)}</p>
+<div class="ctas"><a class="btn primary" href="${escape(mailLink(contactEmail, "Sigillo"))}" target="_blank" rel="noopener">${escape(c.action)}</a><a class="btn outline" href="${SIGN_UP}">${escape(t.start)}</a></div>
+<p class="mail"><a href="${escape(mailLink(contactEmail, "Sigillo"))}" target="_blank" rel="noopener">${escape(contactEmail)}</a></p></div></section>`;
 }
 
 const UPLOAD_ICON = line('<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/>');
@@ -553,10 +659,10 @@ const UPLOAD_ICON = line('<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0
  */
 function verifyBody(context: PageContext): string {
   const v = context.t.verify;
-  return `<div class="wrap hero short"><h1>${escape(v.title)}</h1></div>
+  return `<div class="wrap page-head"><h1>${escape(v.title)}</h1></div>
 <div class="wrap narrow" id="check" data-texts="${escape(JSON.stringify(v))}">
-<label class="drop" id="drop"><span class="ico">${UPLOAD_ICON}</span><b>${escape(v.drop)}</b>
-<span class="btn plain">${escape(v.choose)}</span><input type="file" id="pack" accept=".zip,application/zip" class="sr">
+<label class="drop" id="drop"><span class="ico blue">${UPLOAD_ICON}</span><b>${escape(v.drop)}</b>
+<span class="btn outline">${escape(v.choose)}</span><input type="file" id="pack" accept=".zip,application/zip" class="sr">
 <span>${escape(v.private)}</span></label>
 <div id="result" class="card" hidden aria-live="polite"></div>
 <template id="icon-ok">${STATE_ICONS.ok}</template><template id="icon-bad">${STATE_ICONS.bad}</template>
@@ -570,7 +676,7 @@ function privacyBody(context: PageContext): string {
     context.contactEmail === undefined
       ? ""
       : `<p><a href="${escape(mailLink(context.contactEmail, "Sigillo"))}" target="_blank" rel="noopener">${escape(context.contactEmail)}</a></p>`;
-  return `<div class="wrap hero short"><h1>${escape(p.title)}</h1></div>
+  return `<div class="wrap page-head"><h1>${escape(p.title)}</h1></div>
 <div class="wrap narrow prose">
 ${p.sections
   .map((section) => `<h2>${escape(section.heading)}</h2>\n${section.paragraphs.map((text) => `<p>${escape(text)}</p>`).join("\n")}`)
@@ -582,8 +688,6 @@ ${contact}
 
 const BODIES: Record<SitePath, { title: (t: SiteTexts) => string; body: (context: PageContext) => string }> = {
   "/": { title: (t) => t.home.title, body: homeBody },
-  "/pricing": { title: (t) => `${t.pricing.title} · Sigillo`, body: pricingBody },
-  "/connect": { title: (t) => `${t.connect.title} · Sigillo`, body: connectBody },
   "/verify": { title: (t) => `${t.verify.title} · Sigillo`, body: verifyBody },
   "/privacy": { title: (t) => `${t.privacy.title} · Sigillo`, body: privacyBody },
 };
@@ -727,5 +831,8 @@ export function registerSite(app: FastifyInstance, options: SiteOptions): void {
 
   for (const path of SITE_PATHS) {
     app.get(path, async (request, reply) => respond(request, reply, path));
+  }
+  for (const [from, to] of Object.entries(MOVED)) {
+    app.get(from, async (_request, reply) => reply.redirect(to, 301));
   }
 }
