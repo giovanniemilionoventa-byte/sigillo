@@ -195,6 +195,16 @@ nav a[aria-current="page"] { font-weight: 600; }
 section { padding: 80px 0; }
 h2 { font-size: 34px; letter-spacing: -0.02em; font-weight: 700; text-align: center; margin-bottom: 40px; }
 .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.head { text-align: center; max-width: 720px; margin: 0 auto 8px; }
+.head h2 { margin-bottom: 14px; }
+.eyebrow { display: block; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--brand); margin-bottom: 12px; }
+.sub { font-size: 18px; line-height: 1.5; }
+.group { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
+  margin: 52px 0 20px; }
+.ref { display: inline-block; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--brand); background: var(--fill); border-radius: 999px; padding: 4px 12px; }
+.fine { max-width: 640px; margin: 32px auto 0; text-align: center; font-size: 15px; }
 .two { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
 .card { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow-card); padding: 28px; }
 .card h3 { font-size: 19px; margin: 16px 0 8px; letter-spacing: -0.01em; }
@@ -295,6 +305,14 @@ const ICON = {
   pen: line('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/>'),
   chain: line('<path d="M10 13a5 5 0 007.5.5l3-3a5 5 0 00-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 00-7.5-.5l-3 3a5 5 0 007 7l1.7-1.7"/>'),
   doc: line('<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 15l2 2 4-4"/>'),
+  search: line('<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>'),
+  flag: line('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'),
+  building: line('<path d="M4 21V5a1 1 0 011-1h8a1 1 0 011 1v16M14 9h5a1 1 0 011 1v11M3 21h18M8 8h2M8 12h2M8 16h2"/>'),
+  users: line('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0113 0M16 4.5a3.5 3.5 0 010 7M18 14a6 6 0 013.5 6"/>'),
+  code: line('<path d="M8 8l-5 4 5 4M16 8l5 4-5 4M14 5l-4 14"/>'),
+  lock: line('<rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/>'),
+  eye: line('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  shield: line('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>'),
   menu: line('<path d="M4 7h16M4 12h16M4 17h16"/>'),
   close: line('<path d="M6 6l12 12M18 6L6 18"/>'),
   check: `<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false" style="fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round"><path d="M4 10.5l4 4 8-9"/></svg>`,
@@ -366,7 +384,7 @@ function sitePage(context: PageContext, title: string, body: string): string {
   const link = (href: SitePath, label: string): string =>
     `<a href="${href}"${path === href ? ' aria-current="page"' : ""}>${escape(label)}</a>`;
   const contact =
-    context.contactEmail === undefined ? "" : `<a href="mailto:${escape(context.contactEmail)}">${escape(t.footer.contact)}</a>`;
+    context.contactEmail === undefined ? "" : `<a href="${escape(mailLink(context.contactEmail, "Sigillo"))}" target="_blank" rel="noopener">${escape(t.footer.contact)}</a>`;
   return `<!doctype html>
 <html lang="${language}">
 <head>
@@ -412,8 +430,7 @@ function homeBody(context: PageContext): string {
 <p class="lead">${escape(h.lead)}</p>
 <div class="ctas"><a class="btn primary" href="${SIGN_UP}">${escape(t.start)}</a><a class="btn plain" href="#demo">${escape(t.watch)}</a></div></div>
 <div class="wrap" id="demo"><div class="video">${video}</div></div>
-<section><div class="wrap narrow prose"><h2>${escape(h.why.title)}</h2>
-${h.why.paragraphs.map((text) => `<p>${escape(text)}</p>`).join("\n")}</div></section>
+${whySection(t)}
 <section class="band"><div class="wrap"><h2>${escape(h.what)}</h2><div class="three">
 ${h.cards.map((card, index) => `<div class="card"><div class="ico">${icons[index] ?? ""}</div><h3>${escape(card.title)}</h3><p>${escape(card.text)}</p></div>`).join("\n")}
 </div></div></section>
@@ -424,10 +441,52 @@ ${h.how.items.map((item, index) => `<div class="card"><div class="ico">${index +
 ${stepsOf(t)}
 <div class="ways">${pythonSteps(t, context.endpoint)}</div>
 <p class="more"><a href="/connect">${escape(h.allWays)} ›</a></p></div></section>
-<section><div class="wrap narrow prose"><h2>${escape(h.aiAct.title)}</h2>
-${h.aiAct.paragraphs.map((text) => `<p>${escape(text)}</p>`).join("\n")}</div></section>
+${aiActSection(t)}
 <section class="band"><div class="wrap cta-row"><div class="pilot"><h2>${escape(h.pilot)}</h2><p>${escape(h.pilotText)}</p></div>
 <div class="cta-buttons"><a class="btn plain" href="/pricing">${escape(h.seePricing)}</a><a class="btn primary" href="${SIGN_UP}">${escape(t.start)}</a></div></div></section>${contactSection(context)}`;
+}
+
+/** A centered heading: a small label, the title, and a sentence under it. */
+/**
+ * Writing to the address opens Gmail's own compose window, already addressed:
+ * a mailto: link waits on whatever mail program the visitor's computer has,
+ * and most visitors have none set up. The address stays on the page for those
+ * who use another mail service.
+ */
+function mailLink(email: string, subject: string): string {
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subject)}`;
+}
+
+function sectionHead(eyebrow: string, title: string, lead: string): string {
+  return `<div class="head"><span class="eyebrow">${escape(eyebrow)}</span><h2>${escape(title)}</h2><p class="sub">${escape(lead)}</p></div>`;
+}
+
+function pointCards(points: readonly { title: string; text: string }[], icons: readonly string[], columns: "three" | "two"): string {
+  return `<div class="${columns}">
+${points.map((point, index) => `<div class="card"><div class="ico">${icons[index] ?? ""}</div><h3>${escape(point.title)}</h3><p>${escape(point.text)}</p></div>`).join("\n")}
+</div>`;
+}
+
+/** Why Sigillo exists: the problem, who it is for, and what makes it different. */
+function whySection(t: SiteTexts): string {
+  const w = t.home.why;
+  return `<section><div class="wrap">${sectionHead(w.eyebrow, w.title, w.lead)}
+<h3 class="group">${escape(w.problemsTitle)}</h3>
+${pointCards(w.problems, [ICON.pen, ICON.search, ICON.flag], "three")}
+<h3 class="group">${escape(w.audienceTitle)}</h3>
+${pointCards(w.audience, [ICON.building, ICON.users, ICON.code], "three")}
+<h3 class="group">${escape(w.differenceTitle)}</h3>
+${pointCards(w.difference, [ICON.lock, ICON.chain, ICON.eye, ICON.shield], "two")}
+</div></section>`;
+}
+
+function aiActSection(t: SiteTexts): string {
+  const a = t.home.aiAct;
+  return `<section><div class="wrap">${sectionHead(a.eyebrow, a.title, a.lead)}
+<div class="three">
+${a.articles.map((article) => `<div class="card"><span class="ref">${escape(article.ref)}</span><h3>${escape(article.title)}</h3><p>${escape(article.text)}</p></div>`).join("\n")}
+</div>
+<p class="fine">${escape(a.note)}</p></div></section>`;
 }
 
 function contactSection(context: PageContext): string {
@@ -437,7 +496,7 @@ function contactSection(context: PageContext): string {
   return `
 <section id="contact"><div class="wrap narrow prose"><h2>${escape(c.title)}</h2>
 <p>${escape(c.text)}</p>
-<p><a class="btn primary" href="mailto:${escape(contactEmail)}">${escape(c.action)}</a> <a href="mailto:${escape(contactEmail)}">${escape(contactEmail)}</a></p></div></section>`;
+<p><a class="btn primary" href="${escape(mailLink(contactEmail, "Sigillo"))}" target="_blank" rel="noopener">${escape(c.action)}</a> ${escape(contactEmail)}</p></div></section>`;
 }
 
 function stepsOf(t: SiteTexts): string {
@@ -447,16 +506,15 @@ function stepsOf(t: SiteTexts): string {
 function pricingBody(context: PageContext): string {
   const { t } = context;
   const p = t.pricing;
-  const contact = context.contactEmail === undefined ? SIGN_IN : `mailto:${context.contactEmail}`;
   // Only the pilot can be started today; the other two ask to be told, by email.
   const plans = p.plans.map((plan, index) => {
     const now = index === 0;
-    const href = now ? SIGN_UP : context.contactEmail === undefined ? SIGN_IN : `${contact}?subject=${encodeURIComponent(`Sigillo: ${plan.name}`)}`;
+    const href = now ? SIGN_UP : context.contactEmail === undefined ? SIGN_IN : mailLink(context.contactEmail, `Sigillo: ${plan.name}`);
     const price = index === 1 ? `${escape(plan.price)} <small>${escape(p.perMonth)}</small>` : escape(plan.price);
     return `<div class="card plan${now ? " now" : ""}"><span class="tag">${escape(now ? p.now : p.soon)}</span><h3>${escape(plan.name)}</h3>
 <div class="price">${price}</div>
 <ul>${plan.features.map((feature) => `<li>${ICON.check}${escape(feature)}</li>`).join("")}</ul>
-<a class="btn ${now ? "primary" : "plain"}" href="${escape(href)}">${escape(plan.action)}</a></div>`;
+<a class="btn ${now ? "primary" : "plain"}" href="${escape(href)}"${now ? "" : ' target="_blank" rel="noopener"'}>${escape(plan.action)}</a></div>`;
   });
   return `<div class="wrap hero short"><h1>${escape(p.title)}</h1></div>
 <div class="wrap plans">
@@ -511,7 +569,7 @@ function privacyBody(context: PageContext): string {
   const contact =
     context.contactEmail === undefined
       ? ""
-      : `<p><a href="mailto:${escape(context.contactEmail)}">${escape(context.contactEmail)}</a></p>`;
+      : `<p><a href="${escape(mailLink(context.contactEmail, "Sigillo"))}" target="_blank" rel="noopener">${escape(context.contactEmail)}</a></p>`;
   return `<div class="wrap hero short"><h1>${escape(p.title)}</h1></div>
 <div class="wrap narrow prose">
 ${p.sections
