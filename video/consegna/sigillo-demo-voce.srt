@@ -1,0 +1,151 @@
+1
+00:00:00,500 --> 00:00:04,779
+La vostra azienda usa l'intelligenza
+artificiale per leggere curriculum,
+
+5
+00:00:04,829 --> 00:00:08,593
+rispondere ai clienti, prendere
+piccole decisioni ogni giorno.
+
+9
+00:00:09,290 --> 00:00:13,354
+Ma se un giorno qualcuno vi chiede:
+«Cosa ha fatto esattamente,
+
+13
+00:00:13,404 --> 00:00:16,316
+e come lo dimostrate?», sapete rispondere?
+
+17
+00:00:17,367 --> 00:00:23,278
+Questa è sigillo. Ogni azione della vostra
+AI viene registrata in un modo che nessuno,
+
+21
+00:00:23,328 --> 00:00:27,900
+nemmeno chi gestisce il sistema,
+può cambiare senza che si veda.
+
+25
+00:00:29,723 --> 00:00:34,041
+A destra, un agente che valuta
+candidature per un posto da sviluppatore.
+
+29
+00:00:35,688 --> 00:00:38,905
+A ogni curriculum, il registro
+a sinistra si aggiorna da solo.
+
+33
+00:00:40,942 --> 00:00:45,853
+E in alto, la risposta alla prima domanda:
+tutto a posto, nessuna alterazione.
+
+37
+00:00:48,233 --> 00:00:53,729
+Nella cronologia, in frasi normali: cosa ha
+fatto l'agente, quando, e con quale esito.
+
+41
+00:00:54,873 --> 00:00:59,059
+I dettagli tecnici ci sono, ma restano
+nascosti finché non li cercate.
+
+45
+00:01:00,429 --> 00:01:05,002
+Ogni azione ha la sua impronta, ed
+è legata a quella che la precede:
+
+49
+00:01:05,052 --> 00:01:08,873
+nessuna può sparire o cambiare
+senza rompere la catena.
+
+53
+00:01:10,389 --> 00:01:13,710
+E potete guardare solo gli
+strumenti che l'agente ha usato.
+
+57
+00:01:16,100 --> 00:01:19,572
+Più volte al giorno il registro viene sigillato,
+
+61
+00:01:19,622 --> 00:01:24,152
+e un ente esterno e indipendente
+ci appone la sua marca temporale.
+
+65
+00:01:27,814 --> 00:01:33,237
+È la prova che quelle azioni esistevano già
+a quell'ora: nessuno può riscriverle dopo.
+
+69
+00:01:37,033 --> 00:01:40,429
+Quando un ispettore, un revisore
+o un cliente chiede le prove,
+
+73
+00:01:40,479 --> 00:01:43,037
+basta un clic: sigillo prepara il fascicolo.
+
+77
+00:01:46,433 --> 00:01:48,305
+E chiunque può controllarlo,
+
+81
+00:01:48,355 --> 00:01:52,581
+con uno strumento gratuito e pubblico
+che non appartiene a chi vende sigillo.
+
+85
+00:01:54,920 --> 00:01:58,894
+Il controllo riesce: il fascicolo è integro.
+
+89
+00:01:59,294 --> 00:02:01,581
+Ora cambiamo un solo carattere in una copia:
+
+93
+00:02:01,631 --> 00:02:04,878
+l'orario della valutazione di un
+candidato, spostato di un secondo.
+
+97
+00:02:07,485 --> 00:02:10,760
+Il controllo fallisce, e dice esattamente dove.
+
+101
+00:02:12,267 --> 00:02:16,648
+Lo stesso vale per i documenti. Un
+candidato contesta la selezione:
+
+105
+00:02:16,698 --> 00:02:21,303
+caricate il suo curriculum. Il documento
+non lascia il vostro computer.
+
+109
+00:02:23,883 --> 00:02:28,859
+Sì: è esattamente quello che l'AI ha
+letto. Non uno simile: esattamente quello.
+
+113
+00:02:30,409 --> 00:02:34,285
+Basta un carattere diverso, e
+sigillo non lo riconosce più.
+
+117
+00:02:36,400 --> 00:02:42,851
+Il regolamento europeo sull'intelligenza artificiale chiede alle
+aziende di poter dimostrare cosa hanno fatto i loro sistemi.
+
+121
+00:02:47,500 --> 00:02:54,451
+Sigillo non vi dice se la vostra AI ha fatto la cosa
+giusta: vi dà le prove per verificarlo da soli.
+
+125
+00:02:54,851 --> 00:02:58,422
+Il pilota è gratuito: get-sigillo.eu.

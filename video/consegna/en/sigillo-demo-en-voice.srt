@@ -1,0 +1,147 @@
+1
+00:00:00,500 --> 00:00:04,538
+Your company uses artificial
+intelligence to read CVs,
+
+5
+00:00:04,588 --> 00:00:08,501
+answer customers and make
+small decisions every day.
+
+9
+00:00:08,901 --> 00:00:12,175
+But if one day someone asks
+you: “What exactly did it do,
+
+13
+00:00:12,225 --> 00:00:14,920
+and how can you prove it?”, could you answer?
+
+17
+00:00:17,700 --> 00:00:23,063
+This is sigillo. Every action your AI
+takes is recorded in a way that nobody,
+
+21
+00:00:23,113 --> 00:00:27,685
+not even whoever runs the system,
+can change without it showing.
+
+25
+00:00:30,144 --> 00:00:34,596
+On the right, an agent screening
+applications for a developer job.
+
+29
+00:00:36,027 --> 00:00:40,025
+With every CV, the ledger on
+the left updates by itself.
+
+33
+00:00:41,156 --> 00:00:45,648
+And at the top, the answer to the first
+question: all good, no tampering.
+
+37
+00:00:48,467 --> 00:00:53,909
+The history, in plain sentences: what the
+agent did, when, and how it turned out.
+
+41
+00:00:54,659 --> 00:00:59,550
+The technical details are there, but they
+stay out of sight until you look for them.
+
+45
+00:01:01,051 --> 00:01:05,331
+Every action has its own fingerprint,
+linked to the one before it:
+
+49
+00:01:05,381 --> 00:01:08,939
+none can vanish or change
+without breaking the chain.
+
+53
+00:01:10,572 --> 00:01:13,710
+And you can look at just the tools the agent used.
+
+57
+00:01:15,600 --> 00:01:22,178
+Several times a day the ledger is sealed, and an
+external, independent authority adds its timestamp.
+
+61
+00:01:25,889 --> 00:01:31,954
+It proves those actions already existed at
+that time: nobody can rewrite them afterwards.
+
+65
+00:01:36,067 --> 00:01:40,144
+When an inspector, an auditor or
+a customer asks for evidence,
+
+69
+00:01:40,194 --> 00:01:43,936
+one click is enough: sigillo
+prepares the evidence pack.
+
+73
+00:01:45,533 --> 00:01:51,800
+And anyone can check it, with a free, public tool
+that does not belong to whoever sells sigillo.
+
+77
+00:01:53,306 --> 00:01:56,435
+The check passes: the evidence pack is intact.
+
+81
+00:01:57,480 --> 00:02:00,672
+Now let's change a single character in a copy:
+
+85
+00:02:00,722 --> 00:02:04,585
+the time of a candidate's
+evaluation, moved by one second.
+
+89
+00:02:06,691 --> 00:02:09,412
+The check fails, and says exactly where.
+
+93
+00:02:11,333 --> 00:02:15,517
+The same goes for documents. A
+candidate disputes the selection:
+
+97
+00:02:15,567 --> 00:02:19,360
+upload their CV. The document
+never leaves your computer.
+
+101
+00:02:22,153 --> 00:02:27,705
+Yes: it is exactly the one the AI read.
+Not a similar one: exactly that one.
+
+105
+00:02:28,719 --> 00:02:32,579
+One different character, and
+sigillo no longer recognises it.
+
+109
+00:02:35,067 --> 00:02:40,535
+The European AI Act asks companies to be
+able to show what their systems have done.
+
+113
+00:02:46,967 --> 00:02:50,589
+Sigillo does not tell you whether
+your AI did the right thing:
+
+117
+00:02:50,639 --> 00:02:53,566
+it gives you the evidence to check for yourself.
+
+121
+00:02:53,966 --> 00:02:56,928
+The pilot is free: get-sigillo.eu.

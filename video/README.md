@@ -46,13 +46,49 @@ scene 6, to `get-sigillo.eu`.
 | `cambia-un-carattere.mjs` | writes a copy of a fascicolo or a CV with exactly one character changed, and says which (scene 5) |
 | `parlato.ts` | the narration, scene by scene, in Italian and English: voice-over text and subtitles |
 | `lingua.ts` | the language of the recording (`SIGILLO_VIDEO_LANG`), and the words on screen that depend on it |
-| `monta.sh` | ffmpeg: titles over scenes 1 and 6, a short fade at each cut, H.264 30 fps, no audio |
+| `voce.ts` | the voice-over: reads the narration and the delivered film and subtitles, has each line spoken, places it, mixes it, writes the films with voice |
+| `voce.py` | text to speech, one audio file per line of the narration (Kokoro, offline, on the CPU) |
+| `monta.sh` | ffmpeg: titles over scenes 1 and 6, a short fade at each cut, H.264 30 fps, no audio (`voce.ts` adds it later) |
 | `out/` | everything produced (ignored by git): `scene/*.mp4` one per scene, `sigillo-demo.mp4`, `sigillo-demo.srt` |
 | `consegna/` | the delivered copy of the recording of 2026-10-04: the six scenes, the joined film, the subtitles; `consegna/en/` the same in English |
 
 The demo's state (signing key, database, ingest token) lives outside the
 repository, in the system temporary directory (`SIGILLO_VIDEO_STATE` to
 change it): `pnpm lint` refuses key material anywhere in the tree.
+
+## The voice-over
+
+The films in `consegna/` have no sound. `voce.ts` adds a voice to the delivered
+ones, in the same language as the subtitles:
+
+```bash
+python3 -m venv /tmp/tts && /tmp/tts/bin/pip install kokoro-onnx soundfile
+# the two model files, from https://github.com/thewh1teagle/kokoro-onnx/releases (model-files-v1.0):
+#   kokoro-v1.0.onnx and voices-v1.0.bin
+export SIGILLO_TTS_PYTHON=/tmp/tts/bin/python SIGILLO_TTS_MODEL=/path/kokoro-v1.0.onnx SIGILLO_TTS_VOICES=/path/voices-v1.0.bin
+pnpm tsx video/voce.ts it      # and: pnpm tsx video/voce.ts en
+```
+
+It writes next to the silent films `sigillo-demo-voce.mp4` and its `.srt`
+(English: `sigillo-demo-en-voice*`). The subtitles stay a separate `.srt`, which
+the site's player offers as a track that can be switched on and off. Each
+line of `parlato.ts` starts where its subtitle started, waits for the line before
+it, and the closing lines may start up to four seconds early so the voice ends
+before the film does. The subtitles are laid again over the speech that was
+really spoken, so the `-voce.srt` is the one to use with the `-voce.mp4`, not the
+old one. The voice track is levelled to -16 LUFS; the picture is copied, not
+encoded again.
+
+The English voice is Kokoro's `bm_george`, set in `voce.py`
+(`SIGILLO_TTS_VOICE_EN` changes it). The delivered Italian voice is not Kokoro's,
+which sounded too flat: it is the Qwen text-to-speech model, run through
+Higgsfield with `language: it` and an instruction asking for a warm, expressive
+narrator, one wav per line dropped into `out/voce-it/` (see below). It is
+tooling for the video, like ffmpeg and Chromium; no package depends on it.
+Another engine, a studio-grade one for instance, can replace it without
+touching the mixer: `pnpm tsx video/voce.ts it testo` writes
+`out/voce-it/lines.json`, put one `<id>.wav` or `<id>.mp3` per line next to it,
+and `pnpm tsx video/voce.ts it mixa` does the rest.
 
 ## How it is recorded, and what that changes
 
