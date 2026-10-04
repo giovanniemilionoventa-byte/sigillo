@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -420,94 +420,5 @@ describe.skipIf(process.platform === "win32")("deploy/backup-offsite.sh", () => 
     expect(failed.remote).toEqual(["sigillo-20261002T230000Z.db.gz"]);
     expect(failed.reported?.lastFailure).toBe(failed.reported?.checked);
     expect(failed.reported?.lastSuccess).toBeNull();
-  });
-});
-
-/**
- * deploy/connect-drive.sh, run for real by bash, with `rclone`, `crontab` and
- * the copy script replaced by stand-ins that record what they were asked. The
- * Google sign-in and the upload are rclone's; what is checked is the script's
- * own logic: that it connects Drive and sets the password once, never again
- * (a new password would orphan every copy already on Drive), shows the
- * password before it goes on, and swaps the old cron line for the new one.
- */
-describe.skipIf(process.platform === "win32")("deploy/connect-drive.sh", () => {
-  /** Runs the script, or twice in a row in the same place when `again` is set, and reports the last run. */
-  function runConnect(options: { crontab?: string; again?: boolean }): {
-    status: number | null;
-    stdout: string;
-    calls: string[];
-    crontab: string;
-  } {
-    const root = mkdtempSync(join(tmpdir(), "sigillo-connect-"));
-    try {
-      const deploy = join(root, "deploy");
-      mkdirSync(deploy);
-      cpSync(join(DEPLOY, "connect-drive.sh"), join(deploy, "connect-drive.sh"));
-      const log = join(root, "calls.log");
-      const remotes = join(root, "remotes");
-      const crontab = join(root, "crontab");
-      writeFileSync(remotes, "");
-      writeFileSync(crontab, options.crontab ?? "");
-      writeFileSync(join(deploy, "backup-offsite.sh"), `#!/bin/bash\necho "backup-offsite $*" >> "${log}"\n`, { mode: 0o755 });
-      const bin = join(root, "bin");
-      mkdirSync(bin);
-      writeFileSync(
-        join(bin, "rclone"),
-        `#!/bin/bash\n` +
-          `case "$1 $2" in\n` +
-          `"listremotes ") cat "${remotes}" ;;\n` +
-          `"config create") echo "rclone $*" >> "${log}"; echo "$3:" >> "${remotes}" ;;\n` +
-          `esac\n`,
-        { mode: 0o755 },
-      );
-      writeFileSync(join(bin, "crontab"), `#!/bin/bash\nif [ "$1" = "-l" ]; then cat "${crontab}"; else cat > "${crontab}"; fi\n`, { mode: 0o755 });
-      const run = (): SpawnSyncReturns<string> =>
-        spawnSync("/bin/bash", [join(deploy, "connect-drive.sh")], {
-          encoding: "utf8",
-          input: "\n",
-          env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}`, HOME: root, TERM: "dumb" },
-        });
-      let result = run();
-      let before = 0;
-      if (options.again === true) {
-        before = readFileSync(log, "utf8").trim().split("\n").length;
-        result = run();
-      }
-      return {
-        status: result.status,
-        stdout: result.stdout,
-        calls: readFileSync(log, "utf8").trim().split("\n").slice(before),
-        crontab: readFileSync(crontab, "utf8"),
-      };
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  }
-
-  it("connects Drive, makes the password and shows it, copies once, checks it, and sets the hourly line", () => {
-    const { status, stdout, calls, crontab } = runConnect({
-      crontab: "MAILTO=\n0 * * * * cd /root/sigillo/deploy && docker compose exec -T server /app/backup.sh >> /root/b.log 2>&1\n",
-    });
-    expect(status).toBe(0);
-    expect(calls[0]).toBe("rclone config create sigillo-drive drive scope=drive.file use_trash=false");
-    const crypt = /^rclone config create sigillo-backup crypt remote=sigillo-drive:sigillo-backup filename_encryption=off directory_name_encryption=false password=([0-9a-f]{32}) --obscure$/.exec(calls[1] ?? "");
-    expect(crypt).not.toBeNull();
-    // The password is on the screen, and the check comes after it.
-    expect(stdout).toContain(`    ${crypt?.[1] ?? "missing"}\n`);
-    expect(calls.slice(2)).toEqual(["backup-offsite ", "backup-offsite --check"]);
-    // The old line goes, the rest stays, the new one is there once.
-    expect(crontab).toContain("MAILTO=");
-    expect(crontab).not.toContain("/app/backup.sh");
-    expect(crontab.match(/backup-offsite\.sh >>/g)).toHaveLength(1);
-    expect(crontab).toMatch(/^0 \* \* \* \* .*\/deploy\/backup-offsite\.sh >> .*sigillo-backup\.log 2>&1$/m);
-  });
-
-  it("keeps a connection and a password that already exist, and does not duplicate the cron line", () => {
-    const again = runConnect({ again: true });
-    expect(again.status).toBe(0);
-    expect(again.calls).toEqual(["backup-offsite ", "backup-offsite --check"]);
-    expect(again.stdout).toContain("la password resta quella di prima");
-    expect(again.crontab.match(/backup-offsite\.sh >>/g)).toHaveLength(1);
   });
 });

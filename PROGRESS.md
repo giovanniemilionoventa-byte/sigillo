@@ -3295,20 +3295,6 @@ come la prima; consegna in `video/consegna/en/`, versione con sottotitoli impres
 Restano in italiano i curricula e le righe stampate dall'agente della demo: sono dati e output
 veri, non testo del video.
 
-### Sessione 27 — 2026-10-04 — collegare Google Drive con un solo script
-
-Il committente, vedendo "Il server non ha ancora provato" in Impostazioni, non capiva come si
-collega davvero Drive: i 9 passi a mano non erano all'altezza. Scelto "un solo comando".
-
-- **`deploy/connect-drive.sh`**: dal server, con il tunnel aperto dal portatile, installa rclone
-  se manca, fa il consenso Google (solo `drive.file`), crea la password di cifratura e la mostra
-  una volta, lancia la prima copia e `--check` (che fa riscrivere la password), e sostituisce nel
-  cron la vecchia riga di `backup.sh` con quella di `backup-offsite.sh`. Rilanciato non rifà né il
-  collegamento né la password: una password nuova renderebbe illeggibili le copie già su Drive.
-- Il collegamento resta fuori dal sito: la password di cifratura non passa dalla pagina web, e un
-  pulsante "Collega" in pagina vorrebbe credenziali Google Cloud proprie (scartato per ora).
-- Test in `deploy-config.test.ts` con `rclone` e `crontab` sostituiti. Guida 6.1 aggiornata.
-
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
