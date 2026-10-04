@@ -3184,33 +3184,7 @@ l'account e la scelta chiaro/scuro, e un limite di 10.000 ricevute al mese.
 **Da fare sul server**: il `.env` di produzione copiato dal vecchio `.env.example` ha
 `SIGILLO_ORG_MONTHLY_RECEIPTS=100000`; per avere 10.000 va cambiato lì.
 
-### Sessione 25 — 2026-10-03 — la copia dei backup su Google Drive
-
-Richiesta del committente (thread "Backup su Google Drive"): poter mandare i backup fuori dal
-server, su Google Drive. Fino a oggi le copie stavano solo sullo stesso disco del database.
-
-- **`deploy/backup-offsite.sh`**, sull'host, sostituisce nel cron la chiamata diretta a
-  `backup.sh`: fa il backup locale come prima e poi, se rclone ha un collegamento
-  `sigillo-backup`, comprime l'ultima copia e la carica, senza scriverla una seconda volta sul
-  disco. Senza collegamento si ferma dopo il backup locale e lo scrive nel log.
-- **Cifrata**: `sigillo-backup` è un collegamento `crypt` di rclone sopra Google Drive, con una
-  password che il committente salva fuori dal server. `--check` chiede quella password e scarica
-  l'ultima copia usando solo lei: è il modo di sapere che la password salvata è quella giusta.
-  Provato con rclone 1.75 vero: senza `--obscure` alla creazione rclone salva la password in una
-  forma che poi non riconosce, e `--check` lo scopre (la guida lo dice).
-- **Su Drive** resta la copia dell'ultima ora e una per ciascuno dei 30 giorni prima, contati
-  per giorni che hanno una copia, così un upload che smette di girare non cancella le ultime buone.
-  Accesso di rclone al Drive limitato a `drive.file` (solo i file che crea lui), cestino saltato
-  (`use_trash=false`) perché i file cancellati nel cestino occupano spazio per 30 giorni.
-- **Guida**: `DEPLOY-PRODUZIONE.md` 6.1 (sei passi), 6.2 (ripristino da Drive), checklist.
-  Test in `deploy-config.test.ts` con `docker` e `rclone` sostituiti: backup locale senza Drive,
-  upload dell'ultima copia, quali copie restano, e un upload interrotto che non lascia file a metà.
-- **rclone** è uno strumento installato sul server, non una dipendenza di un pacchetto: aggiunto
-  in `CLAUDE.md` su richiesta del committente (backup su Drive).
-
-**Da fare sul server**: i passi di 6.1 "Copia su Google Drive", e cambiare la riga del cron.
-
-### Sessione 26 — 2026-10-04 — il video dimostrativo, come cattura dello schermo vera
+### Sessione 25 — 2026-10-04 — il video dimostrativo, come cattura dello schermo vera
 
 Richiesta del committente (PROMPT-VIDEO-CATTURA.md): un video di circa 2:30 della console vera,
 non un'animazione. Tutto in `video/`, fuori dai pacchetti, nessuna dipendenza nuova
@@ -3240,7 +3214,7 @@ non un'animazione. Tutto in `video/`, fuori dai pacchetti, nessuna dipendenza nu
 **Da fare**: la voce, registrata dal committente o con uno strumento di voce, sul testo
 dell'`.srt`.
 
-### Sessione 27 — 2026-10-04 — la console in inglese e in italiano
+### Sessione 26 — 2026-10-04 — la console in inglese e in italiano
 
 Richiesta del committente (thread "Sigillo bilingue"): sigillo pensato per tutta l'Unione
 Europea, quindi inglese come lingua principale e italiano a scelta. Il committente ha scelto che
@@ -3265,26 +3239,7 @@ la prima visita segua la lingua del browser.
 **Da fare**: il sito pubblico (thread "Sito, console e app desktop") e la versione inglese del
 video.
 
-### Sessione 26 — 2026-10-04 — il backup su Google Drive dalle Impostazioni
-
-Richiesta del committente: il backup su Drive va acceso, spento e regolato dalle Impostazioni,
-non solo dal cron del server.
-
-- **Impostazioni → Backup su Google Drive**, solo per l'amministratore e solo dove il server
-  conosce la cartella dei backup (`SIGILLO_BACKUP_DIR`, ora nel `docker-compose.yml`): acceso o
-  spento, e ogni ora, 6 ore, 12 ore o una volta al giorno. Ogni pulsante salva da solo, come
-  quelli del tema. Sopra, una riga dice com'è andata: ultima copia, copia non riuscita, Drive non
-  collegato, oppure, in rosso, che lo script non gira da più di due ore.
-- Il server non tocca mai rclone, Drive o la password: scrive la scelta in
-  `offsite-settings.json` nel volume dei backup, che `backup-offsite.sh` legge a ogni giro
-  orario; lo script scrive lì `offsite-status.json`, che la pagina mostra
-  (`apps/server/src/backup/offsite.ts`). Il cron resta ogni ora: è lo script a saltare i giri
-  prima della frequenza scelta, contando dall'ultima copia riuscita.
-- Testi in inglese e italiano. Test in `settings-ui.test.ts` (scelte, stati, solo
-  amministratore) e in `deploy-config.test.ts` (lo script segue la scelta e scrive lo stato nella
-  forma che il server legge). Screenshot `21-impostazioni` rigenerati.
-
-### Sessione 28 — 2026-10-04 — il video dimostrativo in inglese
+### Sessione 27 — 2026-10-04 — il video dimostrativo in inglese
 
 Richiesta del committente: lo stesso video con le schermate e i sottotitoli in inglese, ora che
 la console parla inglese e italiano. Gli script di `video/` scelgono la lingua con
@@ -3300,19 +3255,42 @@ versione inglese di `selezione-cv`. Stesso agente LangGraph con gli strumenti `r
 CI, controlla che ogni curriculum inglese abbia lo stesso punteggio e lo stesso esito del suo
 originale italiano. Il video inglese usa questa demo: sullo schermo non resta nulla in italiano.
 
-### Sessione 27 — 2026-10-04 — collegare Google Drive con un solo script
+### Sessione 28 — 2026-10-04 — il backup su Google Drive, provato e tolto
 
-Il committente, vedendo "Il server non ha ancora provato" in Impostazioni, non capiva come si
-collega davvero Drive: i 9 passi a mano non erano all'altezza. Scelto "un solo comando".
+Il committente aveva chiesto di poter mandare i backup su Google Drive (copia cifrata con
+rclone, poi accensione e frequenza dalle Impostazioni, poi uno script unico per il collegamento).
+Dopo tre giri è risultato troppo complicato da collegare per chi non usa il terminale, e per ora
+ci si affida ai soli backup locali di `backup.sh` (2 copie sul disco del server).
 
-- **`deploy/connect-drive.sh`**: dal server, con il tunnel aperto dal portatile, installa rclone
-  se manca, fa il consenso Google (solo `drive.file`), crea la password di cifratura e la mostra
-  una volta, lancia la prima copia e `--check` (che fa riscrivere la password), e sostituisce nel
-  cron la vecchia riga di `backup.sh` con quella di `backup-offsite.sh`. Rilanciato non rifà né il
-  collegamento né la password: una password nuova renderebbe illeggibili le copie già su Drive.
-- Il collegamento resta fuori dal sito: la password di cifratura non passa dalla pagina web, e un
-  pulsante "Collega" in pagina vorrebbe credenziali Google Cloud proprie (scartato per ora).
-- Test in `deploy-config.test.ts` con `rclone` e `crontab` sostituiti. Guida 6.1 aggiornata.
+- Tolto tutto, con il ripristino delle tre pull request (#35, #39, #41): `backup-offsite.sh`,
+  `connect-drive.sh`, la sezione "Backup su Google Drive" delle Impostazioni, i file di
+  impostazioni e stato nel volume dei backup, `SIGILLO_BACKUP_DIR` nel compose, i test, la guida
+  (6.1 e checklist) e `rclone` dall'elenco degli strumenti approvati. `backup.sh` e le copie locali
+  non sono cambiati.
+- Resta aperto, come prima: la copia fuori dal server (6.1) è manuale. Se un giorno si riprende,
+  l'idea era corretta ma il collegamento va reso più semplice del terminale.
+- **Da fare sul server**: se il cron è stato cambiato su `backup-offsite.sh`, rimettere la riga
+  di `backup.sh` (docs/DEPLOY-PRODUZIONE.md, 6.1) dopo `./update.sh`.
+
+### Sessione 29 — 2026-10-04 — l'esportazione giornaliera
+
+Dopo aver tolto Drive, il committente ha chiesto, al posto di quel backup, che le ricevute si
+scarichino in modo facoltativo ogni giorno alle 23:59.
+
+- **Impostazioni → Esportazione giornaliera**, per ogni account (l'amministratore per i suoi
+  sistemi, ogni cliente per i suoi): Attiva/Spenta, e l'elenco degli ultimi file con "Scarica".
+  Spenta all'inizio.
+- **Cosa fa** (`apps/server/src/backup/daily-export.ts`): un controllo al minuto; dalle 23:59 ora
+  italiana crea, per ogni sistema degli account che l'hanno accesa, un fascicolo con le ricevute
+  di quel giorno (lo stesso di Esporta, per il giorno intero ora italiana). Salta un sistema senza
+  ricevute quel giorno, non rifà un file che c'è, tiene 30 giorni. I file stanno nel volume dei
+  backup (`SIGILLO_BACKUP_DIR`, di nuovo nel compose) in `exports/<organizzazione>/`.
+- **Scelte**: i file restano sul server e si scaricano dalla pagina (niente email: non c'è un
+  servizio per spedirle); chi ha acceso/spento è in `daily-export.json` nel volume, non nel
+  database, quindi nessuna migrazione dello schema. Un cliente scarica solo i file dei suoi
+  sistemi, e un nome di file che non sia uno dei nostri è 404.
+- **Limite noto**: se il server è fermo alle 23:59 quel giorno non viene esportato.
+- Testi in inglese e italiano. Test in `daily-export.test.ts`. Screenshot `21` e `31` rigenerati.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

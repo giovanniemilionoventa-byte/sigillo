@@ -527,13 +527,8 @@ $ crontab -e
 Aggiungi la riga:
 
 ```
-0 * * * * /srv/sigillo/deploy/backup-offsite.sh >> /srv/sigillo-backup.log 2>&1
+0 * * * * cd /srv/sigillo/deploy && docker compose exec -T server /app/backup.sh >> /srv/sigillo-backup.log 2>&1
 ```
-
-`backup-offsite.sh` fa il backup sul server (`backup.sh`, dentro il container) e
-poi, se è stata collegata una copia fuori dal server (sotto, "Copia su Google
-Drive"), ci manda anche l'ultima copia. Finché non è collegata scrive nel log
-`off-site copy: not configured` e si ferma lì, senza errori.
 
 Ogni ora, e ne tiene **2** sul server (le ultime due ore). Perché ogni ora: se
 un giorno si deve rimettere un backup, tutto quello che è arrivato dopo quel
@@ -549,6 +544,17 @@ che finisce in `/srv/sigillo-backup.log`. Una persona cancellata resta nei
 backup sul server al massimo per due ore. **La copia fuori dal server, sotto,
 è quella che copre i giorni e le settimane**, e va fatta davvero.
 
+**Esportazione giornaliera (facoltativa).** In Impostazioni, ogni account (tu per i
+tuoi sistemi, ogni cliente per i suoi) può attivare l'esportazione giornaliera:
+ogni giorno alle 23:59, ora italiana, il server salva un file per sistema con le
+ricevute di quel giorno, lo stesso fascicolo verificabile del pulsante Esporta.
+I file stanno sul server, nello stesso volume dei backup
+(`/var/lib/sigillo-backups/exports/`), si scaricano da Impostazioni e si tengono
+per 30 giorni; un sistema senza ricevute quel giorno non ha il file. È spenta
+finché non la si accende. Se il server è fermo alle 23:59, quel giorno non viene
+esportato. Non sostituisce il backup del database: i file stanno sullo stesso
+disco.
+
 Per fare i conti: una ricevuta occupa circa 2 KB nel database (misurato il
 2026-10-02 con ricevute complete di impronte e pseudonimo), quindi 1 GB
 contiene circa mezzo milione di ricevute.
@@ -563,124 +569,8 @@ Deve stampare `wrote … bytes to /var/lib/sigillo-backups/sigillo-….db` e
 `backups in /var/lib/sigillo-backups: 1`.
 
 **Quel volume è sullo stesso disco del database.** Un backup vero sta altrove.
-
-#### Copia su Google Drive, cifrata
-
-`backup-offsite.sh` comprime l'ultima copia, la **cifra** e la carica su Google
-Drive. Su Drive tiene la copia più recente e una per ciascuno dei 30 giorni
-prima (`SIGILLO_OFFSITE_KEEP_DAYS` per cambiarli); le più vecchie le cancella da
-solo. Se la copia è attiva e ogni quanto si fa (ogni ora, 6 ore, 12 ore o una
-volta al giorno) si sceglie dalla pagina web, in **Impostazioni → Backup su
-Google Drive**, entrando come amministratore; lì si vede anche quando è stata
-fatta l'ultima copia, o se qualcosa non va (Drive non collegato, copia non
-riuscita, script che non gira più). All'inizio è attiva, ogni ora. Il database contiene i dati dei clienti, quindi esce dal
-server solo cifrato: chi apre il Drive vede file `sigillo-….db.gz.bin` che non
-si possono leggere senza la password.
-
-**Il modo corto: un solo script.** Dal portatile entra nel server aprendo anche
-un "tunnel" (serve perché Google deve poter aprire la sua pagina di consenso dal
-browser del portatile):
-
-```sh
-portatile$ ssh -L 53682:127.0.0.1:53682 utente@sigillo.tuaazienda.it
-```
-
-e, in quella sessione, sul server:
-
-```sh
-$ cd /srv/sigillo/deploy && ./connect-drive.sh
-```
-
-Lo script installa rclone se manca, stampa un link da aprire nel browser del
-portatile (entra con l'account Google dove vuoi i backup e premi "Consenti"),
-crea la password di cifratura e la mostra **una volta sola**, fa la prima copia,
-ti fa riscrivere la password per controllare che quella salvata sia giusta, e
-mette la riga del cron al posto della vecchia. Si può rilanciare: un
-collegamento e una password che esistono già non vengono toccati. Sotto, gli
-stessi passi a mano, se preferisci.
-
-Serve [rclone](https://rclone.org), che si installa sul server (non nei
-container). Ogni blocco è un passo.
-
-1. Installa rclone:
-
-```sh
-$ sudo apt-get install -y unzip curl
-$ curl -fsSL https://rclone.org/install.sh | sudo bash
-$ rclone version
-```
-
-L'ultimo comando deve stampare `rclone v1.…`.
-
-2. Collega Google Drive. Google deve aprire una pagina nel **browser del
-portatile**, quindi entra nel server con un "tunnel" (dal portatile):
-
-```sh
-portatile$ ssh -L 53682:127.0.0.1:53682 utente@sigillo.tuaazienda.it
-```
-
-e, in quella sessione, sul server:
-
-```sh
-$ rclone config create sigillo-drive drive scope=drive.file use_trash=false
-```
-
-Stampa `please go to the following link: http://127.0.0.1:53682/auth?state=…`.
-Apri quel link nel browser del portatile, entra con l'account Google dove vuoi
-i backup e premi "Consenti". Il terminale torna al prompt da solo.
-`scope=drive.file` vuol dire che rclone vede solo i file che crea lui, non il
-resto del Drive.
-
-3. Crea la password della cifratura, e il collegamento cifrato che la usa:
-
-```sh
-$ openssl rand -hex 16 > /root/password-backup.txt
-$ rclone config create sigillo-backup crypt remote=sigillo-drive:sigillo-backup filename_encryption=off directory_name_encryption=false password="$(cat /root/password-backup.txt)" --obscure
-```
-
-`--obscure` serve: senza, rclone salva la password in una forma che poi non
-riconosce, e le copie non si rileggono più.
-
-4. **Salva la password fuori dal server**, nel gestore di password:
-
-```sh
-$ cat /root/password-backup.txt
-```
-
-Sono 32 caratteri, lettere `a`–`f` e cifre. Se il server si rompe, questa
-password è l'unico modo per leggere le copie su Drive: non la ha nessun altro,
-nemmeno Google. Poi cancella il file:
-
-```sh
-$ rm /root/password-backup.txt
-```
-
-5. Prova il giro completo a mano:
-
-```sh
-$ /srv/sigillo/deploy/backup-offsite.sh
-```
-
-Deve finire con `off-site copy: uploaded sigillo-….db.gz to sigillo-backup:` e
-`off-site copies in sigillo-backup:: 1`. Su Drive compare la cartella
-`sigillo-backup`, e in Impostazioni "Ultima copia oggi alle …".
-
-6. Controlla che la password salvata sia quella giusta:
-
-```sh
-$ /srv/sigillo/deploy/backup-offsite.sh --check
-```
-
-Chiede la password: **scrivila copiandola dal gestore di password**, non dal
-terminale. Deve rispondere `ok: sigillo-….db.gz decrypts with that password and
-is a whole database`. Se dice `could not be read with that password`, la
-password salvata non è quella giusta: ripeti dal passo 3.
-
-Se il passo 2 si interrompe a metà, ricomincialo dopo
-`rclone config delete sigillo-drive`.
-
-**Senza Google Drive**, il modo più semplice è prendere ogni giorno l'ultima
-copia dal portatile, o da un altro server:
+Il modo più semplice è prendere ogni giorno l'ultima copia dal portatile, o da
+un altro server:
 
 ```sh
 portatile$ ssh utente@sigillo.tuaazienda.it \
@@ -702,17 +592,6 @@ portatile$ node dist/cli.js system list --all --db sigillo-*.db
 Deve elencare `acme-support-bot` con lo stesso numero di ricevute che mostra la
 pagina web a quell'ora (poi `active` o `archived …`, e il nome mostrato, se
 gliene hai dato uno). Senza `--all` i sistemi archiviati non compaiono.
-
-Una copia da Google Drive si scarica dal server (o da qualunque computer con
-rclone configurato come ai passi 2 e 3 sopra, con la password salvata):
-
-```sh
-$ rclone lsf sigillo-backup:
-$ rclone copy sigillo-backup:sigillo-<data>.db.gz .
-$ gunzip sigillo-<data>.db.gz
-```
-
-e si controlla con lo stesso `system list` di sopra.
 
 ### 6.3 Aggiornare
 
@@ -897,8 +776,8 @@ non dà il risultato atteso, fermati lì.
 | 28 | portatile | `node packages/verifier/dist/cli.js fascicolo.zip --tsa-ca cacert.pem --key-id <key_id>` | `OK …`, token `verified … attested time …`, `every signature is by a key you said to expect`; uscita 0 |
 | 29 | portatile | fascicolo alterato (5.4) | `FAILED  chain-link at receipts.jsonl:4`, uscita 1 |
 | 30 | server | `docker compose exec -T server /app/backup.sh` | `wrote … bytes`, `backups in …: 1` |
-| 31 | server | `crontab -l` | la riga `0 * * * *` di `backup-offsite.sh` |
-| 32 | server | `backup-offsite.sh`, poi `backup-offsite.sh --check` (6.1, Google Drive) | `off-site copy: uploaded …`; `ok: … decrypts with that password` |
+| 31 | server | `crontab -l` | la riga `0 * * * *` del backup orario |
+| 32 | portatile | copia dell'ultimo backup (6.1) e `tar -tvf sigillo-backup.tar` | un file `sigillo-….db` |
 | 33 | portatile | `node dist/cli.js system list --all --db sigillo-*.db` | `acme-support-bot	N receipts	active	…` |
 
 Quando tutte le righe sono spuntate, sigillo è in produzione. Restano le scelte

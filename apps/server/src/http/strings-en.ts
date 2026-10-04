@@ -258,21 +258,15 @@ const ui: Strings = {
     adminLogAll: "See all",
     adminLogEmpty: "No operations yet.",
     signingKey: "Signing key",
-    offsite: {
-      heading: "Backup on Google Drive",
+    dailyExport: {
+      heading: "Daily export",
       on: "On",
       off: "Off",
-      frequencyLabel: "Frequency",
-      every: (hours: number): string => (hours === 1 ? "Every hour" : hours === 24 ? "Once a day" : `Every ${hours} hours`),
-      states: {
-        off: "Off: the copies stay on the server only.",
-        neverRan: "The server has not tried to make a copy yet.",
-        notRunning: (when: string): string => `The automatic backup is not running: last run ${when}.`,
-        notConnected: "Google Drive is not connected to the server yet.",
-        failed: (when: string): string => `The last copy failed, ${when}.`,
-        ok: (when: string): string => `Last copy ${when}.`,
-        waiting: "No copy yet.",
-      },
+      stateOn: "Every day at 23:59",
+      stateOff: "Off.",
+      empty: "No files yet.",
+      download: "Download",
+      size: (bytes: number): string => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`),
     },
   },
   history: {

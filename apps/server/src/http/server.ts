@@ -76,7 +76,7 @@ export interface ServerOptions {
     sessions?: UiSessions;
     /** Customers' accounts (ui.ts, UiOptions.accounts). */
     accounts?: UiOptions["accounts"];
-    /** The backups directory, for the off-site copy in Impostazioni (ui.ts, UiOptions.backupDirectory). */
+    /** The backups directory, for the daily export in Impostazioni (ui.ts, UiOptions.backupDirectory). */
     backupDirectory?: string;
   };
 }

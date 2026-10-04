@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { DOCUMENT_TEXT_SOURCE, type DocumentFingerprints } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
@@ -60,15 +61,7 @@ import {
 } from "./pages.js";
 import { currentLanguage, isLanguage, LANGUAGE_COOKIE, languageFor, withLanguage, type Language } from "./locale.js";
 import { systemTitle, UI } from "./strings.js";
-import {
-  isOffsiteFrequency,
-  offsiteState,
-  readOffsiteSettings,
-  readOffsiteStatus,
-  writeOffsiteSettings,
-  type OffsiteSettings,
-  type OffsiteState,
-} from "../backup/offsite.js";
+import { dailyExportPath, isDailyExportOn, listDailyExports, setDailyExport, type StoredExport } from "../backup/daily-export.js";
 import { ICONS, STATE_ICONS } from "./style.js";
 
 /**
@@ -132,9 +125,9 @@ export interface UiOptions {
    */
   organizationMonthlyReceipts?: number;
   /**
-   * The directory backup.sh writes to, which deploy/backup-offsite.sh shares
-   * (backup/offsite.ts). Given, Impostazioni shows the operator the off-site
-   * copy and lets them turn it on or off and choose how often it is made.
+   * The directory backup.sh writes to, shared with the daily export
+   * (backup/daily-export.ts). Given, Impostazioni lets every account turn the
+   * daily export on or off and download its files.
    */
   backupDirectory?: string;
   accounts?: {
@@ -978,7 +971,7 @@ ${exportSheet(record)}`,
           theme: themeOf(request),
           log: store.adminLog(8),
           keyId,
-          offsite: offsiteView(viewer),
+          dailyExport: dailyExportView(session),
           now: options.now(),
           extra: {},
         }),
@@ -986,28 +979,51 @@ ${exportSheet(record)}`,
     );
   });
 
-  function offsiteView(viewer: Viewer): { settings: OffsiteSettings; state: OffsiteState } | null {
+  /** Whose daily export this is: an organization's id, or the empty string for the operator. */
+  const ownerOf = (viewer: Viewer): string => (viewer.kind === "organization" ? viewer.organizationId : "");
+
+  function dailyExportView(session: Session): { on: boolean; files: StoredExport[]; names: Map<string, string> } | null {
     const directory = options.backupDirectory;
-    if (directory === undefined || viewer.kind !== "operator") return null;
-    const settings = readOffsiteSettings(directory);
-    return { settings, state: offsiteState(settings, readOffsiteStatus(directory), options.now()) };
+    if (directory === undefined) return null;
+    const records = session.store.listSystemRecords();
+    const owner = ownerOf(session.viewer);
+    return {
+      on: isDailyExportOn(directory, owner),
+      files: listDailyExports(directory, owner, records.map((record) => record.system_id)),
+      names: new Map(records.map((record) => [record.system_id.replaceAll(/[^A-Za-z0-9._-]/g, "_"), systemTitle(record)])),
+    };
   }
 
-  // One button at a time, from Impostazioni: on, off, or a frequency. What
-  // the other field was stays as it was.
-  app.post("/ui/impostazioni/backup", async (request, reply) => {
-    const session = requireOperator(request, reply);
+  app.post("/ui/impostazioni/esportazione-giornaliera", async (request, reply) => {
+    const session = requireSession(request, reply);
     if (session === null) return reply;
     const directory = options.backupDirectory;
     if (directory === undefined) return reply.code(404).send();
-    const body = request.body as { enabled?: unknown; every?: unknown } | undefined;
-    const settings = readOffsiteSettings(directory);
-    if (body?.enabled === "on" || body?.enabled === "off") settings.enabled = body.enabled === "on";
-    const every = Number(body?.every);
-    if (isOffsiteFrequency(every)) settings.everyHours = every;
-    writeOffsiteSettings(directory, settings);
-    request.log.info({ action: "offsite.settings", enabled: settings.enabled, every_hours: settings.everyHours }, "off-site backup settings changed");
+    const body = request.body as { enabled?: unknown } | undefined;
+    if (body?.enabled === "on" || body?.enabled === "off") {
+      setDailyExport(directory, ownerOf(session.viewer), body.enabled === "on");
+      request.log.info({ action: "daily-export.settings", enabled: body.enabled === "on" }, "daily export setting changed");
+    }
     return reply.redirect("/ui/impostazioni", 303);
+  });
+
+  // A file of the account's own: the name must be one the export makes, and
+  // the system it names one the account can see.
+  app.get("/ui/impostazioni/esportazioni/:fileName", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const directory = options.backupDirectory;
+    const { fileName } = request.params as { fileName: string };
+    if (directory === undefined) return reply.code(404).send();
+    const owner = ownerOf(session.viewer);
+    const visible = listDailyExports(directory, owner, session.store.listSystemRecords().map((record) => record.system_id));
+    const path = visible.some((file) => file.fileName === fileName) ? dailyExportPath(directory, owner, fileName) : null;
+    if (path === null) return reply.code(404).send({ error: "no such file" });
+    return reply
+      .code(200)
+      .type("application/zip")
+      .header("content-disposition", `attachment; filename="sigillo-${fileName}"`)
+      .send(readFileSync(path));
   });
 
   app.post("/ui/impostazioni/tema", async (request, reply) => {
