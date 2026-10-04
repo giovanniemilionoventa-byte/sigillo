@@ -3316,8 +3316,15 @@ progetto).
   'self'` per l'unico file di script del sito, `/site.js`, che mostra i pulsanti "Copia". Le
   pagine della console non caricano script esterni. Con le immagini ammesse, i browser chiedono
   `/favicon.ico`: ora ricevono il sigillo (prima un 404 nascosto dalla CSP).
-- **Da fare**: l'email dei Contatti (la riga si mostra solo quando c'è), e la pagina "Verifica"
-  pubblica che controlla un fascicolo nel browser, in una PR a parte.
+- **Verifica** (`/verify`): chi riceve un fascicolo lo trascina nella pagina e il controllo gira
+  nel suo browser (Web Crypto), senza caricarlo da nessuna parte. È una seconda implementazione
+  dei controlli di `sigillo-verify`, in JavaScript per il browser (`evidence-check.ts`, circa 470
+  righe), con gli stessi nomi dei controlli e nello stesso ordine; `evidence-check.test.ts` la
+  tiene allineata: archivi veri, manomessi in 25 modi diversi, devono avere lo stesso verdetto
+  da entrambi. Non fa, e la pagina lo dice, quello che solo la riga di comando può fare: lo schema
+  completo, le marche temporali RFC 3161 (servono openssl) e i tempi che provano, `--key-id` e
+  `--previous`. Il verificatore di `packages/verifier` non cambia di una riga.
+- **Da fare**: l'email dei Contatti (la riga si mostra solo quando c'è).
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 

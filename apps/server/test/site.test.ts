@@ -4,12 +4,14 @@ import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { chromium } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createZip, readZip } from "@sigillo/core";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { FirebaseAuth } from "../src/auth/firebase.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
+import { buildArchive } from "../src/export/archive.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { buildServer } from "../src/http/server.js";
-import { byteRange, SITE_PATHS, SITE_SCRIPT, subripToWebVtt } from "../src/http/site.js";
+import { byteRange, SITE_PATHS, SITE_SCRIPT, subripToWebVtt, VERIFY_SCRIPT } from "../src/http/site.js";
 import { SITE_TEXTS } from "../src/http/site-strings.js";
 import { ReceiptStore } from "../src/storage/store.js";
 import { BROWSER_PATH, caddyfilePolicy } from "./helpers/browser.js";
@@ -274,10 +276,101 @@ describe("the site in a browser, under deploy/Caddyfile's policy", () => {
     }
   }, 60_000);
 
+  it.skipIf(BROWSER_PATH === undefined)("checks an evidence pack on the Verify page, without sending it anywhere", async () => {
+    const zip = await evidencePack();
+    const tampered = new Map(readZip(zip).map((entry) => [entry.name, entry.data]));
+    const lines = new TextDecoder().decode(tampered.get("receipts.jsonl")).split("\n");
+    lines[1] = (lines[1] ?? "").replace('"outcome":"ok"', '"outcome":"error"');
+    tampered.set("receipts.jsonl", new TextEncoder().encode(lines.join("\n")));
+    const doctored = createZip([...tampered].map(([name, data]) => ({ name, data })));
+
+    const policy = caddyfilePolicy();
+    const live = server(directory, true);
+    live.addHook("onSend", async (_request, reply) => {
+      void reply.header("content-security-policy", policy);
+    });
+    await live.listen({ host: "127.0.0.1", port: 0 });
+    const address = live.server.address();
+    const base = `http://localhost:${typeof address === "object" && address !== null ? address.port : 0}`;
+    const browser = await chromium.launch({ ...(BROWSER_PATH === undefined ? {} : { executablePath: BROWSER_PATH }), args: ["--no-proxy-server"] });
+    try {
+      const page = await browser.newPage({ locale: "it-IT", extraHTTPHeaders: { "accept-language": "it-IT" } });
+      const problems: string[] = [];
+      const sent: string[] = [];
+      page.on("console", (message) => {
+        if (message.type() === "error") problems.push(message.text());
+      });
+      page.on("pageerror", (error) => problems.push(error.message));
+      page.on("request", (request) => {
+        if (request.method() !== "GET") sent.push(`${request.method()} ${request.url()}`);
+      });
+      await page.goto(`${base}/verify`);
+      const result = page.locator("#result");
+      const choose = async (name: string, buffer: Uint8Array) =>
+        page.locator("#pack").setInputFiles({ name, mimeType: "application/zip", buffer: Buffer.from(buffer) });
+
+      await choose("fascicolo.zip", zip);
+      await expect.poll(() => result.locator("h3").textContent()).toBe("Integro");
+      expect(await result.textContent()).toContain("3 ricevute di site-bot, firmate e in ordine.");
+      expect(await result.locator("dl").textContent()).toContain("Firme3 su 3");
+
+      await choose("fascicolo.zip", doctored);
+      await expect.poll(() => result.locator("h3").textContent()).toBe("Alterato");
+      expect(await result.textContent()).toContain("Una ricevuta è stata modificata.");
+      expect(await result.locator("code").textContent()).toMatch(/^chain-link · receipts\.jsonl:3: /);
+
+      await choose("note.zip", new TextEncoder().encode("not a zip"));
+      await expect.poll(() => result.locator("h3").textContent()).toBe("Non è un fascicolo");
+
+      expect(problems).toEqual([]);
+      expect(sent).toEqual([]);
+    } finally {
+      await browser.close();
+      await live.close();
+    }
+  }, 60_000);
+
   it("keeps its one script to what it says", () => {
-    expect(SITE_SCRIPT).not.toMatch(/fetch|XMLHttpRequest|eval|innerHTML|import/);
+    // Neither script sends anything anywhere or writes markup: the evidence
+    // pack stays in the reader's browser.
+    for (const script of [SITE_SCRIPT, VERIFY_SCRIPT]) {
+      expect(script).not.toMatch(/fetch\(|XMLHttpRequest|sendBeacon|WebSocket|eval\(|new Function|innerHTML|outerHTML|insertAdjacentHTML|import\(/);
+    }
   });
 });
+
+/** A small real evidence pack: three receipts, one checkpoint, as the server exports them. */
+async function evidencePack(): Promise<Uint8Array> {
+  const signer = createTestSigner();
+  const store = ReceiptStore.open(join(directory, "pack.db"), signer);
+  try {
+    await store.createSystem("site-bot", "2026-10-04T09:00:00.000Z");
+    for (const index of [1, 2]) {
+      await store.append({
+        system_id: "site-bot",
+        ts_event: `2026-10-04T09:0${index}:00.000Z`,
+        ts_received: `2026-10-04T09:0${index}:00.005Z`,
+        actor: { agent: "planner" },
+        action: { kind: "tool_call", name: `call-${index}` },
+        input_hash: null,
+        output_hash: null,
+        outcome: "ok",
+        source: { type: "sdk" },
+      });
+    }
+    await store.createCheckpoint("site-bot");
+    const archive = await buildArchive({
+      systemId: "site-bot",
+      receipts: store.readChain("site-bot"),
+      checkpoints: store.readCheckpoints("site-bot").map((stored) => ({ stored, timestamps: store.readTimestamps(stored.id) })),
+      keys: [{ key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 }],
+      exportedAt: NOW,
+    });
+    return archive.zip;
+  } finally {
+    store.close();
+  }
+}
 
 function escapeHtml(text: string): string {
   return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");

@@ -7,7 +7,7 @@ import type { Language } from "./locale.js";
  */
 
 export interface SiteTexts {
-  nav: { pricing: string; connect: string };
+  nav: { pricing: string; connect: string; verify: string };
   signIn: string;
   start: string;
   watch: string;
@@ -51,6 +51,39 @@ export interface SiteTexts {
     apiNote: string;
     keyNote: string;
   };
+  verify: {
+    title: string;
+    drop: string;
+    choose: string;
+    private: string;
+    checking: string;
+    intact: string;
+    /** {receipts} and {system} are filled in by the page's script. */
+    intactLine: string;
+    signatures: string;
+    /** {n}: the number of receipts. */
+    signaturesValue: string;
+    chain: string;
+    chainValue: string;
+    seals: string;
+    /** {last}: the time of the newest checkpoint; {n}: how many were checked. */
+    sealsValue: string;
+    noSeals: string;
+    unsealed: string;
+    timestamps: string;
+    /** {n}: tokens in the pack. */
+    timestampsValue: string;
+    altered: string;
+    alteredLine: string;
+    notPack: string;
+    notPackLine: string;
+    oldBrowser: string;
+    oldBrowserLine: string;
+    details: string;
+    /** Plain words for each check of evidence-check.ts that can fail. */
+    reasons: Record<string, string>;
+    cli: string;
+  };
   privacy: {
     title: string;
     sections: readonly { heading: string; paragraphs: readonly string[] }[];
@@ -60,7 +93,7 @@ export interface SiteTexts {
 }
 
 const EN: SiteTexts = {
-  nav: { pricing: "Pricing", connect: "How to connect" },
+  nav: { pricing: "Pricing", connect: "How to connect", verify: "Verify" },
   signIn: "Sign in",
   start: "Start free pilot",
   watch: "Watch the demo",
@@ -117,6 +150,51 @@ const EN: SiteTexts = {
     apiNote: "From any language: one HTTP request per action.",
     keyNote: "You get the key when you add a system in the console.",
   },
+  verify: {
+    title: "Verify an evidence pack",
+    drop: "Drop the evidence pack here",
+    choose: "Choose file",
+    private: "The file is checked in your browser. It is never uploaded.",
+    checking: "Checking…",
+    intact: "Intact",
+    intactLine: "{receipts} receipts of {system}, signed and in order.",
+    signatures: "Signatures",
+    signaturesValue: "{n} of {n}",
+    chain: "Chain",
+    chainValue: "No gaps, nothing changed",
+    seals: "Seals",
+    sealsValue: "The last on {last}, {n} in all",
+    noSeals: "None yet",
+    unsealed: "Not sealed yet",
+    timestamps: "Timestamps",
+    timestampsValue: "{n} in the pack, checked by the command-line verifier",
+    altered: "Altered",
+    alteredLine: "Something in this pack was changed after it was signed.",
+    notPack: "Not an evidence pack",
+    notPackLine: "This file is not a Sigillo evidence pack. It is the .zip you download from the console.",
+    oldBrowser: "This browser cannot check it",
+    oldBrowserLine: "It cannot check Ed25519 signatures. Use a recent Chrome, Edge, Firefox or Safari, or the command-line verifier.",
+    details: "Technical details",
+    reasons: {
+      sequence: "A receipt is missing, repeated or out of order.",
+      "chain-link": "A receipt was changed.",
+      signature: "A signature does not match its receipt.",
+      key: "A signing key does not match.",
+      genesis: "The first receipt is not the start of the chain.",
+      system: "The pack mixes receipts of different systems.",
+      range: "The pack's summary does not match what it holds.",
+      manifest: "The pack's summary is damaged.",
+      "checkpoint-signature": "A seal does not match.",
+      "merkle-root": "A seal does not match the receipts.",
+      "inclusion-proof": "A seal does not match the receipts.",
+      "artifacts-index": "The document index does not match the receipts.",
+      "receipt-json": "A receipt is damaged.",
+      "receipt-schema": "A receipt is damaged.",
+      "checkpoint-json": "A seal is damaged.",
+      "checkpoint-schema": "A seal is damaged.",
+    },
+    cli: "Full check, timestamps included: the command-line verifier",
+  },
   privacy: {
     title: "Privacy",
     sections: [
@@ -157,7 +235,7 @@ const EN: SiteTexts = {
 };
 
 const IT: SiteTexts = {
-  nav: { pricing: "Prezzi", connect: "Come si collega" },
+  nav: { pricing: "Prezzi", connect: "Come si collega", verify: "Verifica" },
   signIn: "Entra",
   start: "Inizia il pilota gratuito",
   watch: "Guarda la demo",
@@ -213,6 +291,51 @@ const IT: SiteTexts = {
     otelNote: "Se il tuo agente manda già tracce OpenTelemetry: tre impostazioni su quel server, niente da installare.",
     apiNote: "Da qualsiasi linguaggio: una richiesta HTTP per ogni azione.",
     keyNote: "La chiave te la dà la console quando aggiungi un sistema.",
+  },
+  verify: {
+    title: "Verifica un fascicolo",
+    drop: "Trascina qui il fascicolo",
+    choose: "Scegli il file",
+    private: "Il file viene controllato nel tuo browser. Non viene mai caricato.",
+    checking: "Controllo in corso…",
+    intact: "Integro",
+    intactLine: "{receipts} ricevute di {system}, firmate e in ordine.",
+    signatures: "Firme",
+    signaturesValue: "{n} su {n}",
+    chain: "Catena",
+    chainValue: "Nessun buco, niente modificato",
+    seals: "Sigilli",
+    sealsValue: "L'ultimo il {last}, {n} in tutto",
+    noSeals: "Ancora nessuno",
+    unsealed: "Non ancora sigillate",
+    timestamps: "Marche temporali",
+    timestampsValue: "{n} nel fascicolo, si controllano con il verificatore da riga di comando",
+    altered: "Alterato",
+    alteredLine: "Qualcosa in questo fascicolo è stato cambiato dopo la firma.",
+    notPack: "Non è un fascicolo",
+    notPackLine: "Questo file non è un fascicolo di Sigillo. È lo .zip che scarichi dalla console.",
+    oldBrowser: "Questo browser non può controllarlo",
+    oldBrowserLine: "Non sa verificare le firme Ed25519. Usa un Chrome, Edge, Firefox o Safari recente, oppure il verificatore da riga di comando.",
+    details: "Dettagli tecnici",
+    reasons: {
+      sequence: "Una ricevuta manca, è ripetuta o fuori ordine.",
+      "chain-link": "Una ricevuta è stata modificata.",
+      signature: "Una firma non corrisponde alla sua ricevuta.",
+      key: "Una chiave di firma non corrisponde.",
+      genesis: "La prima ricevuta non è l'inizio della catena.",
+      system: "Il fascicolo mescola ricevute di sistemi diversi.",
+      range: "Il riepilogo del fascicolo non corrisponde al contenuto.",
+      manifest: "Il riepilogo del fascicolo è danneggiato.",
+      "checkpoint-signature": "Un sigillo non corrisponde.",
+      "merkle-root": "Un sigillo non corrisponde alle ricevute.",
+      "inclusion-proof": "Un sigillo non corrisponde alle ricevute.",
+      "artifacts-index": "L'indice dei documenti non corrisponde alle ricevute.",
+      "receipt-json": "Una ricevuta è danneggiata.",
+      "receipt-schema": "Una ricevuta è danneggiata.",
+      "checkpoint-json": "Un sigillo è danneggiato.",
+      "checkpoint-schema": "Un sigillo è danneggiato.",
+    },
+    cli: "Controllo completo, marche temporali comprese: il verificatore da riga di comando",
   },
   privacy: {
     title: "Privacy",

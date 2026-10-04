@@ -3,7 +3,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Language } from "./locale.js";
 import { SITE_TEXTS, type SiteTexts } from "./site-strings.js";
 import { escape } from "./layout.js";
-import { SEAL_SVG, THEME } from "./style.js";
+import { EVIDENCE_CHECK_SOURCE } from "./evidence-check.js";
+import { SEAL_SVG, STATE_ICONS, THEME } from "./style.js";
 
 /**
  * The public site at the root of the domain: what Sigillo is, its demo
@@ -21,7 +22,7 @@ import { SEAL_SVG, THEME } from "./style.js";
  */
 
 /** The pages of the site, which the language switch may return to. */
-export const SITE_PATHS = ["/", "/pricing", "/connect", "/privacy"] as const;
+export const SITE_PATHS = ["/", "/pricing", "/connect", "/verify", "/privacy"] as const;
 type SitePath = (typeof SITE_PATHS)[number];
 
 /** Where the console's sign-in and sign-up pages are. */
@@ -73,7 +74,7 @@ const MEDIA: Record<string, MediaFile> = {
 
 /** SubRip to WebVTT: a header, and a full stop instead of a comma before the milliseconds. */
 export function subripToWebVtt(subrip: string): string {
-  const body = subrip.replace(/^﻿/, "").replace(/\r\n/g, "\n");
+  const body = subrip.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
   return `WEBVTT\n\n${body.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2")}`;
 }
 
@@ -174,6 +175,7 @@ nav { display: flex; gap: 24px; flex: 1; }
 nav a { color: var(--text); font-size: 15px; }
 nav a[aria-current="page"] { font-weight: 600; }
 .menu-close, .menu-open { display: none; color: var(--text); }
+.menu-close svg, .menu-open svg { width: 24px; height: 24px; }
 .lang { margin: 0; }
 .lang button { border: 0; background: none; color: var(--text); font: 500 15px var(--font); padding: 8px 6px; cursor: pointer; }
 .lang button:hover { text-decoration: underline; }
@@ -237,6 +239,26 @@ h3.way { font-size: 22px; margin: 16px 0 16px; }
 details { background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-card); padding: 18px 22px; }
 summary { font-weight: 600; cursor: pointer; }
 details p { margin-top: 10px; }
+.drop { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; cursor: pointer;
+  border: 2px dashed var(--separator); border-radius: 18px; background: var(--surface); padding: 44px 24px; }
+.drop.over { border-color: var(--action); }
+.drop b { font-size: 18px; }
+.drop .ico { width: 56px; height: 56px; border-radius: 14px; }
+.drop .ico svg { width: 28px; height: 28px; }
+.drop:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+#result { margin-top: 24px; }
+.verdict { display: flex; gap: 14px; align-items: flex-start; }
+.verdict svg { width: 32px; height: 32px; margin-top: 2px; }
+.verdict h3 { margin: 0 0 4px; font-size: 22px; }
+.verdict.ok { color: var(--ok); }
+.verdict.bad { color: var(--bad); }
+.verdict p { color: var(--text); }
+#result dl { display: grid; grid-template-columns: auto 1fr; gap: 10px 24px; margin: 22px 0 0; padding-top: 18px;
+  border-top: 1px solid var(--separator); }
+#result dt { font-weight: 600; }
+#result dd { margin: 0; }
+#result details { box-shadow: none; padding: 0; margin-top: 18px; }
+#result code { font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
 .prose h2 { text-align: left; font-size: 22px; margin: 36px 0 10px; }
 .prose p { margin: 0 0 12px; }
 .prose { padding-bottom: 40px; }
@@ -353,12 +375,12 @@ function sitePage(context: PageContext, title: string, body: string): string {
 <meta name="description" content="${escape(t.home.lead)}">
 <link rel="icon" href="/favicon.ico" type="image/svg+xml">
 <style>${SITE_STYLE}</style>
-<script src="/site.js" defer></script>
+<script src="/site.js" defer></script>${path === "/verify" ? '\n<script src="/verify.js" defer></script>' : ""}
 </head>
 <body>
 <header><div class="wrap bar">
 <a class="brand" href="/">${SEAL_SVG}<span>sigillo</span></a>
-<nav id="menu"><a class="menu-close" href="#" aria-label="×">${ICON.close}</a>${link("/pricing", t.nav.pricing)}${link("/connect", t.nav.connect)}</nav>
+<nav id="menu"><a class="menu-close" href="#" aria-label="×">${ICON.close}</a>${link("/pricing", t.nav.pricing)}${link("/connect", t.nav.connect)}${link("/verify", t.nav.verify)}</nav>
 <form class="lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="${language === "en" ? "it" : "en"}"><input type="hidden" name="back" value="${path ?? "/"}"><button type="submit" aria-label="${escape(t.switchLabel)}" lang="${language === "en" ? "it" : "en"}">${escape(t.switchTo)}</button></form>
 <a class="btn primary" href="${SIGN_IN}">${escape(t.signIn)}</a>
 <a class="menu-open" href="#menu" aria-label="Menu">${ICON.menu}</a>
@@ -446,6 +468,26 @@ ${codeBox(t, apiSnippet(endpoint))}
 </div>`;
 }
 
+const UPLOAD_ICON = line('<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/>');
+
+/**
+ * The check runs in the browser (verify.js); the page holds its words, in
+ * the reader's language, for the script to fill in, and the two state icons
+ * as templates, so the script never writes markup of its own.
+ */
+function verifyBody(context: PageContext): string {
+  const v = context.t.verify;
+  return `<div class="wrap hero short"><h1>${escape(v.title)}</h1></div>
+<div class="wrap narrow" id="check" data-texts="${escape(JSON.stringify(v))}">
+<label class="drop" id="drop"><span class="ico">${UPLOAD_ICON}</span><b>${escape(v.drop)}</b>
+<span class="btn plain">${escape(v.choose)}</span><input type="file" id="pack" accept=".zip,application/zip" class="sr">
+<span>${escape(v.private)}</span></label>
+<div id="result" class="card" hidden aria-live="polite"></div>
+<template id="icon-ok">${STATE_ICONS.ok}</template><template id="icon-bad">${STATE_ICONS.bad}</template>
+<p class="more"><a href="${REPOSITORY}/tree/main/packages/verifier">${escape(v.cli)} ›</a></p>
+</div>`;
+}
+
 function privacyBody(context: PageContext): string {
   const p = context.t.privacy;
   const contact =
@@ -466,6 +508,7 @@ const BODIES: Record<SitePath, { title: (t: SiteTexts) => string; body: (context
   "/": { title: (t) => t.home.title, body: homeBody },
   "/pricing": { title: (t) => `${t.pricing.title} · Sigillo`, body: pricingBody },
   "/connect": { title: (t) => `${t.connect.title} · Sigillo`, body: connectBody },
+  "/verify": { title: (t) => `${t.verify.title} · Sigillo`, body: verifyBody },
   "/privacy": { title: (t) => `${t.privacy.title} · Sigillo`, body: privacyBody },
 };
 
@@ -489,8 +532,95 @@ for (const button of document.querySelectorAll("button.copy")) {
 }
 `;
 
+/**
+ * The "Verify" page's script: the check itself (evidence-check.ts, tested on
+ * its own against sigillo-verify) and the few lines that hand it the file and
+ * show its answer, with textContent only.
+ */
+export const VERIFY_SCRIPT = `"use strict";
+${EVIDENCE_CHECK_SOURCE}
+
+(function () {
+  const root = document.getElementById("check");
+  if (root === null) return;
+  const t = JSON.parse(root.dataset.texts);
+  const lang = document.documentElement.lang;
+  const input = document.getElementById("pack");
+  const drop = document.getElementById("drop");
+  const out = document.getElementById("result");
+  const number = (n) => n.toLocaleString(lang);
+  const fill = (text, values) => text.replace(/\\{(\\w+)\\}/g, (whole, key) => (key in values ? String(values[key]) : whole));
+  const element = (tag, text) => {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const verdict = (ok, title, line) => {
+    const head = element("div");
+    head.className = "verdict " + (ok ? "ok" : "bad");
+    head.append(document.getElementById(ok ? "icon-ok" : "icon-bad").content.cloneNode(true));
+    const words = element("div");
+    words.append(element("h3", title), element("p", line));
+    head.append(words);
+    return head;
+  };
+  const when = (iso) => new Intl.DateTimeFormat(lang, { dateStyle: "long", timeStyle: "short" }).format(new Date(iso));
+
+  const show = (result) => {
+    out.replaceChildren();
+    if (result.ok) {
+      const s = result.summary;
+      out.append(verdict(true, t.intact, fill(t.intactLine, { receipts: number(s.receipts), system: s.system_id })));
+      const rows = [
+        [t.signatures, fill(t.signaturesValue, { n: number(s.receipts) })],
+        [t.chain, t.chainValue],
+        [t.seals, s.checkpoints === 0 || s.last_checkpoint_ts === null ? t.noSeals : fill(t.sealsValue, { n: number(s.checkpoints), last: when(s.last_checkpoint_ts) })],
+      ];
+      if (s.unanchored_receipts > 0) rows.push([t.unsealed, number(s.unanchored_receipts)]);
+      if (s.timestamps > 0) rows.push([t.timestamps, fill(t.timestampsValue, { n: number(s.timestamps) })]);
+      const list = element("dl");
+      for (const [term, value] of rows) list.append(element("dt", term), element("dd", value));
+      out.append(list);
+    } else if (result.check === "archive") {
+      out.append(verdict(false, t.notPack, t.notPackLine));
+    } else if (result.check === "browser") {
+      out.append(verdict(false, t.oldBrowser, t.oldBrowserLine));
+    } else {
+      out.append(verdict(false, t.altered, t.alteredLine + " " + (t.reasons[result.check] || "")));
+    }
+    if (!result.ok) {
+      const details = element("details");
+      details.append(element("summary", t.details), element("code", result.check + " · " + result.location + ": " + result.detail));
+      out.append(details);
+    }
+  };
+
+  const run = async (file) => {
+    if (file === undefined) return;
+    out.hidden = false;
+    out.replaceChildren(element("p", t.checking));
+    show(await sigilloCheckPack(new Uint8Array(await file.arrayBuffer())));
+  };
+  input.addEventListener("change", () => run(input.files[0]));
+  drop.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    drop.classList.add("over");
+  });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    drop.classList.remove("over");
+    run(event.dataTransfer.files[0]);
+  });
+})();
+`;
+
 export function registerSite(app: FastifyInstance, options: SiteOptions): void {
   const media = registerMedia(app);
+
+  app.get("/verify.js", async (_request, reply) =>
+    reply.type("text/javascript; charset=utf-8").header("cache-control", "public, max-age=3600").send(VERIFY_SCRIPT),
+  );
 
   app.get("/site.js", async (_request, reply) =>
     reply.type("text/javascript; charset=utf-8").header("cache-control", "public, max-age=3600").send(SITE_SCRIPT),
