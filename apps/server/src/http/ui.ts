@@ -81,7 +81,7 @@ import { registerFavicon, registerSite, SITE_CONTACT_EMAIL, SITE_PATHS } from ".
  */
 
 const COOKIE = "sigillo_session";
-/** The theme the reader chose in Impostazioni: "light" or "dark"; absent, the system's. Not a secret, not a session. */
+/** The theme the reader chose in Impostazioni: "light", "dark" or "system"; absent, light. Not a secret, not a session. */
 const THEME_COOKIE = "sigillo_theme";
 const THEME_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
 
@@ -342,10 +342,10 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     };
   });
 
-  /** The theme the reader chose, from its cookie: anything but "light" or "dark" is the system's. */
+  /** The theme the reader chose, from its cookie; until they choose, light, whatever their system prefers. */
   const themeOf = (request: FastifyRequest): Theme => {
     const value = cookieNamed(request, THEME_COOKIE);
-    return value === "light" || value === "dark" ? value : "system";
+    return value === "dark" || value === "system" ? value : "light";
   };
 
   /**
@@ -1056,7 +1056,7 @@ ${exportSheet(record)}`,
     const session = requireSession(request, reply);
     if (session === null) return reply;
     const body = request.body as { theme?: unknown } | undefined;
-    const theme = body?.theme === "light" || body?.theme === "dark" ? body.theme : null;
+    const theme = body?.theme === "light" || body?.theme === "dark" || body?.theme === "system" ? body.theme : null;
     const cookie =
       theme === null
         ? `${THEME_COOKIE}=; ${cookieAttributes(request)}; Max-Age=0`

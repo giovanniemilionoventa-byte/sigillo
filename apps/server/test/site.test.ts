@@ -87,21 +87,8 @@ describe("the public site", () => {
       expect(response.statusCode, path).toBe(200);
       expect(response.headers["content-type"]).toBe("text/html; charset=utf-8");
       expect(response.body).toContain('href="/ui/login"');
-      expect(response.body).toContain('href="/privacy"');
+      expect(response.body).toContain('<a href="/privacy">');
     }
-  });
-
-  it("shows the console's own dashboard on /, with sample data and a Sign in button, and the presentation on /about", async () => {
-    const english = (await get("/")).body;
-    expect(english).toContain('<div class="app">');
-    expect(english).toContain(">Sign in</a>");
-    expect(english).toContain(SITE_TEXTS.en.demo.note);
-    expect(english).not.toContain('href="/ui"');
-    expect(english).not.toContain("<video");
-    const italian = (await get("/", { cookie: "sigillo_lang=it" })).body;
-    expect(italian).toContain(">Accedi</a>");
-    expect(italian).toContain("Assistente clienti");
-    expect((await get("/about")).body).toContain("<video");
   });
 
   it("leaves / to the console where only the operator signs in", async () => {
@@ -112,17 +99,17 @@ describe("the public site", () => {
   });
 
   it("speaks English by default, Italian to a browser that asks for it, and the language chosen in the cookie above both", async () => {
-    expect((await get("/about")).body).toContain(SITE_TEXTS.en.home.heading);
-    expect((await get("/about", { "accept-language": "it-IT,it;q=0.9,en;q=0.8" })).body).toContain(escapeHtml(SITE_TEXTS.it.home.heading));
-    const chosen = await get("/about", { "accept-language": "it-IT", cookie: "sigillo_lang=en" });
+    expect((await get("/")).body).toContain(SITE_TEXTS.en.home.heading);
+    expect((await get("/", { "accept-language": "it-IT,it;q=0.9,en;q=0.8" })).body).toContain(escapeHtml(SITE_TEXTS.it.home.heading));
+    const chosen = await get("/", { "accept-language": "it-IT", cookie: "sigillo_lang=en" });
     expect(chosen.body).toContain(SITE_TEXTS.en.home.heading);
-    expect(chosen.body).toMatch(/^<!doctype html>\n<html lang="en">/);
+    expect(chosen.body).toMatch(/^<!doctype html>\n<html lang="en" data-theme="light">/);
     expect(chosen.headers["vary"]).toBe("Cookie, Accept-Language");
   });
 
   it("switches language through the console's own switch, and comes back to the same page of the site", async () => {
     const page = (await get("/pricing")).body;
-    expect(page).toContain('<form class="sh-lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="it"><input type="hidden" name="back" value="/pricing">');
+    expect(page).toContain('<form class="lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="it"><input type="hidden" name="back" value="/pricing">');
     const response = await app.inject({
       method: "POST",
       url: "/ui/lingua",
@@ -146,15 +133,15 @@ describe("the public site", () => {
 
   it("carries the theme the reader chose in the console", async () => {
     expect((await get("/", { cookie: "sigillo_theme=dark" })).body).toMatch(/^<!doctype html>\n<html lang="en" data-theme="dark">/);
-    expect((await get("/")).body).toMatch(/^<!doctype html>\n<html lang="en">/);
+    expect((await get("/")).body).toMatch(/^<!doctype html>\n<html lang="en" data-theme="light">/);
   });
 
   it("shows the demo video in the reader's language, with its subtitles and its still", async () => {
-    const english = (await get("/about")).body;
+    const english = (await get("/")).body;
     expect(english).toContain('<video controls preload="none" poster="/media/poster-en.jpg"');
     expect(english).toContain('<source src="/media/demo-en.mp4" type="video/mp4">');
     expect(english).toContain('<track kind="subtitles" src="/media/demo-en.vtt" srclang="en"');
-    const italian = (await get("/about", { cookie: "sigillo_lang=it" })).body;
+    const italian = (await get("/", { cookie: "sigillo_lang=it" })).body;
     expect(italian).toContain('<source src="/media/demo-it.mp4" type="video/mp4">');
   });
 
@@ -274,7 +261,7 @@ describe("the site in a browser, under deploy/Caddyfile's policy", () => {
       expect(await page.evaluate("navigator.clipboard.readText()")).toBe(
         'pip install "sigillo[langchain] @ git+https://github.com/giovanniemilionoventa-byte/sigillo#subdirectory=sdk-python"',
       );
-      await page.goto(`${base}/about`);
+      await page.goto(`${base}/`);
       // The browser fetches the video (whether this Chromium has the codec to
       // play it is another matter): a policy without media-src 'self' would
       // refuse the request outright, and say so on the console.
