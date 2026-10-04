@@ -297,6 +297,17 @@ export interface AdminRequest {
 }
 
 /** What a deletion removed, as the administrative log records it. */
+/**
+ * Whose systems a query is limited to: one organization's, or, with null,
+ * the operator's own (the systems no organization was given).
+ */
+export interface SystemOwner {
+  organizationId: string | null;
+}
+
+/** The condition SystemOwner adds to a query on receipts, with @organization_id bound. */
+const OWNED_BY = "AND system_id IN (SELECT system_id FROM systems WHERE organization_id IS @organization_id)";
+
 export interface DeletedSystem {
   system_id: string;
   display_name: string | null;
@@ -1272,7 +1283,7 @@ export class ReceiptStore {
    * not reached by eraseSubject: whoever erases a person is told how many
    * there are (SECURITY.md, "Erasing a person").
    */
-  legacyReceiptsNaming(identifier: string): number {
+  legacyReceiptsNaming(identifier: string, owner?: SystemOwner): number {
     let wanted: string;
     try {
       wanted = normaliseSubjectIdentifier(identifier);
@@ -1284,9 +1295,10 @@ export class ReceiptStore {
         `SELECT json_extract(canonical, '$.actor.on_behalf_of') AS who, count(*) AS n
          FROM receipts
          WHERE json_extract(canonical, '$.v') < 4 AND json_extract(canonical, '$.actor.on_behalf_of') IS NOT NULL
+         ${owner === undefined ? "" : OWNED_BY}
          GROUP BY who`,
       )
-      .all() as { who: string; n: number }[];
+      .all(owner === undefined ? {} : { organization_id: owner.organizationId }) as { who: string; n: number }[];
     let count = 0;
     for (const row of rows) {
       try {
@@ -1333,15 +1345,20 @@ export class ReceiptStore {
     return row?.system_id ?? null;
   }
 
-  /** Every receipt made on behalf of `token`, across systems, newest first. */
-  receiptsOnBehalfOf(token: string, limit = 500): Receipt[] {
+  /** Every receipt made on behalf of `token`, newest first: across systems, or only those of `owner`. */
+  receiptsOnBehalfOf(token: string, limit = 500, owner?: SystemOwner): Receipt[] {
     const rows = this.read
       .prepare(
         `SELECT canonical, sig FROM receipts
-         WHERE json_extract(canonical, '$.actor.on_behalf_of') = ?
-         ORDER BY ts_received DESC, system_id, seq DESC LIMIT ?`,
+         WHERE json_extract(canonical, '$.actor.on_behalf_of') = @token
+         ${owner === undefined ? "" : OWNED_BY}
+         ORDER BY ts_received DESC, system_id, seq DESC LIMIT @limit`,
       )
-      .all(token, Math.min(Math.max(limit, 1), 10_000)) as StoredRow[];
+      .all({
+        token,
+        limit: Math.min(Math.max(limit, 1), 10_000),
+        ...(owner === undefined ? {} : { organization_id: owner.organizationId }),
+      }) as StoredRow[];
     return rows.map(rowToReceipt);
   }
 

@@ -10,6 +10,7 @@ import { NotVisibleError, OPERATOR, storeFor, type Viewer } from "../src/auth/te
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { buildServer } from "../src/http/server.js";
+import { runDailyExports, setDailyExport } from "../src/backup/daily-export.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
 
@@ -17,7 +18,9 @@ import { createTestSigner, type TestSigner } from "./helpers/signer.js";
  * Two customers on one hosted installation, and the operator's own system
  * beside them. Whatever one organization does in the web view, it sees and
  * touches its own systems and nothing else: not the other organization's,
- * not the operator's, and not even whether they exist.
+ * not the operator's, and not even whether they exist. And the operator,
+ * signed in with the installation's password, sees its own systems and the
+ * list of customers, never a customer's systems, receipts or people.
  */
 
 const PASSWORD = "an administrator password";
@@ -36,6 +39,7 @@ const SHARED_DOCUMENT = "d".repeat(64);
 const SHARED_PERSON = "mario.rossi@example.com";
 
 let directory: string;
+let backups: string;
 let signer: TestSigner;
 let store: ReceiptStore;
 let keys: ApiKeyStore;
@@ -60,6 +64,7 @@ function event(systemId: string, index: number, overrides: Partial<ChainEvent> =
 
 beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), "sigillo-tenancy-"));
+  backups = join(directory, "backups");
   const databasePath = join(directory, "sigillo.db");
   signer = createTestSigner();
   store = ReceiptStore.open(databasePath, signer);
@@ -87,6 +92,7 @@ beforeEach(async () => {
       healthMonitor,
       checkpointer,
       sessions,
+      backupDirectory: backups,
     },
   });
   await app.ready();
@@ -218,8 +224,100 @@ describe("the store as an organization sees it", () => {
     expect(acme["write"]).toBeUndefined();
   });
 
-  it("leaves the operator's view as it was", () => {
-    expect(storeFor(store, OPERATOR)).toBe(store);
+});
+
+describe("the store as the operator sees it", () => {
+  const ONLY_GLOBEX = "only.globex@example.com";
+
+  it("lists the operator's own systems and no customer's", () => {
+    const operator = storeFor(store, OPERATOR);
+    expect(operator).not.toBe(store);
+    expect(operator.listSystemRecords().map((record) => record.system_id)).toEqual([OPERATOR_BOT]);
+    expect(operator.listSystems()).toEqual([OPERATOR_BOT]);
+    for (const customer of [ACME_BOT, GLOBEX_BOT]) {
+      expect(operator.systemRecord(customer)).toBeNull();
+      expect(operator.hasSystem(customer)).toBe(false);
+    }
+  });
+
+  it("refuses to read or change a customer's chain, by any method", async () => {
+    const operator = storeFor(store, OPERATOR);
+    const attempts: (() => unknown)[] = [
+      () => operator.readChain(ACME_BOT),
+      () => operator.readChainFrom(ACME_BOT, 0),
+      () => operator.readChainInRange(GLOBEX_BOT),
+      () => operator.readReceiptHashes(ACME_BOT),
+      () => operator.readCheckpoints(ACME_BOT),
+      () => operator.latestCheckpoint(GLOBEX_BOT),
+      () => operator.receiptAt(ACME_BOT, 1),
+      () => operator.tip(ACME_BOT),
+      () => operator.openingsOf(ACME_BOT, [1]),
+      () => operator.subjectIdentifierIn(ACME_BOT, store.subjectToken(SHARED_PERSON) ?? ""),
+      () => operator.searchReceipts({ systemId: ACME_BOT }),
+      () => operator.countReceiptsByKind({ systemId: GLOBEX_BOT }),
+      () => operator.countReceiptsByOutcome({ systemId: GLOBEX_BOT }),
+      () => operator.readTimestamps(store.latestCheckpoint(ACME_BOT)?.id ?? -1),
+    ];
+    for (const attempt of attempts) expect(attempt).toThrow(NotVisibleError);
+    const attempt = async (work: () => Promise<unknown>) => work();
+    await expect(attempt(() => operator.renameSystem(ACME_BOT, "mine now", ADMIN))).rejects.toThrow(NotVisibleError);
+    await expect(attempt(() => operator.archiveSystem(ACME_BOT, ADMIN))).rejects.toThrow(NotVisibleError);
+    await expect(attempt(() => operator.deleteEmptySystem(GLOBEX_BOT, ADMIN))).rejects.toThrow(NotVisibleError);
+    expect(operator.readChain(OPERATOR_BOT)).toHaveLength(4);
+  });
+
+  it("finds a document only in the operator's own systems", () => {
+    const fingerprints = { bytes: SHARED_DOCUMENT, text: null, lines: [], json: null, jsonLines: [] };
+    expect(new Set(storeFor(store, OPERATOR).findDocument(fingerprints).map((match) => match.system_id))).toEqual(
+      new Set([OPERATOR_BOT]),
+    );
+  });
+
+  it("reaches people only through the operator's own systems", async () => {
+    await store.append(event(GLOBEX_BOT, 5, { actor: { agent: "screener", on_behalf_of: ONLY_GLOBEX } }));
+    const operator = storeFor(store, OPERATOR);
+    const shared = operator.subjectToken(SHARED_PERSON);
+    expect(shared).toBe(store.subjectToken(SHARED_PERSON));
+    expect(new Set(operator.receiptsOnBehalfOf(shared ?? "").map((receipt) => receipt.system_id))).toEqual(new Set([OPERATOR_BOT]));
+    // Someone only a customer's agent acted for is not there for the operator, and cannot be erased by it.
+    const theirs = store.subjectToken(ONLY_GLOBEX) ?? "";
+    expect(theirs).not.toBe("");
+    expect(operator.subjectToken(ONLY_GLOBEX)).toBeNull();
+    expect(operator.receiptsOnBehalfOf(theirs)).toEqual([]);
+    expect(await operator.eraseSubject(theirs, ADMIN)).toBe(false);
+    expect(store.subjectIdentifier(theirs)).toBe(ONLY_GLOBEX);
+    expect(operator.legacyReceiptsNaming(ONLY_GLOBEX)).toBe(0);
+    // Organizations do not have these at all.
+    expect(() => storeFor(store, ACME).subjectToken(SHARED_PERSON)).toThrow(NotVisibleError);
+  });
+
+  it("reads the log of its own systems and of the customers it approves, not of their systems", async () => {
+    await store.renameSystem(ACME_BOT, "Acme screening", ADMIN);
+    const acme = storeFor(store, ACME);
+    await acme.createSystem("acme.empty", "2026-03-29T15:00:00.000Z");
+    await acme.deleteEmptySystem("acme.empty", ADMIN);
+    await store.renameSystem(OPERATOR_BOT, "Operator bot", ADMIN);
+    const operator = storeFor(store, OPERATOR);
+    const log = operator.adminLog();
+    expect(log.map((entry) => entry.system_id).filter((id) => id !== "")).toEqual([OPERATOR_BOT]);
+    expect(log.some((entry) => entry.action === "organization.create")).toBe(true);
+    expect(JSON.stringify(log)).not.toContain("Acme screening");
+    expect(operator.deletionOf("acme.empty")).toBeNull();
+    expect(acme.deletionOf("acme.empty")).not.toBeNull();
+  });
+
+  it("creates systems of the operator's own", async () => {
+    await storeFor(store, OPERATOR).createSystem("second-bot", "2026-03-29T15:00:00.000Z");
+    expect(store.systemRecord("second-bot")?.organization_id).toBeNull();
+    expect(storeFor(store, ACME).hasSystem("second-bot")).toBe(false);
+  });
+
+  it("is closed by default too", () => {
+    const operator = storeFor(store, OPERATOR) as unknown as Record<string, unknown>;
+    for (const name of ["subjectIdentifier", "assignSystem", "append", "appendBatch", "receiptsSince", "eraseOpenings", "receiptsOfDocument"]) {
+      expect(() => (operator[name] as () => unknown)()).toThrow(NotVisibleError);
+    }
+    expect(operator["read"]).toBeUndefined();
   });
 });
 
@@ -237,7 +335,7 @@ describe("the web view, signed in as an organization", () => {
   it("answers 404 for every page of a system that is not its own", async () => {
     for (const systemId of [GLOBEX_BOT, OPERATOR_BOT]) {
       const path = `/ui/systems/${encodeURIComponent(systemId)}`;
-      for (const url of [path, `${path}?seq=1`, `${path}/checkpoints`, `${path}/manage`]) {
+      for (const url of [path, `${path}?seq=1`, `${path}/checkpoints`, `${path}/manage`, `${path}/collega`]) {
         const response = await get(ACME, url);
         expect(response.statusCode, url).toBe(404);
         expect(response.body).not.toContain("call-1");
@@ -254,6 +352,8 @@ describe("the web view, signed in as an organization", () => {
   it("cannot change, delete or export another's system", async () => {
     const path = `/ui/systems/${GLOBEX_BOT}`;
     expect((await post(ACME, `${path}/rename`, { display_name: "taken" })).statusCode).toBe(404);
+    expect((await post(ACME, `${path}/key`)).statusCode).toBe(404);
+    expect((await post(ACME, `/ui/systems/${OPERATOR_BOT}/key`)).statusCode).toBe(404);
     expect((await post(ACME, `${path}/archive`)).statusCode).toBe(404);
     expect((await post(ACME, `${path}/unarchive`)).statusCode).toBe(404);
     expect((await post(ACME, `${path}/delete`, { confirm: GLOBEX_BOT })).statusCode).toBe(404);
@@ -336,9 +436,120 @@ describe("the web view, signed in as an organization", () => {
     expect(await status(operator)).toBe(200);
   });
 
-  it("lets the operator see every system, as before", async () => {
-    const body = (await get(OPERATOR, "/ui/sistemi?vista=tutti")).body;
-    for (const systemId of [ACME_BOT, GLOBEX_BOT, OPERATOR_BOT]) expect(body).toContain(systemId);
+});
+
+describe("the web view, signed in as the operator", () => {
+  const CUSTOMER_SYSTEMS = [ACME_BOT, GLOBEX_BOT];
+
+  it("shows the operator's own systems only, on every listing", async () => {
+    for (const url of ["/ui", "/ui/sistemi", "/ui/sistemi?vista=tutti", "/ui/sistemi?vista=archiviati"]) {
+      const response = await get(OPERATOR, url);
+      expect(response.statusCode).toBe(200);
+      if (url !== "/ui/sistemi?vista=archiviati") expect(response.body).toContain(OPERATOR_BOT);
+      for (const customer of CUSTOMER_SYSTEMS) expect(response.body, url).not.toContain(customer);
+    }
+  });
+
+  it("answers 404 for every page of a customer's system", async () => {
+    for (const systemId of CUSTOMER_SYSTEMS) {
+      const path = `/ui/systems/${encodeURIComponent(systemId)}`;
+      for (const url of [path, `${path}?seq=1`, `${path}?seq=1&kind=tool_call`, `${path}/checkpoints`, `${path}/manage`, `${path}/collega`]) {
+        const response = await get(OPERATOR, url);
+        expect(response.statusCode, url).toBe(404);
+        expect(response.body).not.toContain("call-1");
+        expect(response.body).not.toContain(systemId);
+      }
+    }
+    for (const url of ["", "?seq=1", "/checkpoints", "/manage", "/collega"]) {
+      expect((await get(OPERATOR, `/ui/systems/${OPERATOR_BOT}${url}`)).statusCode, url).toBe(200);
+    }
+  });
+
+  it("cannot change, give a new key to, delete or export a customer's system", async () => {
+    const issued = keys.issue(ACME_BOT, NOW);
+    const path = `/ui/systems/${ACME_BOT}`;
+    expect((await post(OPERATOR, `${path}/rename`, { display_name: "taken" })).statusCode).toBe(404);
+    expect((await post(OPERATOR, `${path}/key`)).statusCode).toBe(404);
+    expect((await post(OPERATOR, `${path}/archive`)).statusCode).toBe(404);
+    expect((await post(OPERATOR, `${path}/unarchive`)).statusCode).toBe(404);
+    expect((await post(OPERATOR, `${path}/delete`, { confirm: ACME_BOT })).statusCode).toBe(404);
+    const exported = await post(OPERATOR, `${path}/export`);
+    expect(exported.statusCode).toBe(404);
+    expect(exported.headers["content-type"]).not.toContain("zip");
+    expect((await post(OPERATOR, "/ui/export", { system_id: GLOBEX_BOT })).statusCode).toBe(404);
+    const record = store.systemRecord(ACME_BOT);
+    expect(record?.display_name).toBeNull();
+    expect(record?.archived_at).toBeNull();
+    // The customer's agent keeps its key.
+    expect(keys.list(ACME_BOT).find((key) => key.keyId === issued.keyId)?.revokedAt).toBeNull();
+    // Its own system it still exports.
+    expect((await post(OPERATOR, `/ui/systems/${OPERATOR_BOT}/export`)).statusCode).toBe(200);
+  });
+
+  it("finds a document in its own systems only", async () => {
+    const response = await get(OPERATOR, `/ui/verify-document?sha256=${SHARED_DOCUMENT}`);
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain(encodeURIComponent(OPERATOR_BOT));
+    for (const customer of CUSTOMER_SYSTEMS) expect(response.body).not.toContain(customer);
+  });
+
+  it("finds people through its own systems only, and cannot erase a customer's", async () => {
+    await store.append(event(GLOBEX_BOT, 5, { actor: { agent: "screener", on_behalf_of: "only.globex@example.com" } }));
+    const found = await post(OPERATOR, "/ui/persone", { identifier: SHARED_PERSON });
+    expect(found.statusCode).toBe(200);
+    expect(found.body).toContain(OPERATOR_BOT);
+    for (const customer of CUSTOMER_SYSTEMS) expect(found.body).not.toContain(customer);
+    const theirs = await post(OPERATOR, "/ui/persone", { identifier: "only.globex@example.com" });
+    const token = store.subjectToken("only.globex@example.com") ?? "";
+    expect(theirs.body).not.toContain(token);
+    expect(theirs.body).not.toContain(GLOBEX_BOT);
+    expect((await post(OPERATOR, "/ui/persone/cancella", { token, confirm: token })).statusCode).toBe(404);
+    expect(store.subjectIdentifier(token)).toBe("only.globex@example.com");
+  });
+
+  it("does not show a customer's systems in the settings or the administrative log", async () => {
+    await store.renameSystem(ACME_BOT, "Acme screening", ADMIN);
+    for (const url of ["/ui/impostazioni", "/ui/impostazioni/registro"]) {
+      const response = await get(OPERATOR, url);
+      expect(response.statusCode).toBe(200);
+      expect(response.body).not.toContain("Acme screening");
+      for (const customer of CUSTOMER_SYSTEMS) expect(response.body, url).not.toContain(customer);
+    }
+  });
+
+  it("lists the customers by name and number of systems, without their systems", async () => {
+    const response = await get(OPERATOR, "/ui/clienti");
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain("Acme S.p.A.");
+    expect(response.body).toContain("Globex S.r.l.");
+    for (const customer of CUSTOMER_SYSTEMS) expect(response.body).not.toContain(customer);
+  });
+
+  it("cannot create a system under a customer's name", async () => {
+    const refused = await post(OPERATOR, "/ui/sistemi", { system_id: "acme.cv-bot" });
+    expect(refused.statusCode).toBe(400);
+    const new_ = await post(OPERATOR, "/ui/sistemi", { system_id: "acme.new-one" });
+    expect(new_.statusCode).toBe(400);
+    // The same refusal whether the system exists or not: it says nothing about Acme's systems.
+    expect(new_.body.replaceAll("acme.new-one", "X")).toBe(refused.body.replaceAll("acme.cv-bot", "X"));
+    expect(store.hasSystem("acme.new-one")).toBe(false);
+    expect((await post(OPERATOR, "/ui/sistemi", { system_id: "own.bot" })).statusCode).toBe(200);
+    expect(store.systemRecord("own.bot")?.organization_id).toBeNull();
+  });
+
+  it("downloads its own daily exports, never a customer's", async () => {
+    setDailyExport(backups, "", true);
+    setDailyExport(backups, "acme", true);
+    expect(await runDailyExports({ store, directory: backups, now: new Date("2026-03-29T21:59:30.000Z") })).toBe(2);
+    const settings = (await get(OPERATOR, "/ui/impostazioni")).body;
+    expect(settings).toContain("operator-bot--2026-03-29.zip");
+    expect(settings).not.toContain(ACME_BOT);
+    expect((await get(OPERATOR, "/ui/impostazioni/esportazioni/operator-bot--2026-03-29.zip")).statusCode).toBe(200);
+    expect((await get(OPERATOR, "/ui/impostazioni/esportazioni/acme.cv-bot--2026-03-29.zip")).statusCode).toBe(404);
+    // And the other way round.
+    expect((await get(ACME, "/ui/impostazioni/esportazioni/acme.cv-bot--2026-03-29.zip")).statusCode).toBe(200);
+    expect((await get(ACME, "/ui/impostazioni/esportazioni/operator-bot--2026-03-29.zip")).statusCode).toBe(404);
+    expect((await get(GLOBEX, "/ui/impostazioni/esportazioni/acme.cv-bot--2026-03-29.zip")).statusCode).toBe(404);
   });
 });
 

@@ -332,7 +332,8 @@ a person lives outside the chain, in two tables that are not evidence and can
 be deleted from:
 
 - `subjects`: identifier ↔ `psn_` token. **Erasing a person** deletes their
-  row (web view: "persone"; command line: `sigillo-server subject erase`). The
+  row (web view: "persone", for people the operator's own systems acted for;
+  command line: `sigillo-server subject erase`, for anyone). The
   administrative log records the erasure by the token alone. Their receipts
   stay valid, verifiable and in every export; nothing links the token to them
   any more, and if they come back they get a new, unrelated token.
@@ -789,17 +790,30 @@ organization, the web view shows that organization's systems and nothing else:
 another's system answers exactly as one that does not exist, a document is
 found only in its own systems, an export names only people its own chain acted
 for, and a system it creates is named `<organization_id>.<name>`, so no refusal
-can tell it about anyone else's. This is enforced in one place,
+can tell it about anyone else's. Signed in with the operator's password
+(`/ui/admin`), the web view is cut down the same way to the operator's own
+systems, those no organization was given: a customer's systems, receipts,
+checkpoints, keys, exports, daily exports and administrative log entries
+answer as if they did not exist, a document is found only in the operator's
+systems, and the operator cannot create a system under a customer's
+`<organization_id>.` prefix. What the operator sees of customers is the
+"Clienti" page: each organization's name, who signs in for it, whether it is
+approved and how many systems it has, which is what approving it and managing
+its quota needs. This is enforced in one place,
 `apps/server/src/auth/tenancy.ts`, by a stand-in for the store that is closed
-by default: a store method it does not list throws instead of answering, so a
-method added later fails a page rather than leaking across organizations
-(`apps/server/test/tenancy.test.ts`). What it does not change: one signing key
-signs every organization's chains; the operator sees everything; whoever
-administers the database administers every organization in it; and the people
-pages stay the operator's alone, because one person has one pseudonym token
-across every system, whichever organization's agent acted for them. Until
-pseudonyms are kept per organization, opening those pages to an organization
-would let it look up, and erase, another's people.
+by default, for organizations and the operator alike: a store method it does
+not list throws instead of answering, so a method added later fails a page
+rather than leaking across organizations (`apps/server/test/tenancy.test.ts`).
+What it does not change: one signing key signs every organization's chains;
+whoever administers the server and its database (the `sigillo-server` command
+line, a copy of the file, the backups) can still read every organization's
+records, since they are one database on one machine; and the people pages
+stay the operator's alone, because one person has one pseudonym token across
+every system, whichever organization's agent acted for them. Until pseudonyms
+are kept per organization, opening those pages to an organization would let it
+look up, and erase, another's people. On those pages the operator, too, finds
+only people its own systems acted for; erasing a person on a customer's
+request is done with `sigillo-server subject erase` on the server.
 
 **Retention and erasure are not implemented.** Nothing here deletes a
 recorded action, and the append-only triggers actively prevent it. The one
