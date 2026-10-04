@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect } from "vitest";
+import { it } from "./helpers/italian.js";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
@@ -176,7 +177,7 @@ describe("every form keeps its action, method and field names", () => {
       ["/ui/persone", ["post /ui/logout []", "post /ui/persone [identifier]"]],
       ["/ui/verify-document", ["post /ui/logout []"]],
       // The sign-out is there twice: in the sidebar, and in the account's block.
-      ["/ui/impostazioni", ["post /ui/logout []", "post /ui/logout []", "post /ui/impostazioni/tema []"]],
+      ["/ui/impostazioni", ["post /ui/logout []", "post /ui/logout []", "post /ui/impostazioni/tema []", "post /ui/lingua [back]"]],
     ];
     for (const [url, forms] of pages) {
       expect(formsOf(await get(url)), url).toEqual(forms);
@@ -189,9 +190,9 @@ describe("every form keeps its action, method and field names", () => {
     await store.archiveSystem(EMPTY, { actor: "test", ts: NOW });
     expect(formsOf(await get(`/ui/systems/${EMPTY}/manage`))).toContain(`post /ui/systems/${EMPTY}/unarchive []`);
     const login = (await app.inject({ method: "GET", url: "/ui/login" })).body;
-    expect(formsOf(login)).toEqual(["post /ui/login [password]"]);
+    expect(formsOf(login)).toEqual(["post /ui/login [password]", "post /ui/lingua [back]"]);
     const admin = (await app.inject({ method: "GET", url: "/ui/admin" })).body;
-    expect(formsOf(admin)).toEqual(["post /ui/login [password]"]);
+    expect(formsOf(admin)).toEqual(["post /ui/login [password]", "post /ui/lingua [back]"]);
   });
 
   it("carries no script anywhere but on 'verifica un documento', and there exactly the one the CSP allows", async () => {

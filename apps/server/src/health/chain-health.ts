@@ -5,7 +5,7 @@ import {
   receiptHashHex,
   verifyReceiptSignature,
 } from "@sigillo/core";
-import { formatTs } from "../http/strings.js";
+import { durationWords, formatTs, healthWords } from "../http/strings.js";
 import type { ReceiptStore } from "../storage/store.js";
 
 /**
@@ -41,7 +41,7 @@ interface TrackedState {
   lastSeq: number;
   lastHash: string;
   failed: boolean;
-  failureDetail?: string;
+  failure?: { kind: "link" | "signature"; seq: number };
 }
 
 export class ChainHealthMonitor {
@@ -123,7 +123,7 @@ export class ChainHealthMonitor {
           lastSeq,
           lastHash,
           failed: true,
-          failureDetail: `la ricevuta seq ${receipt.seq} non collega alla precedente`,
+          failure: { kind: "link", seq: receipt.seq },
         });
         return;
       }
@@ -135,7 +135,7 @@ export class ChainHealthMonitor {
           lastSeq,
           lastHash,
           failed: true,
-          failureDetail: `la firma della ricevuta seq ${receipt.seq} non è valida`,
+          failure: { kind: "signature", seq: receipt.seq },
         });
         return;
       }
@@ -147,33 +147,28 @@ export class ChainHealthMonitor {
   }
 
   statusFor(systemId: string, now: Date): SystemHealth {
+    // The words are read at every call, in the language of the page asking.
+    const words = healthWords();
     const state = this.tracked.get(systemId);
     if (state?.failed === true) {
-      return { status: "red", message: `Verifica fallita: ${state.failureDetail ?? "la catena non torna"}.` };
+      const failure = state.failure;
+      const detail =
+        failure === undefined ? null : failure.kind === "link" ? words.linkBroken(failure.seq) : words.signatureInvalid(failure.seq);
+      return { status: "red", message: words.failed(detail) };
     }
     if (this.signerReachable === false) {
-      return {
-        status: "red",
-        message:
-          "Il firmatario non risponde: nessuna nuova azione può essere registrata finché non torna. " +
-          "Le ricevute già scritte non cambiano.",
-      };
+      return { status: "red", message: words.signerDown };
     }
     // The signer keeps its own record of every chain. When the two disagree
     // in any way other than the one the server repairs by itself, nothing
     // more is written to this chain until a person has looked.
     if (this.store.signerDivergence(systemId) !== null) {
-      return {
-        status: "red",
-        message:
-          "Il firmatario e il database non concordano su questo registro: nessuna correzione automatica, " +
-          "il dettaglio è nel registro amministrativo.",
-      };
+      return { status: "red", message: words.divergence };
     }
 
     const tip = this.store.tip(systemId);
     if (tip === null) {
-      return { status: "yellow", message: "Nessuna azione registrata ancora." };
+      return { status: "yellow", message: words.noActions };
     }
 
     const [latest] = this.store.searchReceipts({ systemId, limit: 1 });
@@ -205,39 +200,20 @@ export class ChainHealthMonitor {
 
     const total = tip.seq + 1;
     if (anchoring === "first" && !stale) {
-      return {
-        status: "green",
-        message:
-          `Registro integro. ${total} azion${total === 1 ? "e" : "i"} registrat${total === 1 ? "a" : "e"}, ` +
-          `primo sigillo in arrivo entro ${durationWords(tolerance)}.`,
-      };
+      return { status: "green", message: words.firstComing(total, durationWords(tolerance)) };
     }
     if ((anchoring === "anchored" || anchoring === "coming") && !stale && checkpoint !== null) {
-      return {
-        status: "green",
-        message:
-          `Registro integro. ${total} azion${total === 1 ? "e" : "i"} registrat${total === 1 ? "a" : "e"}, ultimo sigillo del ${formatTs(checkpoint.checkpoint.ts)}` +
-          `${anchoring === "coming" ? ", marca temporale in arrivo" : ""}.`,
-      };
+      return { status: "green", message: words.sealed(total, formatTs(checkpoint.checkpoint.ts), anchoring === "coming") };
     }
 
     const reasons: string[] = [];
-    if (anchoring === "none") reasons.push(`non è ancora stato sigillato, da oltre ${durationWords(tolerance)}`);
-    if (anchoring === "missing") reasons.push(`manca la marca temporale da oltre ${durationWords(tolerance)}`);
-    if (anchoring === "late") {
-      reasons.push(`l'ultima marca temporale è arrivata ${durationWords(Math.round(lateBy / 60_000))} dopo il sigillo, oltre il limite di ${durationWords(tolerance)}`);
-    }
-    if (stale) reasons.push(`nessuna nuova azione da oltre ${durationWords(Math.round(this.staleAfterMs / 60_000))}`);
-    return {
-      status: "yellow",
-      message: `Registro integro (${total} azion${total === 1 ? "e" : "i"}), ma ${reasons.join(" e ")}.`,
-    };
+    if (anchoring === "none") reasons.push(words.notSealed(durationWords(tolerance)));
+    if (anchoring === "missing") reasons.push(words.stampMissing(durationWords(tolerance)));
+    if (anchoring === "late") reasons.push(words.stampLate(durationWords(Math.round(lateBy / 60_000)), durationWords(tolerance)));
+    if (stale) reasons.push(words.idle(durationWords(Math.round(this.staleAfterMs / 60_000))));
+    return { status: "yellow", message: words.attention(total, reasons) };
   }
 }
 
-/** A whole number of minutes as a person says it: "90 minuti", "1 ora", "24 ore", "2 giorni". */
-export function durationWords(minutes: number): string {
-  if (minutes >= 2880 && minutes % 1440 === 0) return `${minutes / 1440} giorni`;
-  if (minutes >= 60 && minutes % 60 === 0) return minutes === 60 ? "1 ora" : `${minutes / 60} ore`;
-  return minutes === 1 ? "1 minuto" : `${minutes} minuti`;
-}
+/** In the reader's language now (http/strings.ts); exported from here as before. */
+export { durationWords };

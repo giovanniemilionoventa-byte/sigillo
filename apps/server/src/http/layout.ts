@@ -1,6 +1,7 @@
 import type { Receipt } from "@sigillo/core";
 import type { ChainHealthMonitor, ChainStatus, SystemHealth } from "../health/chain-health.js";
 import type { ReceiptStore, SystemRecord } from "../storage/store.js";
+import { currentBack, currentLanguage } from "./locale.js";
 import { outcomeWord, systemTitle, UI } from "./strings.js";
 import { GOOGLE_LOGO, ICONS, KIND_ICONS, SEAL_SVG, STATE_ICONS, STYLE } from "./style.js";
 
@@ -169,7 +170,7 @@ export interface PageOptions {
  */
 function documentStart(title: string): string {
   return `<!doctype html>
-<html lang="it"><head>
+<html lang="${currentLanguage()}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>${escape(title)}</title>
@@ -277,8 +278,26 @@ ${icon}
 <h1>${escape(title)}</h1>
 ${options.message === undefined ? "" : `<p class="message">${escape(options.message)}</p>`}
 ${options.head ?? ""}${body}
+${languageSwitch("auth-lang", currentBack())}
 </div></main>
 </body></html>`;
+}
+
+/**
+ * The two languages as a form of two buttons, the reader's own pressed: it
+ * sets the language cookie (ui.ts, /ui/lingua) and returns to `back`. Each
+ * language is named in its own words, so a reader who landed in the wrong one
+ * can still find theirs.
+ */
+export function languageSwitch(className: string, back: string): string {
+  const now = currentLanguage();
+  const buttons = (["en", "it"] as const)
+    .map(
+      (language) =>
+        `<button type="submit" name="lang" value="${language}" lang="${language}" aria-pressed="${language === now}">${escape(UI.languages[language])}</button>`,
+    )
+    .join("");
+  return `<form method="post" action="/ui/lingua" class="${className}" aria-label="${escape(UI.languageLabel)}"><input type="hidden" name="back" value="${escape(back)}">${buttons}</form>`;
 }
 
 /** The operator's password form, alone on its page. */

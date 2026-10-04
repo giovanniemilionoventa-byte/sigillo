@@ -7,6 +7,7 @@ import type { Viewer } from "../auth/tenancy.js";
 import { StorageError, type ReceiptStore } from "../storage/store.js";
 import { accountPage, authField, escape, loginPage, passwordStepPage } from "./layout.js";
 import { GOOGLE_LOGO } from "./style.js";
+import { currentLanguage } from "./locale.js";
 import { UI } from "./strings.js";
 
 /**
@@ -112,7 +113,7 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
   ): Promise<FastifyReply> => {
     if (!identity.emailVerified) {
       try {
-        await firebase.sendVerification(identity.idToken);
+        await firebase.sendVerification(identity.idToken, currentLanguage());
       } catch (error) {
         return login(reply, { error: failure(error) }, 503);
       }
@@ -191,7 +192,7 @@ ${authField(t.passwordRepeat, `type="password" name="password_again" autocomplet
     if (context.requestThrottle.isLocked(client, at)) return refuse(t.tooMany, 429);
     context.requestThrottle.recordFailure(client, at);
     try {
-      await firebase.signUp(email, password);
+      await firebase.signUp(email, password, currentLanguage());
     } catch (error) {
       if (error instanceof FirebaseError && error.code === "EMAIL_EXISTS") return refuse(t.emailExists, 409);
       if (error instanceof FirebaseError && error.code === "INVALID_EMAIL") return refuse(t.emailInvalid);
@@ -221,7 +222,7 @@ ${authField(t.email, 'type="email" name="email" autocomplete="email" required')}
     // Firebase said so: the page must not tell anyone who is a customer.
     if (EMAIL.test(email)) {
       try {
-        await firebase.sendPasswordReset(email);
+        await firebase.sendPasswordReset(email, currentLanguage());
       } catch (error) {
         if (error instanceof FirebaseError && error.code === "UNAVAILABLE") {
           return html(reply, resetPage({ error: t.unavailable }), 503);

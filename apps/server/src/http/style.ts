@@ -460,6 +460,9 @@ details.tech .facts { margin-top: 10px; }
   background: var(--fill); font-size: 14px; overflow-wrap: anywhere; }
 .auth-foot { display: flex; justify-content: center; gap: 8px 18px; flex-wrap: wrap; margin-top: 22px; font-size: 13px; }
 .auth-box .notice { text-align: left; }
+.auth-box .auth-lang { flex-direction: row; justify-content: center; gap: 4px; margin-top: 28px; }
+.auth-box .auth-lang button { width: auto; min-height: 32px; padding: 0 10px; border: 0; background: none; box-shadow: none; font-size: 13px; color: var(--secondary); }
+.auth-box .auth-lang button[aria-pressed="true"] { color: var(--text); font-weight: 600; }
 
 /* narrow windows and phones: the sidebar becomes a menu, the inspector a page */
 @media (max-width: 899px) {

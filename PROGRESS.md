@@ -3240,6 +3240,31 @@ non un'animazione. Tutto in `video/`, fuori dai pacchetti, nessuna dipendenza nu
 **Da fare**: la voce, registrata dal committente o con uno strumento di voce, sul testo
 dell'`.srt`.
 
+### Sessione 27 — 2026-10-04 — la console in inglese e in italiano
+
+Richiesta del committente (thread "Sigillo bilingue"): sigillo pensato per tutta l'Unione
+Europea, quindi inglese come lingua principale e italiano a scelta. Il committente ha scelto che
+la prima visita segua la lingua del browser.
+
+- **Due file di testi con la stessa forma**: `strings-it.ts` (il testo di prima, invariato) e
+  `strings-en.ts`, che il compilatore obbliga ad avere le stesse chiavi. `strings.ts` sceglie
+  quello della richiesta (`locale.ts`, con `AsyncLocalStorage`): nessuna pagina passa la lingua
+  a mano, e `UI.x` resta scritto come prima.
+- **Come si sceglie**: il cookie `sigillo_lang` se c'è, altrimenti la prima tra inglese e
+  italiano nell'Accept-Language del browser, altrimenti inglese. L'interruttore "English ·
+  Italiano" è in fondo a ogni pagina di accesso e in Impostazioni, sezione Lingua; `POST
+  /ui/lingua` non chiede la sessione (serve anche prima di entrare) e torna solo a pagine `/ui`.
+- **Anche**: `<html lang>`, date ("Today, 14:44", "2 Oct 2026"), numeri ("10,000"), i messaggi
+  sullo stato dei registri, il registro amministrativo, i frammenti di codice di "Collega".
+  Le email di Firebase (conferma, nuova password) chiedono la lingua con `X-Firebase-Locale`.
+- **Restano solo in inglese**, come già erano: il rapporto PDF, le istruzioni del fascicolo, il
+  verificatore e gli errori dell'API. L'ora mostrata resta quella di Roma.
+- **Test**: quelli esistenti controllano ancora l'italiano parola per parola
+  (`test/helpers/italian.ts`); `test/language.test.ts` copre l'inglese e il passaggio tra le due.
+
+**Da fare**: il sito pubblico (thread "Sito, console e app desktop") e la versione inglese del
+video.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
