@@ -265,6 +265,22 @@ const ui = {
     adminLogAll: "Vedi tutto",
     adminLogEmpty: "Nessuna operazione ancora.",
     signingKey: "Chiave di firma",
+    offsite: {
+      heading: "Backup su Google Drive",
+      on: "Attivo",
+      off: "Spento",
+      frequencyLabel: "Frequenza",
+      every: (hours: number): string => (hours === 1 ? "Ogni ora" : hours === 24 ? "Una volta al giorno" : `Ogni ${hours} ore`),
+      states: {
+        off: "Spento: le copie restano solo sul server.",
+        neverRan: "Il server non ha ancora provato a fare una copia.",
+        notRunning: (when: string): string => `Il backup automatico non gira più: l'ultima volta ${when}.`,
+        notConnected: "Google Drive non è ancora collegato al server.",
+        failed: (when: string): string => `L'ultima copia non è riuscita, ${when}.`,
+        ok: (when: string): string => `Ultima copia ${when}.`,
+        waiting: "Nessuna copia ancora.",
+      },
+    },
   },
   history: {
     anchored: "Sigillata",

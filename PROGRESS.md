@@ -3265,6 +3265,25 @@ la prima visita segua la lingua del browser.
 **Da fare**: il sito pubblico (thread "Sito, console e app desktop") e la versione inglese del
 video.
 
+### Sessione 26 — 2026-10-04 — il backup su Google Drive dalle Impostazioni
+
+Richiesta del committente: il backup su Drive va acceso, spento e regolato dalle Impostazioni,
+non solo dal cron del server.
+
+- **Impostazioni → Backup su Google Drive**, solo per l'amministratore e solo dove il server
+  conosce la cartella dei backup (`SIGILLO_BACKUP_DIR`, ora nel `docker-compose.yml`): acceso o
+  spento, e ogni ora, 6 ore, 12 ore o una volta al giorno. Ogni pulsante salva da solo, come
+  quelli del tema. Sopra, una riga dice com'è andata: ultima copia, copia non riuscita, Drive non
+  collegato, oppure, in rosso, che lo script non gira da più di due ore.
+- Il server non tocca mai rclone, Drive o la password: scrive la scelta in
+  `offsite-settings.json` nel volume dei backup, che `backup-offsite.sh` legge a ogni giro
+  orario; lo script scrive lì `offsite-status.json`, che la pagina mostra
+  (`apps/server/src/backup/offsite.ts`). Il cron resta ogni ora: è lo script a saltare i giri
+  prima della frequenza scelta, contando dall'ultima copia riuscita.
+- Testi in inglese e italiano. Test in `settings-ui.test.ts` (scelte, stati, solo
+  amministratore) e in `deploy-config.test.ts` (lo script segue la scelta e scrive lo stato nella
+  forma che il server legge). Screenshot `21-impostazioni` rigenerati.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
