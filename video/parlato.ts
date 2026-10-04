@@ -1,0 +1,78 @@
+/**
+ * The narration, scene by scene, in Italian: the words of the voice-over and
+ * the subtitles at once. Adapted from demo/selezione-cv/VIDEO.md to what the
+ * recorded scenes actually show, with the same rule: no technical words in
+ * what is said.
+ *
+ * Each part names the recorded clip it is spoken over; `pnpm tsx
+ * video/registra.ts sottotitoli` spreads its lines over that clip's real
+ * duration, so the subtitles follow the film even after a scene is redone.
+ */
+export const PARLATO: { clip: string; lines: string[] }[] = [
+  {
+    clip: "scena-1",
+    lines: [
+      "La vostra azienda usa l'intelligenza artificiale per leggere curriculum, rispondere ai clienti, prendere piccole decisioni ogni giorno.",
+      "Ma se un giorno qualcuno vi chiede: «Cosa ha fatto esattamente, e come lo dimostrate?», sapete rispondere?",
+    ],
+  },
+  {
+    clip: "scena-2",
+    lines: [
+      "Questa è sigillo. Ogni azione della vostra AI viene registrata in un modo che nessuno, nemmeno chi gestisce il sistema, può cambiare senza che si veda.",
+      "A destra, un agente che valuta candidature per un posto da sviluppatore.",
+      "A ogni curriculum, il registro a sinistra si aggiorna da solo.",
+      "E in alto, la risposta alla prima domanda: tutto a posto, nessuna alterazione.",
+    ],
+  },
+  {
+    clip: "scena-3",
+    lines: [
+      "Nella cronologia, in frasi normali: cosa ha fatto l'agente, quando, e con quale esito.",
+      "I dettagli tecnici ci sono, ma restano nascosti finché non li cercate.",
+      "Ogni azione ha la sua impronta, ed è legata a quella che la precede: nessuna può sparire o cambiare senza rompere la catena.",
+      "E potete guardare solo gli strumenti che l'agente ha usato.",
+    ],
+  },
+  {
+    clip: "scena-4",
+    lines: [
+      "Più volte al giorno il registro viene sigillato, e un ente esterno e indipendente ci appone la sua marca temporale.",
+      "È la prova che quelle azioni esistevano già a quell'ora: nessuno può riscriverle dopo.",
+    ],
+  },
+  {
+    clip: "scena-5a",
+    lines: ["Quando un ispettore, un revisore o un cliente chiede le prove, basta un clic: sigillo prepara il fascicolo."],
+  },
+  {
+    clip: "scena-5b",
+    lines: [
+      "E chiunque può controllarlo, con uno strumento gratuito e pubblico che non appartiene a chi vende sigillo.",
+      "Il controllo riesce: il fascicolo è integro.",
+      "Ora cambiamo un solo carattere in una copia: l'orario della valutazione di un candidato, spostato di un secondo.",
+      "Il controllo fallisce, e dice esattamente dove.",
+    ],
+  },
+  {
+    clip: "scena-5c",
+    lines: [
+      "Lo stesso vale per i documenti. Un candidato contesta la selezione: caricate il suo curriculum. Il documento non lascia il vostro computer.",
+      "Sì: è esattamente quello che l'AI ha letto. Non uno simile: esattamente quello.",
+      "Basta un carattere diverso, e sigillo non lo riconosce più.",
+    ],
+  },
+  {
+    clip: "scena-6a",
+    lines: [
+      "Il regolamento europeo sull'intelligenza artificiale chiede alle aziende di poter dimostrare cosa hanno fatto i loro sistemi.",
+    ],
+  },
+  {
+    clip: "scena-6b",
+    lines: [
+      "Sigillo non vi dice se la vostra AI ha fatto la cosa giusta: vi dà le prove per verificarlo da soli.",
+      "Il pilota è gratuito: get-sigillo.eu.",
+    ],
+  },
+];

@@ -28,3 +28,6 @@ __pycache__/
 
 .DS_Store
 *.log
+
+# video/registra.ts: recorded frames, scenes, demo state
+video/out/

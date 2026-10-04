@@ -65,6 +65,7 @@ Run from the repository root. Node 22 and pnpm 10 are required.
 | `python3 scripts/crosscheck_vectors.py` | re-derive the receipt test vectors with an independent Python implementation |
 | `pnpm tsx scripts/gen-vectors.ts` | regenerate `packages/core/test/vectors.json` |
 | `pnpm tsx scripts/screenshots.ts [dir]` | regenerate `docs/screenshots/` against the real web view (default `docs/screenshots`) |
+| `pnpm tsx video/registra.ts tutto && video/monta.sh` | record the demo video from the real console (`video/README.md`) |
 | `pnpm audit:deps` | known-vulnerability check of Node and Python dependencies (`audit:node`, `audit:python`); see `docs/DEPENDENCY-AUDIT.md` |
 
 Tests import `@sigillo/core` and resolve to `packages/core/src` through a vitest
