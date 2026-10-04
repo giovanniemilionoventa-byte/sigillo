@@ -29,9 +29,6 @@ This file collects the permanent rules for anyone (human or AI) working on this 
 - **CI-only tooling** (never a dependency of any package): `pip-audit`, pinned in
   `.github/workflows/dependency-audit.yml`. Added in pilot phase 3 for the
   dependency check; pending the project owner's confirmation.
-- **Server tooling** (installed on the production host, never a dependency of any package):
-  `rclone`, used by `deploy/backup-offsite.sh` for the encrypted off-site copy on Google Drive.
-  Added on the project owner's request of 2026-10-03 (PROGRESS.md, session 25).
 - **Python**: `opentelemetry-sdk`, `opentelemetry-exporter-otlp-proto-http`; optional extras `openinference-instrumentation-langchain`, `openinference-instrumentation-crewai`, `openinference-instrumentation-openai` (added in phase 2, N2, for agents that call an OpenAI-compatible server directly).
 - Anything else: ask the project owner before adding it.
 
