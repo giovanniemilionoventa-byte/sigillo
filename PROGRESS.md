@@ -3184,7 +3184,78 @@ l'account e la scelta chiaro/scuro, e un limite di 10.000 ricevute al mese.
 **Da fare sul server**: il `.env` di produzione copiato dal vecchio `.env.example` ha
 `SIGILLO_ORG_MONTHLY_RECEIPTS=100000`; per avere 10.000 va cambiato lì.
 
-### Sessione 25 — 2026-10-04 — il backup su Google Drive, provato e tolto
+### Sessione 25 — 2026-10-04 — il video dimostrativo, come cattura dello schermo vera
+
+Richiesta del committente (PROMPT-VIDEO-CATTURA.md): un video di circa 2:30 della console vera,
+non un'animazione. Tutto in `video/`, fuori dai pacchetti, nessuna dipendenza nuova
+(`playwright-core` c'era già, ffmpeg e Chromium sono strumenti della macchina). Guida in
+`video/README.md`.
+
+- **Dati veri della demo `selezione-cv`**: firmatario e server da `dist/` come `run_demo.sh`,
+  l'agente vero sui curricula 01–14 prima delle riprese, 15–20 dal vivo nella scena 2 (un
+  curriculum per esecuzione, così il registro si aggiorna sei volte), sigilli con marca
+  temporale di FreeTSA. Il modello è quello finto e deterministico della demo, e si vede.
+- **Sei scene registrate a parte** (`pnpm tsx video/registra.ts scena N`), ognuna dal suo
+  stato salvato, poi unite da `video/monta.sh` (H.264, 30 fps, 1920×1080, senza audio) con i
+  titoli di apertura e chiusura. Sottotitoli `.srt` dal testo di `video/parlato.ts`, calcolati
+  sulle durate vere delle scene.
+- **Scena 5, diversa dal copione**: "Verifica un documento" cerca un documento usato da
+  un'azione, non verifica il fascicolo. Il fascicolo scaricato dalla console è quindi verificato
+  dal verificatore indipendente (`sigillo-verify`, in un terminale), poi una copia con un solo
+  carattere cambiato (`video/cambia-un-carattere.mjs`) fallisce indicando file e riga. Dopo, in
+  "Verifica un documento", il curriculum del candidato 07 (trovato) e una sua copia con un
+  carattere cambiato (non trovata).
+- **Non mostrati perché non esistono nella demo**: uno strumento bloccato (l'agente della demo
+  non ne ha) e un sito pubblico separato (`design/sito/` non c'è): la chiusura mostra la pagina
+  pubblica vera di get-sigillo.eu, quella di accesso.
+- Durata: circa 3:00 invece di 2:30, soprattutto per la scena 5 che mostra fascicolo e
+  curriculum insieme.
+
+**Da fare**: la voce, registrata dal committente o con uno strumento di voce, sul testo
+dell'`.srt`.
+
+### Sessione 26 — 2026-10-04 — la console in inglese e in italiano
+
+Richiesta del committente (thread "Sigillo bilingue"): sigillo pensato per tutta l'Unione
+Europea, quindi inglese come lingua principale e italiano a scelta. Il committente ha scelto che
+la prima visita segua la lingua del browser.
+
+- **Due file di testi con la stessa forma**: `strings-it.ts` (il testo di prima, invariato) e
+  `strings-en.ts`, che il compilatore obbliga ad avere le stesse chiavi. `strings.ts` sceglie
+  quello della richiesta (`locale.ts`, con `AsyncLocalStorage`): nessuna pagina passa la lingua
+  a mano, e `UI.x` resta scritto come prima.
+- **Come si sceglie**: il cookie `sigillo_lang` se c'è, altrimenti la prima tra inglese e
+  italiano nell'Accept-Language del browser, altrimenti inglese. L'interruttore "English ·
+  Italiano" è in fondo a ogni pagina di accesso e in Impostazioni, sezione Lingua; `POST
+  /ui/lingua` non chiede la sessione (serve anche prima di entrare) e torna solo a pagine `/ui`.
+- **Anche**: `<html lang>`, date ("Today, 14:44", "2 Oct 2026"), numeri ("10,000"), i messaggi
+  sullo stato dei registri, il registro amministrativo, i frammenti di codice di "Collega".
+  Le email di Firebase (conferma, nuova password) chiedono la lingua con `X-Firebase-Locale`.
+- **Restano solo in inglese**, come già erano: il rapporto PDF, le istruzioni del fascicolo, il
+  verificatore e gli errori dell'API. L'ora mostrata resta quella di Roma.
+- **Test**: quelli esistenti controllano ancora l'italiano parola per parola
+  (`test/helpers/italian.ts`); `test/language.test.ts` copre l'inglese e il passaggio tra le due.
+
+**Da fare**: il sito pubblico (thread "Sito, console e app desktop") e la versione inglese del
+video.
+
+### Sessione 27 — 2026-10-04 — il video dimostrativo in inglese
+
+Richiesta del committente: lo stesso video con le schermate e i sottotitoli in inglese, ora che
+la console parla inglese e italiano. Gli script di `video/` scelgono la lingua con
+`SIGILLO_VIDEO_LANG=en`: il browser chiede l'inglese alla console (e al sito vero), e quello che
+è del video (nome del sistema, terminale, strumento `change-one-character`, titoli, parlato in
+`video/parlato.ts`) segue `video/lingua.ts`. Registrazione nuova da zero, con dati veri, come la prima;
+consegna in `video/consegna/en/`, versione con sottotitoli impressi compresa.
+
+Su richiesta del committente anche l'agente è in inglese: nuova demo `demo/cv-screening`, la
+versione inglese di `selezione-cv`. Stesso agente LangGraph con gli strumenti `read_cv`,
+`evaluate_candidate` e `send_email`, gli stessi 20 candidati con i curricula tradotti
+(`candidate-XX.txt`), esiti `interview` / `not_suitable`. `tests/test_parity.py`, aggiunto alla
+CI, controlla che ogni curriculum inglese abbia lo stesso punteggio e lo stesso esito del suo
+originale italiano. Il video inglese usa questa demo: sullo schermo non resta nulla in italiano.
+
+### Sessione 28 — 2026-10-04 — il backup su Google Drive, provato e tolto
 
 Il committente aveva chiesto di poter mandare i backup su Google Drive (copia cifrata con
 rclone, poi accensione e frequenza dalle Impostazioni, poi uno script unico per il collegamento).
@@ -3201,7 +3272,7 @@ ci si affida ai soli backup locali di `backup.sh` (2 copie sul disco del server)
 - **Da fare sul server**: se il cron è stato cambiato su `backup-offsite.sh`, rimettere la riga
   di `backup.sh` (docs/DEPLOY-PRODUZIONE.md, 6.1) dopo `./update.sh`.
 
-### Sessione 26 — 2026-10-04 — l'esportazione giornaliera
+### Sessione 29 — 2026-10-04 — l'esportazione giornaliera
 
 Dopo aver tolto Drive, il committente ha chiesto, al posto di quel backup, che le ricevute si
 scarichino in modo facoltativo ogni giorno alle 23:59.

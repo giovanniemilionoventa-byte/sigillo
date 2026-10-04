@@ -7,11 +7,12 @@
  * real and visible, not described:
  *
  *   - a fascicolo (.zip): in receipts.jsonl, the receipt of the
- *     `valuta_candidato` tool call that follows the reading of candidate 07's
+ *     `valuta_candidato` (`evaluate_candidate` in the English demo) tool call
+ *     that follows the reading of candidate 07's
  *     CV gets one digit of its `ts_event` seconds changed (the time of the
  *     evaluation moved by one second). Every other file and byte is the
  *     original's. Needs `unzip` and `zip` on PATH.
- *   - a text file: the first "immediata." becomes "immediata!".
+ *   - a text file: the first "immediata." ("immediate." in English) becomes "immediata!".
  *
  * The original is never touched. No dependencies beyond Node. It reports in
  * Italian, or in English with SIGILLO_VIDEO_LANG=en (the English video shows
@@ -32,7 +33,11 @@ if (original === undefined || copy === undefined) {
   process.exit(2);
 }
 
-const CV_07 = fileURLToPath(new URL("../demo/selezione-cv/curricula/candidato-07.txt", import.meta.url));
+const CV_07 = fileURLToPath(
+  new URL(english ? "../demo/cv-screening/curricula/candidate-07.txt" : "../demo/selezione-cv/curricula/candidato-07.txt", import.meta.url),
+);
+const EVALUATE = english ? "evaluate_candidate" : "valuta_candidato";
+const WORD = english ? "immediate" : "immediata";
 
 if (original.endsWith(".zip")) {
   const folder = mkdtempSync(join(tmpdir(), "copia-"));
@@ -47,7 +52,7 @@ if (original.endsWith(".zip")) {
     const at = lines.findIndex((line) => {
       if (line === "") return false;
       const receipt = JSON.parse(line);
-      return receipt.seq > read.seq && receipt.action.name === "valuta_candidato";
+      return receipt.seq > read.seq && receipt.action.name === EVALUATE;
     });
     if (at === -1) throw new Error("nessuna valutazione dopo la lettura del curriculum del candidato 07");
     const line = lines[at];
@@ -77,15 +82,15 @@ if (original.endsWith(".zip")) {
   }
 } else {
   const text = readFileSync(original, "utf8");
-  const at = text.indexOf("immediata.");
-  if (at === -1) throw new Error('"immediata." non trovato');
-  const column = at + "immediata".length;
+  const at = text.indexOf(`${WORD}.`);
+  if (at === -1) throw new Error(`"${WORD}." not found`);
+  const column = at + WORD.length;
   writeFileSync(copy, text.slice(0, column) + "!" + text.slice(column + 1));
   const lineNumber = text.slice(0, column).split("\n").length;
   process.stdout.write(
     english
       ? `${basename(copy)}: a copy of ${basename(original)} with one character changed\n` +
-          `  line ${lineNumber}: "immediata." → "immediata!"\n`
+          `  line ${lineNumber}: "immediate." → "immediate!"\n`
       : `${basename(copy)}: copia di ${basename(original)} con un solo carattere diverso\n` +
           `  riga ${lineNumber}: «immediata.» → «immediata!»\n`,
   );

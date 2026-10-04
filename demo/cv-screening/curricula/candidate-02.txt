@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Giulia Moretti
+
+Education:
+Degree in Computer Science.
+
+Experience:
+1 year of experience as a backend developer in a team of four,
+on a management product for small businesses.
+
+Technical skills:
+Java, Spring, SQL, Git, PostgreSQL.
+
+Availability: two weeks' notice.

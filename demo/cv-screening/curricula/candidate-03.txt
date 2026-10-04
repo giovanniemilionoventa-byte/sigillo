@@ -1,0 +1,15 @@
+Application for: Junior Backend Developer
+Name: Davide Colombo
+
+Education:
+Mechanical technician diploma.
+
+Experience:
+1 year of experience as a developer, self-taught, on small personal projects
+and a short internship at a repair workshop where he also looked after the
+internal management software.
+
+Technical skills:
+SQL, Git, Linux.
+
+Availability: immediate.

@@ -687,7 +687,7 @@ function dailyExportSection(view: { on: boolean; files: StoredExport[]; names: M
     .join("\n");
   return `<section class="section" aria-labelledby="esportazione-giornaliera"><h2 id="esportazione-giornaliera">${escape(t.heading)}</h2>
 <div class="card"><div class="line" data-daily-export="${view.on ? "on" : "off"}"><span class="tile-icon ${view.on ? "green" : "grey"}" aria-hidden="true">${view.on ? STATE_ICONS.ok : ICONS.folder}</span><span class="line-text">${escape(view.on ? t.stateOn : t.stateOff)}</span></div></div>
-<form method="post" action="/ui/impostazioni/esportazione-giornaliera" class="segmented offsite-controls" aria-label="${escape(t.heading)}"><button type="submit" name="enabled" value="on" aria-pressed="${view.on}">${escape(t.on)}</button><button type="submit" name="enabled" value="off" aria-pressed="${!view.on}">${escape(t.off)}</button></form>
+<form method="post" action="/ui/impostazioni/esportazione-giornaliera" class="segmented setting-controls" aria-label="${escape(t.heading)}"><button type="submit" name="enabled" value="on" aria-pressed="${view.on}">${escape(t.on)}</button><button type="submit" name="enabled" value="off" aria-pressed="${!view.on}">${escape(t.off)}</button></form>
 ${lines === "" ? (view.on ? `<p class="card empty export-files">${escape(t.empty)}</p>` : "") : `<div class="card lines export-files">${lines}</div>`}</section>`;
 }
 

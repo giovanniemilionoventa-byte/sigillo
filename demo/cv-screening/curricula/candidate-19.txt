@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Marco Vitali
+
+Education:
+Degree in Computer Engineering.
+
+Experience:
+2 years of experience as a backend developer on internal reporting
+services for a medium-sized manufacturer.
+
+Technical skills:
+Python, PostgreSQL, Docker, Git, REST.
+
+Availability: one month's notice.

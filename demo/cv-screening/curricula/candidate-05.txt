@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Matteo Rinaldi
+
+Education:
+Degree in Computer Science.
+
+Experience:
+3 years of experience as a backend developer, with a particular focus
+on containerising and orchestrating services.
+
+Technical skills:
+Java, Spring, Docker, Kubernetes, SQL, Git, REST.
+
+Availability: one month's notice.

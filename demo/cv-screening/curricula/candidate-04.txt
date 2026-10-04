@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Chiara Galli
+
+Education:
+Degree in Computer Engineering.
+
+Experience:
+2 years of experience as a developer, mostly on internal APIs
+for a logistics company.
+
+Technical skills:
+Python, Django, PostgreSQL, Git.
+
+Availability: one month's notice.

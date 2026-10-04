@@ -1,0 +1,14 @@
+Application for: Junior Backend Developer
+Name: Francesca Villa
+
+Education:
+Degree in Computer Engineering.
+
+Experience:
+2 years of experience as a backend developer on an e-commerce
+application, responsible for the product catalogue and payments.
+
+Technical skills:
+Python, Flask, PostgreSQL, Docker, Git, REST.
+
+Availability: two weeks' notice.
