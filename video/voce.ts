@@ -15,8 +15,7 @@
  *
  * Reads the delivered film and subtitles of the recording (video/consegna/,
  * video/consegna/en/) and writes next to them <name>-voce|voice.mp4 (voice,
- * no subtitles), its .srt, and <name>-voce|voice-sottotitolato|subtitled.mp4
- * (voice and subtitles burned in). Needs ffmpeg and, to speak, the Python
+ * no subtitles) and its .srt, which the site's player offers as a track. Needs ffmpeg and, to speak, the Python
  * of video/voce.py (SIGILLO_TTS_PYTHON, default python3).
  */
 import { execFileSync } from "node:child_process";
@@ -32,8 +31,8 @@ const language: "it" | "en" = argument;
 const step = process.argv[3] ?? "tutto";
 
 const NAMES = {
-  it: { dir: join(ROOT, "video", "consegna"), base: "sigillo-demo", voice: "voce", subtitled: "sottotitolato" },
-  en: { dir: join(ROOT, "video", "consegna", "en"), base: "sigillo-demo-en", voice: "voice", subtitled: "subtitled" },
+  it: { dir: join(ROOT, "video", "consegna"), base: "sigillo-demo", voice: "voce" },
+  en: { dir: join(ROOT, "video", "consegna", "en"), base: "sigillo-demo-en", voice: "voice" },
 }[language];
 const WORK = join(ROOT, "video", "out", `voce-${language}`);
 const FILM = join(NAMES.dir, `${NAMES.base}.mp4`);
@@ -166,15 +165,7 @@ function mixa(all: Line[]): void {
   const withVoiceSrt = join(NAMES.dir, `${NAMES.base}-${NAMES.voice}.srt`);
   writeFileSync(withVoiceSrt, srt);
 
-  // The same film with the subtitles burned in, as monta.sh does.
-  const burned = join(NAMES.dir, `${NAMES.base}-${NAMES.voice}-${NAMES.subtitled}.mp4`);
-  execFileSync("ffmpeg", [
-    "-y", "-loglevel", "error", "-i", withVoice, "-vf",
-    `subtitles=${withVoiceSrt}:charenc=UTF-8:force_style='FontName=DejaVu Sans,FontSize=13,PrimaryColour=&H00FFFFFF,BackColour=&H99000000,BorderStyle=4,Outline=0,Shadow=0,MarginV=22,Alignment=2'`,
-    "-c:v", "libx264", "-preset", "slow", "-crf", "17", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", burned,
-  ]);
-
-  process.stdout.write(`wrote ${withVoice}\nwrote ${withVoiceSrt}\nwrote ${burned}\n`);
+  process.stdout.write(`wrote ${withVoice}\nwrote ${withVoiceSrt}\n`);
 }
 
 /** The .srt of the placed lines: a line's cues share its speaking time by length, and keep their two rows. */

@@ -69,8 +69,9 @@ export SIGILLO_TTS_PYTHON=/tmp/tts/bin/python SIGILLO_TTS_MODEL=/path/kokoro-v1.
 pnpm tsx video/voce.ts it      # and: pnpm tsx video/voce.ts en
 ```
 
-It writes next to the silent films `sigillo-demo-voce.mp4`, its `.srt` and
-`sigillo-demo-voce-sottotitolato.mp4` (English: `sigillo-demo-en-voice*`). Each
+It writes next to the silent films `sigillo-demo-voce.mp4` and its `.srt`
+(English: `sigillo-demo-en-voice*`). The subtitles stay a separate `.srt`, which
+the site's player offers as a track that can be switched on and off. Each
 line of `parlato.ts` starts where its subtitle started, waits for the line before
 it, and the closing lines may start up to four seconds early so the voice ends
 before the film does. The subtitles are laid again over the speech that was
