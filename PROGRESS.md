@@ -3210,6 +3210,36 @@ server, su Google Drive. Fino a oggi le copie stavano solo sullo stesso disco de
 
 **Da fare sul server**: i passi di 6.1 "Copia su Google Drive", e cambiare la riga del cron.
 
+### Sessione 26 — 2026-10-04 — il video dimostrativo, come cattura dello schermo vera
+
+Richiesta del committente (PROMPT-VIDEO-CATTURA.md): un video di circa 2:30 della console vera,
+non un'animazione. Tutto in `video/`, fuori dai pacchetti, nessuna dipendenza nuova
+(`playwright-core` c'era già, ffmpeg e Chromium sono strumenti della macchina). Guida in
+`video/README.md`.
+
+- **Dati veri della demo `selezione-cv`**: firmatario e server da `dist/` come `run_demo.sh`,
+  l'agente vero sui curricula 01–14 prima delle riprese, 15–20 dal vivo nella scena 2 (un
+  curriculum per esecuzione, così il registro si aggiorna sei volte), sigilli con marca
+  temporale di FreeTSA. Il modello è quello finto e deterministico della demo, e si vede.
+- **Sei scene registrate a parte** (`pnpm tsx video/registra.ts scena N`), ognuna dal suo
+  stato salvato, poi unite da `video/monta.sh` (H.264, 30 fps, 1920×1080, senza audio) con i
+  titoli di apertura e chiusura. Sottotitoli `.srt` dal testo di `video/parlato.ts`, calcolati
+  sulle durate vere delle scene.
+- **Scena 5, diversa dal copione**: "Verifica un documento" cerca un documento usato da
+  un'azione, non verifica il fascicolo. Il fascicolo scaricato dalla console è quindi verificato
+  dal verificatore indipendente (`sigillo-verify`, in un terminale), poi una copia con un solo
+  carattere cambiato (`video/cambia-un-carattere.mjs`) fallisce indicando file e riga. Dopo, in
+  "Verifica un documento", il curriculum del candidato 07 (trovato) e una sua copia con un
+  carattere cambiato (non trovata).
+- **Non mostrati perché non esistono nella demo**: uno strumento bloccato (l'agente della demo
+  non ne ha) e un sito pubblico separato (`design/sito/` non c'è): la chiusura mostra la pagina
+  pubblica vera di get-sigillo.eu, quella di accesso.
+- Durata: circa 3:00 invece di 2:30, soprattutto per la scena 5 che mostra fascicolo e
+  curriculum insieme.
+
+**Da fare**: la voce, registrata dal committente o con uno strumento di voce, sul testo
+dell'`.srt`.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

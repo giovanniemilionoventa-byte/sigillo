@@ -14,6 +14,7 @@
     "apps/*/src/**/*.ts",
     "apps/*/test/**/*.ts",
     "scripts/**/*.ts",
+    "video/**/*.ts",
     "vitest.config.ts"
   ]
 }
