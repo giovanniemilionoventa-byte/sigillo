@@ -4,7 +4,7 @@
 # short fade at each cut, no audio. H.264, 30 fps, 1920x1080.
 #
 # Run after: pnpm tsx video/registra.ts tutto   (or the scenes one by one, then "titoli")
-# Output:    video/out/sigillo-demo.mp4 and video/out/sigillo-demo.srt
+# Output:    video/out/sigillo-demo.mp4, sigillo-demo.srt, and sigillo-demo-sottotitolato.mp4 (subtitles burned in)
 set -euo pipefail
 
 OUT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/out"
@@ -45,3 +45,9 @@ echo "wrote $OUT/sigillo-demo.mp4 ($(duration "$OUT/sigillo-demo.mp4") s)"
 
 # The subtitles, timed on these very scenes.
 cd "$OUT/../.." && pnpm exec tsx video/registra.ts sottotitoli
+
+# The same film with the subtitles burned in, for players that do not load an .srt.
+ffmpeg -y -loglevel error -i "$OUT/sigillo-demo.mp4" \
+  -vf "subtitles=$OUT/sigillo-demo.srt:charenc=UTF-8:force_style='FontName=DejaVu Sans,FontSize=13,PrimaryColour=&H00FFFFFF,BackColour=&H99000000,BorderStyle=4,Outline=0,Shadow=0,MarginV=22,Alignment=2'" \
+  -c:v libx264 -preset slow -crf 17 -pix_fmt yuv420p -movflags +faststart "$OUT/sigillo-demo-sottotitolato.mp4"
+echo "wrote $OUT/sigillo-demo-sottotitolato.mp4"
