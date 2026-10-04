@@ -577,6 +577,28 @@ riuscita, script che non gira più). All'inizio è attiva, ogni ora. Il database
 server solo cifrato: chi apre il Drive vede file `sigillo-….db.gz.bin` che non
 si possono leggere senza la password.
 
+**Il modo corto: un solo script.** Dal portatile entra nel server aprendo anche
+un "tunnel" (serve perché Google deve poter aprire la sua pagina di consenso dal
+browser del portatile):
+
+```sh
+portatile$ ssh -L 53682:127.0.0.1:53682 utente@sigillo.tuaazienda.it
+```
+
+e, in quella sessione, sul server:
+
+```sh
+$ cd /srv/sigillo/deploy && ./connect-drive.sh
+```
+
+Lo script installa rclone se manca, stampa un link da aprire nel browser del
+portatile (entra con l'account Google dove vuoi i backup e premi "Consenti"),
+crea la password di cifratura e la mostra **una volta sola**, fa la prima copia,
+ti fa riscrivere la password per controllare che quella salvata sia giusta, e
+mette la riga del cron al posto della vecchia. Si può rilanciare: un
+collegamento e una password che esistono già non vengono toccati. Sotto, gli
+stessi passi a mano, se preferisci.
+
 Serve [rclone](https://rclone.org), che si installa sul server (non nei
 container). Ogni blocco è un passo.
 
