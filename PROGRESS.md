@@ -3355,6 +3355,14 @@ dell'operatore hanno servito, e non cancella chi compare solo da un cliente (per
 operator sees it", "the web view, signed in as the operator"), più chiave e "collega" nei test
 delle organizzazioni. `docs/SECURITY.md` aggiornato.
 
+### Sessione 33 — 2026-10-04 — il sito spiega meglio e ha i contatti
+
+Richieste del proprietario dopo aver visto il sito online: bottone "Crea un account" (era "Inizia il pilota gratuito"); "Avvisami" e "Contattaci" dei prezzi aprono una mail a lui (prima portavano all'accesso con Google); sezione Contatti con la sua email; più spiegazione nella pagina iniziale.
+
+- `SITE_CONTACT_EMAIL` ora ha l'indirizzo: appaiono il link "Contatti" nel piede, la sezione Contatti e la riga nella Privacy.
+- Pagina iniziale: "Perché esiste Sigillo" (il bisogno), "Come funziona" in quattro passi, "L'AI Act europeo" (dice che Sigillo non rende conforme un sistema da solo), Contatti. In inglese e in italiano.
+- Il verificatore non è toccato.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

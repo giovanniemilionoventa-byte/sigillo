@@ -31,8 +31,8 @@ const SIGN_UP = "/ui/registrati";
 
 const REPOSITORY = "https://github.com/giovanniemilionoventa-byte/sigillo";
 
-/** The address the site's "Contact" links write to; none yet, so none is shown. */
-export const SITE_CONTACT_EMAIL: string | undefined = undefined;
+/** The address the site's "Contact" links write to; with none, no link is shown. */
+export const SITE_CONTACT_EMAIL: string | undefined = "giovanniemilio.noventa@gmail.com";
 
 export interface SiteOptions {
   languageOf: (request: FastifyRequest) => Language;
@@ -195,6 +195,7 @@ nav a[aria-current="page"] { font-weight: 600; }
 section { padding: 80px 0; }
 h2 { font-size: 34px; letter-spacing: -0.02em; font-weight: 700; text-align: center; margin-bottom: 40px; }
 .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.two { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
 .card { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow-card); padding: 28px; }
 .card h3 { font-size: 19px; margin: 16px 0 8px; letter-spacing: -0.01em; }
 .ico { width: 40px; height: 40px; border-radius: 10px; background: var(--fill); display: flex; align-items: center;
@@ -278,7 +279,7 @@ footer a { color: var(--text); }
   .hero h1 { font-size: 34px; }
   .hero .lead { font-size: 17px; }
   .ctas { flex-direction: column; align-items: stretch; }
-  .three, .plans, .steps { grid-template-columns: 1fr; }
+  .three, .two, .plans, .steps { grid-template-columns: 1fr; }
   section { padding: 56px 0; }
   h2 { font-size: 26px; }
   .cta-row { flex-direction: column; align-items: flex-start; }
@@ -411,15 +412,32 @@ function homeBody(context: PageContext): string {
 <p class="lead">${escape(h.lead)}</p>
 <div class="ctas"><a class="btn primary" href="${SIGN_UP}">${escape(t.start)}</a><a class="btn plain" href="#demo">${escape(t.watch)}</a></div></div>
 <div class="wrap" id="demo"><div class="video">${video}</div></div>
-<section><div class="wrap"><h2>${escape(h.what)}</h2><div class="three">
+<section><div class="wrap narrow prose"><h2>${escape(h.why.title)}</h2>
+${h.why.paragraphs.map((text) => `<p>${escape(text)}</p>`).join("\n")}</div></section>
+<section class="band"><div class="wrap"><h2>${escape(h.what)}</h2><div class="three">
 ${h.cards.map((card, index) => `<div class="card"><div class="ico">${icons[index] ?? ""}</div><h3>${escape(card.title)}</h3><p>${escape(card.text)}</p></div>`).join("\n")}
+</div></div></section>
+<section><div class="wrap"><h2>${escape(h.how.title)}</h2><div class="two">
+${h.how.items.map((item, index) => `<div class="card"><div class="ico">${index + 1}</div><h3>${escape(item.title)}</h3><p>${escape(item.text)}</p></div>`).join("\n")}
 </div></div></section>
 <section class="band"><div class="wrap"><h2>${escape(h.connect)}</h2>
 ${stepsOf(t)}
 <div class="ways">${pythonSteps(t, context.endpoint)}</div>
 <p class="more"><a href="/connect">${escape(h.allWays)} ›</a></p></div></section>
-<section><div class="wrap cta-row"><div class="pilot"><h2>${escape(h.pilot)}</h2><p>${escape(h.pilotText)}</p></div>
-<div class="cta-buttons"><a class="btn plain" href="/pricing">${escape(h.seePricing)}</a><a class="btn primary" href="${SIGN_UP}">${escape(t.start)}</a></div></div></section>`;
+<section><div class="wrap narrow prose"><h2>${escape(h.aiAct.title)}</h2>
+${h.aiAct.paragraphs.map((text) => `<p>${escape(text)}</p>`).join("\n")}</div></section>
+<section class="band"><div class="wrap cta-row"><div class="pilot"><h2>${escape(h.pilot)}</h2><p>${escape(h.pilotText)}</p></div>
+<div class="cta-buttons"><a class="btn plain" href="/pricing">${escape(h.seePricing)}</a><a class="btn primary" href="${SIGN_UP}">${escape(t.start)}</a></div></div></section>${contactSection(context)}`;
+}
+
+function contactSection(context: PageContext): string {
+  const { t, contactEmail } = context;
+  if (contactEmail === undefined) return "";
+  const c = t.home.contact;
+  return `
+<section id="contact"><div class="wrap narrow prose"><h2>${escape(c.title)}</h2>
+<p>${escape(c.text)}</p>
+<p><a class="btn primary" href="mailto:${escape(contactEmail)}">${escape(c.action)}</a> <a href="mailto:${escape(contactEmail)}">${escape(contactEmail)}</a></p></div></section>`;
 }
 
 function stepsOf(t: SiteTexts): string {
@@ -433,7 +451,7 @@ function pricingBody(context: PageContext): string {
   // Only the pilot can be started today; the other two ask to be told, by email.
   const plans = p.plans.map((plan, index) => {
     const now = index === 0;
-    const href = now ? SIGN_UP : contact;
+    const href = now ? SIGN_UP : context.contactEmail === undefined ? SIGN_IN : `${contact}?subject=${encodeURIComponent(`Sigillo: ${plan.name}`)}`;
     const price = index === 1 ? `${escape(plan.price)} <small>${escape(p.perMonth)}</small>` : escape(plan.price);
     return `<div class="card plan${now ? " now" : ""}"><span class="tag">${escape(now ? p.now : p.soon)}</span><h3>${escape(plan.name)}</h3>
 <div class="price">${price}</div>

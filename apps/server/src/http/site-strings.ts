@@ -28,6 +28,10 @@ export interface SiteTexts {
     pilot: string;
     pilotText: string;
     seePricing: string;
+    why: { title: string; paragraphs: readonly string[] };
+    how: { title: string; items: readonly { title: string; text: string }[] };
+    aiAct: { title: string; paragraphs: readonly string[] };
+    contact: { title: string; text: string; action: string };
   };
   pricing: {
     title: string;
@@ -95,7 +99,7 @@ export interface SiteTexts {
 const EN: SiteTexts = {
   nav: { pricing: "Pricing", connect: "How to connect", verify: "Verify" },
   signIn: "Sign in",
-  start: "Start free pilot",
+  start: "Create an account",
   watch: "Watch the demo",
   switchTo: "IT",
   switchLabel: "Italiano",
@@ -118,6 +122,31 @@ const EN: SiteTexts = {
     pilot: "Start free",
     pilotText: "While Sigillo is in its pilot phase, it is free for up to 10,000 receipts a month. No card needed.",
     seePricing: "See pricing",
+    why: {
+      title: "Why Sigillo exists",
+      paragraphs: [
+        "AI agents now act on their own: they read CVs, answer customers, move money. When something goes wrong, or an auditor asks, a company has to show exactly what the agent did.",
+        "Ordinary logs are not enough. Whoever runs the server can edit or delete them, and nobody can tell. Sigillo keeps a record that cannot be changed without showing, and that a third party can check without trusting you or us.",
+        "It is for companies that use AI agents for decisions about people or money, and for the consultants and auditors who answer for them.",
+      ],
+    },
+    how: {
+      title: "How it works",
+      items: [
+        { title: "Your agent works as usual", text: "A few lines in your code send Sigillo a fingerprint of every action: which tool, when, with what outcome. The text itself, prompts and answers, never leaves your server." },
+        { title: "Each action becomes a signed receipt", text: "Sigillo signs it with a key held by a separate process, and links it to the one before, like numbered pages in a book." },
+        { title: "Seals fix the ledger in time", text: "The ledger is sealed regularly and timestamped by an independent authority, so nobody can say later that it was written afterwards." },
+        { title: "Anyone can check it", text: "You download an evidence pack. The open-source verifier, or the Verify page on this site, confirms signatures, order and seals without asking Sigillo." },
+      ],
+    },
+    aiAct: {
+      title: "The EU AI Act",
+      paragraphs: [
+        "The EU AI Act asks high-risk AI systems to record their events automatically and to keep those records for a set period.",
+        "Sigillo makes the records tamper-evident and easy to hand to an auditor. It does not make a system compliant by itself: that depends on what your AI does and how you use it.",
+      ],
+    },
+    contact: { title: "Contact", text: "Questions, a pilot, a demo for your team? Write to Giovanni Noventa.", action: "Send an email" },
   },
   pricing: {
     title: "Pricing",
@@ -237,7 +266,7 @@ const EN: SiteTexts = {
 const IT: SiteTexts = {
   nav: { pricing: "Prezzi", connect: "Come si collega", verify: "Verifica" },
   signIn: "Accedi",
-  start: "Inizia il pilota gratuito",
+  start: "Crea un account",
   watch: "Guarda la demo",
   switchTo: "EN",
   switchLabel: "English",
@@ -260,6 +289,31 @@ const IT: SiteTexts = {
     pilot: "Inizia gratis",
     pilotText: "Finché Sigillo è nella fase pilota è gratuito, fino a 10.000 ricevute al mese. Senza carta di credito.",
     seePricing: "Vedi i prezzi",
+    why: {
+      title: "Perché esiste Sigillo",
+      paragraphs: [
+        "Gli agenti AI ormai agiscono da soli: leggono CV, rispondono ai clienti, muovono denaro. Quando qualcosa va storto, o quando lo chiede un revisore, l'azienda deve poter mostrare cosa ha fatto davvero l'agente.",
+        "I log normali non bastano. Chi gestisce il server può modificarli o cancellarli e nessuno se ne accorge. Sigillo tiene un registro che non si può cambiare senza che si veda, e che un terzo può controllare senza fidarsi né di te né di noi.",
+        "È per le aziende che usano agenti AI per decisioni su persone o denaro, e per i consulenti e i revisori che ne rispondono.",
+      ],
+    },
+    how: {
+      title: "Come funziona",
+      items: [
+        { title: "Il tuo agente lavora come sempre", text: "Poche righe nel tuo codice mandano a Sigillo l'impronta di ogni azione: quale strumento, quando, con quale esito. Il testo, cioè richieste e risposte, non lascia mai il tuo server." },
+        { title: "Ogni azione diventa una ricevuta firmata", text: "Sigillo la firma con una chiave custodita da un processo separato e la lega alla precedente, come le pagine numerate di un libro." },
+        { title: "I sigilli fissano il registro nel tempo", text: "Il registro viene sigillato a intervalli regolari e marcato da un'autorità indipendente, così nessuno può dire che sia stato scritto dopo." },
+        { title: "Chiunque può controllarlo", text: "Scarichi un fascicolo delle prove. Il verificatore open source, o la pagina Verifica di questo sito, controlla firme, ordine e sigilli senza chiedere a Sigillo." },
+      ],
+    },
+    aiAct: {
+      title: "L'AI Act europeo",
+      paragraphs: [
+        "L'AI Act europeo chiede ai sistemi di AI ad alto rischio di registrare automaticamente i propri eventi e di conservare quelle registrazioni per un periodo stabilito.",
+        "Sigillo rende le registrazioni a prova di manomissione e facili da consegnare a un revisore. Da solo non rende un sistema conforme: dipende da cosa fa la tua AI e da come la usi.",
+      ],
+    },
+    contact: { title: "Contatti", text: "Domande, un pilota, una demo per il tuo team? Scrivi a Giovanni Noventa.", action: "Scrivi una mail" },
   },
   pricing: {
     title: "Prezzi",
