@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Receipt } from "@sigillo/core";
 import type { ReceiptStore } from "../storage/store.js";
 import { isProvider, type Provider, type ProviderKeyStore } from "./provider-keys.js";
+import { toolRequestsOf } from "./tool-requests.js";
 
 /**
  * The model gateway: a system's agent talks to its cloud model through
@@ -25,6 +26,11 @@ import { isProvider, type Provider, type ProviderKeyStore } from "./provider-key
  * answer is handed back only once its receipt is written: if the receipt
  * cannot be written, the agent gets a 503 and not the answer. A streamed
  * answer is passed on as it arrives, and its receipt written at the end.
+ *
+ * Where `toolRequests` allows it, the tools the model asked for in an answer
+ * (tool-requests.ts) each get a receipt of their own, `model_requested.<tool>`,
+ * right after the call's: what the model asked its agent to do, with the
+ * arguments digested, not that the agent did it.
  */
 
 export type GatewayAccess = "operator" | "all";
@@ -33,6 +39,8 @@ export interface GatewayOptions {
   keys: ProviderKeyStore;
   /** Who may use it: the operator's own systems only, until the owner opens it to every account. */
   access: GatewayAccess;
+  /** Who also gets a receipt per tool the model requests. Default: nobody. */
+  toolRequests?: "off" | GatewayAccess;
   /** The providers' addresses; tests point them at a local stand-in. */
   upstream?: Partial<Record<Provider, string>>;
 }
@@ -77,6 +85,9 @@ const FORWARDED_REQUEST_HEADERS = [
 const FORWARDED_RESPONSE_HEADER = /^(content-type|retry-after|x-request-id|request-id|openai-[a-z-]+|anthropic-[a-z-]+|x-ratelimit-[a-z-]+)$/;
 
 const MAX_NAME = 256;
+
+/** The action name of a tool the model asked for: `model_requested.send_email`. */
+export const TOOL_REQUEST_PREFIX = "model_requested.";
 
 /** Whether a system may use the gateway under `access`: one with no organization is the operator's. */
 export function gatewayAllowed(access: GatewayAccess, organizationId: string | null): boolean {
@@ -148,8 +159,11 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
       if (FORWARDED_RESPONSE_HEADER.test(name)) passOn[name] = value;
     });
 
-    const record = async (answer: string, outcome: Receipt["outcome"]): Promise<Receipt> =>
-      store.append({
+    const recordTools = options.toolRequests !== undefined && options.toolRequests !== "off" &&
+      gatewayAllowed(options.toolRequests, store.systemRecord(systemId)?.organization_id ?? null);
+
+    const record = async (answer: string, outcome: Receipt["outcome"], streamed: boolean): Promise<Receipt> => {
+      const call = await store.append({
         system_id: systemId,
         ts_event: startedAt,
         ts_received: now().toISOString(),
@@ -163,6 +177,26 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
         source: { type: "api" },
         model: { name: modelOf(body, rest), provider, digest: null },
       });
+      if (recordTools && outcome === "ok") {
+        for (const tool of toolRequestsOf(answer, streamed)) {
+          await store.append({
+            system_id: systemId,
+            ts_event: startedAt,
+            ts_received: now().toISOString(),
+            actor: { agent: agentOf(request, systemId) },
+            action: { kind: "tool_call", name: `${TOOL_REQUEST_PREFIX}${tool.name}`.slice(0, MAX_NAME) },
+            input_hash: null,
+            output_hash: null,
+            raw_input: { value: tool.args },
+            // Asked for, not done: nothing here says whether the agent went on to do it.
+            outcome: "unknown",
+            source: { type: "api" },
+            model: { name: modelOf(body, rest), provider, digest: null },
+          });
+        }
+      }
+      return call;
+    };
 
     if (!recorded) {
       return reply.code(upstream.status).headers(passOn).send(Buffer.from(await upstream.arrayBuffer()));
@@ -173,7 +207,7 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
     if (!streamed || upstream.body === null) {
       const answer = await upstream.text();
       // No receipt, no answer: the signer being away comes back as a 503 (server.ts).
-      await record(answer, outcome);
+      await record(answer, outcome, false);
       return reply.code(upstream.status).headers(passOn).send(answer);
     }
 
@@ -195,7 +229,7 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
     }
     reply.raw.end();
     try {
-      await record(Buffer.concat(chunks).toString("utf8"), finished ? outcome : "unknown");
+      await record(Buffer.concat(chunks).toString("utf8"), finished ? outcome : "unknown", true);
     } catch (error) {
       request.log.error({ system: systemId, provider, err: error }, "a streamed model call was passed on but its receipt could not be written");
     }

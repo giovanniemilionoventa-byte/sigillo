@@ -144,6 +144,19 @@ export function llmGateway(env: Environment): "off" | "operator" | "all" {
 }
 
 /**
+ * Whether the gateway also writes a receipt for each tool a model asks for
+ * (gateway/tool-requests.ts): SIGILLO_LLM_TOOL_REQUESTS, `off`, `operator`
+ * (the default) or `all`. New, so for the administrator's own systems until
+ * the owner says otherwise (CLAUDE.md, rule 11).
+ */
+export function llmToolRequests(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_LLM_TOOL_REQUESTS"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_LLM_TOOL_REQUESTS must be off, operator or all, received ${JSON.stringify(value)}`);
+}
+
+/**
  * Customers' accounts (auth/firebase.ts): SIGILLO_FIREBASE_API_KEY and
  * SIGILLO_FIREBASE_PROJECT_ID, both or neither, and SIGILLO_PUBLIC_URL, the
  * address browsers reach this installation at, to which Google sends them

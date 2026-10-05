@@ -3437,6 +3437,14 @@ può chiamare il modello senza passare da Sigillo, e ogni chiamata diventa una r
   gateway è aperto a tutti (l'amministratore lo imposta da Gestisci).
 - Terzo fornitore: **Google Gemini** (`/llm/gemini/...`, API sua e compatibile OpenAI), scelto dal
   titolare perché ha un piano gratuito per le prove.
+- **Strumenti richiesti dal modello** (`gateway/tool-requests.ts`): se la risposta del modello dice
+  "usa lo strumento `send_email`" (OpenAI chat e responses, Anthropic, Gemini, anche in streaming), il
+  centralino scrive una ricevuta `model_requested.send_email` con gli argomenti in impronta, esito
+  "sconosciuto". Mostra cosa il modello ha chiesto, non che l'agente l'abbia fatto. Interruttore
+  `SIGILLO_LLM_TOOL_REQUESTS` (`operator` di base, regola 11).
+- Centralino **aperto ai clienti** (`SIGILLO_LLM_GATEWAY=all` in `deploy/docker-compose.yml`), su
+  richiesta del titolare dopo la prova con Gemini (2026-10-05); nel codice il valore di base resta
+  `operator`.
 - `demo/centralino/agente_gemini.py`: un agente Gemini "già esistente" senza Sigillo, senza
   dipendenze; collegarlo è cambiare 2 righe (indirizzo e chiave), come farebbe un cliente.
 - Limiti in `docs/SECURITY.md`: vale finché la chiave sta solo in Sigillo; non vede modelli locali
