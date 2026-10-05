@@ -215,11 +215,27 @@ describe("the site's media", () => {
     expect(still.rawPayload.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
     const subtitles = await get("/media/demo-it.vtt");
     expect(subtitles.headers["content-type"]).toBe("text/vtt; charset=utf-8");
-    expect(subtitles.body).toMatch(/^WEBVTT\n\n1\n00:00:00\.500 --> 00:00:05\.023\n/);
+    expect(subtitles.body).toMatch(/^WEBVTT\n\n1\n00:00:00\.500 --> 00:00:04\.779\n/);
+  });
+
+  it("ships the films with the voice-over, not the silent ones", () => {
+    // The image copies these files into assets/video/ (deploy/Dockerfile); the
+    // silent films stay in the repository but are never the ones served.
+    const dockerfile = readFileSync(join(REPOSITORY_ROOT, "deploy", "Dockerfile"), "utf8");
+    const copies = [
+      ["video/consegna/en/sigillo-demo-en-voice.mp4", "demo-en.mp4"],
+      ["video/consegna/en/sigillo-demo-en-voice.srt", "demo-en.srt"],
+      ["video/consegna/sigillo-demo-voce.mp4", "demo-it.mp4"],
+      ["video/consegna/sigillo-demo-voce.srt", "demo-it.srt"],
+    ] as const;
+    for (const [source, target] of copies) {
+      expect(dockerfile).toContain(`COPY ${source} ./assets/video/${target}`);
+      expect(readFileSync(join(REPOSITORY_ROOT, source)).length, source).toBeGreaterThan(1000);
+    }
   });
 
   it("serves a video whole, or the one byte range a player asks for", async () => {
-    const whole = readFileSync(join(REPOSITORY_ROOT, "video", "consegna", "en", "sigillo-demo-en.mp4"));
+    const whole = readFileSync(join(REPOSITORY_ROOT, "video", "consegna", "en", "sigillo-demo-en-voice.mp4"));
     const full = await get("/media/demo-en.mp4");
     expect(full.statusCode).toBe(200);
     expect(full.headers["accept-ranges"]).toBe("bytes");

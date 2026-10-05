@@ -72,10 +72,10 @@ interface MediaFile {
 }
 
 const MEDIA: Record<string, MediaFile> = {
-  "demo-en.mp4": { type: "video/mp4", candidates: [new URL("video/demo-en.mp4", ASSETS), new URL("en/sigillo-demo-en.mp4", RECORDINGS)] },
-  "demo-it.mp4": { type: "video/mp4", candidates: [new URL("video/demo-it.mp4", ASSETS), new URL("sigillo-demo.mp4", RECORDINGS)] },
-  "demo-en.vtt": { type: "text/vtt; charset=utf-8", subrip: true, candidates: [new URL("video/demo-en.srt", ASSETS), new URL("en/sigillo-demo-en.srt", RECORDINGS)] },
-  "demo-it.vtt": { type: "text/vtt; charset=utf-8", subrip: true, candidates: [new URL("video/demo-it.srt", ASSETS), new URL("sigillo-demo.srt", RECORDINGS)] },
+  "demo-en.mp4": { type: "video/mp4", candidates: [new URL("video/demo-en.mp4", ASSETS), new URL("en/sigillo-demo-en-voice.mp4", RECORDINGS)] },
+  "demo-it.mp4": { type: "video/mp4", candidates: [new URL("video/demo-it.mp4", ASSETS), new URL("sigillo-demo-voce.mp4", RECORDINGS)] },
+  "demo-en.vtt": { type: "text/vtt; charset=utf-8", subrip: true, candidates: [new URL("video/demo-en.srt", ASSETS), new URL("en/sigillo-demo-en-voice.srt", RECORDINGS)] },
+  "demo-it.vtt": { type: "text/vtt; charset=utf-8", subrip: true, candidates: [new URL("video/demo-it.srt", ASSETS), new URL("sigillo-demo-voce.srt", RECORDINGS)] },
   "poster-en.jpg": { type: "image/jpeg", candidates: [new URL("site/poster-en.jpg", ASSETS)] },
   "poster-it.jpg": { type: "image/jpeg", candidates: [new URL("site/poster-it.jpg", ASSETS)] },
 };
