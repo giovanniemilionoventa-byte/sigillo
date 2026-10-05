@@ -338,8 +338,21 @@ describe("the AI model block of a system's page", () => {
     expect((await post(ACME, `/ui/systems/${ACME_BOT}/llm-key`, { provider: "openai", key: `${OPENAI_KEY}X` })).statusCode).toBe(404);
     expect(providerKeys.get(ACME_BOT, "openai")).toBe(OPENAI_KEY);
 
+    expect((await get(ACME, `/ui/systems/${ACME_BOT}/collega`)).body).not.toContain("/llm/");
+
     await start("all");
     expect((await get(ACME, `/ui/systems/${ACME_BOT}/manage`)).body).toContain("AI model");
+    const connect = (await get(ACME, `/ui/systems/${ACME_BOT}/collega`)).body;
+    expect(connect).toContain('id="way-model"');
+    expect(connect).toContain("/llm/openai/v1");
+    expect(connect).toContain("ANTHROPIC_BASE_URL=");
+  });
+
+  it("leaves the operator's connect page as it was: the operator sets the gateway up from the manage page", async () => {
+    await start("all");
+    const connect = (await get(OPERATOR, `/ui/systems/${OPERATOR_BOT}/collega`)).body;
+    expect(connect).not.toContain('id="way-model"');
+    expect(connect).not.toContain("/llm/");
   });
 });
 

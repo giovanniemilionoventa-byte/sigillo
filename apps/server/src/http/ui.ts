@@ -716,7 +716,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
         render(session, {
           title: UI.connect.ready(systemTitle(record)),
           current: `system:${systemId}`,
-          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now() }),
+          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), model: offersModel(record) }),
         }),
       );
     } catch (error) {
@@ -844,7 +844,7 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.title(systemTitle(record)),
         current: `system:${systemId}`,
-        body: connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now() }),
+        body: connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now(), model: offersModel(record) }),
       }),
     );
   });
@@ -861,6 +861,12 @@ ${exportSheet(record)}`,
   /** The gateway, where it is open to this system: the operator's own systems only, until it is opened to all. */
   const gatewayOf = (record: SystemRecord): GatewayOptions | null =>
     options.gateway !== undefined && gatewayAllowed(options.gateway.access, record.organization_id) ? options.gateway : null;
+
+  /**
+   * Whether the connect page offers the model gateway: to a customer's
+   * system it is open to. The operator sets it up from the manage page.
+   */
+  const offersModel = (record: SystemRecord): boolean => record.organization_id !== null && gatewayOf(record) !== null;
 
   const renderManage = (
     session: Session,
@@ -943,7 +949,7 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.newKey(systemTitle(record)),
         current: `system:${systemId}`,
-        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now() }),
+        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), model: offersModel(record) }),
       }),
     );
   });

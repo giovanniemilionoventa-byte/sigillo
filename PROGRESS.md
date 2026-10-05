@@ -3433,6 +3433,10 @@ può chiamare il modello senza passare da Sigillo, e ogni chiamata diventa una r
 - **Regola 1** del titolare, ora in `CLAUDE.md` (regola 11): `SIGILLO_LLM_GATEWAY=operator` di
   default, cioè solo i sistemi dell'amministratore; `all` lo apre a tutti dopo la sua conferma.
 - Caddy non comprime più `/llm/*`, per non trattenere gli eventi dello streaming.
+- Pagina **Collega** dei clienti: secondo modo "Modello AI" con i passi, visibile solo quando il
+  gateway è aperto a tutti (l'amministratore lo imposta da Gestisci).
+- `demo/centralino/agente_demo.py`: agente demo senza dipendenze che fa 2 chiamate al modello
+  passando dal gateway, per la prova del titolare.
 - Limiti in `docs/SECURITY.md`: vale finché la chiave sta solo in Sigillo; non vede modelli locali
   o altre chiavi; domanda e risposta passano in chiaro nella memoria del server.
 

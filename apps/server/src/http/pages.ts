@@ -298,7 +298,7 @@ ${notices(extra)}
  * endpoints still answer, the SDK itself sends to the first, but neither is
  * offered here.
  */
-function connectWays(systemId: string, endpoint: string, token: string | null): string {
+function connectWays(systemId: string, endpoint: string, token: string | null, model: boolean): string {
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
   const python = [
@@ -312,11 +312,38 @@ function connectWays(systemId: string, endpoint: string, token: string | null): 
     '    instrument=["langchain"],',
     ")",
   ].join("\n");
-  return `<input type="radio" name="way" id="way-python" class="sr" checked>
+  const pythonWay = `<label class="way" for="way-python"><span class="tile-icon blue" aria-hidden="true">${ICONS.python}</span>${escape(t.ways.python)}</label>`;
+  if (!model) {
+    return `<input type="radio" name="way" id="way-python" class="sr" checked>
 <div class="ways">
-<label class="way" for="way-python"><span class="tile-icon blue" aria-hidden="true">${ICONS.python}</span>${escape(t.ways.python)}</label>
+${pythonWay}
 </div>
 <pre class="code python">${escape(python)}</pre>`;
+  }
+  // The model gateway (gateway/llm.ts): the customer's model key stays in
+  // sigillo, and the agent reaches its model only through it.
+  const gateway = [
+    `# 1. ${t.modelStep1}`,
+    `# 2. ${t.modelStep2}`,
+    "from openai import OpenAI",
+    "",
+    "client = OpenAI(",
+    `    base_url="${endpoint}/llm/openai/v1",`,
+    `    api_key="${key}",`,
+    ")",
+    "",
+    "# Anthropic, Claude Code",
+    `ANTHROPIC_BASE_URL=${endpoint}/llm/anthropic`,
+    `ANTHROPIC_API_KEY=${key}`,
+  ].join("\n");
+  return `<input type="radio" name="way" id="way-python" class="sr" checked>
+<input type="radio" name="way" id="way-model" class="sr">
+<div class="ways">
+${pythonWay}
+<label class="way" for="way-model"><span class="tile-icon blue" aria-hidden="true">${ICONS.link}</span>${escape(t.ways.model)}</label>
+</div>
+<pre class="code python">${escape(python)}</pre>
+<pre class="code model">${escape(gateway)}</pre>`;
 }
 
 /**
@@ -332,6 +359,8 @@ export function connectPage(view: {
   mode: "created" | "newKey" | "connect";
   firstReceipt: Receipt | null;
   now: Date;
+  /** Whether to offer the model gateway as a second way (a customer's system the gateway is open to). */
+  model?: boolean;
 }): string {
   const t = UI.connect;
   const { record, token, mode } = view;
@@ -354,12 +383,11 @@ export function connectPage(view: {
   return `<div class="narrow">${pageHead(title)}
 ${key}
 ${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
-${connectWays(record.system_id, view.endpoint, token)}
+${connectWays(record.system_id, view.endpoint, token, view.model ?? false)}
 ${wait}
 </div>`;
 }
 
-/** A system's settings: its name, identifier and key, connecting it, archiving it, and deleting it while its chain is empty. */
 /** The model gateway's block on a system's page (gateway/llm.ts): present only where the gateway is open to the system. */
 export interface ManageModel {
   endpoint: string;
@@ -368,6 +396,7 @@ export interface ManageModel {
 
 const PROVIDER_NAMES: Record<ProviderKeyRecord["provider"], string> = { openai: "OpenAI", anthropic: "Anthropic" };
 
+/** A system's settings: its name, identifier and key, connecting it, archiving it, and deleting it while its chain is empty. */
 export function managePage(
   record: SystemRecord,
   extra: { notice?: string; error?: string },
