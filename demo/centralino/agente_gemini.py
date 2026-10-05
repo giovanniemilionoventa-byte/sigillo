@@ -14,6 +14,7 @@ Run:  python agente_gemini.py   (on Windows also: py agente_gemini.py)
 import json
 import ssl
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -21,6 +22,7 @@ import urllib.request
 GEMINI_URL = "https://generativelanguage.googleapis.com"
 GEMINI_KEY = ""
 MODEL = "gemini-3.8-flash"
+ATTEMPTS = 4
 # ---------------------------------------------------------------------------
 
 CANDIDATES = """\
@@ -37,20 +39,29 @@ def ask(question: str) -> str:
         method="POST",
         headers={"x-goog-api-key": GEMINI_KEY.strip(), "Content-Type": "application/json"},
     )
-    try:
-        with urllib.request.urlopen(request, timeout=120) as response:
-            answer = json.load(response)
-    except urllib.error.HTTPError as error:
-        print(f"Errore {error.code} da {GEMINI_URL}:")
-        print(error.read().decode("utf-8", "replace")[:500])
-        sys.exit(1)
-    except urllib.error.URLError as error:
-        if isinstance(error.reason, ssl.SSLCertVerificationError):
-            print("Python non trova i certificati HTTPS.")
-            print("Sul Mac: apri Applicazioni > Python 3.x e fai doppio clic su 'Install Certificates.command'.")
-        else:
-            print(f"Non riesco a raggiungere {GEMINI_URL}: {error.reason}")
-        sys.exit(1)
+    # Gemini sometimes answers "high demand" (503) or "slow down" (429) for a
+    # moment: wait and ask again a few times before giving up.
+    for attempt in range(1, ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                answer = json.load(response)
+            break
+        except urllib.error.HTTPError as error:
+            if error.code in (429, 500, 503) and attempt < ATTEMPTS:
+                wait = 5 * 2 ** (attempt - 1)
+                print(f"Gemini è occupato (errore {error.code}): riprovo tra {wait} secondi...")
+                time.sleep(wait)
+                continue
+            print(f"Errore {error.code} da {GEMINI_URL}:")
+            print(error.read().decode("utf-8", "replace")[:500])
+            sys.exit(1)
+        except urllib.error.URLError as error:
+            if isinstance(error.reason, ssl.SSLCertVerificationError):
+                print("Python non trova i certificati HTTPS.")
+                print("Sul Mac: apri Applicazioni > Python 3.x e fai doppio clic su 'Install Certificates.command'.")
+            else:
+                print(f"Non riesco a raggiungere {GEMINI_URL}: {error.reason}")
+            sys.exit(1)
     return answer["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
