@@ -3386,6 +3386,13 @@ sito"; schermate in `design/sito/v7-google` della cartella del progetto).
   resta solo per chi lo sceglie nella console. La console non è toccata.
 - Testi in inglese e italiano rivisti (`site-strings.ts`); test in `site.test.ts`.
 
+### Sessione 36 — 2026-10-05 — il sito serve i video con la voce
+
+Dopo l'unione del doppiaggio (PR #51) il sito online mostrava ancora i film muti: `deploy/Dockerfile`
+copiava `sigillo-demo.mp4` e `sigillo-demo-en.mp4`. Ora copia i film con la voce
+(`sigillo-demo-voce.*`, `en/sigillo-demo-en-voice.*`) con i loro `.srt`, e `site.ts` li cerca per primi
+anche da un checkout. Un test controlla che il Dockerfile copi proprio questi file.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
