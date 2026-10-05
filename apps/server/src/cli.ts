@@ -9,6 +9,7 @@ import { ApiKeyStore } from "./auth/api-keys.js";
 import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
 import { DailyExporter } from "./backup/daily-export.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
+import { ConnectionWatch } from "./connection/watch.js";
 import { cookieSecure, firebaseAccounts, ingestPause, port, positiveInteger, readSecret, trustProxy } from "./config.js";
 import { FirebaseAuth } from "./auth/firebase.js";
 import { archiveFromStore, positionsIn, tokensIn } from "./export/from-store.js";
@@ -234,9 +235,14 @@ program
       onError: (message) => process.stderr.write(`${message}\n`),
     });
 
+    // Paused for maintenance, every heartbeat is refused: a sweep then would
+    // call every agent lost for a silence that was the server's own.
+    const connections = new ConnectionWatch({ store });
+
     const app = buildServer({
       store,
       keys,
+      connections,
       logger: true,
       trustProxy: proxies,
       ingestLimits,
@@ -281,8 +287,10 @@ program
     healthMonitor?.start();
     checkpointer.start();
     dailyExporter?.start();
+    if (pause === null) connections.start();
 
     const shutdown = (): void => {
+      connections.stop();
       checkpointer.stop();
       dailyExporter?.stop();
       healthMonitor?.stop();

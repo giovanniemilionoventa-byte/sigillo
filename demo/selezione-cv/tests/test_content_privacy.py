@@ -35,10 +35,14 @@ CANDIDATE_NAMES = [
 
 class _Capture(http.server.BaseHTTPRequestHandler):
     bodies: list[bytes] = []
+    # The SDK's heartbeat (session and event, JSON): on the wire too, so in
+    # the traffic checked below, but not a batch of spans to decode.
+    heartbeats: list[bytes] = []
 
     def do_POST(self) -> None:  # noqa: N802 - the name is fixed by the base class
         length = int(self.headers.get("Content-Length", "0"))
-        type(self).bodies.append(self.rfile.read(length))
+        body = self.rfile.read(length)
+        (type(self).heartbeats if self.path.endswith("/api/v1/heartbeat") else type(self).bodies).append(body)
         self.send_response(200)
         self.send_header("Content-Type", "application/x-protobuf")
         self.end_headers()
@@ -52,6 +56,7 @@ class _Capture(http.server.BaseHTTPRequestHandler):
 class DemoContentPrivacyTest(unittest.TestCase):
     def setUp(self) -> None:
         _Capture.bodies = []
+        _Capture.heartbeats = []
         self.server = http.server.HTTPServer(("127.0.0.1", 0), _Capture)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -83,7 +88,7 @@ class DemoContentPrivacyTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
         self.assertGreater(len(_Capture.bodies), 0, "the agent sent nothing at all")
 
-        traffic = b"".join(_Capture.bodies)
+        traffic = b"".join(_Capture.bodies + _Capture.heartbeats)
         for name in CANDIDATE_NAMES:
             self.assertNotIn(name.encode("utf-8"), traffic, f"{name!r} reached the wire")
         for path in sorted(DEMO.glob("curricula/candidato-*.txt")):

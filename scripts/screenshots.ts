@@ -382,8 +382,6 @@ for (const [variantName, contextOptions] of variants) {
   await page.fill('input[name="display_name"]', `Nuovo assistente ${variantName}`);
   await Promise.all([page.waitForNavigation(), page.click('form[action="/ui/sistemi"] button[type="submit"]')]);
   await shoot(page, `25-sistema-creato-${variantName}`);
-  await page.locator('label[for="way-otel"]').click();
-  await shoot(page, `26-sistema-creato-opentelemetry-${variantName}`);
   await context.close();
 }
 

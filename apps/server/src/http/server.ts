@@ -4,6 +4,7 @@ import type { Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
 import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
+import { ConnectionWatch } from "../connection/watch.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
 import { adaptSpans } from "../ingest/adapter.js";
 import { decodeJsonTraces, decodeProtobufTraces, OtlpDecodeError } from "../ingest/otlp.js";
@@ -62,6 +63,11 @@ export interface ServerOptions {
    */
   organizationMonthlyReceipts?: number;
   /**
+   * The SDK heartbeat (connection/watch.ts). One is made here when not given,
+   * whose sweep nobody runs: the caller that wants silence noticed starts it.
+   */
+  connections?: ConnectionWatch;
+  /**
    * The operator's view. Without a password it is not mounted at all: an
    * unguarded window onto an audit log is worse than no window.
    */
@@ -109,6 +115,13 @@ function requestForLog(request: { method: string; url: string; ip: string }): Re
 }
 
 const hex64 = z.string().regex(/^[0-9a-f]{64}$/, "must be 64 lowercase hex characters");
+
+const heartbeatRequestSchema = z
+  .object({
+    session: z.string().regex(/^[0-9a-f]{32}$/, "must be 32 lowercase hex characters"),
+    event: z.enum(["start", "beat", "stop"]),
+  })
+  .strict();
 
 const receiptRequestSchema = z
   .object({
@@ -181,6 +194,7 @@ function bearer(request: FastifyRequest): string | null {
 
 export function buildServer(options: ServerOptions): FastifyInstance {
   const { store, keys } = options;
+  const connections = options.connections ?? new ConnectionWatch({ store, ...(options.now === undefined ? {} : { now: options.now }) });
   const now = options.now ?? ((): Date => new Date());
   const bodyLimit = options.bodyLimitBytes ?? 8 * 1024 * 1024;
 
@@ -419,6 +433,25 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         rawContentHashed: batch.rawContentHashed,
       },
     });
+  });
+
+  // The Python SDK's heartbeat. Not counted against the monthly limit, and
+  // never refused for it: a receipt saying an agent went silent is worth most
+  // exactly when nothing else is being written.
+  app.post("/api/v1/heartbeat", async (request, reply) => {
+    const systemId = await authenticate(request);
+    if (systemId === null) {
+      return reply.code(401).send({ error: "a valid Bearer API key is required" });
+    }
+    if (pausedFor(systemId, reply)) return reply;
+    const parsed = heartbeatRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: parsed.error.issues.map((issue) => `${issue.path.join(".") || "<body>"}: ${issue.message}`).join("; "),
+      });
+    }
+    const written = await connections.heartbeat(systemId, parsed.data.session, parsed.data.event);
+    return reply.code(200).send({ recorded: written === null ? null : { seq: written.seq, name: written.action.name } });
   });
 
   app.post("/api/v1/receipts", async (request, reply) => {

@@ -40,6 +40,7 @@ import {
 } from "@sigillo/core";
 import { SignerRefusedError } from "../signer/errors.js";
 import { applySchema, requireCurrentSchema } from "./schema.js";
+import { CONNECTION_PREFIX } from "../connection/names.js";
 
 /**
  * Whatever holds the private key. In production this is the separate signer
@@ -95,6 +96,17 @@ export interface ChainEvent {
   source: Source;
   artifacts?: ArtifactEntryV3[];
   model?: ModelInfo;
+}
+
+export type ConnectionState = "open" | "lost" | "closed";
+
+/** One running copy of an agent, as its heartbeat left it (schema.ts, connections). */
+export interface ConnectionRow {
+  system_id: string;
+  session_id: string;
+  state: ConnectionState;
+  started_at: string;
+  last_beat_at: string;
 }
 
 export interface ChainTip {
@@ -475,6 +487,12 @@ function rowToReceipt(row: StoredRow): Receipt {
  * previous one stopped — the tip is always read from the database, never
  * remembered in memory.
  */
+function refuseReservedName(event: ChainEvent): void {
+  if (event.action.name.startsWith(CONNECTION_PREFIX)) {
+    throw new StorageError(`action names starting with ${CONNECTION_PREFIX} are written by the server alone`);
+  }
+}
+
 export class ReceiptStore {
   /** Writes are serialised through this promise: one open transaction at a time. */
   private writes: Promise<unknown> = Promise.resolve();
@@ -894,6 +912,7 @@ export class ReceiptStore {
       this.write.prepare("DELETE FROM checkpoints WHERE system_id = ?").run(systemId);
       this.write.prepare("DELETE FROM receipts WHERE system_id = ? AND seq = 0").run(systemId);
       this.write.prepare("DELETE FROM api_keys WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM connections WHERE system_id = ?").run(systemId);
       this.write.prepare("DELETE FROM systems WHERE system_id = ?").run(systemId);
       return deleted;
     });
@@ -919,6 +938,7 @@ export class ReceiptStore {
     if (event.action.kind === "genesis") {
       throw new StorageError("a genesis receipt is written by createSystem, not by append");
     }
+    refuseReservedName(event);
     this.checkEvent(event);
     return this.enqueue(async () => (await this.writeReceipt(event, "continuation")).receipt);
   }
@@ -944,6 +964,7 @@ export class ReceiptStore {
       throw new StorageError("a genesis receipt is written by createSystem, not by append");
     }
     if (events.length === 0) return { receipts: [], duplicates: 0 };
+    for (const event of events) refuseReservedName(event);
     for (const event of events) this.checkEvent(event);
     return this.enqueue(async () => {
       const receipts: Receipt[] = [];
@@ -955,6 +976,56 @@ export class ReceiptStore {
       }
       return { receipts, duplicates };
     });
+  }
+
+  /**
+   * Saves one heartbeat session's state and, when `event` is given, the
+   * receipt recording that change (connection/watch.ts), in one transaction:
+   * a state is never saved without its receipt, nor a receipt written twice
+   * for the same change. Without `event`, only the state (an ordinary beat).
+   */
+  async recordConnection(row: ConnectionRow, event: ChainEvent | null): Promise<Receipt | null> {
+    const save = (): void => {
+      this.write
+        .prepare(
+          `INSERT INTO connections (system_id, session_id, state, started_at, last_beat_at)
+           VALUES (@system_id, @session_id, @state, @started_at, @last_beat_at)
+           ON CONFLICT (system_id, session_id) DO UPDATE
+           SET state = excluded.state, last_beat_at = excluded.last_beat_at`,
+        )
+        .run(row);
+    };
+    if (event === null) {
+      return this.enqueue(async () => {
+        save();
+        return null;
+      });
+    }
+    if (!event.action.name.startsWith(CONNECTION_PREFIX)) {
+      throw new StorageError(`a connection receipt is named ${CONNECTION_PREFIX}*, not ${event.action.name}`);
+    }
+    this.checkEvent(event);
+    return this.enqueue(async () => (await this.writeReceipt(event, "continuation", null, save)).receipt);
+  }
+
+  /** One heartbeat session, or null if it never started. */
+  connection(systemId: string, sessionId: string): ConnectionRow | null {
+    const row = this.read
+      .prepare("SELECT * FROM connections WHERE system_id = ? AND session_id = ?")
+      .get(systemId, sessionId) as ConnectionRow | undefined;
+    return row ?? null;
+  }
+
+  /** A system's heartbeat sessions, the most recent beat first. */
+  connectionsOf(systemId: string): ConnectionRow[] {
+    return this.read
+      .prepare("SELECT * FROM connections WHERE system_id = ? ORDER BY last_beat_at DESC")
+      .all(systemId) as ConnectionRow[];
+  }
+
+  /** Every session still beating, for the watch to look for silence. */
+  openConnections(): ConnectionRow[] {
+    return this.read.prepare("SELECT * FROM connections WHERE state = 'open'").all() as ConnectionRow[];
   }
 
   /**
@@ -1609,9 +1680,16 @@ export class ReceiptStore {
     event: ChainEvent,
     mode: "genesis" | "continuation",
     organizationId: string | null = null,
+    /** Run inside the receipt's own transaction, after it is inserted. */
+    alongside?: () => void,
   ): Promise<{ receipt: Receipt; duplicate: boolean }> {
+    const work = async (): Promise<{ receipt: Receipt; duplicate: boolean }> => {
+      const written = await this.insertReceipt(event, mode, organizationId);
+      alongside?.();
+      return written;
+    };
     try {
-      return await this.inTransaction(() => this.insertReceipt(event, mode, organizationId));
+      return await this.inTransaction(work);
     } catch (error) {
       if (!(error instanceof SignerRefusedError) || error.code !== "sequence") throw error;
       const outcome = await this.reconcileNow(event.system_id);
@@ -1621,7 +1699,7 @@ export class ReceiptStore {
           outcome.status === "diverged" ? `${error.message}; ${outcome.detail}` : error.message,
         );
       }
-      return this.inTransaction(() => this.insertReceipt(event, mode, organizationId));
+      return this.inTransaction(work);
     }
   }
 

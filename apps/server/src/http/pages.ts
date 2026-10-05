@@ -2,6 +2,7 @@ import type { DocumentFingerprints, Receipt } from "@sigillo/core";
 import type { AdminLogEntry, DocumentMatch, ReceiptStore, SystemRecord } from "../storage/store.js";
 import type { ChainStatus } from "../health/chain-health.js";
 import type { StoredExport } from "../backup/daily-export.js";
+import { connectionStatus } from "../connection/watch.js";
 import { discloseFields } from "./history.js";
 import {
   archivedButShown,
@@ -237,6 +238,10 @@ export function sistemiPage(
     .join("")}</nav>`;
 
   const connection = (record: SystemRecord): string => {
+    const heartbeat = connectionStatus(store, record.system_id);
+    if (heartbeat !== null) {
+      return heartbeat.state === "open" ? t.connection.open : t.connection[heartbeat.state](formatTs(heartbeat.since));
+    }
     const latest = store.searchReceipts({ systemId: record.system_id, limit: 1 })[0];
     return latest === undefined || latest.action.kind === "genesis" ? t.connection.none : t.connection[latest.source.type];
   };
@@ -285,7 +290,13 @@ ${notices(extra)}
 </form></div>`;
 }
 
-/** The three ways to connect an agent, with the key in each snippet, or a placeholder where it is not shown. */
+/**
+ * How to connect an agent, with the key in the snippet, or a placeholder where
+ * it is not shown. Python only: its heartbeat is what lets sigillo say when an
+ * agent was disconnected (connection/watch.ts). The OpenTelemetry and HTTP
+ * endpoints still answer, the SDK itself sends to the first, but neither is
+ * offered here.
+ */
 function connectWays(systemId: string, endpoint: string, token: string | null): string {
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
@@ -300,33 +311,11 @@ function connectWays(systemId: string, endpoint: string, token: string | null): 
     '    instrument=["langchain"],',
     ")",
   ].join("\n");
-  const otel = [
-    UI.snippet.otelComment,
-    `OTEL_EXPORTER_OTLP_ENDPOINT="${endpoint}"`,
-    `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20${key}"`,
-    `OTEL_SERVICE_NAME="${systemId}"`,
-  ].join("\n");
-  const api = [
-    `curl -X POST ${endpoint}/api/v1/receipts \\`,
-    `  -H "Authorization: Bearer ${key}" \\`,
-    '  -H "Content-Type: application/json" \\',
-    `  -d '{"actor": {"agent": "${UI.snippet.agent}"},`,
-    `       "action": {"kind": "decision", "name": "${UI.snippet.action}"},`,
-    `       "outcome": "ok"}'`,
-  ].join("\n");
-  const way = (id: string, tile: string, icon: string, label: string, tag = ""): string =>
-    `<label class="way" for="way-${id}"><span class="tile-icon ${tile}" aria-hidden="true">${icon}</span>${escape(label)}${tag === "" ? "" : `<small>${escape(tag)}</small>`}</label>`;
   return `<input type="radio" name="way" id="way-python" class="sr" checked>
-<input type="radio" name="way" id="way-otel" class="sr">
-<input type="radio" name="way" id="way-api" class="sr">
 <div class="ways">
-${way("python", "blue", ICONS.python, t.ways.python, t.recommended)}
-${way("otel", "teal", ICONS.otel, t.ways.otel)}
-${way("api", "purple", ICONS.code, t.ways.api)}
+<label class="way" for="way-python"><span class="tile-icon blue" aria-hidden="true">${ICONS.python}</span>${escape(t.ways.python)}</label>
 </div>
-<pre class="code python">${escape(python)}</pre>
-<pre class="code otel">${escape(otel)}</pre>
-<pre class="code api">${escape(api)}</pre>`;
+<pre class="code python">${escape(python)}</pre>`;
 }
 
 /**

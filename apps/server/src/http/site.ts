@@ -281,8 +281,8 @@ details p { margin-top: 10px; }
 .tabs > label { padding: 16px 24px; font-weight: 600; cursor: pointer; border-bottom: 3px solid transparent; }
 .tabs > label:hover { background: var(--band); }
 .tabs .panel { display: none; order: 1; flex-basis: 100%; padding: 28px; border-top: 1px solid var(--line); }
-#way-python:checked + label, #way-otel:checked + label, #way-api:checked + label { color: var(--primary); border-bottom-color: var(--primary); }
-#way-python:checked ~ .p-python, #way-otel:checked ~ .p-otel, #way-api:checked ~ .p-api { display: block; }
+#way-python:checked + label { color: var(--primary); border-bottom-color: var(--primary); }
+#way-python:checked ~ .p-python { display: block; }
 .tabs input:focus-visible + label { outline: 2px solid var(--primary); outline-offset: -4px; }
 h4 { font-size: 17px; margin: 0 0 4px; }
 .where { margin: 0 0 12px; }
@@ -404,7 +404,7 @@ const ICON = {
 const HUES = ["blue", "green", "yellow", "red"] as const;
 
 // ---------------------------------------------------------------------------
-// The snippets, the same three ways the console's connect page shows, with a
+// The snippets, the same way the console's connect page shows, with a
 // placeholder where the console puts the system's own key.
 
 const PIP = `pip install "sigillo[langchain] @ git+${REPOSITORY}#subdirectory=sdk-python"`;
@@ -435,21 +435,6 @@ ${codeBox(t, escape(PIP))}
 <h4>${escape(c.inCode)}</h4>
 <p class="where">${escape(c.inCodeWhere)}</p>
 ${codeBox(t, code)}`;
-}
-
-function otelSnippet(endpoint: string): string {
-  return `OTEL_EXPORTER_OTLP_ENDPOINT=<span class="s">"${escape(endpoint)}"</span>
-OTEL_EXPORTER_OTLP_HEADERS=<span class="s">"Authorization=Bearer%20sigillo_..."</span>
-OTEL_SERVICE_NAME=<span class="s">"customer-assistant"</span>`;
-}
-
-function apiSnippet(endpoint: string): string {
-  return `curl -X POST ${escape(endpoint)}/api/v1/receipts \\
-  -H <span class="s">"Authorization: Bearer sigillo_..."</span> \\
-  -H <span class="s">"Content-Type: application/json"</span> \\
-  -d <span class="s">'{"actor": {"agent": "customer-assistant"},
-       "action": {"kind": "decision", "name": "approve_refund"},
-       "outcome": "ok"}'</span>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -618,7 +603,7 @@ ${p.faq.map((item, index) => `<details${index === 0 ? " open" : ""}><summary>${e
 </div></div></section>`;
 }
 
-/** The three ways to connect an agent, as tabs that need no script (radio buttons and :checked). */
+/** How to connect an agent: Python only, the one way with a heartbeat (pages.ts, connectWays). */
 function connectSection(context: PageContext): string {
   const { t, endpoint } = context;
   const c = t.connect;
@@ -628,13 +613,7 @@ function connectSection(context: PageContext): string {
 <div class="flow">${c.steps.map((step, index) => `<div><span class="num">${index + 1}</span>${escape(step)}</div>`).join("")}</div>
 <div class="tabs">
 ${tab("python", c.ways.python, true)}
-${tab("otel", c.ways.otel, false)}
-${tab("api", c.ways.api, false)}
 <div class="panel p-python">${pythonSteps(t, endpoint)}</div>
-<div class="panel p-otel"><p class="where">${escape(c.otelNote)}</p>
-${codeBox(t, otelSnippet(endpoint))}</div>
-<div class="panel p-api"><p class="where">${escape(c.apiNote)}</p>
-${codeBox(t, apiSnippet(endpoint))}</div>
 </div>
 <p class="keynote">${escape(c.keyNote)}</p>
 </div></section>`;

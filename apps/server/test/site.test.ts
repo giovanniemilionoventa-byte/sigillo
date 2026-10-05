@@ -184,14 +184,16 @@ describe("the public site", () => {
     expect(page).toContain(escapeHtml(t.installWhere));
     expect(page).toContain(escapeHtml(t.inCodeWhere));
     const boxes = [...page.matchAll(/<div class="code"><pre>([^]*?)<\/pre>/g)].map((match) => match[1] ?? "");
-    expect(boxes).toHaveLength(4);
+    expect(boxes).toHaveLength(2);
     expect(boxes[0]).toBe(
       "pip install &quot;sigillo[langchain] @ git+https://github.com/giovanniemilionoventa-byte/sigillo#subdirectory=sdk-python&quot;",
     );
     expect(boxes[1]).toContain(`endpoint=<span class="s">"${PUBLIC_URL}"</span>`);
-    expect(boxes[3]).toContain(`curl -X POST ${PUBLIC_URL}/api/v1/receipts`);
+    // Python only: no OpenTelemetry or HTTP way is offered.
+    expect(page).not.toContain("OTEL_EXPORTER_OTLP_ENDPOINT");
+    expect(page).not.toContain("/api/v1/receipts");
     // The copy buttons stay hidden until the script shows them.
-    expect(page.match(/<button type="button" class="copy" data-copied="Copied" hidden>Copy<\/button>/g)).toHaveLength(4);
+    expect(page.match(/<button type="button" class="copy" data-copied="Copied" hidden>Copy<\/button>/g)).toHaveLength(2);
   });
 
   it("asks for nothing from another origin", async () => {

@@ -3393,6 +3393,28 @@ copiava `sigillo-demo.mp4` e `sigillo-demo-en.mp4`. Ora copia i film con la voce
 (`sigillo-demo-voce.*`, `en/sigillo-demo-en-voice.*`) con i loro `.srt`, e `site.ts` li cerca per primi
 anche da un checkout. Un test controlla che il Dockerfile copi proprio questi file.
 
+### Sessione 37 — 2026-10-05 — il battito dell'SDK Python, e solo Python per collegarsi
+
+Su richiesta del titolare: Sigillo deve dire quando un agente è stato scollegato (codice tolto,
+programma fermato, computer spento), non solo che è inattivo.
+
+- **SDK Python**: `sigillo.init` avvia un battito su un thread a parte: `start`, poi `beat` ogni
+  60 secondi (anche ad agente fermo), `stop` a `shutdown()` o alla fine del processo
+  (`heartbeat_seconds`, `POST /api/v1/heartbeat`).
+- **Server** (`apps/server/src/connection/watch.ts`): una ricevuta firmata sulla catena a ogni cambio
+  di stato e solo allora (`sigillo.connection.start`, `stop`, `lost` dopo 3 minuti senza battito
+  con l'ora dell'ultimo battito, `restored`). Sono ricevute normali: firmate, sigillate, nel
+  fascicolo esportato. Nessun cambio del formato: `agent_step` dell'agente `sigillo`, nomi
+  riservati al server (rifiutati da `/api/v1/receipts`, scartati da `/v1/traces`). Tabella
+  `connections` per lo stato, schema del database 4.
+- **Console**: la lista dei sistemi dice "collegato", "scollegato dal…" o "chiuso il…"; un agente
+  scollegato rende il sistema giallo, uno fermo ma collegato non è più "inattivo".
+- **Collega**, nella console e sul sito: solo Python. Gli endpoint OpenTelemetry e HTTP restano
+  attivi (l'SDK manda i suoi span al primo).
+- Limiti scritti in `docs/SECURITY.md`: il battito dice *che* l'agente era scollegato e da quando,
+  non cosa ha fatto nel frattempo; un programma che tiene il battito e spegne la registrazione non
+  si vede.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
