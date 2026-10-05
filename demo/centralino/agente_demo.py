@@ -74,6 +74,9 @@ def explain(status: int, detail: str) -> None:
         429: "Troppe richieste, o limite mensile raggiunto. Riprova più tardi.",
         503: "Sigillo non può firmare la ricevuta in questo momento: la risposta non è stata data.",
     }
+    if status in (401, 429) and not any(word in detail.lower() for word in ("sigillo", "receipts")):
+        # The provider's own refusal, passed on by sigillo: the OpenAI key or its account.
+        reasons[status] = "OpenAI ha rifiutato: la chiave OpenAI non è valida o l'account non ha credito."
     print(f"Errore {status}: {reasons.get(status, 'risposta inattesa.')}")
     print(f"Dettaglio: {detail[:300]}")
 
