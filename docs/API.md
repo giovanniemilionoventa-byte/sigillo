@@ -313,6 +313,54 @@ check, and are never refused for it.
 Response `200` with `{"recorded": {"seq": 7, "name": "sigillo.connection.start"}}`,
 or `{"recorded": null}` for a beat that changed nothing.
 
+## `/llm/openai/v1/…` and `/llm/anthropic/v1/…` — the model gateway
+
+An agent can call its cloud model through sigillo instead of directly. The
+customer saves their own OpenAI or Anthropic key on the system's page in the
+console (block "AI model"); the agent is given only the sigillo key of the
+system, and points its model client at sigillo:
+
+| client | setting |
+| --- | --- |
+| OpenAI SDK, LangChain `ChatOpenAI`, anything OpenAI-compatible | `base_url="https://<server>/llm/openai/v1"`, `api_key="<the system key>"` |
+| Anthropic SDK, Claude Code | `ANTHROPIC_BASE_URL=https://<server>/llm/anthropic`, `ANTHROPIC_API_KEY=<the system key>` |
+
+The sigillo key is accepted as `Authorization: Bearer` (OpenAI's SDKs) or as
+`x-api-key` (Anthropic's). Whatever follows `/llm/<provider>/` is the
+provider's own path and is forwarded unchanged, with the query string and the
+headers the providers read (`anthropic-version`, `anthropic-beta`,
+`openai-beta`, `openai-organization`, `openai-project`, `accept`), to
+`https://api.openai.com` or `https://api.anthropic.com`, with the customer's
+key in place of sigillo's. The provider's status, body and SDK-facing headers
+(type, request id, rate limits, `retry-after`) come back as they are.
+
+Every `POST` that reaches the provider writes a receipt on the system's chain:
+
+| field | value |
+| --- | --- |
+| `action` | `{"kind": "llm_call", "name": "<the path, e.g. v1/chat/completions>"}` |
+| `actor.agent` | the `x-sigillo-agent` header when the client sets it, else the system id |
+| `model` | `{"name": "<the request's model>", "provider": "openai" \| "anthropic", "digest": null}` |
+| `input`, `output` | digests of the request body and of the answer, each under a fresh nonce |
+| `outcome` | `ok` for a 2xx answer, `error` otherwise, `unknown` for a stream cut short |
+| `source` | `{"type": "api"}` |
+
+A plain answer is handed back only after its receipt is written: if the signer
+cannot sign, the agent gets `503` and not the answer. A streamed answer
+(`text/event-stream`) is passed on as it arrives and its receipt written when it
+ends. `GET` (a model list) is forwarded and not recorded.
+
+Errors of the gateway itself: `401` without a valid sigillo key, `403` when the
+gateway is not open to the system's account, `404` for an unknown provider or a
+path not under `v1/`, `409` when the system has no key for that provider, `415`
+for a body that is not JSON, `502` when the provider does not answer; plus the
+`503` and `429` every ingest endpoint can give (signer away, writes paused,
+monthly limit).
+
+Who may use it is set by `SIGILLO_LLM_GATEWAY`: `operator` (the default) for the
+administrator's own systems only, `all` for every account, `off` for none. The
+console's block follows the same setting.
+
 ## `GET /healthz`
 
 Returns `{"status":"ok"}` while the signer answers with the key the server

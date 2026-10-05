@@ -7,7 +7,10 @@
 }
 
 {$SIGILLO_DOMAIN} {
-	encode zstd gzip
+	# Not on the model gateway: its answers may be streamed (text/event-stream),
+	# and compressing a stream holds its events back until a block fills.
+	@compressible not path /llm/*
+	encode @compressible zstd gzip
 
 	# The ingest endpoints take protobuf and JSON bodies; an OTLP batch from a
 	# busy agent can be large.

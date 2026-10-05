@@ -660,6 +660,27 @@ the forged address.
 dropped first. A server run without Docker writes to standard output and leaves
 rotation to whatever runs it (systemd's journal rotates on its own).
 
+
+### The customers' model keys
+
+The model gateway holds each customer's OpenAI or Anthropic key
+(`apps/server/src/gateway/provider-keys.ts`), in the `provider_keys` table,
+sealed with AES-256-GCM: a fresh 12-byte nonce per key, the system id and the
+provider bound in as associated data (a sealed key copied to another row does
+not open), and only the last four characters in the clear, for the console.
+The 32-byte sealing key is in its own file, `llm-gateway.key` next to the
+database (or `SIGILLO_LLM_GATEWAY_KEY_FILE`), made on first start with mode
+0600. It is never in the database and so never in a backup: a stolen backup
+holds sealed keys and nothing that opens them. The flip side: a database
+restored on a new machine without that file has keys that no longer open, and
+each customer saves theirs again. The key is opened in memory for each call,
+never logged, never shown again after it is saved.
+
+The request and the answer cross the server in the clear, in memory, like any
+proxy's, and are hashed on the way to the receipt; neither is written to the
+database or the log. Whoever controls the server process could read them while
+they pass: the gateway asks the customer to trust the operator with the
+traffic to the model, which sending receipts alone does not.
 ## What sigillo cannot detect
 
 This list matters as much as the tamper tests that pass
@@ -685,6 +706,17 @@ and nothing else.
   that sends the heartbeat by hand: the beat proves that sigillo's code is
   running, not that every action goes through it. The other two ways in send
   no heartbeat at all.
+- **A model call that does not go through the gateway.** The model gateway
+  (`docs/API.md`, `/llm/...`) makes every call to a cloud model a receipt,
+  and an agent that does not hold the customer's provider key has no other way
+  to reach that model. That holds only as long as the key stays with sigillo:
+  a copy of the key left in the agent's environment, a second key of the same
+  account, a local model, or a model of another provider bypass it, and
+  sigillo cannot see that they exist. The gateway records the calls to the
+  model, not what the agent does with the answers. A streamed answer is passed
+  on before its receipt is written: if the signer is away at that moment, the
+  agent has the answer and the chain does not (the server's log says so). A
+  plain answer is never handed back without its receipt.
 - **sigillo itself being unreachable, from the agent's side.** Measured for
   real (fase 9), against the Python SDK's default settings
   (`opentelemetry-sdk` 1.44.0): a batch of spans that fails to export is not

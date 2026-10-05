@@ -5,6 +5,7 @@ import type { ApiKeyStore } from "../auth/api-keys.js";
 import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { ConnectionWatch } from "../connection/watch.js";
+import { registerGateway, type GatewayOptions } from "../gateway/llm.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
 import { adaptSpans } from "../ingest/adapter.js";
 import { decodeJsonTraces, decodeProtobufTraces, OtlpDecodeError } from "../ingest/otlp.js";
@@ -67,6 +68,8 @@ export interface ServerOptions {
    * whose sweep nobody runs: the caller that wants silence noticed starts it.
    */
   connections?: ConnectionWatch;
+  /** The model gateway (gateway/llm.ts). Not given: /llm/* is not served. */
+  gateway?: GatewayOptions;
   /**
    * The operator's view. Without a password it is not mounted at all: an
    * unguarded window onto an audit log is worse than no window.
@@ -260,8 +263,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
    * key the server has already checked can still succeed, so an agent that was
    * working carries on while the guessing costs nothing.
    */
-  const authenticate = async (request: FastifyRequest): Promise<string | null> => {
-    const token = bearer(request);
+  const authenticate = async (request: FastifyRequest, token = bearer(request)): Promise<string | null> => {
     if (token === null) return null;
     const at = now().getTime();
     const client = request.ip;
@@ -339,6 +341,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.ui.sessions === undefined ? {} : { sessions: options.ui.sessions }),
       ...(options.ui.accounts === undefined ? {} : { accounts: options.ui.accounts }),
       ...(options.ui.backupDirectory === undefined ? {} : { backupDirectory: options.ui.backupDirectory }),
+      ...(options.gateway === undefined ? {} : { gateway: options.gateway }),
       ...(options.organizationMonthlyReceipts === undefined
         ? {}
         : { organizationMonthlyReceipts: options.organizationMonthlyReceipts }),
@@ -434,6 +437,10 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       },
     });
   });
+
+  if (options.gateway !== undefined) {
+    registerGateway(app, options.gateway, { store, now, authenticate, pausedFor, overQuota });
+  }
 
   // The Python SDK's heartbeat. Not counted against the monthly limit, and
   // never refused for it: a receipt saying an agent went silent is worth most

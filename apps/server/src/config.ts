@@ -130,6 +130,20 @@ export function ingestPause(env: Environment): { except: ReadonlySet<string> } |
 }
 
 /**
+ * SIGILLO_LLM_GATEWAY: who may use the model gateway (gateway/llm.ts). `off`
+ * serves no /llm/* at all; `operator`, the default, the operator's own
+ * systems only; `all`, every account's. A new feature reaches the operator's
+ * account first and every customer only once the owner says so (CLAUDE.md,
+ * rule 11): opening it is this one setting.
+ */
+export function llmGateway(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_LLM_GATEWAY"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_LLM_GATEWAY must be off, operator or all, received ${JSON.stringify(value)}`);
+}
+
+/**
  * Customers' accounts (auth/firebase.ts): SIGILLO_FIREBASE_API_KEY and
  * SIGILLO_FIREBASE_PROJECT_ID, both or neither, and SIGILLO_PUBLIC_URL, the
  * address browsers reach this installation at, to which Google sends them

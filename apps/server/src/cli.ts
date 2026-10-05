@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { hostname, userInfo } from "node:os";
+import { dirname, join } from "node:path";
 import Database from "better-sqlite3";
 import { Command } from "commander";
 import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw, receiptHashHex } from "@sigillo/core";
@@ -10,9 +11,10 @@ import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throt
 import { DailyExporter } from "./backup/daily-export.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
 import { ConnectionWatch } from "./connection/watch.js";
-import { cookieSecure, firebaseAccounts, ingestPause, port, positiveInteger, readSecret, trustProxy } from "./config.js";
+import { cookieSecure, firebaseAccounts, ingestPause, llmGateway, port, positiveInteger, readSecret, trustProxy } from "./config.js";
 import { FirebaseAuth } from "./auth/firebase.js";
 import { archiveFromStore, positionsIn, tokensIn } from "./export/from-store.js";
+import { loadOrCreateSealingKey, ProviderKeyStore } from "./gateway/provider-keys.js";
 import { ChainHealthMonitor } from "./health/chain-health.js";
 import { buildServer } from "./http/server.js";
 import { SignerClient } from "./signer/client.js";
@@ -178,6 +180,7 @@ program
     const secureCookie = cookieSecure(process.env["SIGILLO_COOKIE_SECURE"]);
     const pause = ingestPause(process.env);
     const accounts = firebaseAccounts(process.env);
+    const gatewayAccess = llmGateway(process.env);
     // Where backup.sh writes its copies; the daily export keeps its files here too.
     const backupDirectory = process.env["SIGILLO_BACKUP_DIR"] || undefined;
     const organizationMonthlyReceipts = positiveInteger(
@@ -199,6 +202,15 @@ program
     const signer = await SignerClient.connect(options.signerSocket);
     const store = ReceiptStore.open(options.db, signer);
     const keys = ApiKeyStore.open(options.db);
+    // The customers' own model keys, sealed under a key kept in a file beside
+    // the database and never in it: a backup carries the sealed keys only.
+    const providerKeys =
+      gatewayAccess === "off"
+        ? undefined
+        : ProviderKeyStore.open(
+            options.db,
+            loadOrCreateSealingKey(process.env["SIGILLO_LLM_GATEWAY_KEY_FILE"] || join(dirname(options.db), "llm-gateway.key")),
+          );
 
     // Every chain's tip against the signer's head, before any request is
     // served: a receipt signed and lost to a crash is written now; any other
@@ -243,6 +255,7 @@ program
       store,
       keys,
       connections,
+      ...(providerKeys === undefined || gatewayAccess === "off" ? {} : { gateway: { keys: providerKeys, access: gatewayAccess } }),
       logger: true,
       trustProxy: proxies,
       ingestLimits,
@@ -296,6 +309,7 @@ program
       healthMonitor?.stop();
       void app.close().then(() => {
         keys.close();
+        providerKeys?.close();
         store.close();
         signer.close();
         process.exit(0);

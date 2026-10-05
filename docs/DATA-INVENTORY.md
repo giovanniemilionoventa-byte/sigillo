@@ -155,6 +155,15 @@ many fields the server had to hash itself rather than receiving an
 already-computed digest. It is a signal for the operator, not a block: such a
 span is still recorded.
 
+**The model gateway is the exception by design.** A call made through
+`/llm/...` (`docs/API.md`) carries the whole prompt to the server and the
+whole answer back through it, because the server is what calls the model.
+Both stay in memory for the length of the call and leave only as salted
+digests in the `llm_call` receipt; `model.name` is the request's `model`, and
+`action.name` the provider's path (`v1/chat/completions`). The customer's own
+provider key is stored sealed (`docs/SECURITY.md`, "The customers' model
+keys"), with its last four characters in clear.
+
 ## Recommendations for an integration
 
 - **`on_behalf_of`**: the server pseudonymises it, but the identifier still

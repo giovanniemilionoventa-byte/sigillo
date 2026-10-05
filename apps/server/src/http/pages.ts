@@ -3,6 +3,7 @@ import type { AdminLogEntry, DocumentMatch, ReceiptStore, SystemRecord } from ".
 import type { ChainStatus } from "../health/chain-health.js";
 import type { StoredExport } from "../backup/daily-export.js";
 import { connectionStatus } from "../connection/watch.js";
+import type { ProviderKeyRecord } from "../gateway/provider-keys.js";
 import { discloseFields } from "./history.js";
 import {
   archivedButShown,
@@ -359,7 +360,20 @@ ${wait}
 }
 
 /** A system's settings: its name, identifier and key, connecting it, archiving it, and deleting it while its chain is empty. */
-export function managePage(record: SystemRecord, extra: { notice?: string; error?: string }, keyIds: string[]): string {
+/** The model gateway's block on a system's page (gateway/llm.ts): present only where the gateway is open to the system. */
+export interface ManageModel {
+  endpoint: string;
+  saved: ProviderKeyRecord[];
+}
+
+const PROVIDER_NAMES: Record<ProviderKeyRecord["provider"], string> = { openai: "OpenAI", anthropic: "Anthropic" };
+
+export function managePage(
+  record: SystemRecord,
+  extra: { notice?: string; error?: string },
+  keyIds: string[],
+  model: ManageModel | null = null,
+): string {
   const t = UI.manage;
   const path = systemPath(record.system_id);
   const deletable = record.receipts <= 1;
@@ -389,6 +403,46 @@ export function managePage(record: SystemRecord, extra: { notice?: string; error
 </form></div>
 </section>`;
 
+  const modelBlock =
+    model === null
+      ? ""
+      : block(
+          "blue",
+          ICONS.link,
+          t.modelTitle,
+          `${model.saved
+            .map(
+              (saved) => `<form method="post" action="${path}/llm-key/delete" class="inline">
+  <input type="hidden" name="provider" value="${saved.provider}">
+  <code class="keybox">${escape(`${PROVIDER_NAMES[saved.provider]} ••••${saved.last4}`)}</code>
+  <button type="submit">${ICONS.trash}${escape(t.modelRemove)}</button>
+</form>`,
+            )
+            .join("\n")}
+<form method="post" action="${path}/llm-key" class="inline${model.saved.length === 0 ? "" : " section"}">
+  <label><span class="sr">${escape(t.modelProvider)}</span>
+    <select name="provider">${Object.entries(PROVIDER_NAMES)
+      .map(([value, name]) => `<option value="${value}">${escape(name)}</option>`)
+      .join("")}</select>
+  </label>
+  <label><span class="sr">${escape(t.modelKeyLabel)}</span>
+    <input type="password" name="key" placeholder="${escape(t.modelKeyLabel)}" autocomplete="off" spellcheck="false" required>
+  </label>
+  <button type="submit" class="primary">${escape(t.modelSave)}</button>
+</form>
+<pre class="code section">${escape(
+            [
+              `# OpenAI`,
+              `base_url="${model.endpoint}/llm/openai/v1"`,
+              `api_key="${UI.connect.keyPlaceholder}"`,
+              "",
+              `# Anthropic, Claude Code`,
+              `ANTHROPIC_BASE_URL=${model.endpoint}/llm/anthropic`,
+              `ANTHROPIC_API_KEY=${UI.connect.keyPlaceholder}`,
+            ].join("\n"),
+          )}</pre>`,
+        );
+
   return `${notices(extra)}
 <div class="blocks">
 ${block(
@@ -410,6 +464,7 @@ ${block(
   `<div class="inline"><code class="keybox" aria-label="${escape(t.keyLabel)}">${escape(current)}</code><a class="button" href="#nuova-chiave">${escape(t.newKey)}</a></div>
 <p class="section"><a href="${path}/collega">${escape(t.connect)}</a></p>`,
 )}
+${modelBlock}
 ${block("grey", ICONS.archive, t.archiveTitle, archive)}
 ${block("red", ICONS.trash, t.deleteTitle, removal)}
 </div>
