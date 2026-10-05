@@ -60,15 +60,13 @@ export interface SiteTexts {
   connect: {
     title: string;
     steps: readonly string[];
-    ways: { python: string; otel: string; api: string };
+    ways: { python: string };
     install: string;
     installWhere: string;
     inCode: string;
     inCodeWhere: string;
     copy: string;
     copied: string;
-    otelNote: string;
-    apiNote: string;
     keyNote: string;
   };
   verify: {
@@ -200,15 +198,13 @@ const EN: SiteTexts = {
   connect: {
     title: "Connect your agent",
     steps: ["Create an account", "Add your system", "Paste a few lines"],
-    ways: { python: "Python", otel: "OpenTelemetry", api: "HTTP API" },
+    ways: { python: "Python" },
     install: "1. Install",
     installWhere: "On the server or computer where your AI agent runs, not on the computer you use to read the console.",
     inCode: "2. Add to your agent",
     inCodeWhere: "In your agent's code, where it starts. From then on every action it takes is sent to Sigillo as a fingerprint.",
     copy: "Copy",
     copied: "Copied",
-    otelNote: "If your agent already sends OpenTelemetry traces: three settings on the server where it runs, nothing to install.",
-    apiNote: "From any language, on the server where your agent runs: one HTTP request per action.",
     keyNote: "You get the key when you add a system in the console.",
   },
   verify: {
@@ -383,15 +379,13 @@ const IT: SiteTexts = {
   connect: {
     title: "Collega il tuo agente",
     steps: ["Crea un account", "Aggiungi il tuo sistema", "Incolla poche righe"],
-    ways: { python: "Python", otel: "OpenTelemetry", api: "API HTTP" },
+    ways: { python: "Python" },
     install: "1. Installa",
     installWhere: "Sul server o sul computer dove gira il tuo agente AI, non sul computer da cui guardi la console.",
     inCode: "2. Aggiungi al tuo agente",
     inCodeWhere: "Nel codice del tuo agente, dove parte. Da lì in poi ogni sua azione arriva a Sigillo come impronta.",
     copy: "Copia",
     copied: "Copiato",
-    otelNote: "Se il tuo agente manda già tracce OpenTelemetry: tre impostazioni sul server dove gira, niente da installare.",
-    apiNote: "Da qualsiasi linguaggio, sul server dove gira il tuo agente: una richiesta HTTP per ogni azione.",
     keyNote: "La chiave te la dà la console quando aggiungi un sistema.",
   },
   verify: {

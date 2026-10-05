@@ -28,6 +28,11 @@ By default, `init` also hashes a span's input and output right here, before
 anything is sent, instead of letting the raw text travel to the server: see
 `redact_content` below.
 
+`init` also starts a heartbeat: every minute, busy or idle, the agent tells
+the server it is still connected, so that an agent whose sigillo code was
+removed, or whose process or computer stopped, shows on the chain as
+disconnected from its last beat on. See `heartbeat_seconds` below.
+
 What this package does not do: it does not sign anything, and it does not decide
 where a receipt lands. The API key does: a key belongs to exactly one system,
 and the server writes to that system's chain whatever `system_id` says here.
@@ -40,6 +45,7 @@ from __future__ import annotations
 # Imported under private names: this package's public surface is init,
 # artifact, current_span_from_callbacks and pseudonym, and a stray
 # `sigillo.TracerProvider` would be part of it otherwise.
+import atexit as _atexit
 import contextlib as _contextlib
 import hashlib as _hashlib
 import hmac as _hmac
@@ -49,6 +55,7 @@ import mimetypes as _mimetypes
 import os as _os
 import pathlib as _pathlib
 import secrets as _secrets
+import threading as _threading
 import urllib.request as _urllib_request
 from typing import Iterator as _Iterator
 from typing import Sequence as _Sequence
@@ -72,10 +79,64 @@ __version__ = "0.1.0"
 
 _LOG = _logging.getLogger("sigillo")
 _TRACES_PATH = "/v1/traces"
+_HEARTBEAT_PATH = "/api/v1/heartbeat"
 _SUPPORTED = ("langchain", "crewai", "openai")
 _ARTIFACT_ROLES = ("input", "output")
 # Both dialects an LLM span's model name arrives under, tried in order.
 _MODEL_NAME_ATTRIBUTES = ("gen_ai.request.model", "gen_ai.response.model", "llm.model_name")
+
+
+class _Heartbeat:
+    """Tells the server, every `interval` seconds, that this agent is still
+    connected: `start` once, `beat` while the process runs (whether the agent
+    is working or idle), `stop` when it closes normally. The server writes a
+    receipt on the chain when the agent connects, closes, goes silent without
+    closing (the code removed, the process killed, the computer switched off,
+    the network cut) and comes back; an ordinary beat writes nothing.
+
+    Runs on a daemon thread, so it never keeps a process alive. A beat that
+    does not get through is logged and not retried: the next one says the
+    same thing.
+    """
+
+    def __init__(self, url: str, api_key: str, interval: float) -> None:
+        self._url = url
+        self._headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        self._interval = interval
+        self.session = _secrets.token_hex(16)
+        self._stopped = _threading.Event()
+        self._closed = False
+        self._lock = _threading.Lock()
+        self._thread = _threading.Thread(target=self._run, name="sigillo-heartbeat", daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+        # A process that ends without calling shutdown() still says it closed.
+        _atexit.register(self.close)
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+        self._stopped.set()
+        self._thread.join(timeout=self._interval + 15)
+        self._send("stop")
+        _atexit.unregister(self.close)
+
+    def _run(self) -> None:
+        self._send("start")
+        while not self._stopped.wait(self._interval):
+            self._send("beat")
+
+    def _send(self, event: str) -> None:
+        body = _json.dumps({"session": self.session, "event": event}).encode("utf-8")
+        request = _urllib_request.Request(self._url, data=body, headers=self._headers, method="POST")
+        try:
+            with _urllib_request.urlopen(request, timeout=10) as response:
+                response.read()
+        except Exception as error:  # noqa: BLE001 - a heartbeat must never take the agent down
+            _LOG.warning("sigillo heartbeat %r not delivered: %s", event, type(error).__name__)
 
 
 class Tracing:
@@ -87,18 +148,23 @@ class Tracing:
         system_id: str,
         endpoint: str,
         instrumented: tuple[str, ...],
+        heartbeat: _Heartbeat | None = None,
     ) -> None:
         self.provider = provider
         self.system_id = system_id
         self.endpoint = endpoint
         self.instrumented = instrumented
+        self._heartbeat = heartbeat
 
     def flush(self, timeout_millis: int = 30_000) -> bool:
         """Sends whatever is still buffered. Call this before a short process exits."""
         return self.provider.force_flush(timeout_millis)
 
     def shutdown(self) -> None:
+        """Sends what is buffered, then tells the server this agent closed normally."""
         self.provider.shutdown()
+        if self._heartbeat is not None:
+            self._heartbeat.close()
 
     @_contextlib.contextmanager
     def tool(self, name: str, agent: str | None = None) -> _Iterator[_Span]:
@@ -151,6 +217,11 @@ def _traces_endpoint(endpoint: str) -> str:
     if cleaned.endswith(_TRACES_PATH):
         return cleaned
     return cleaned + _TRACES_PATH
+
+
+def _heartbeat_endpoint(traces_endpoint: str) -> str:
+    """The heartbeat's URL, beside the traces URL on the same server."""
+    return traces_endpoint[: -len(_TRACES_PATH)] + _HEARTBEAT_PATH
 
 
 def _instrument(name: str, provider: _TracerProvider) -> bool:
@@ -381,6 +452,7 @@ def init(
     ollama_url: str | None = None,
     redact_content: bool = True,
     salt_content: bool = True,
+    heartbeat_seconds: float = 60.0,
 ) -> Tracing:
     """Point OpenTelemetry at a sigillo server and turn on the instrumentations.
 
@@ -417,6 +489,12 @@ def init(
             that reads the nonce (October 2026 or later); an older one would
             record the salted digest as a plain one, so set this to false only
             for such a server.
+        heartbeat_seconds: how often the agent tells the server it is still
+            connected, 60 by default. The server calls an agent disconnected
+            after three minutes without a beat, and writes that on the chain,
+            so keep it well under that. The beat runs on its own thread from
+            here on, whether the agent is busy or idle, and `shutdown()` (or
+            the end of the process) sends a last one saying it closed.
 
     Returns:
         A handle with `flush()` and `shutdown()`, and the list of the
@@ -426,6 +504,8 @@ def init(
         raise ValueError("api_key must not be empty")
     if not system_id:
         raise ValueError("system_id must not be empty")
+    if not heartbeat_seconds > 0:
+        raise ValueError("heartbeat_seconds must be a positive number of seconds")
 
     unknown = [name for name in instrument if name not in _SUPPORTED]
     if unknown:
@@ -452,11 +532,15 @@ def init(
     _trace.set_tracer_provider(provider)
     instrumented = tuple(name for name in instrument if _instrument(name, provider))
 
+    heartbeat = _Heartbeat(_heartbeat_endpoint(traces_endpoint), api_key, heartbeat_seconds)
+    heartbeat.start()
+
     return Tracing(
         provider=provider,
         system_id=system_id,
         endpoint=traces_endpoint,
         instrumented=instrumented,
+        heartbeat=heartbeat,
     )
 
 

@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -104,9 +105,19 @@ class _Capture(http.server.BaseHTTPRequestHandler):
     bodies: list[bytes] = []
     headers_seen: list[dict[str, str]] = []
     paths: list[str] = []
+    # The heartbeat's requests, kept apart from the spans the other tests read.
+    heartbeats: list[tuple[dict, dict[str, str]]] = []
 
     def do_POST(self):  # noqa: N802 - the name is fixed by the base class
         length = int(self.headers.get("Content-Length", "0"))
+        if self.path.endswith("/api/v1/heartbeat"):
+            headers = {key.lower(): value for key, value in self.headers.items()}
+            type(self).heartbeats.append((json.loads(self.rfile.read(length)), headers))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"recorded": null}')
+            return
         type(self).bodies.append(self.rfile.read(length))
         type(self).headers_seen.append({key.lower(): value for key, value in self.headers.items()})
         type(self).paths.append(self.path)
@@ -681,6 +692,69 @@ class SigilloInitTest(unittest.TestCase):
             sorted(name for name in public if callable(getattr(sigillo, name))),
             ["Tracing", "artifact", "current_span_from_callbacks", "init", "pseudonym"],
         )
+
+
+class HeartbeatTest(unittest.TestCase):
+    """The heartbeat: start once, a beat every interval, stop on shutdown,
+    all for one session, with the system's key, beside the traces URL.
+    """
+
+    def setUp(self) -> None:
+        _Capture.heartbeats = []
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), _Capture)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def tearDown(self) -> None:
+        self.server.shutdown()
+        self.thread.join(timeout=5)
+        self.server.server_close()
+
+    def _events(self) -> list[str]:
+        return [body["event"] for body, _headers in _Capture.heartbeats]
+
+    def test_starts_beats_and_stops_one_session(self) -> None:
+        tracing = sigillo.init(
+            endpoint=f"{self.base}/v1/traces",
+            api_key="sigillo_secret",
+            system_id="s",
+            instrument=[],
+            heartbeat_seconds=0.05,
+        )
+        deadline = time.monotonic() + 5
+        while self._events().count("beat") < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        tracing.shutdown()
+
+        events = self._events()
+        self.assertEqual(events[0], "start")
+        self.assertGreaterEqual(events.count("beat"), 2)
+        self.assertEqual(events[-1], "stop")
+        self.assertEqual(events.count("stop"), 1)
+        sessions = {body["session"] for body, _headers in _Capture.heartbeats}
+        self.assertEqual(len(sessions), 1)
+        self.assertRegex(sessions.pop(), r"^[0-9a-f]{32}$")
+        for body, headers in _Capture.heartbeats:
+            self.assertEqual(set(body), {"session", "event"})
+            self.assertEqual(headers["authorization"], "Bearer sigillo_secret")
+
+    def test_a_second_shutdown_sends_nothing_more(self) -> None:
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+        tracing.shutdown()
+        tracing.shutdown()
+        self.assertEqual(self._events(), ["start", "stop"])
+
+    def test_an_unreachable_server_does_not_stop_the_agent(self) -> None:
+        tracing = sigillo.init(
+            endpoint="http://127.0.0.1:9", api_key="k", system_id="s", instrument=[], heartbeat_seconds=0.05
+        )
+        with self.assertLogs("sigillo", level="WARNING"):
+            tracing.shutdown()
+
+    def test_refuses_an_interval_that_is_not_positive(self) -> None:
+        with self.assertRaises(ValueError):
+            sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], heartbeat_seconds=0)
 
 
 class ContentFilterTest(unittest.TestCase):

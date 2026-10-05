@@ -58,6 +58,21 @@ tracing.shutdown()
 A long-running service does not need the handle. A script does: without a flush,
 the last spans may never leave the process.
 
+## Heartbeat
+
+`init` also starts a heartbeat, on a thread of its own: once when it runs, every
+`heartbeat_seconds` (60 by default) while the process runs, busy or idle, and a
+last time on `shutdown()` or at the end of the process. The server writes a
+receipt when the agent connects, when it closes normally, when it goes silent
+without closing (three minutes without a beat: the code removed, the process
+killed, the computer switched off, the network down) and when it comes back.
+An ordinary beat writes nothing. See `POST /api/v1/heartbeat` in
+`docs/API.md`.
+
+A process stopped by `SIGTERM` (a computer shutting down, `systemctl stop`)
+does not run Python's exit handlers, so it shows as lost rather than closed,
+unless the program catches the signal and calls `shutdown()`.
+
 ## Tool calls written by hand
 
 The server reads a span the way OpenTelemetry defines its status: one that

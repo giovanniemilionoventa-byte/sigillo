@@ -172,6 +172,10 @@ const ui: Strings = {
       otlp: "OpenTelemetry",
       api: "HTTP API",
       none: "Not connected yet",
+      // The SDK heartbeat's state (connection/watch.ts), when there is one.
+      open: "Python SDK · connected",
+      lost: (since: string): string => `Python SDK · disconnected since ${since}`,
+      closed: (since: string): string => `Python SDK · closed on ${since}`,
     },
     newTitle: "New system",
     displayNameLabel: "Name",
@@ -190,8 +194,7 @@ const ui: Strings = {
     keyNote: "You can only see it now: copy it and keep it safe.",
     heading: "Connect your agent",
     title: (name: string): string => `Connect ${name}`,
-    ways: { python: "Python SDK", otel: "OpenTelemetry", api: "HTTP API" },
-    recommended: "Recommended",
+    ways: { python: "Python SDK" },
     keyPlaceholder: "<the-system-key>",
     waiting: "Waiting for the first receipt…",
     check: "Check",
@@ -384,9 +387,6 @@ const ui: Strings = {
   },
   snippet: {
     extras: "(or [crewai], [openai])",
-    otelComment: "# Your agent's OTLP/HTTP exporter, pointed at sigillo",
-    agent: "agent",
-    action: "action",
   },
   languages: { en: "English", it: "Italiano" },
   languageLabel: "Language",
@@ -406,6 +406,19 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "organization.approve": "organization approved",
   "user.register": "new sign-up",
   "system.assign": "assigned to an organization",
+};
+
+/** The server's own receipts for the SDK heartbeat (connection/watch.ts): a title and a sentence each. */
+const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
+  "sigillo.connection.start": { title: "Agent connected", sentence: "The agent connected to sigillo and sends its heartbeat." },
+  "sigillo.connection.stop": { title: "Agent closed normally", sentence: "The agent's program was closed normally." },
+  "sigillo.connection.lost": {
+    title: "Connection lost",
+    sentence:
+      "The agent stopped sending its heartbeat without closing: sigillo's code removed, the program stopped, " +
+      "the computer switched off or the network down. The event time is that of the last heartbeat received.",
+  },
+  "sigillo.connection.restored": { title: "Connection restored", sentence: "The agent sends its heartbeat again after an interruption." },
 };
 
 const KIND_LABELS: Record<Receipt["action"]["kind"], string> = {
@@ -469,6 +482,8 @@ export const EN: Texts = {
     const ok = outcome === "ok";
     const onBehalfOf = onBehalfOfClause(actor.on_behalf_of);
     const model = receipt.v !== 1 ? receipt.model : undefined;
+    const connection = CONNECTION_TEXTS[action.name];
+    if (connection !== undefined) return connection.sentence;
 
     if (action.kind === "genesis") {
       return `The system «${action.name}» opened its ledger.`;
@@ -510,6 +525,8 @@ export const EN: Texts = {
 
   receiptTitle(receipt: Receipt): string {
     const { action } = receipt;
+    const connection = CONNECTION_TEXTS[action.name];
+    if (connection !== undefined) return connection.title;
     const model = receipt.v !== 1 ? receipt.model : undefined;
     switch (action.kind) {
       case "genesis":
@@ -603,6 +620,7 @@ export const EN: Texts = {
     stampLate: (late: string, limit: string): string =>
       `the last timestamp arrived ${late} after the seal, beyond the limit of ${limit}`,
     idle: (over: string): string => `no new actions for over ${over}`,
+    disconnected: (since: string): string => `the agent has been disconnected since ${since}`,
     attention: (total: number, reasons: string[]): string => `Ledger intact (${actions(total)}), but ${reasons.join(" and ")}.`,
   },
 };

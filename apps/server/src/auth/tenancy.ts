@@ -87,6 +87,7 @@ export function storeFor(store: ReceiptStore, viewer: Viewer): ReceiptStore {
     openingsOf: bySystem(store.openingsOf),
     subjectIdentifierIn: bySystem(store.subjectIdentifierIn),
     signerDivergence: bySystem(store.signerDivergence),
+    connectionsOf: bySystem(store.connectionsOf),
     renameSystem: bySystem(store.renameSystem),
     archiveSystem: bySystem(store.archiveSystem),
     unarchiveSystem: bySystem(store.unarchiveSystem),

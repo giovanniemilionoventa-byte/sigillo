@@ -24,6 +24,11 @@ whichever fits what the agent already does:
    one plain JSON request per receipt, in whatever language can make an HTTP
    call.
 
+Since October 2026 the console and the public site offer only the first: its
+heartbeat (`POST /api/v1/heartbeat`, below) is what lets sigillo say when an
+agent was disconnected, and neither of the other two sends one. Both endpoints
+still answer, and the SDK itself sends its spans to `/v1/traces`.
+
 ## Authentication
 
 Every ingest request carries an API key:
@@ -272,6 +277,41 @@ the chain its receipt lands, nor when the server says it arrived. Response
 
 Response `400` names the offending field. Response `403` if the body claims a
 different system than the key writes to.
+
+## `POST /api/v1/heartbeat` — the SDK's heartbeat
+
+The Python SDK sends one when `init` runs, one a minute while the process runs
+(whether the agent is working or idle), and one when it closes normally:
+
+```json
+{ "session": "0123456789abcdef0123456789abcdef", "event": "start" }
+```
+
+`session` is 32 lowercase hex characters, new for every process; `event` is
+`start`, `beat` or `stop`. Same bearer key as the ingest endpoints.
+
+The server writes a receipt on the key's chain at every change of a session's
+state, and only then: an ordinary beat writes nothing. Each is an `agent_step`
+by the agent `sigillo`, named
+
+| `action.name` | when | `ts_event` |
+| --- | --- | --- |
+| `sigillo.connection.start` | a session is first heard from | when it was |
+| `sigillo.connection.stop` | it closed normally | when it did |
+| `sigillo.connection.lost` | no beat for 3 minutes, without a stop | its last beat |
+| `sigillo.connection.restored` | a lost session beats again | when it did |
+
+`lost` covers every silence alike: sigillo's code removed from the agent, the
+process killed, the computer switched off, the network cut. The server does not
+tell them apart, and does not call a session lost until it has itself been up
+for 3 minutes, so its own downtime is not blamed on the agent. A
+`sigillo.connection.*` name is refused from `/api/v1/receipts` (400) and
+dropped from `/v1/traces` (counted in `ignored`): only the server writes one.
+Heartbeat receipts do not count against an organization's monthly limit
+check, and are never refused for it.
+
+Response `200` with `{"recorded": {"seq": 7, "name": "sigillo.connection.start"}}`,
+or `{"recorded": null}` for a beat that changed nothing.
 
 ## `GET /healthz`
 

@@ -6,6 +6,7 @@ import {
   verifyReceiptSignature,
 } from "@sigillo/core";
 import { durationWords, formatTs, healthWords } from "../http/strings.js";
+import { connectionStatus } from "../connection/watch.js";
 import type { ReceiptStore } from "../storage/store.js";
 
 /**
@@ -174,7 +175,11 @@ export class ChainHealthMonitor {
     const [latest] = this.store.searchReceipts({ systemId, limit: 1 });
     const minutesSinceActivity =
       latest === undefined ? Number.POSITIVE_INFINITY : (now.getTime() - Date.parse(latest.ts_received)) / 60_000;
-    const stale = minutesSinceActivity > this.staleAfterMs / 60_000;
+    // An agent whose heartbeat is still beating is idle, not gone: no warning
+    // for quiet. One whose heartbeat stopped without closing is, at once.
+    const connection = connectionStatus(this.store, systemId);
+    const lost = connection?.state === "lost";
+    const stale = connection?.state !== "open" && minutesSinceActivity > this.staleAfterMs / 60_000;
 
     const checkpoint = this.store.latestCheckpoint(systemId);
     const tolerance = Math.round(this.maxAnchorDelayMs / 60_000);
@@ -199,10 +204,10 @@ export class ChainHealthMonitor {
     }
 
     const total = tip.seq + 1;
-    if (anchoring === "first" && !stale) {
+    if (anchoring === "first" && !stale && !lost) {
       return { status: "green", message: words.firstComing(total, durationWords(tolerance)) };
     }
-    if ((anchoring === "anchored" || anchoring === "coming") && !stale && checkpoint !== null) {
+    if ((anchoring === "anchored" || anchoring === "coming") && !stale && !lost && checkpoint !== null) {
       return { status: "green", message: words.sealed(total, formatTs(checkpoint.checkpoint.ts), anchoring === "coming") };
     }
 
@@ -211,6 +216,7 @@ export class ChainHealthMonitor {
     if (anchoring === "missing") reasons.push(words.stampMissing(durationWords(tolerance)));
     if (anchoring === "late") reasons.push(words.stampLate(durationWords(Math.round(lateBy / 60_000)), durationWords(tolerance)));
     if (stale) reasons.push(words.idle(durationWords(Math.round(this.staleAfterMs / 60_000))));
+    if (lost) reasons.push(words.disconnected(formatTs(connection.since)));
     return { status: "yellow", message: words.attention(total, reasons) };
   }
 }

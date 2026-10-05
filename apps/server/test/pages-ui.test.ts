@@ -255,18 +255,18 @@ describe("the systems page", () => {
     expect(main).toContain(`data-chain="archived"`);
   });
 
-  it("shows a new system's key once, inside the shell, with the three ways to use it, one shown at a time", async () => {
+  it("shows a new system's key once, inside the shell, with the Python way to use it and no other", async () => {
     const created = await post("/ui/sistemi", "system_id=nuovo&display_name=Il%20nuovo");
     expect(created.status).toBe(200);
     const main = mainOf(created.body);
     const token = /<code class="keybox">(sigillo_[0-9a-f]{16}_[0-9a-f]{64})<\/code>/.exec(main)?.[1] ?? "";
     expect(token).not.toBe("");
     expect(main).toContain(`<h1>${UI.connect.ready("Il nuovo")}</h1>`);
-    // Each way carries the key and the identifier; CSS shows only the one whose radio is checked.
-    for (const way of ["python", "otel", "api"]) {
-      const snippet = new RegExp(`<pre class="code ${way}">([^]*?)</pre>`).exec(main)?.[1] ?? "";
-      expect(snippet, way).toContain(token);
-    }
+    // Python only: its heartbeat is what tells when an agent was disconnected.
+    const snippet = /<pre class="code python">([^]*?)<\/pre>/.exec(main)?.[1] ?? "";
+    expect(snippet).toContain(token);
+    expect(main).not.toContain('<pre class="code otel">');
+    expect(main).not.toContain('<pre class="code api">');
     expect(main).toContain('<input type="radio" name="way" id="way-python" class="sr" checked>');
     expect(main).toContain('system_id=&quot;nuovo&quot;');
     expect(main).toContain(`href="/ui/systems/nuovo/collega"`);

@@ -406,11 +406,9 @@ details.tech .facts { margin-top: 10px; }
 .way small { font-size: 12px; font-weight: 600; color: var(--link); }
 .code { display: none; margin: 0; padding: 20px 22px; border-radius: 14px; background: var(--code); color: var(--on-code);
   font: 13px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-#way-python:checked ~ .ways [for="way-python"], #way-otel:checked ~ .ways [for="way-otel"],
-#way-api:checked ~ .ways [for="way-api"] { box-shadow: 0 0 0 2px var(--action); }
-#way-python:focus-visible ~ .ways [for="way-python"], #way-otel:focus-visible ~ .ways [for="way-otel"],
-#way-api:focus-visible ~ .ways [for="way-api"] { outline: 2px solid var(--focus); outline-offset: 2px; }
-#way-python:checked ~ .code.python, #way-otel:checked ~ .code.otel, #way-api:checked ~ .code.api { display: block; }
+#way-python:checked ~ .ways [for="way-python"] { box-shadow: 0 0 0 2px var(--action); }
+#way-python:focus-visible ~ .ways [for="way-python"] { outline: 2px solid var(--focus); outline-offset: 2px; }
+#way-python:checked ~ .code.python { display: block; }
 .wait-line { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 14px 18px; font-weight: 500; }
 .wait-line .end { margin-left: auto; }
 .wait-line.green { color: var(--ok); }
@@ -612,7 +610,6 @@ export const ICONS = {
   python: line(
     '<path d="M12 3c-4 0-4 2-4 3v2h5v1H6c-2 0-3 1-3 4s1 4 3 4h1v-2c0-2 1-3 3-3h5c1 0 2-1 2-2V6c0-2-2-3-5-3z"/><path d="M12 21c4 0 4-2 4-3v-2h-5v-1h7c2 0 3-1 3-4s-1-4-3-4h-1v2c0 2-1 3-3 3h-5c-1 0-2 1-2 2v4c0 2 2 3 5 3z"/>',
   ),
-  otel: line('<circle cx="12" cy="12" r="3"/><path d="M12 3v6"/><path d="M12 15v6"/><path d="M3 12h6"/><path d="M15 12h6"/>'),
 } as const;
 
 /** Google's "G", in Google's own colours, as its sign-in guidelines ask for the button. */

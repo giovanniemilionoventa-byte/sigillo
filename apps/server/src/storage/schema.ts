@@ -136,6 +136,19 @@ CREATE TABLE IF NOT EXISTS signing_keys (
   first_seen        TEXT NOT NULL
 ) STRICT;
 
+-- The Python SDK's heartbeat (connection/watch.ts), one row per running
+-- copy of an agent: its session, whether it is beating, and when it last did.
+-- Not evidence: state only, so the server can notice silence. What is evidence
+-- is the receipt written on each change of state (sigillo.connection.*).
+CREATE TABLE IF NOT EXISTS connections (
+  system_id    TEXT NOT NULL,
+  session_id   TEXT NOT NULL,
+  state        TEXT NOT NULL CHECK (state IN ('open', 'lost', 'closed')),
+  started_at   TEXT NOT NULL,
+  last_beat_at TEXT NOT NULL,
+  PRIMARY KEY (system_id, session_id)
+) STRICT;
+
 -- What an administrator did to a system outside its chain: renaming,
 -- archiving, and deleting an empty one. Append-only like the evidence, and
 -- deliberately outside any chain: a deleted system's chain no longer exists
@@ -284,7 +297,8 @@ function ensureColumn(db: Database.Database, table: string, column: string, type
 // 2: organizations, and the organization a system belongs to. A release at 1
 // would show every system to whoever holds its password.
 // 3: the people who sign in for an organization.
-export const SCHEMA_VERSION = 3;
+// 4: the SDK heartbeat's sessions (connections).
+export const SCHEMA_VERSION = 4;
 
 export class NewerSchemaError extends Error {
   constructor(readonly found: number) {

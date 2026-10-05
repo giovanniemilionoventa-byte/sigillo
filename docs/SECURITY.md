@@ -674,6 +674,17 @@ and nothing else.
   activity (a day by default), and that is all: silence is reported as
   inactivity, never as tampering, and an export of the period is simply
   shorter.
+  An agent on the Python SDK is the exception, as far as it goes: its
+  heartbeat (`docs/API.md`, `POST /api/v1/heartbeat`) makes a silence of more
+  than three minutes a signed `sigillo.connection.lost` receipt on the chain,
+  dated at the last beat, whether sigillo's code was removed, the process
+  killed or the computer switched off; an idle agent that still beats is not
+  called stale. It says *that* the agent was disconnected and from when, not
+  what it did meanwhile, and it does not tell those causes apart. It does not
+  catch a program that keeps the heartbeat and turns the recording off, or one
+  that sends the heartbeat by hand: the beat proves that sigillo's code is
+  running, not that every action goes through it. The other two ways in send
+  no heartbeat at all.
 - **sigillo itself being unreachable, from the agent's side.** Measured for
   real (fase 9), against the Python SDK's default settings
   (`opentelemetry-sdk` 1.44.0): a batch of spans that fails to export is not

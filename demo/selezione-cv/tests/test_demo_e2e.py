@@ -178,7 +178,13 @@ class DemoEndToEndTest(unittest.TestCase):
         token = self._run(["node", str(SERVER_CLI), "subject", "find", "elena.rizzo",
                            "--db", str(self.db_path)]).strip()
         self.assertRegex(token, r"^psn_[0-9a-f]{32}$")
+        # The agent's heartbeat opened and closed its connection on the chain:
+        # those two receipts are the server's own, on behalf of nobody.
+        connection = [r["action"]["name"] for r in receipts if r["action"]["name"].startswith("sigillo.connection.")]
+        self.assertEqual(connection, ["sigillo.connection.start", "sigillo.connection.stop"])
         for receipt in receipts[1:]:
+            if receipt["action"]["name"].startswith("sigillo.connection."):
+                continue
             self.assertEqual(receipt["actor"].get("on_behalf_of"), token)
         self.assertNotIn("elena.rizzo", receipts_text)
 
