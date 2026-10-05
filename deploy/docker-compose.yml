@@ -142,6 +142,10 @@ services:
       SIGILLO_PUBLIC_URL: https://${SIGILLO_DOMAIN}
       # Receipts each customer organization may write per calendar month (UTC).
       SIGILLO_ORG_MONTHLY_RECEIPTS: ${SIGILLO_ORG_MONTHLY_RECEIPTS:-10000}
+      # The model gateway (/llm/...): "operator" opens it to the administrator's
+      # own systems only, "all" to every customer as well, "off" closes it.
+      # Its sealing key is made next to the database, outside every backup.
+      SIGILLO_LLM_GATEWAY: ${SIGILLO_LLM_GATEWAY:-operator}
     healthcheck:
       # /healthz also asks the signer: 503 while the server cannot sign.
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

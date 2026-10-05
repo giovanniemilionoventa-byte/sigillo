@@ -3415,6 +3415,27 @@ programma fermato, computer spento), non solo che è inattivo.
   non cosa ha fatto nel frattempo; un programma che tiene il battito e spegne la registrazione non
   si vede.
 
+### Sessione 38 — 2026-10-05 — il centralino dei modelli AI, solo per l'amministratore
+
+Su richiesta del titolare: Sigillo tiene la chiave del modello cloud del cliente, così l'agente non
+può chiamare il modello senza passare da Sigillo, e ogni chiamata diventa una ricevuta.
+
+- **Gateway** (`apps/server/src/gateway/llm.ts`): `/llm/openai/v1/...` e `/llm/anthropic/v1/...`
+  inoltrano al fornitore con la chiave del cliente al posto di quella di Sigillo. Ogni `POST` scrive
+  una ricevuta `llm_call` (nome del modello, impronte di domanda e risposta, esito). Risposta
+  normale: prima la ricevuta, poi la risposta (senza firmatario, 503). Risposta in streaming:
+  passata subito, ricevuta alla fine.
+- **Chiavi dei fornitori** (`gateway/provider-keys.ts`): cifrate con AES-256-GCM, chiave di
+  cifratura in `llm-gateway.key` accanto al database e mai nei backup; si vedono solo le ultime 4
+  cifre. Tabella `provider_keys`, schema del database 5.
+- **Console**: blocco "Modello AI" nella pagina di gestione del sistema (salva, rimuovi, gli
+  indirizzi da mettere nell'agente).
+- **Regola 1** del titolare, ora in `CLAUDE.md` (regola 11): `SIGILLO_LLM_GATEWAY=operator` di
+  default, cioè solo i sistemi dell'amministratore; `all` lo apre a tutti dopo la sua conferma.
+- Caddy non comprime più `/llm/*`, per non trattenere gli eventi dello streaming.
+- Limiti in `docs/SECURITY.md`: vale finché la chiave sta solo in Sigillo; non vede modelli locali
+  o altre chiavi; domanda e risposta passano in chiaro nella memoria del server.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

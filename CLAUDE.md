@@ -14,6 +14,7 @@ This file collects the permanent rules for anyone (human or AI) working on this 
 8. At the end of every milestone: tests green, `PROGRESS.md` updated, commit and push to the `sigillo` GitHub repository.
 9. **Never stop with unsaved work.** Before any pause, question, or end of session: push to the `sigillo` repository and open or update a pull request against `main`.
 10. **Never push directly to `main`.** All work happens on the session's feature branch.
+11. **New features go to the administrator first.** Every new feature ships enabled only for the operator's own account (the systems with no organization, `/ui/admin`), behind a switch that defaults to that (e.g. `SIGILLO_LLM_GATEWAY=operator|all|off`), and hides its console UI from organization accounts as well as its endpoints. It is opened to every account only after the project owner confirms it works (rule set by the project owner on 2026-10-05).
 
 ## Approved dependencies
 

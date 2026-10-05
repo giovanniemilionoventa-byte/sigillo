@@ -913,6 +913,7 @@ export class ReceiptStore {
       this.write.prepare("DELETE FROM receipts WHERE system_id = ? AND seq = 0").run(systemId);
       this.write.prepare("DELETE FROM api_keys WHERE system_id = ?").run(systemId);
       this.write.prepare("DELETE FROM connections WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM provider_keys WHERE system_id = ?").run(systemId);
       this.write.prepare("DELETE FROM systems WHERE system_id = ?").run(systemId);
       return deleted;
     });

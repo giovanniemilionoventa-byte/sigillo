@@ -149,6 +149,19 @@ CREATE TABLE IF NOT EXISTS connections (
   PRIMARY KEY (system_id, session_id)
 ) STRICT;
 
+-- A system's own key for a cloud model (gateway/provider-keys.ts), so that the
+-- agent never holds it and every call it makes goes through the gateway. Not
+-- evidence. Encrypted with AES-256-GCM under a key kept outside the database
+-- (its own file, never in a backup); last4 is what the web view shows.
+CREATE TABLE IF NOT EXISTS provider_keys (
+  system_id  TEXT NOT NULL,
+  provider   TEXT NOT NULL,
+  sealed     TEXT NOT NULL,
+  last4      TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (system_id, provider)
+) STRICT;
+
 -- What an administrator did to a system outside its chain: renaming,
 -- archiving, and deleting an empty one. Append-only like the evidence, and
 -- deliberately outside any chain: a deleted system's chain no longer exists
@@ -298,7 +311,8 @@ function ensureColumn(db: Database.Database, table: string, column: string, type
 // would show every system to whoever holds its password.
 // 3: the people who sign in for an organization.
 // 4: the SDK heartbeat's sessions (connections).
-export const SCHEMA_VERSION = 4;
+// 5: the cloud-model keys the gateway holds for a system (provider_keys).
+export const SCHEMA_VERSION = 5;
 
 export class NewerSchemaError extends Error {
   constructor(readonly found: number) {
