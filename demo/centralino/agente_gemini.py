@@ -93,6 +93,11 @@ def main() -> None:
         list_models()
         return
 
+    if "googleapis.com" in GEMINI_URL:
+        print("Chiamo Gemini direttamente: Sigillo non vede niente.")
+    else:
+        print(f"Chiamo Gemini passando da Sigillo ({GEMINI_URL}).")
+    print()
     print("1/2  Scelgo il candidato migliore...")
     choice = ask(
         "Selezioni un addetto di magazzino con esperienza. Candidati:\n"
