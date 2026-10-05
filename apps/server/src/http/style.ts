@@ -409,6 +409,9 @@ details.tech .facts { margin-top: 10px; }
 #way-python:checked ~ .ways [for="way-python"] { box-shadow: 0 0 0 2px var(--action); }
 #way-python:focus-visible ~ .ways [for="way-python"] { outline: 2px solid var(--focus); outline-offset: 2px; }
 #way-python:checked ~ .code.python { display: block; }
+#way-model:checked ~ .ways [for="way-model"] { box-shadow: 0 0 0 2px var(--action); }
+#way-model:focus-visible ~ .ways [for="way-model"] { outline: 2px solid var(--focus); outline-offset: 2px; }
+#way-model:checked ~ .code.model { display: block; }
 .wait-line { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 14px 18px; font-weight: 500; }
 .wait-line .end { margin-left: auto; }
 .wait-line.green { color: var(--ok); }

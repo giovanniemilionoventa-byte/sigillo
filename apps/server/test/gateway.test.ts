@@ -31,6 +31,7 @@ const ACME_BOT = "acme.cv-bot";
 const ACME: Viewer = { kind: "organization", organizationId: "acme" };
 const OPENAI_KEY = "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
 const ANTHROPIC_KEY = "sk-ant-api03-ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210";
+const GEMINI_KEY = "AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW";
 const PROMPT = "Rank these curricula for the warehouse role";
 const ANSWER = "Candidate B fits the role best";
 const NOW = "2026-10-05T17:00:00.000Z";
@@ -69,7 +70,7 @@ async function start(access: GatewayAccess): Promise<void> {
     store,
     keys,
     now: () => new Date(NOW),
-    gateway: { keys: providerKeys, access, upstream: { openai: upstreamUrl, anthropic: `${upstreamUrl}/` } },
+    gateway: { keys: providerKeys, access, upstream: { openai: upstreamUrl, anthropic: `${upstreamUrl}/`, gemini: upstreamUrl } },
     ui: {
       password: "an administrator password",
       signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
@@ -124,6 +125,7 @@ beforeEach(async () => {
   for (const systemId of [OPERATOR_BOT, ACME_BOT]) {
     providerKeys.set(systemId, "openai", OPENAI_KEY, ADMIN.ts);
     providerKeys.set(systemId, "anthropic", ANTHROPIC_KEY, ADMIN.ts);
+    providerKeys.set(systemId, "gemini", GEMINI_KEY, ADMIN.ts);
   }
   await start("operator");
 });
@@ -199,6 +201,50 @@ describe("the model gateway", () => {
     const [receipt] = calls(OPERATOR_BOT);
     expect((receipt as { model?: unknown }).model).toEqual({ name: "claude-sonnet-5-5", provider: "anthropic", digest: null });
     expect(receipt!.actor.agent).toBe(OPERATOR_BOT);
+  });
+
+  it("speaks Gemini's own API: the key as x-goog-api-key or ?key=, the model from the path", async () => {
+    answer = (_seen, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: ANSWER }] } }] }));
+    };
+    const payload = { contents: [{ role: "user", parts: [{ text: PROMPT }] }] };
+    const byHeader = await app.inject({
+      method: "POST",
+      url: "/llm/gemini/v1beta/models/gemini-2.5-flash:generateContent",
+      headers: { "x-goog-api-key": operatorToken, "x-goog-api-client": "google-genai-sdk/1.0" },
+      payload,
+    });
+    expect(byHeader.statusCode).toBe(200);
+    expect(seen[0]!.url).toBe("/v1beta/models/gemini-2.5-flash:generateContent");
+    expect(seen[0]!.headers["x-goog-api-key"]).toBe(GEMINI_KEY);
+    expect(seen[0]!.headers["x-goog-api-client"]).toBe("google-genai-sdk/1.0");
+    expect(seen[0]!.headers.authorization).toBeUndefined();
+
+    const byQuery = await app.inject({
+      method: "POST",
+      url: `/llm/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${operatorToken}`,
+      payload,
+    });
+    expect(byQuery.statusCode).toBe(200);
+    // The sigillo key never travels on: the provider sees its own key and the rest of the query.
+    expect(seen[1]!.url).toBe("/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse");
+    expect(seen[1]!.headers["x-goog-api-key"]).toBe(GEMINI_KEY);
+
+    const receipts = calls(OPERATOR_BOT);
+    expect(receipts.map((receipt) => receipt.action.name)).toEqual([
+      "v1beta/models/gemini-2.5-flash:generateContent",
+      "v1beta/models/gemini-2.5-flash:streamGenerateContent",
+    ]);
+    expect((receipts[0] as { model?: unknown }).model).toEqual({ name: "gemini-2.5-flash", provider: "gemini", digest: null });
+  });
+
+  it("speaks Gemini's OpenAI-compatible API with the key as a bearer token", async () => {
+    const response = await chat(operatorToken, { model: "gemini-2.5-flash", messages: [{ role: "user", content: PROMPT }] }, "/llm/gemini/v1beta/openai/chat/completions");
+    expect(response.statusCode).toBe(200);
+    expect(seen[0]!.url).toBe("/v1beta/openai/chat/completions");
+    expect(seen[0]!.headers.authorization).toBe(`Bearer ${GEMINI_KEY}`);
+    expect(seen[0]!.headers["x-goog-api-key"]).toBeUndefined();
   });
 
   it("records a refusal of the provider as an error, and passes it on with its retry hint", async () => {
@@ -338,8 +384,21 @@ describe("the AI model block of a system's page", () => {
     expect((await post(ACME, `/ui/systems/${ACME_BOT}/llm-key`, { provider: "openai", key: `${OPENAI_KEY}X` })).statusCode).toBe(404);
     expect(providerKeys.get(ACME_BOT, "openai")).toBe(OPENAI_KEY);
 
+    expect((await get(ACME, `/ui/systems/${ACME_BOT}/collega`)).body).not.toContain("/llm/");
+
     await start("all");
     expect((await get(ACME, `/ui/systems/${ACME_BOT}/manage`)).body).toContain("AI model");
+    const connect = (await get(ACME, `/ui/systems/${ACME_BOT}/collega`)).body;
+    expect(connect).toContain('id="way-model"');
+    expect(connect).toContain("/llm/openai/v1");
+    expect(connect).toContain("ANTHROPIC_BASE_URL=");
+  });
+
+  it("leaves the operator's connect page as it was: the operator sets the gateway up from the manage page", async () => {
+    await start("all");
+    const connect = (await get(OPERATOR, `/ui/systems/${OPERATOR_BOT}/collega`)).body;
+    expect(connect).not.toContain('id="way-model"');
+    expect(connect).not.toContain("/llm/");
   });
 });
 
