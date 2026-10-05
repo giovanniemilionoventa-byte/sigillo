@@ -13,6 +13,7 @@ import { isProvider, type Provider, type ProviderKeyStore } from "./provider-key
  *
  *   OpenAI-compatible   base_url = <server>/llm/openai/v1
  *   Anthropic (Claude)  base_url = <server>/llm/anthropic
+ *   Google Gemini       base_url = <server>/llm/gemini
  *
  * Whatever path follows the prefix is the provider's own, forwarded as it is:
  * `/llm/openai/v1/chat/completions` reaches `https://api.openai.com/v1/chat/completions`.
@@ -47,13 +48,30 @@ export interface GatewayGuards {
 const UPSTREAM: Record<Provider, string> = {
   openai: "https://api.openai.com",
   anthropic: "https://api.anthropic.com",
+  gemini: "https://generativelanguage.googleapis.com",
 };
 
-/** A provider path: starts at its API version, no `..`, nothing but URL-safe characters. */
-const PATH = /^v1\/[A-Za-z0-9._~\/-]+$/;
+/**
+ * A provider path: starts at its API version, no `..`, nothing but URL-safe
+ * characters. Gemini's versions are v1 and v1beta, and its methods follow a
+ * colon: `v1beta/models/gemini-2.5-flash:generateContent`.
+ */
+const PATH: Record<Provider, RegExp> = {
+  openai: /^v1\/[A-Za-z0-9._~\/-]+$/,
+  anthropic: /^v1\/[A-Za-z0-9._~\/-]+$/,
+  gemini: /^v1(beta)?\/[A-Za-z0-9._~\/:-]+$/,
+};
 
 /** The request headers the providers read that are not the key: passed on as they are. */
-const FORWARDED_REQUEST_HEADERS = ["accept", "anthropic-version", "anthropic-beta", "openai-beta", "openai-organization", "openai-project"];
+const FORWARDED_REQUEST_HEADERS = [
+  "accept",
+  "anthropic-version",
+  "anthropic-beta",
+  "openai-beta",
+  "openai-organization",
+  "openai-project",
+  "x-goog-api-client",
+];
 
 /** The response headers an SDK reads: the type, the request id, rate limits and when to retry. */
 const FORWARDED_RESPONSE_HEADER = /^(content-type|retry-after|x-request-id|request-id|openai-[a-z-]+|anthropic-[a-z-]+|x-ratelimit-[a-z-]+)$/;
@@ -71,12 +89,13 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
 
   const handle = async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const { provider, "*": rest } = request.params as { provider: string; "*": string };
-    if (!isProvider(provider) || !PATH.test(rest) || rest.split("/").includes("..")) {
+    if (!isProvider(provider) || !PATH[provider].test(rest) || rest.split("/").includes("..")) {
       return reply.code(404).send({ error: "no such model endpoint" });
     }
-    // OpenAI's SDKs send the key as a bearer token, Anthropic's as x-api-key.
-    const header = request.headers["x-api-key"];
-    const token = bearerOf(request) ?? (typeof header === "string" ? header.trim() : null);
+    // OpenAI's SDKs send the key as a bearer token, Anthropic's as x-api-key,
+    // Google's as x-goog-api-key or as `?key=`.
+    const token =
+      bearerOf(request) ?? headerOf(request, "x-api-key") ?? headerOf(request, "x-goog-api-key") ?? keyParamOf(request);
     const systemId = await guards.authenticate(request, token);
     if (systemId === null) return reply.code(401).send({ error: "a valid sigillo API key is required" });
     if (!gatewayAllowed(options.access, store.systemRecord(systemId)?.organization_id ?? null)) {
@@ -94,8 +113,8 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
       return reply.code(415).send({ error: "the gateway carries JSON requests only" });
     }
 
-    const query = request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : "";
-    const headers: Record<string, string> = provider === "openai" ? { authorization: `Bearer ${providerKey}` } : { "x-api-key": providerKey };
+    const query = queryWithoutKey(request.url);
+    const headers = providerAuth(provider, rest, providerKey);
     for (const name of FORWARDED_REQUEST_HEADERS) {
       const value = request.headers[name];
       if (typeof value === "string") headers[name] = value;
@@ -142,7 +161,7 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
         raw_output: { value: parsedOrText(answer) },
         outcome,
         source: { type: "api" },
-        model: { name: modelOf(body), provider, digest: null },
+        model: { name: modelOf(body, rest), provider, digest: null },
       });
 
     if (!recorded) {
@@ -187,6 +206,33 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
   app.get("/llm/:provider/*", handle);
 }
 
+/** How each provider takes its key. Gemini's OpenAI-compatible endpoints take it as OpenAI does. */
+function providerAuth(provider: Provider, path: string, key: string): Record<string, string> {
+  if (provider === "anthropic") return { "x-api-key": key };
+  if (provider === "gemini" && !/^v1(beta)?\/openai\//.test(path)) return { "x-goog-api-key": key };
+  return { authorization: `Bearer ${key}` };
+}
+
+function headerOf(request: FastifyRequest, name: string): string | null {
+  const value = request.headers[name];
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
+function keyParamOf(request: FastifyRequest): string | null {
+  const key = new URLSearchParams(request.url.split("?")[1] ?? "").get("key");
+  return key === null || key === "" ? null : key;
+}
+
+/** The query string passed on to the provider: the agent's own, less a `key` (the sigillo key, from a Gemini client). */
+function queryWithoutKey(url: string): string {
+  const at = url.indexOf("?");
+  if (at === -1) return "";
+  const params = new URLSearchParams(url.slice(at + 1));
+  params.delete("key");
+  const rest = params.toString();
+  return rest === "" ? "" : `?${rest}`;
+}
+
 function bearerOf(request: FastifyRequest): string | null {
   const header = request.headers.authorization;
   if (typeof header !== "string") return null;
@@ -199,9 +245,12 @@ function agentOf(request: FastifyRequest, systemId: string): string {
   return typeof named === "string" && named.trim() !== "" ? named.trim().slice(0, MAX_NAME) : systemId;
 }
 
-function modelOf(body: unknown): string {
+/** The model asked for: the body's `model`, or for Gemini's own API the path's `models/<name>:<method>`. */
+function modelOf(body: unknown, path: string): string {
   const model = typeof body === "object" && body !== null ? (body as { model?: unknown }).model : undefined;
-  return typeof model === "string" && model !== "" ? model.slice(0, MAX_NAME) : "unknown";
+  if (typeof model === "string" && model !== "") return model.slice(0, MAX_NAME);
+  const named = /(?:^|\/)models\/([^/:]+)(?::|$)/.exec(path)?.[1];
+  return named === undefined ? "unknown" : named.slice(0, MAX_NAME);
 }
 
 function parsedOrText(answer: string): unknown {

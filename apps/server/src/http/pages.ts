@@ -335,6 +335,12 @@ ${pythonWay}
     "# Anthropic, Claude Code",
     `ANTHROPIC_BASE_URL=${endpoint}/llm/anthropic`,
     `ANTHROPIC_API_KEY=${key}`,
+    "",
+    "# Google Gemini (google-genai)",
+    "client = genai.Client(",
+    `    api_key="${key}",`,
+    `    http_options={"base_url": "${endpoint}/llm/gemini"},`,
+    ")",
   ].join("\n");
   return `<input type="radio" name="way" id="way-python" class="sr" checked>
 <input type="radio" name="way" id="way-model" class="sr">
@@ -394,7 +400,7 @@ export interface ManageModel {
   saved: ProviderKeyRecord[];
 }
 
-const PROVIDER_NAMES: Record<ProviderKeyRecord["provider"], string> = { openai: "OpenAI", anthropic: "Anthropic" };
+const PROVIDER_NAMES: Record<ProviderKeyRecord["provider"], string> = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Google Gemini" };
 
 /** A system's settings: its name, identifier and key, connecting it, archiving it, and deleting it while its chain is empty. */
 export function managePage(
@@ -468,6 +474,10 @@ export function managePage(
               `# Anthropic, Claude Code`,
               `ANTHROPIC_BASE_URL=${model.endpoint}/llm/anthropic`,
               `ANTHROPIC_API_KEY=${UI.connect.keyPlaceholder}`,
+              "",
+              `# Google Gemini`,
+              `base_url="${model.endpoint}/llm/gemini"`,
+              `api_key="${UI.connect.keyPlaceholder}"`,
             ].join("\n"),
           )}</pre>`,
         );

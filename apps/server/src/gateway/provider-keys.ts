@@ -17,14 +17,14 @@ import { applySchema } from "../storage/schema.js";
  * kept in the clear, for the web view.
  */
 
-export const PROVIDERS = ["openai", "anthropic"] as const;
+export const PROVIDERS = ["openai", "anthropic", "gemini"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export function isProvider(value: unknown): value is Provider {
   return typeof value === "string" && (PROVIDERS as readonly string[]).includes(value);
 }
 
-/** What a provider's key looks like: "sk-proj-…", "sk-ant-api03-…". Anything else is refused, not cleaned. */
+/** What a provider's key looks like: "sk-proj-…", "sk-ant-api03-…", "AIza…". Anything else is refused, not cleaned. */
 const KEY_SHAPE = /^[A-Za-z0-9_.-]{20,512}$/;
 
 export class ProviderKeyError extends Error {

@@ -313,10 +313,10 @@ check, and are never refused for it.
 Response `200` with `{"recorded": {"seq": 7, "name": "sigillo.connection.start"}}`,
 or `{"recorded": null}` for a beat that changed nothing.
 
-## `/llm/openai/v1/…` and `/llm/anthropic/v1/…` — the model gateway
+## `/llm/openai/v1/…`, `/llm/anthropic/v1/…`, `/llm/gemini/…` — the model gateway
 
 An agent can call its cloud model through sigillo instead of directly. The
-customer saves their own OpenAI or Anthropic key on the system's page in the
+customer saves their own OpenAI, Anthropic or Google Gemini key on the system's page in the
 console (block "AI model"); the agent is given only the sigillo key of the
 system, and points its model client at sigillo:
 
@@ -324,14 +324,19 @@ system, and points its model client at sigillo:
 | --- | --- |
 | OpenAI SDK, LangChain `ChatOpenAI`, anything OpenAI-compatible | `base_url="https://<server>/llm/openai/v1"`, `api_key="<the system key>"` |
 | Anthropic SDK, Claude Code | `ANTHROPIC_BASE_URL=https://<server>/llm/anthropic`, `ANTHROPIC_API_KEY=<the system key>` |
+| Google Gemini (`google-genai`, or its REST API) | `http_options={"base_url": "https://<server>/llm/gemini"}`, `api_key="<the system key>"` |
+| Gemini's OpenAI-compatible API | `base_url="https://<server>/llm/gemini/v1beta/openai"`, `api_key="<the system key>"` |
 
-The sigillo key is accepted as `Authorization: Bearer` (OpenAI's SDKs) or as
-`x-api-key` (Anthropic's). Whatever follows `/llm/<provider>/` is the
+The sigillo key is accepted as `Authorization: Bearer` (OpenAI's SDKs), as
+`x-api-key` (Anthropic's), or as `x-goog-api-key` or `?key=` (Google's; the
+`key` parameter is taken out of the query before it is forwarded). Whatever follows `/llm/<provider>/` is the
 provider's own path and is forwarded unchanged, with the query string and the
 headers the providers read (`anthropic-version`, `anthropic-beta`,
-`openai-beta`, `openai-organization`, `openai-project`, `accept`), to
-`https://api.openai.com` or `https://api.anthropic.com`, with the customer's
-key in place of sigillo's. The provider's status, body and SDK-facing headers
+`openai-beta`, `openai-organization`, `openai-project`, `x-goog-api-client`,
+`accept`), to `https://api.openai.com`, `https://api.anthropic.com` or
+`https://generativelanguage.googleapis.com`, with the customer's key in place
+of sigillo's. Gemini's paths start at `v1/` or `v1beta/` and may carry its
+`:method` (`v1beta/models/gemini-2.5-flash:generateContent`). The provider's status, body and SDK-facing headers
 (type, request id, rate limits, `retry-after`) come back as they are.
 
 Every `POST` that reaches the provider writes a receipt on the system's chain:
@@ -340,7 +345,7 @@ Every `POST` that reaches the provider writes a receipt on the system's chain:
 | --- | --- |
 | `action` | `{"kind": "llm_call", "name": "<the path, e.g. v1/chat/completions>"}` |
 | `actor.agent` | the `x-sigillo-agent` header when the client sets it, else the system id |
-| `model` | `{"name": "<the request's model>", "provider": "openai" \| "anthropic", "digest": null}` |
+| `model` | `{"name": "<the request's model>", "provider": "openai" \| "anthropic" \| "gemini", "digest": null}`; for Gemini's own API, the model named in the path |
 | `input`, `output` | digests of the request body and of the answer, each under a fresh nonce |
 | `outcome` | `ok` for a 2xx answer, `error` otherwise, `unknown` for a stream cut short |
 | `source` | `{"type": "api"}` |
@@ -352,7 +357,7 @@ ends. `GET` (a model list) is forwarded and not recorded.
 
 Errors of the gateway itself: `401` without a valid sigillo key, `403` when the
 gateway is not open to the system's account, `404` for an unknown provider or a
-path not under `v1/`, `409` when the system has no key for that provider, `415`
+path not under the provider's API version, `409` when the system has no key for that provider, `415`
 for a body that is not JSON, `502` when the provider does not answer; plus the
 `503` and `429` every ingest endpoint can give (signer away, writes paused,
 monthly limit).

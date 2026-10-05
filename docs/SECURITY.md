@@ -663,7 +663,7 @@ rotation to whatever runs it (systemd's journal rotates on its own).
 
 ### The customers' model keys
 
-The model gateway holds each customer's OpenAI or Anthropic key
+The model gateway holds each customer's OpenAI, Anthropic or Google Gemini key
 (`apps/server/src/gateway/provider-keys.ts`), in the `provider_keys` table,
 sealed with AES-256-GCM: a fresh 12-byte nonce per key, the system id and the
 provider bound in as associated data (a sealed key copied to another row does

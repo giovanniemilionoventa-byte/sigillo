@@ -203,7 +203,7 @@ const ui = {
     heading: "Collega il tuo agente",
     title: (name: string): string => `Collega ${name}`,
     ways: { python: "SDK Python", model: "Modello AI" },
-    modelStep1: "Salva la chiave OpenAI o Anthropic in Gestisci, nel blocco “Modello AI”.",
+    modelStep1: "Salva la chiave OpenAI, Anthropic o Gemini in Gestisci, nel blocco “Modello AI”.",
     modelStep2: "Collega il modello dell'agente a sigillo, con la chiave del sistema:",
     keyPlaceholder: "<la-chiave-del-sistema>",
     waiting: "In attesa della prima ricevuta…",

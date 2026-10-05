@@ -195,7 +195,7 @@ const ui: Strings = {
     heading: "Connect your agent",
     title: (name: string): string => `Connect ${name}`,
     ways: { python: "Python SDK", model: "AI model" },
-    modelStep1: "Save your OpenAI or Anthropic key in Manage, under “AI model”.",
+    modelStep1: "Save your OpenAI, Anthropic or Gemini key in Manage, under “AI model”.",
     modelStep2: "Point the agent's model at sigillo, with the system key:",
     keyPlaceholder: "<the-system-key>",
     waiting: "Waiting for the first receipt…",

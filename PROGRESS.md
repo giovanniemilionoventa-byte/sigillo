@@ -3435,8 +3435,10 @@ può chiamare il modello senza passare da Sigillo, e ogni chiamata diventa una r
 - Caddy non comprime più `/llm/*`, per non trattenere gli eventi dello streaming.
 - Pagina **Collega** dei clienti: secondo modo "Modello AI" con i passi, visibile solo quando il
   gateway è aperto a tutti (l'amministratore lo imposta da Gestisci).
-- `demo/centralino/agente_demo.py`: agente demo senza dipendenze che fa 2 chiamate al modello
-  passando dal gateway, per la prova del titolare.
+- Terzo fornitore: **Google Gemini** (`/llm/gemini/...`, API sua e compatibile OpenAI), scelto dal
+  titolare perché ha un piano gratuito per le prove.
+- `demo/centralino/agente_gemini.py`: un agente Gemini "già esistente" senza Sigillo, senza
+  dipendenze; collegarlo è cambiare 2 righe (indirizzo e chiave), come farebbe un cliente.
 - Limiti in `docs/SECURITY.md`: vale finché la chiave sta solo in Sigillo; non vede modelli locali
   o altre chiavi; domanda e risposta passano in chiaro nella memoria del server.
 

@@ -1,16 +1,18 @@
-# Model gateway demo agent
+# Model gateway demo: an existing Gemini agent, connected to sigillo
 
-`agente_demo.py` is a tiny agent that calls OpenAI only through sigillo's
-model gateway (`docs/API.md`, `/llm/...`). It holds the sigillo key of its
-system and nothing else; the OpenAI key is saved in the console, on the
-system's Manage page ("AI model"). It makes two model calls (pick a candidate,
-write the invitation), so the system's chain gains two `llm_call` receipts.
+`agente_gemini.py` stands for an agent a customer already runs: it calls
+Google Gemini directly with its own Gemini key, and knows nothing of sigillo.
+Standard library only, Python 3.8 or newer.
 
-Standard library only, Python 3.8 or newer:
+Connecting it is what a customer would do:
 
-    python agente_demo.py
+1. In the console, create a system and keep its sigillo key.
+2. On the system's Manage page, block "AI model", save the Gemini key.
+3. In the agent, change two settings and nothing else:
 
-It asks for the sigillo key when `SIGILLO_KEY` is empty in the file and not set
-in the environment. `SIGILLO_URL` (default `https://get-sigillo.eu`) can be set
-in the environment too. The gateway is open to the operator's own systems only
-until `SIGILLO_LLM_GATEWAY=all`.
+       GEMINI_URL = "https://get-sigillo.eu/llm/gemini"
+       GEMINI_KEY = "<the sigillo key of the system>"
+
+From then on the agent no longer holds the Gemini key, and each of its two
+model calls is an `llm_call` receipt on the system's chain. The gateway is open
+to the operator's own systems only until `SIGILLO_LLM_GATEWAY=all`.
