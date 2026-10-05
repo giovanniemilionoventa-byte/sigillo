@@ -65,10 +65,33 @@ def ask(question: str) -> str:
     return answer["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
+def list_models() -> None:
+    """Prints the models this key can use for generateContent (py agente_gemini.py --modelli)."""
+    request = urllib.request.Request(
+        f"{GEMINI_URL.rstrip('/')}/v1beta/models?pageSize=200",
+        headers={"x-goog-api-key": GEMINI_KEY.strip()},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            models = json.load(response).get("models", [])
+    except urllib.error.HTTPError as error:
+        print(f"Errore {error.code}: {error.read().decode('utf-8', 'replace')[:300]}")
+        sys.exit(1)
+    names = sorted(
+        m["name"].split("/", 1)[1] for m in models if "generateContent" in m.get("supportedGenerationMethods", [])
+    )
+    print("Modelli che puoi scrivere in MODEL = \"...\" :")
+    for name in names:
+        print(f"  {name}")
+
+
 def main() -> None:
     if not GEMINI_KEY.strip():
         print("Manca la chiave: scrivila nel file, nella riga GEMINI_KEY = \"\", tra le virgolette.")
         sys.exit(1)
+    if "--modelli" in sys.argv:
+        list_models()
+        return
 
     print("1/2  Scelgo il candidato migliore...")
     choice = ask(
