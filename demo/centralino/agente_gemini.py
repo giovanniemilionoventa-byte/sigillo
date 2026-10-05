@@ -1,11 +1,9 @@
 """A small recruiting agent built on Google Gemini, with no sigillo in it.
 
 It stands for an agent a customer already has: it calls Gemini directly with
-its own Gemini key. Connecting it to sigillo's model gateway takes two lines
-of the settings below, and no other change (see README.md):
-
-    GEMINI_URL = "https://get-sigillo.eu/llm/gemini"
-    GEMINI_KEY = "<the sigillo key of the system>"
+its own Gemini key. To connect it to sigillo's model gateway, change the two
+settings GEMINI_URL and GEMINI_KEY in the "Settings" block below (the real
+ones, not this text), and nothing else. See README.md.
 
 Python 3.8 or newer, nothing to install: only the standard library.
 Run:  python agente_gemini.py   (on Windows also: py agente_gemini.py)
@@ -18,7 +16,7 @@ import time
 import urllib.error
 import urllib.request
 
-# --- Settings -------------------------------------------------------------
+# --- Settings: the two lines to change are GEMINI_URL and GEMINI_KEY ---------
 GEMINI_URL = "https://generativelanguage.googleapis.com"
 GEMINI_KEY = ""
 MODEL = "gemini-3.8-flash"
