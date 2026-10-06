@@ -10,7 +10,7 @@ import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { UiSessions } from "../src/auth/sessions.js";
 import { OPERATOR, type Viewer } from "../src/auth/tenancy.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
-import { llmGateway } from "../src/config.js";
+import { llmGateway, llmToolRequests } from "../src/config.js";
 import { gatewayAllowed, type GatewayAccess } from "../src/gateway/llm.js";
 import { loadOrCreateSealingKey, ProviderKeyStore } from "../src/gateway/provider-keys.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
@@ -62,7 +62,7 @@ let app: FastifyInstance;
 let operatorToken: string;
 let acmeToken: string;
 
-async function start(access: GatewayAccess): Promise<void> {
+async function start(access: GatewayAccess, toolRequests: "off" | GatewayAccess = "operator"): Promise<void> {
   if (app !== undefined) await app.close();
   const healthMonitor = new ChainHealthMonitor(store, signer.publicKey, 24 * 60 * 60_000);
   sessions = new UiSessions();
@@ -70,7 +70,7 @@ async function start(access: GatewayAccess): Promise<void> {
     store,
     keys,
     now: () => new Date(NOW),
-    gateway: { keys: providerKeys, access, upstream: { openai: upstreamUrl, anthropic: `${upstreamUrl}/`, gemini: upstreamUrl } },
+    gateway: { keys: providerKeys, access, toolRequests, upstream: { openai: upstreamUrl, anthropic: `${upstreamUrl}/`, gemini: upstreamUrl } },
     ui: {
       password: "an administrator password",
       signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
@@ -296,6 +296,75 @@ describe("the model gateway", () => {
     await expect.poll(() => calls(OPERATOR_BOT).map((receipt) => receipt.outcome)).toEqual(["ok", "ok"]);
   });
 
+  describe("the tools a model asks for", () => {
+    const EMAIL_ARGS = { to: "sara@example.com", body: "Ti invitiamo a un colloquio" };
+    const toolAnswer = (_seen: Seen, response: import("node:http").ServerResponse): void => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "send_email", arguments: JSON.stringify(EMAIL_ARGS) } }] } }],
+        }),
+      );
+    };
+    const requested = (systemId: string): Receipt[] => store.readChain(systemId).filter((receipt) => receipt.action.name.startsWith("model_requested."));
+
+    it("writes a receipt per requested tool after the call's own, with the arguments digested and the outcome unknown", async () => {
+      answer = toolAnswer;
+      expect((await chat(operatorToken)).statusCode).toBe(200);
+      const chain = store.readChain(OPERATOR_BOT);
+      expect(chain.slice(1).map((receipt) => `${receipt.action.kind}:${receipt.action.name}`)).toEqual([
+        "llm_call:v1/chat/completions",
+        "tool_call:model_requested.send_email",
+      ]);
+      const [tool] = requested(OPERATOR_BOT);
+      expect(verifyReceiptSignature(tool!, signer.publicKey)).toBe(true);
+      expect(tool!.outcome).toBe("unknown");
+      expect(tool!.actor.agent).toBe("cv-screener");
+      expect((tool as { model?: unknown }).model).toEqual({ name: "gpt-4o-mini", provider: "openai", digest: null });
+      expect(JSON.stringify(chain)).not.toContain("sara@example.com");
+    });
+
+    it("also reads a streamed answer, once it has ended", async () => {
+      answer = (_seen, response) => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "send_email", arguments: "" } }] } }] })}\n\n`);
+        response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify(EMAIL_ARGS) } }] } }] })}\n\n`);
+        response.end("data: [DONE]\n\n");
+      };
+      await chat(operatorToken, { model: "gpt-4o-mini", stream: true, messages: [{ role: "user", content: PROMPT }] });
+      await expect.poll(() => requested(OPERATOR_BOT).length).toBe(1);
+    });
+
+    it("writes none for a plain answer, for a refused call, or when it is off", async () => {
+      await chat(operatorToken);
+      expect(requested(OPERATOR_BOT)).toEqual([]);
+
+      answer = (_seen, response) => {
+        response.writeHead(400, { "content-type": "application/json" });
+        response.end(JSON.stringify({ choices: [{ message: { tool_calls: [{ function: { name: "send_email", arguments: "{}" } }] } }] }));
+      };
+      await chat(operatorToken);
+      expect(requested(OPERATOR_BOT)).toEqual([]);
+
+      answer = toolAnswer;
+      await start("operator", "off");
+      await chat(operatorToken);
+      expect(requested(OPERATOR_BOT)).toEqual([]);
+    });
+
+    it("follows the same rule 11 as the gateway: a customer's system only once it is opened to all", async () => {
+      answer = toolAnswer;
+      await start("all", "operator");
+      await chat(acmeToken);
+      expect(calls(ACME_BOT)).toHaveLength(1);
+      expect(requested(ACME_BOT)).toEqual([]);
+
+      await start("all", "all");
+      await chat(acmeToken);
+      expect(requested(ACME_BOT)).toHaveLength(1);
+    });
+  });
+
   it("forwards a model list without a receipt", async () => {
     answer = (_seen, response) => {
       response.writeHead(200, { "content-type": "application/json" });
@@ -408,6 +477,9 @@ describe("who the gateway is open to", () => {
     expect(llmGateway({ SIGILLO_LLM_GATEWAY: "all" })).toBe("all");
     expect(llmGateway({ SIGILLO_LLM_GATEWAY: "off" })).toBe("off");
     expect(() => llmGateway({ SIGILLO_LLM_GATEWAY: "everyone" })).toThrow();
+    expect(llmToolRequests({})).toBe("operator");
+    expect(llmToolRequests({ SIGILLO_LLM_TOOL_REQUESTS: "all" })).toBe("all");
+    expect(() => llmToolRequests({ SIGILLO_LLM_TOOL_REQUESTS: "sometimes" })).toThrow();
     expect(gatewayAllowed("operator", null)).toBe(true);
     expect(gatewayAllowed("operator", "acme")).toBe(false);
     expect(gatewayAllowed("all", "acme")).toBe(true);

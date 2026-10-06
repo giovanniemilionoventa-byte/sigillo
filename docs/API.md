@@ -350,6 +350,16 @@ Every `POST` that reaches the provider writes a receipt on the system's chain:
 | `outcome` | `ok` for a 2xx answer, `error` otherwise, `unknown` for a stream cut short |
 | `source` | `{"type": "api"}` |
 
+Where `SIGILLO_LLM_TOOL_REQUESTS` allows it (`off`, `operator` — the default —
+or `all`), each tool the model asks for in a successful answer also gets a
+receipt of its own, right after the call's: kind `tool_call`, name
+`model_requested.<tool>` (for example `model_requested.send_email`), the
+arguments digested under a nonce like any other input, `outcome` `unknown`, the
+same agent and model. It is read out of the answer in each provider's own shape
+(OpenAI chat and responses, Anthropic `tool_use`, Gemini `functionCall`), whole
+or streamed. It records what the model **asked its agent to do**; whether the
+agent then did it is not something the gateway can see (`docs/SECURITY.md`).
+
 A plain answer is handed back only after its receipt is written: if the signer
 cannot sign, the agent gets `503` and not the answer. A streamed answer
 (`text/event-stream`) is passed on as it arrives and its receipt written when it
@@ -362,8 +372,9 @@ for a body that is not JSON, `502` when the provider does not answer; plus the
 `503` and `429` every ingest endpoint can give (signer away, writes paused,
 monthly limit).
 
-Who may use it is set by `SIGILLO_LLM_GATEWAY`: `operator` (the default) for the
-administrator's own systems only, `all` for every account, `off` for none. The
+Who may use it is set by `SIGILLO_LLM_GATEWAY`: `operator` (the code's default)
+for the administrator's own systems only, `all` for every account (the
+deployment's `docker-compose.yml` sets it), `off` for none. The
 console's block follows the same setting.
 
 ## `GET /healthz`
