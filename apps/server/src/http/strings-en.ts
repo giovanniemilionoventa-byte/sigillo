@@ -197,6 +197,7 @@ const ui: Strings = {
     ways: { python: "Python SDK", model: "AI model" },
     modelStep1: "Save your OpenAI, Anthropic or Gemini key in Manage, under “AI model”.",
     modelStep2: "Point the agent's model at sigillo, with the system key:",
+    pasteAtTop: "Paste this at the top of your agent's Python file:",
     keyPlaceholder: "<the-system-key>",
     waiting: "Waiting for the first receipt…",
     check: "Check",

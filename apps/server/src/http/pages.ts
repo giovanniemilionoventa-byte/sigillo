@@ -310,6 +310,7 @@ function connectWays(systemId: string, endpoint: string, token: string | null, m
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
   const python = [
+    `# ${t.pasteAtTop}`,
     "import sigillo",
     "",
     "sigillo.init(",

@@ -437,6 +437,8 @@ describe("the sistemi page", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toContain("sigillo_");
     expect(response.body).toContain("sigillo.init(");
+    // Where the code goes is said in the code itself, as a comment that pastes harmlessly.
+    expect(response.body).toContain(`# ${UI.connect.pasteAtTop.replace("'", "&#39;")}`);
     // An install line a customer can run as is: no checkout, no git.
     expect(response.body).toContain("archive/refs/heads/main.zip#subdirectory=sdk-python");
     expect(response.body).not.toContain("pip install -e");

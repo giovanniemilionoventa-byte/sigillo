@@ -205,6 +205,7 @@ const ui = {
     ways: { python: "SDK Python", model: "Modello AI" },
     modelStep1: "Salva la chiave OpenAI, Anthropic o Gemini in Gestisci, nel blocco “Modello AI”.",
     modelStep2: "Collega il modello dell'agente a sigillo, con la chiave del sistema:",
+    pasteAtTop: "Incolla questo all'inizio del file Python del tuo agente:",
     keyPlaceholder: "<la-chiave-del-sistema>",
     waiting: "In attesa della prima ricevuta…",
     check: "Controlla",
