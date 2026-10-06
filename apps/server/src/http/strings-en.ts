@@ -395,9 +395,6 @@ const ui: Strings = {
     dropHint: "or choose one",
     notModified: "It has not been modified",
   },
-  snippet: {
-    extras: "(or [crewai], [openai])",
-  },
   languages: { en: "English", it: "Italiano" },
   languageLabel: "Language",
 };
