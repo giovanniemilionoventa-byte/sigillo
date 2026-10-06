@@ -210,6 +210,16 @@ const ui = {
     check: "Controlla",
     arrived: (when: string): string => `Prima ricevuta arrivata: ${when}`,
     goToSystem: "Vai al sistema",
+    upload: {
+      drop: "Carica il file .py del tuo agente",
+      done: "{file} scaricato, con sigillo già dentro. Installa con il comando qui sopra, poi avvia l'agente come sempre.",
+      doneNoFramework:
+        "{file} scaricato, con sigillo già dentro. Non usa LangChain, CrewAI né OpenAI: sigillo registra quando è collegato e le azioni che registri tu.",
+      already: "{file} usa già sigillo: non c'è niente da aggiungere.",
+      notPython: "Scegli il file Python dell'agente (.py, fino a 1 MB).",
+      privacy: "Il file resta nel tuo browser: non viene inviato a sigillo.",
+      or: "oppure aggiungi tu queste righe",
+    },
   },
   people: {
     title: "Persone",

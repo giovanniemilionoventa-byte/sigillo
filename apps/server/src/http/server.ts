@@ -87,6 +87,8 @@ export interface ServerOptions {
     accounts?: UiOptions["accounts"];
     /** The backups directory, for the daily export in Impostazioni (ui.ts, UiOptions.backupDirectory). */
     backupDirectory?: string;
+    /** Who sees "upload your agent" on the connect page (ui.ts, UiOptions.agentUpload). */
+    agentUpload?: UiOptions["agentUpload"];
   };
 }
 
@@ -341,6 +343,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.ui.sessions === undefined ? {} : { sessions: options.ui.sessions }),
       ...(options.ui.accounts === undefined ? {} : { accounts: options.ui.accounts }),
       ...(options.ui.backupDirectory === undefined ? {} : { backupDirectory: options.ui.backupDirectory }),
+      ...(options.ui.agentUpload === undefined ? {} : { agentUpload: options.ui.agentUpload }),
       ...(options.gateway === undefined ? {} : { gateway: options.gateway }),
       ...(options.organizationMonthlyReceipts === undefined
         ? {}

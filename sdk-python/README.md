@@ -126,6 +126,24 @@ from its content. A server older than October 2026 does not read the nonce and
 would record the salted digest as a plain one: only for such a server, pass
 `salt_content=False`.
 
+## Seeing what leaves your computer
+
+`sigillo.init(..., show_sent=True)` prints, on standard error, one line for
+everything this package sends: each action as it is about to be exported
+(name, attributes, status, events) and each heartbeat. What the agent said and
+received appears there only as a digest. It is off by default; it exists so
+that a customer can check, on their own machine and without taking sigillo's
+word for it, that none of their content is sent.
+
+```
+[sigillo sends] action {"name": "leggi_curriculum", "attributes": {"tool.name": "leggi_curriculum", "sigillo.input.sha256": "9f2c…", "sigillo.input.nonce": "51ab…"}}
+[sigillo sends] heartbeat {"session": "4be1…", "event": "beat"}
+```
+
+An exception is sent as its class only (`ValueError`): its message and
+traceback, which can quote the content, stay in the process, and so does the
+description OpenTelemetry writes into the status of a span an exception ended.
+
 ## Pseudonymous identities
 
 `actor.on_behalf_of` — who an action was for — is the one receipt field an

@@ -306,9 +306,10 @@ export const SDK_REQUIREMENT =
  * endpoints still answer, the SDK itself sends to the first, but neither is
  * offered here.
  */
-function connectWays(systemId: string, endpoint: string, token: string | null, model: boolean): string {
+function connectWays(systemId: string, endpoint: string, token: string | null, model: boolean, upload: boolean): string {
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
+  const agent = upload && token !== null ? agentUpload(systemId, endpoint, token) : "";
   const python = [
     "import sigillo",
     "",
@@ -329,7 +330,7 @@ function connectWays(systemId: string, endpoint: string, token: string | null, m
 ${pythonWay}
 </div>
 ${install}
-<pre class="code python">${escape(python)}</pre>`;
+${agent}<pre class="code python">${escape(python)}</pre>`;
   }
   // The model gateway (gateway/llm.ts): the customer's model key stays in
   // sigillo, and the agent reaches its model only through it.
@@ -360,8 +361,28 @@ ${pythonWay}
 <label class="way" for="way-model"><span class="tile-icon blue" aria-hidden="true">${ICONS.link}</span>${escape(t.ways.model)}</label>
 </div>
 ${install}
-<pre class="code python">${escape(python)}</pre>
+${agent}<pre class="code python">${escape(python)}</pre>
 <pre class="code model">${escape(gateway)}</pre>`;
+}
+
+/**
+ * "Upload your agent" (agent-setup.ts): shown only where the key is on the
+ * page, since the file it gives back carries it, and only once its script has
+ * run (the `ready` class), so a browser without scripts sees the code alone.
+ * What the script writes is in the data attributes, in the reader's language.
+ */
+function agentUpload(systemId: string, endpoint: string, token: string): string {
+  const t = UI.connect.upload;
+  const url = SDK_REQUIREMENT.slice(SDK_REQUIREMENT.indexOf("@") + 1).trim();
+  return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}" data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}">
+<label class="drop"><span class="tile-icon blue" aria-hidden="true">${ICONS.upload}</span><strong>${escape(t.drop)}</strong><input type="file" id="sigillo-agent-file" accept=".py,text/x-python"></label>
+<p class="notice ok" id="sigillo-agent-done" role="status" hidden>${STATE_ICONS.ok}<span></span></p>
+<p class="notice warn" id="sigillo-agent-problem" role="alert" hidden>${STATE_ICONS.warn}<span></span></p>
+<p class="privacy">${ICONS.lock}<span>${escape(t.privacy)}</span></p>
+<p class="or">${escape(t.or)}</p>
+<script src="/ui/agent-setup.js" defer></script>
+</div>
+`;
 }
 
 /**
@@ -379,6 +400,8 @@ export function connectPage(view: {
   now: Date;
   /** Whether to offer the model gateway as a second way (a customer's system the gateway is open to). */
   model?: boolean;
+  /** Whether to offer "upload your agent" (agent-setup.ts), where the key is shown. */
+  upload?: boolean;
 }): string {
   const t = UI.connect;
   const { record, token, mode } = view;
@@ -401,7 +424,7 @@ export function connectPage(view: {
   return `<div class="narrow">${pageHead(title)}
 ${key}
 ${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
-${connectWays(record.system_id, view.endpoint, token, view.model ?? false)}
+${connectWays(record.system_id, view.endpoint, token, view.model ?? false, view.upload ?? false)}
 ${wait}
 </div>`;
 }

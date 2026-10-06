@@ -906,6 +906,60 @@ class ContentFilterTest(unittest.TestCase):
         self.assertEqual(len(span.events), 1)
         self.assertEqual(span.events[0].name, "sigillo.artifact")
 
+    def test_an_exception_leaves_its_class_and_never_its_message(self) -> None:
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+        self.addCleanup(tracing.shutdown)
+        tracer = tracing.provider.get_tracer("sigillo.tests")
+        # The default handling: OpenTelemetry records the exception as an
+        # event, with its message and traceback, and sets the status to
+        # ERROR with "ValueError: <message>" as its description.
+        with self.assertRaises(ValueError):
+            with tracer.start_as_current_span("leggi_curriculum"):
+                raise ValueError("Maria Bianchi non ha risposto")
+        tracing.flush()
+        body = _Capture.bodies[-1]
+        self.assertNotIn(b"Maria Bianchi", body)
+        span = _first_span(body)
+        self.assertEqual(span.status.code, Status.STATUS_CODE_ERROR)
+        self.assertEqual(span.status.message, "")
+        self.assertEqual([event.name for event in span.events], ["exception"])
+        self.assertEqual(_string_attributes(span.events[0].attributes), {"exception.type": "ValueError"})
+
+    def test_show_sent_prints_what_leaves_and_it_holds_no_content(self) -> None:
+        import contextlib
+        import io
+
+        printed = io.StringIO()
+        with contextlib.redirect_stderr(printed):
+            tracing = sigillo.init(
+                endpoint=self.base, api_key="k", system_id="s", instrument=[], show_sent=True
+            )
+            self._emit(
+                tracing,
+                {"openinference.span.kind": "TOOL", "tool.name": "t", "input.value": "il CV di Maria Bianchi"},
+            )
+            tracing.shutdown()
+        lines = printed.getvalue().splitlines()
+        actions = [line for line in lines if line.startswith("[sigillo sends] action ")]
+        self.assertEqual(len(actions), 1)
+        shown = json.loads(actions[0].removeprefix("[sigillo sends] action "))
+        self.assertEqual(shown["name"], "leggi_curriculum")
+        self.assertEqual(shown["attributes"]["tool.name"], "t")
+        self.assertIn("sigillo.input.sha256", shown["attributes"])
+        self.assertNotIn("Maria Bianchi", printed.getvalue())
+        self.assertTrue(any(line.startswith('[sigillo sends] heartbeat {"session"') for line in lines))
+
+    def test_show_sent_is_off_by_default(self) -> None:
+        import contextlib
+        import io
+
+        printed = io.StringIO()
+        with contextlib.redirect_stderr(printed):
+            tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+            self._emit(tracing, {"tool.name": "t"})
+            tracing.shutdown()
+        self.assertNotIn("[sigillo sends]", printed.getvalue())
+
     def test_can_be_turned_off_explicitly(self) -> None:
         tracing = sigillo.init(
             endpoint=self.base, api_key="k", system_id="s", instrument=[], redact_content=False
