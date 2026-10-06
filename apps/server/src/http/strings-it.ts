@@ -212,9 +212,9 @@ const ui = {
     goToSystem: "Vai al sistema",
     upload: {
       drop: "Carica il file .py del tuo agente",
-      done: "{file} scaricato, con sigillo già dentro. Installa con il comando qui sopra, poi avvia l'agente come sempre.",
+      done: "{file} scaricato, con sigillo già dentro. Avvia l'agente come sempre: la prima volta installa da solo quello che serve.",
       doneNoFramework:
-        "{file} scaricato, con sigillo già dentro. Non usa LangChain, CrewAI né OpenAI: sigillo registra quando è collegato e le azioni che registri tu.",
+        "{file} scaricato, con sigillo già dentro, che la prima volta si installa da solo. Non usa LangChain, CrewAI né OpenAI: sigillo registra quando è collegato e le azioni che registri tu.",
       already: "{file} usa già sigillo: non c'è niente da aggiungere.",
       notPython: "Scegli il file Python dell'agente (.py, fino a 1 MB).",
       privacy: "Il file resta nel tuo browser: non viene inviato a sigillo.",

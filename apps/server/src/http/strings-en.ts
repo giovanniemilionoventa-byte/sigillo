@@ -204,9 +204,9 @@ const ui: Strings = {
     goToSystem: "Go to the system",
     upload: {
       drop: "Upload your agent's .py file",
-      done: "{file} downloaded, with sigillo already in it. Install with the command above, then run your agent as usual.",
+      done: "{file} downloaded, with sigillo already in it. Run your agent as usual: the first time, it installs what it needs by itself.",
       doneNoFramework:
-        "{file} downloaded, with sigillo already in it. It uses neither LangChain, CrewAI nor OpenAI: sigillo records when it is connected and the actions you record yourself.",
+        "{file} downloaded, with sigillo already in it, which installs itself the first time. It uses neither LangChain, CrewAI nor OpenAI: sigillo records when it is connected and the actions you record yourself.",
       already: "{file} already uses sigillo: there is nothing to add.",
       notPython: "Choose the agent's Python file (.py, up to 1 MB).",
       privacy: "The file stays in your browser: it is not sent to sigillo.",

@@ -98,7 +98,8 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, in a real browse
     const saved = join(directory, "downloaded.py");
     await download.saveAs(saved);
     const text = readFileSync(saved, "utf8");
-    expect(text.startsWith('"""My agent."""\n\nimport sigillo\n\nsigillo.init(\n')).toBe(true);
+    expect(text.startsWith('"""My agent."""\n\ntry:\n    import sigillo\n    import openinference.instrumentation.crewai\n')).toBe(true);
+    expect(text).toContain(`"--quiet", "sigillo[crewai] @ https://github.com/`);
     expect(text).toContain(`    api_key="${key}",\n`);
     expect(text).toContain(`    system_id="${SYSTEM}",\n`);
     expect(text).toContain('    instrument=["crewai"],\n');

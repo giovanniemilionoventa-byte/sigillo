@@ -3463,7 +3463,8 @@ anche sul sito; (2) collegare un agente senza passi tecnici.
 - **Console, "Carica il file .py del tuo agente"** (`apps/server/src/http/agent-setup.ts`): nella
   pagina che mostra la chiave, il browser aggiunge `import sigillo` e `sigillo.init(...)` (chiave
   compresa) dopo docstring e `from __future__`, riconosce LangChain/LangGraph, CrewAI o OpenAI, e
-  restituisce il file da scaricare con il comando `pip install` giusto. Il file non arriva al server.
+  restituisce il file da scaricare, che la prima volta si installa da solo l'SDK con `pip` (stesso
+  Python che lo esegue): niente comandi da lanciare. Il file non arriva al server.
   Script servito come file (`/ui/agent-setup.js`), già permesso da `script-src 'self'`.
   Regola 11: `SIGILLO_AGENT_UPLOAD=operator` di base, `all` dopo la conferma del titolare.
 - **Sito**: sezione "I tuoi dati restano tuoi" (`#data`) con il limite detto chiaro (cosa vediamo,
