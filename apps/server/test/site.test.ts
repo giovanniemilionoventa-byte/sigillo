@@ -186,7 +186,7 @@ describe("the public site", () => {
     const boxes = [...page.matchAll(/<div class="code"><pre>([^]*?)<\/pre>/g)].map((match) => match[1] ?? "");
     expect(boxes).toHaveLength(2);
     expect(boxes[0]).toBe(
-      "pip install &quot;sigillo[langchain] @ git+https://github.com/giovanniemilionoventa-byte/sigillo#subdirectory=sdk-python&quot;",
+      "pip install &quot;sigillo[langchain] @ https://github.com/giovanniemilionoventa-byte/sigillo/archive/refs/heads/main.zip#subdirectory=sdk-python&quot;",
     );
     expect(boxes[1]).toContain(`endpoint=<span class="s">"${PUBLIC_URL}"</span>`);
     // Python only: no OpenTelemetry or HTTP way is offered.
@@ -310,7 +310,7 @@ describe("the site in a browser, under deploy/Caddyfile's policy", () => {
       await first.click();
       await expect.poll(() => first.textContent()).toBe("Copied");
       expect(await page.evaluate("navigator.clipboard.readText()")).toBe(
-        'pip install "sigillo[langchain] @ git+https://github.com/giovanniemilionoventa-byte/sigillo#subdirectory=sdk-python"',
+        'pip install "sigillo[langchain] @ https://github.com/giovanniemilionoventa-byte/sigillo/archive/refs/heads/main.zip#subdirectory=sdk-python"',
       );
       await page.goto(`${base}/`);
       // The browser fetches the video (whether this Chromium has the codec to

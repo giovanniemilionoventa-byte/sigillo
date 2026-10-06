@@ -5,6 +5,7 @@ import { SITE_TEXTS, type SiteTexts } from "./site-strings.js";
 import { escape } from "./layout.js";
 import { EVIDENCE_CHECK_SOURCE } from "./evidence-check.js";
 import { SEAL_SVG, STATE_ICONS, THEME } from "./style.js";
+import { SDK_REQUIREMENT } from "./pages.js";
 
 /**
  * The public site at the root of the domain, for people who have not signed
@@ -407,7 +408,7 @@ const HUES = ["blue", "green", "yellow", "red"] as const;
 // The snippets, the same way the console's connect page shows, with a
 // placeholder where the console puts the system's own key.
 
-const PIP = `pip install "sigillo[langchain] @ git+${REPOSITORY}#subdirectory=sdk-python"`;
+const PIP = `pip install "${SDK_REQUIREMENT}"`;
 
 /**
  * One command or one piece of code, in a box with a "Copy" button. The button

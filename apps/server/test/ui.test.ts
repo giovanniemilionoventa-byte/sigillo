@@ -437,6 +437,9 @@ describe("the sistemi page", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toContain("sigillo_");
     expect(response.body).toContain("sigillo.init(");
+    // An install line a customer can run as is: no checkout, no git.
+    expect(response.body).toContain("archive/refs/heads/main.zip#subdirectory=sdk-python");
+    expect(response.body).not.toContain("pip install -e");
     expect(response.body).toContain("nuovo-sistema");
     expect(response.body).toContain(UI.connect.keyNote);
 

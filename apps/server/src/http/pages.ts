@@ -292,6 +292,14 @@ ${notices(extra)}
 }
 
 /**
+ * The SDK as pip installs it from the repository's archive: no git needed on
+ * the customer's machine, unlike a git+ URL, and no checkout, unlike
+ * `pip install -e sdk-python`. The public site shows the same requirement.
+ */
+export const SDK_REQUIREMENT =
+  "sigillo[langchain] @ https://github.com/giovanniemilionoventa-byte/sigillo/archive/refs/heads/main.zip#subdirectory=sdk-python";
+
+/**
  * How to connect an agent, with the key in the snippet, or a placeholder where
  * it is not shown. Python only: its heartbeat is what lets sigillo say when an
  * agent was disconnected (connection/watch.ts). The OpenTelemetry and HTTP
@@ -302,7 +310,7 @@ function connectWays(systemId: string, endpoint: string, token: string | null, m
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
   const python = [
-    `# pip install -e 'sdk-python[langchain]'   ${UI.snippet.extras}`,
+    `# pip install "${SDK_REQUIREMENT}"   ${UI.snippet.extras}`,
     "import sigillo",
     "",
     "sigillo.init(",
