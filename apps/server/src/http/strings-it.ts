@@ -410,9 +410,6 @@ const ui = {
     notModified: "Non è stato modificato",
   },
   // The words inside the connection snippets that are not code.
-  snippet: {
-    extras: "(o [crewai], [openai])",
-  },
   // The two languages, each always named in its own words.
   languages: { en: "English", it: "Italiano" },
   languageLabel: "Lingua",

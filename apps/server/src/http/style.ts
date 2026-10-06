@@ -406,6 +406,7 @@ details.tech .facts { margin-top: 10px; }
 .way small { font-size: 12px; font-weight: 600; color: var(--link); }
 .code { display: none; margin: 0; padding: 20px 22px; border-radius: 14px; background: var(--code); color: var(--on-code);
   font: 13px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.code.install { margin-bottom: 12px; user-select: all; -webkit-user-select: all; }
 #way-python:checked ~ .ways [for="way-python"] { box-shadow: 0 0 0 2px var(--action); }
 #way-python:focus-visible ~ .ways [for="way-python"] { outline: 2px solid var(--focus); outline-offset: 2px; }
 #way-python:checked ~ .code.python { display: block; }

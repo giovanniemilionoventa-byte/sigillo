@@ -292,6 +292,14 @@ ${notices(extra)}
 }
 
 /**
+ * The SDK as pip installs it from the repository's archive: no git needed on
+ * the customer's machine, unlike a git+ URL, and no checkout, unlike
+ * `pip install -e sdk-python`. The public site shows the same requirement.
+ */
+export const SDK_REQUIREMENT =
+  "sigillo[langchain] @ https://github.com/giovanniemilionoventa-byte/sigillo/archive/refs/heads/main.zip#subdirectory=sdk-python";
+
+/**
  * How to connect an agent, with the key in the snippet, or a placeholder where
  * it is not shown. Python only: its heartbeat is what lets sigillo say when an
  * agent was disconnected (connection/watch.ts). The OpenTelemetry and HTTP
@@ -302,7 +310,6 @@ function connectWays(systemId: string, endpoint: string, token: string | null, m
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
   const python = [
-    `# pip install -e 'sdk-python[langchain]'   ${UI.snippet.extras}`,
     "import sigillo",
     "",
     "sigillo.init(",
@@ -313,11 +320,15 @@ function connectWays(systemId: string, endpoint: string, token: string | null, m
     ")",
   ].join("\n");
   const pythonWay = `<label class="way" for="way-python"><span class="tile-icon blue" aria-hidden="true">${ICONS.python}</span>${escape(t.ways.python)}</label>`;
+  // The install command is a box of its own, one click selects all of it:
+  // inside the code it would be a comment, and a copy of that line would not run.
+  const install = `<pre class="code python install">${escape(`pip install "${SDK_REQUIREMENT}"`)}</pre>`;
   if (!model) {
     return `<input type="radio" name="way" id="way-python" class="sr" checked>
 <div class="ways">
 ${pythonWay}
 </div>
+${install}
 <pre class="code python">${escape(python)}</pre>`;
   }
   // The model gateway (gateway/llm.ts): the customer's model key stays in
@@ -348,6 +359,7 @@ ${pythonWay}
 ${pythonWay}
 <label class="way" for="way-model"><span class="tile-icon blue" aria-hidden="true">${ICONS.link}</span>${escape(t.ways.model)}</label>
 </div>
+${install}
 <pre class="code python">${escape(python)}</pre>
 <pre class="code model">${escape(gateway)}</pre>`;
 }
