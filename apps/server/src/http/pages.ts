@@ -311,6 +311,7 @@ function connectWays(systemId: string, endpoint: string, token: string | null, m
   const key = token ?? t.keyPlaceholder;
   const agent = upload && token !== null ? agentUpload(systemId, endpoint, token) : "";
   const python = [
+    `# ${t.pasteAtTop}`,
     "import sigillo",
     "",
     "sigillo.init(",
