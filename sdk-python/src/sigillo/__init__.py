@@ -247,7 +247,7 @@ def _instrument(name: str, provider: _TracerProvider) -> bool:
     except ImportError:
         _LOG.warning(
             "sigillo: %s instrumentation was requested but is not installed; "
-            "install it with: pip install 'sigillo[%s]'",
+            "install it with: pip install openinference-instrumentation-%s",
             name,
             name,
         )

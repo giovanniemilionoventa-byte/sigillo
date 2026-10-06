@@ -293,6 +293,8 @@ class SigilloInitTest(unittest.TestCase):
 
         self.assertEqual(tracing.instrumented, ())
         self.assertIn("crewai", "".join(logs.output))
+        # The command it suggests installs from PyPI as it is, quoted or not.
+        self.assertIn("pip install openinference-instrumentation-crewai", "".join(logs.output))
         # A missing optional instrumentation is a warning, not a failure: the
         # rest of the recording still works.
         self._emit_span(tracing)
