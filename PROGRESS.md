@@ -3470,6 +3470,22 @@ anche sul sito; (2) collegare un agente senza passi tecnici.
 - **Sito**: sezione "I tuoi dati restano tuoi" (`#data`) con il limite detto chiaro (cosa vediamo,
   e il centralino che passa domanda e risposta in memoria); la pagina Privacy dice lo stesso.
 
+### Sessione 40 — 2026-10-06 — la console più semplice, per tutti gli account
+
+Su richiesta del titolare, dopo aver provato "carica l'agente", direttamente per tutti gli account
+(regola 11: la sua parola):
+
+- **Carica l'agente aperto a tutti**: `SIGILLO_AGENT_UPLOAD` vale `all` in `deploy/docker-compose.yml`
+  (nel codice il valore di base resta `operator`).
+- **Collega, due strade separate**: sopra il riquadro "Carica il file .py", sotto, dopo "oppure a mano,
+  con questi due comandi", il `pip install` e le righe di `sigillo.init`. Il comando non cambia più
+  dopo un caricamento.
+- **Pagina "Persone" tolta**, per l'amministratore (i clienti non l'avevano): voce della barra, pagine
+  e cancellazione dal web. La cancellazione di una persona resta con `sigillo-server subject erase`.
+  Il sito dice "su richiesta" e `docs/SECURITY.md` è aggiornato.
+- **Impostazioni dall'account**: tolta la voce "Impostazioni" dalla barra; l'icona e il nome
+  dell'account in basso aprono le Impostazioni (il tasto Esci resta accanto).
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

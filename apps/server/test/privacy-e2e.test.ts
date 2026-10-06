@@ -219,27 +219,22 @@ describe("a person named in a span", () => {
     for (const [name, text] of files) expect(text.includes(PERSON), name).toBe(false);
   });
 
-  it("is found from the web view by identifier, through the table", async () => {
+  it("is found by identifier, through the table", async () => {
     await ingest(candidateRun());
-    const found = await post("/ui/persone", { identifier: " Elena.Rizzo " });
-    expect(found.status).toBe(200);
-    expect(found.body).toContain(chain()[1]?.actor.on_behalf_of ?? "missing");
-    expect(found.body).toContain("valuta_candidato");
-    expect((found.body.match(/class="person-receipt"/g) ?? []).length).toBe(3);
+    const token = store.subjectToken(" Elena.Rizzo ");
+    expect(token).toBe(chain()[1]?.actor.on_behalf_of);
+    expect(store.receiptsOnBehalfOf(token ?? "missing", 500)).toHaveLength(3);
   });
 
-  it("is erased from the web view: the receipts stay valid, the identifier leaves the file, the log keeps the token", async () => {
+  it("is erased: the receipts stay valid, the identifier leaves the file, the log keeps the token", async () => {
     await ingest(candidateRun());
     const token = chain()[1]?.actor.on_behalf_of ?? "";
     expect(databaseBytes().includes(PERSON)).toBe(true);
 
-    const refused = await post("/ui/persone/cancella", { token, confirm: "sì" });
-    expect(refused.status).toBe(400);
-    const erased = await post("/ui/persone/cancella", { token, confirm: token });
-    expect(erased.status).toBe(303);
+    expect(await store.eraseSubject(token, { actor: "test", ts: "2026-10-06T12:00:00.000Z" })).toBe(true);
 
     expect(databaseBytes().includes(PERSON)).toBe(false);
-    expect((await post("/ui/persone", { identifier: PERSON })).body).not.toContain(token);
+    expect(store.subjectToken(PERSON)).toBeNull();
     const [entry] = store.adminLog(1);
     expect(entry).toMatchObject({ action: "subject.erase", detail: { token } });
     expect(JSON.stringify(entry)).not.toContain(PERSON);
@@ -398,10 +393,6 @@ describe("a chain started before version 4", () => {
     expect(store.legacyReceiptsNaming(" ELENA.rizzo ")).toBe(1);
     expect(store.legacyReceiptsNaming("someone.else")).toBe(0);
 
-    const found = await post("/ui/persone", { identifier: PERSON });
-    expect(found.body).toContain("1 ricevuta scritta prima di ottobre 2026 contiene questo identificativo in chiaro");
-    expect((await post("/ui/persone", { identifier: "someone.else" })).body).not.toContain("prima di ottobre 2026");
-
     const erased = await serverCli("subject", "erase", "--identifier", PERSON);
     expect(erased.code, erased.stderr).toBe(0);
     expect(erased.stdout).toContain(`erased ${token}: its receipts from version 4 on no longer lead to anyone`);
@@ -412,7 +403,7 @@ describe("a chain started before version 4", () => {
     expect(again.code).toBe(1);
     expect(again.stderr).toContain("nothing to erase");
     expect(again.stderr).toContain("WARNING: 1 receipt(s)");
-    expect((await post("/ui/persone", { identifier: PERSON })).body).toContain("1 ricevuta scritta prima di ottobre 2026");
+    expect(store.legacyReceiptsNaming(PERSON)).toBe(1);
   }, 60_000);
 
   it("keeps its v2 receipts valid, with v4 receipts after them, in the same export", async () => {

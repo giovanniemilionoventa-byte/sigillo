@@ -147,7 +147,9 @@ export function llmGateway(env: Environment): "off" | "operator" | "all" {
  * SIGILLO_AGENT_UPLOAD: who sees "upload your agent" on the connect page
  * (http/agent-setup.ts), where the browser adds the sigillo lines to an
  * agent's .py file. `off`, `operator` (the default: new, so the
- * administrator's own systems only, CLAUDE.md rule 11) or `all`.
+ * administrator's own systems only, CLAUDE.md rule 11) or `all`. The
+ * deployment (deploy/docker-compose.yml) opened it to all on 2026-10-06, on
+ * the owner's word.
  */
 export function agentUpload(env: Environment): "off" | "operator" | "all" {
   const value = env["SIGILLO_AGENT_UPLOAD"];

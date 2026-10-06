@@ -36,7 +36,6 @@ export function capital(word: string): string {
 export type NavCurrent =
   | "registro"
   | "sistemi"
-  | "persone"
   | "clienti"
   | "verifica"
   | "impostazioni"
@@ -213,12 +212,10 @@ ${systems === "" ? "" : `<ul class="side-list">${systems}</ul>`}
 ${item("/ui/sistemi", "sistemi", ICONS.list, UI.nav.allSystems)}
 <p class="side-head">${escape(UI.nav.tools)}</p>
 ${item("/ui/verify-document", "verifica", ICONS.docCheck, UI.nav.verificaDocumento)}
-${shell.operator ? item("/ui/persone", "persone", ICONS.people, UI.nav.persone) : ""}
 ${shell.operator ? item("/ui/clienti", "clienti", ICONS.building, UI.nav.clienti, shell.waiting) : ""}
 <div class="side-spacer"></div>
-${item("/ui/impostazioni", "impostazioni", ICONS.gear, UI.nav.impostazioni)}
 </nav>
-<div class="account"><span class="avatar" aria-hidden="true">${escape(initials(shell.account.name))}</span><span class="who"><strong>${escape(shell.account.name)}</strong><span>${escape(shell.account.detail)}</span></span>
+<div class="account"><a class="account-link" href="/ui/impostazioni"${here("impostazioni")} title="${escape(UI.nav.impostazioni)}"><span class="avatar" aria-hidden="true">${escape(initials(shell.account.name))}</span><span class="who"><strong>${escape(shell.account.name)}</strong><span>${escape(shell.account.detail)}</span></span></a>
 <form method="post" action="/ui/logout"><button type="submit" class="icon-button" aria-label="${escape(UI.nav.esci)}" title="${escape(UI.nav.esci)}">${ICONS.logout}</button></form></div>
 </div></div>`;
 }

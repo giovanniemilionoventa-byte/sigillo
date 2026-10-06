@@ -107,7 +107,8 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, in a real browse
 
     expect(await page.isVisible("#sigillo-agent-done")).toBe(true);
     expect(await page.textContent("#sigillo-agent-done")).toContain("my_agent.py");
-    expect(await page.textContent(".code.install")).toMatch(/^pip install "sigillo\[crewai\] @ https:\/\/github\.com\//);
+    // The commands below are the other way, by hand: the upload leaves them as they were.
+    expect(await page.textContent(".code.install")).toMatch(/^pip install "sigillo\[langchain\] @ https:\/\/github\.com\//);
     // The file went nowhere: no request at all while it was handled.
     expect(requests).toEqual([]);
     expect(problems).toEqual([]);

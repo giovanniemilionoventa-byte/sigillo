@@ -3,7 +3,7 @@
  * file, and the browser gives it back with the sigillo lines already in it,
  * the key included. Those lines install the SDK, with the instrumentation for
  * the framework the file uses, the first time the file runs: nothing else to
- * type. The install command is still shown, for whoever prefers to run it. The
+ * type. The page offers the two commands below it as the other way, by hand. The
  * file is read and rewritten in the browser: it is never sent to the server.
  *
  * AGENT_SETUP_SOURCE is the part that decides what the new file says, a pure
@@ -115,7 +115,6 @@ ${AGENT_SETUP_SOURCE}
   var input = document.getElementById("sigillo-agent-file");
   var done = document.getElementById("sigillo-agent-done");
   var problem = document.getElementById("sigillo-agent-problem");
-  var install = document.querySelector(".code.install");
   box.classList.add("ready");
   var show = function (element, text) {
     done.hidden = true;
@@ -146,7 +145,6 @@ ${AGENT_SETUP_SOURCE}
     document.body.appendChild(link);
     link.click();
     link.remove();
-    if (install !== null) install.textContent = result.install;
     show(done, (result.frameworks.length > 0 ? box.dataset.done : box.dataset.doneNoFramework).replace("{file}", file.name));
     input.value = "";
   });

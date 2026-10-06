@@ -232,6 +232,11 @@ describe("who is offered the upload", () => {
     const page = await newKey(OPERATOR, OPERATOR_BOT);
     expect(page).toContain('id="sigillo-agent"');
     expect(page).toContain('<script src="/ui/agent-setup.js" defer></script>');
+    // Two separate ways: the upload on top, the two commands below it.
+    const commands = page.indexOf('<pre class="code python install">');
+    expect(page.indexOf('id="sigillo-agent"')).toBeGreaterThan(-1);
+    expect(page.indexOf('id="sigillo-agent"')).toBeLessThan(commands);
+    expect(commands).toBeLessThan(page.indexOf('<pre class="code python">'));
     const key = /<code class="keybox">(sigillo_[^<]+)<\/code>/.exec(page)?.[1];
     expect(key).toBeDefined();
     expect(page).toContain(`data-key="${key}"`);

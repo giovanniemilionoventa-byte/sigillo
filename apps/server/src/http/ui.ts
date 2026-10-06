@@ -54,7 +54,6 @@ import {
   newSystemPage,
   notFoundPage,
   organizationsPage,
-  peoplePage,
   settingsPage,
   sistemiPage,
   verifyDocumentResult,
@@ -1211,59 +1210,6 @@ ${exportSheet(record)}`,
     await allSystems.approveOrganization(organizationId, adminRequest(request, session.viewer));
     request.log.info({ action: "organization.approve", organization: organizationId }, "an organization was approved");
     return reply.redirect(`/ui/clienti?approvato=${encodeURIComponent(organizationId)}`, 303);
-  });
-
-  // People: who the pseudonym tokens stand for. The identifier is posted,
-  // never put in an address, so it stays out of the browser's history and of
-  // any log that keeps addresses.
-
-  const renderPeople = (
-    session: Session,
-    search: { identifier: string; token: string | null } | null,
-    extra: { notice?: string; error?: string } = {},
-  ): string =>
-    render(session, {
-      title: UI.people.title,
-      current: "persone",
-      body: peoplePage(session.store, search, extra, options.now()),
-    });
-
-  app.get("/ui/persone", async (request, reply) => {
-    const session = requireOperator(request, reply);
-    if (session === null) return reply;
-    const { store } = session;
-    const erased = (request.query as { cancellato?: string }).cancellato;
-    // Said only for an erasure the administrative log actually holds.
-    const done =
-      typeof erased === "string" &&
-      store.adminLog(10_000).some((entry) => entry.action === "subject.erase" && entry.detail["token"] === erased);
-    return html(reply, renderPeople(session, null, done ? { notice: UI.people.erased(erased) } : {}));
-  });
-
-  app.post("/ui/persone", async (request, reply) => {
-    const session = requireOperator(request, reply);
-    if (session === null) return reply;
-    const { store } = session;
-    const body = request.body as { identifier?: unknown } | undefined;
-    const identifier = typeof body?.identifier === "string" ? body.identifier : "";
-    return html(reply, renderPeople(session, { identifier, token: store.subjectToken(identifier) }));
-  });
-
-  app.post("/ui/persone/cancella", async (request, reply) => {
-    const session = requireOperator(request, reply);
-    if (session === null) return reply;
-    const { store } = session;
-    const body = request.body as { token?: unknown; confirm?: unknown } | undefined;
-    const token = typeof body?.token === "string" ? body.token : "";
-    // The exact token, typed out: not a "sei sicuro?" a thumb can tap.
-    if (body?.confirm !== token || token === "") {
-      return html(reply, renderPeople(session, null, { error: UI.people.confirmMismatch }), 400);
-    }
-    if (!(await store.eraseSubject(token, adminRequest(request, session.viewer)))) {
-      return html(reply, renderPeople(session, null, { error: UI.people.notFound }), 404);
-    }
-    request.log.info({ action: "subject.erase", token }, "a subject was erased");
-    return reply.redirect(`/ui/persone?cancellato=${encodeURIComponent(token)}`, 303);
   });
 
   async function sendArchive(

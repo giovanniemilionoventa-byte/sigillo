@@ -195,7 +195,7 @@ describe("?ricevuta= and the inspector", () => {
 
   it("names whom an action was for, and links each receipt to the one before it", async () => {
     const inspector = inspectorOf(await get(`/ui/systems/${SYSTEM}?ricevuta=1`));
-    expect(inspector).toContain('<dt>Per conto di</dt><dd><a href="/ui/persone">');
+    expect(inspector).toContain('<dt>Per conto di</dt><dd>');
     const previous = store.readChain(SYSTEM)[0];
     expect(inspector).toContain(
       `<a href="/ui/systems/acme-support-bot?ricevuta=0#r-0">${UI.inspector.linkedTo(0)}</a><code class="hash-full">${receiptHashHex(previous!)}</code>`,

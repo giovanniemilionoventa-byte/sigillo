@@ -1246,7 +1246,7 @@ describe("the shell: sidebar and sign-in (Interfaccia B, B1)", () => {
     await freshApp.ready();
     try {
       const cookie = await signIn(freshApp);
-      const side = sidebarOf((await freshApp.inject({ method: "GET", url: "/ui/persone", headers: { cookie } })).body);
+      const side = sidebarOf((await freshApp.inject({ method: "GET", url: "/ui", headers: { cookie } })).body);
       expect(side).toContain('<span class="light red" aria-hidden="true"></span>');
       expect(side).toContain(`<span class="sr">${UI.chain.red}: </span>`);
     } finally {
@@ -1265,8 +1265,10 @@ describe("the shell: sidebar and sign-in (Interfaccia B, B1)", () => {
     expect(side).not.toContain('href="/ui/systems/vecchio"');
     expect(side).toContain('<a class="side-item" href="/ui/sistemi">');
     expect(side).toContain(UI.nav.allSystems);
-    expect(side).toContain('href="/ui/persone"');
-    expect(side).toContain('href="/ui/impostazioni"');
+    expect(side).not.toContain("/ui/persone");
+    // The settings are the account block itself, not an entry beside it.
+    expect(side).not.toContain('class="side-item" href="/ui/impostazioni"');
+    expect(side).toMatch(/<div class="account"><a class="account-link" href="\/ui\/impostazioni"[^>]*><span class="avatar"/);
     expect(side).toContain(`<strong>${UI.settings.operator}</strong>`);
     expect(side).toMatch(/<form method="post" action="\/ui\/logout"><button type="submit" class="icon-button" aria-label="[^"]+"/);
   });
@@ -1279,7 +1281,6 @@ describe("the shell: sidebar and sign-in (Interfaccia B, B1)", () => {
       ["/ui/sistemi", 'href="/ui/sistemi" aria-current="page"'],
       ["/ui/sistemi?vista=archiviati", 'href="/ui/sistemi" aria-current="page"'],
       ["/ui/sistemi?vista=tutti", 'href="/ui/sistemi" aria-current="page"'],
-      ["/ui/persone", 'href="/ui/persone" aria-current="page"'],
       ["/ui/impostazioni", 'href="/ui/impostazioni" aria-current="page"'],
     ] as const) {
       const side = sidebarOf((await app.inject({ method: "GET", url, headers: { cookie } })).body);
