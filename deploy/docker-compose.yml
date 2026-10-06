@@ -150,6 +150,10 @@ services:
       # Whether it also writes a receipt for each tool the model asks for
       # (model_requested.<tool>). Same values; new, so the administrator's only.
       SIGILLO_LLM_TOOL_REQUESTS: ${SIGILLO_LLM_TOOL_REQUESTS:-operator}
+      # "Upload your agent" on the connect page: the browser adds the sigillo
+      # lines to the agent's .py file. Same values; new, so the
+      # administrator's only until the owner says otherwise.
+      SIGILLO_AGENT_UPLOAD: ${SIGILLO_AGENT_UPLOAD:-operator}
     healthcheck:
       # /healthz also asks the signer: 503 while the server cannot sign.
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

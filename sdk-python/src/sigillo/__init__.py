@@ -55,18 +55,21 @@ import mimetypes as _mimetypes
 import os as _os
 import pathlib as _pathlib
 import secrets as _secrets
+import sys as _sys
 import threading as _threading
 import urllib.request as _urllib_request
 from typing import Iterator as _Iterator
 from typing import Sequence as _Sequence
 
 from opentelemetry import trace as _trace
+from opentelemetry.trace import Status as _Status
 from opentelemetry.trace import StatusCode as _StatusCode
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
     OTLPSpanExporter as _OTLPSpanExporter,
 )
 from opentelemetry.sdk.resources import Resource as _Resource
 from opentelemetry.sdk.trace import ReadableSpan as _ReadableSpan
+from opentelemetry.sdk.trace import Event as _Event
 from opentelemetry.sdk.trace import Span as _Span
 from opentelemetry.sdk.trace import SpanProcessor as _SpanProcessor
 from opentelemetry.sdk.trace import TracerProvider as _TracerProvider
@@ -99,8 +102,9 @@ class _Heartbeat:
     same thing.
     """
 
-    def __init__(self, url: str, api_key: str, interval: float) -> None:
+    def __init__(self, url: str, api_key: str, interval: float, show: bool = False) -> None:
         self._url = url
+        self._show = show
         self._headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         self._interval = interval
         self.session = _secrets.token_hex(16)
@@ -131,6 +135,8 @@ class _Heartbeat:
 
     def _send(self, event: str) -> None:
         body = _json.dumps({"session": self.session, "event": event}).encode("utf-8")
+        if self._show:
+            _show_sent("heartbeat", body.decode("utf-8"))
         request = _urllib_request.Request(self._url, data=body, headers=self._headers, method="POST")
         try:
             with _urllib_request.urlopen(request, timeout=10) as response:
@@ -405,11 +411,26 @@ def _filtered_attributes(attributes: object, salt: bool = True) -> dict[str, obj
     return kept
 
 
+def _filtered_event(event: _Event) -> _Event:
+    """An `exception` event keeps its name and the exception's class, which is
+    all the server reads (an exception with no status is *esito
+    sconosciuto*); its message and traceback stay here, since they can quote
+    the very content the attributes are filtered for. Every other event, such
+    as `sigillo.artifact`'s, never carried content and goes as it is.
+    """
+    if event.name != "exception":
+        return event
+    kept = {key: value for key, value in (event.attributes or {}).items() if key == "exception.type"}
+    return _Event(event.name, kept, event.timestamp)
+
+
 def _filtered_span(span: _ReadableSpan, salt: bool = True) -> _ReadableSpan:
-    """A copy of `span`, its attributes replaced — nothing else about it
-    changes: same name, same timing, same trace, same events (so
-    `sigillo.artifact`, which never carried content in the first place, is
-    untouched). `ReadableSpan.attributes` is read-only past `on_end` (OpenTelemetry
+    """A copy of `span`, its attributes replaced, its exception events cut
+    down to the exception's class (`_filtered_event`) and its status to its
+    code: OpenTelemetry writes "ValueError: <the message>" as the description
+    of a span an exception ended. Nothing else about it changes: same name,
+    same timing, same trace, same other events (so `sigillo.artifact`, which
+    never carried content in the first place, is untouched). `ReadableSpan.attributes` is read-only past `on_end` (OpenTelemetry
     marks a span's own attribute mapping immutable the moment it ends), so this
     builds a new `ReadableSpan` rather than editing the one that arrived.
     """
@@ -419,10 +440,10 @@ def _filtered_span(span: _ReadableSpan, salt: bool = True) -> _ReadableSpan:
         parent=span.parent,
         resource=span.resource,
         attributes=_filtered_attributes(span.attributes, salt),
-        events=span.events,
+        events=[_filtered_event(event) for event in span.events],
         links=span.links,
         kind=span.kind,
-        status=span.status,
+        status=_Status(span.status.status_code),
         start_time=span.start_time,
         end_time=span.end_time,
         instrumentation_scope=span.instrumentation_scope,
@@ -436,12 +457,47 @@ class _ContentFilteringExporter(_OTLPSpanExporter):
     process (fase 9, decision D6).
     """
 
-    def __init__(self, *args: object, salt: bool = True, **kwargs: object) -> None:
+    def __init__(self, *args: object, salt: bool = True, show: bool = False, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self._salt = salt
+        self._show = show
 
     def export(self, spans: _Sequence[_ReadableSpan]) -> _SpanExportResult:
-        return super().export([_filtered_span(span, self._salt) for span in spans])
+        filtered = [_filtered_span(span, self._salt) for span in spans]
+        if self._show:
+            for span in filtered:
+                _show_span(span)
+        return super().export(filtered)
+
+
+class _ShowingExporter(_OTLPSpanExporter):
+    """The plain OTLP exporter, for `redact_content=False`, showing each span
+    before it goes when `show_sent` asks for it."""
+
+    def export(self, spans: _Sequence[_ReadableSpan]) -> _SpanExportResult:
+        for span in spans:
+            _show_span(span)
+        return super().export(spans)
+
+
+def _show_sent(kind: str, what: str) -> None:
+    """One line on standard error per thing sent, for `show_sent`: printed,
+    not logged, so it appears whether or not the program configured logging."""
+    print(f"[sigillo sends] {kind} {what}", file=_sys.stderr, flush=True)
+
+
+def _show_span(span: _ReadableSpan) -> None:
+    """Everything of a span the exporter is about to serialise that could
+    carry a value: its name, attributes, status and events. Timing and trace
+    identifiers are left out, being only numbers."""
+    shown: dict[str, object] = {"name": span.name, "attributes": dict(span.attributes or {})}
+    if span.status.status_code is not _StatusCode.UNSET:
+        shown["status"] = span.status.status_code.name
+        if span.status.description:
+            shown["status_description"] = span.status.description
+    if span.events:
+        shown["events"] = [{"name": event.name, "attributes": dict(event.attributes or {})} for event in span.events]
+    _show_sent("action", _json.dumps(shown, ensure_ascii=False, default=str))
 
 
 def init(
@@ -453,6 +509,7 @@ def init(
     redact_content: bool = True,
     salt_content: bool = True,
     heartbeat_seconds: float = 60.0,
+    show_sent: bool = False,
 ) -> Tracing:
     """Point OpenTelemetry at a sigillo server and turn on the instrumentations.
 
@@ -495,6 +552,12 @@ def init(
             so keep it well under that. The beat runs on its own thread from
             here on, whether the agent is busy or idle, and `shutdown()` (or
             the end of the process) sends a last one saying it closed.
+        show_sent: false by default. When true, everything this package sends
+            to the server is also printed on standard error, one line per
+            action and per heartbeat, exactly as it leaves the process: what
+            the agent said and received appears only as a digest. It is how a
+            customer checks, on their own computer and without trusting
+            sigillo, that no content leaves it.
 
     Returns:
         A handle with `flush()` and `shutdown()`, and the list of the
@@ -521,9 +584,9 @@ def init(
 
     headers = {"Authorization": f"Bearer {api_key}"}
     exporter = (
-        _ContentFilteringExporter(endpoint=traces_endpoint, headers=headers, salt=salt_content)
+        _ContentFilteringExporter(endpoint=traces_endpoint, headers=headers, salt=salt_content, show=show_sent)
         if redact_content
-        else _OTLPSpanExporter(endpoint=traces_endpoint, headers=headers)
+        else (_ShowingExporter if show_sent else _OTLPSpanExporter)(endpoint=traces_endpoint, headers=headers)
     )
     provider.add_span_processor(_BatchSpanProcessor(exporter))
 
@@ -532,7 +595,7 @@ def init(
     _trace.set_tracer_provider(provider)
     instrumented = tuple(name for name in instrument if _instrument(name, provider))
 
-    heartbeat = _Heartbeat(_heartbeat_endpoint(traces_endpoint), api_key, heartbeat_seconds)
+    heartbeat = _Heartbeat(_heartbeat_endpoint(traces_endpoint), api_key, heartbeat_seconds, show=show_sent)
     heartbeat.start()
 
     return Tracing(

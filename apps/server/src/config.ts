@@ -144,6 +144,19 @@ export function llmGateway(env: Environment): "off" | "operator" | "all" {
 }
 
 /**
+ * SIGILLO_AGENT_UPLOAD: who sees "upload your agent" on the connect page
+ * (http/agent-setup.ts), where the browser adds the sigillo lines to an
+ * agent's .py file. `off`, `operator` (the default: new, so the
+ * administrator's own systems only, CLAUDE.md rule 11) or `all`.
+ */
+export function agentUpload(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_AGENT_UPLOAD"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_AGENT_UPLOAD must be off, operator or all, received ${JSON.stringify(value)}`);
+}
+
+/**
  * Whether the gateway also writes a receipt for each tool a model asks for
  * (gateway/tool-requests.ts): SIGILLO_LLM_TOOL_REQUESTS, `off`, `operator`
  * (the default) or `all`. New, so for the administrator's own systems until

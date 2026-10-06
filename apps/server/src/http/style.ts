@@ -413,6 +413,9 @@ details.tech .facts { margin-top: 10px; }
 #way-model:checked ~ .ways [for="way-model"] { box-shadow: 0 0 0 2px var(--action); }
 #way-model:focus-visible ~ .ways [for="way-model"] { outline: 2px solid var(--focus); outline-offset: 2px; }
 #way-model:checked ~ .code.model { display: block; }
+.agent-upload { display: none; }
+#way-python:checked ~ .agent-upload.ready { display: block; }
+.agent-upload .notice { margin: 12px 0 0; }
 .wait-line { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 14px 18px; font-weight: 500; }
 .wait-line .end { margin-left: auto; }
 .wait-line.green { color: var(--ok); }

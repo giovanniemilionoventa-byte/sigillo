@@ -38,7 +38,8 @@
 		# at /fonts/ by apps/server/src/http/fonts.ts). The public site at the
 		# root (apps/server/src/http/site.ts) adds, from this origin only, the
 		# demo video and its still (/media/) and one script file, /site.js,
-		# for its "Copy" buttons; no page of the console loads a script file.
+		# for its "Copy" buttons. The one script file a console page loads is
+		# /ui/agent-setup.js, on the connect page (http/agent-setup.ts).
 		Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; media-src 'self'; script-src 'self' 'sha256-9cCyXgmnD9QCiwTYG/QZN+GEMElkaS71OJol3qmCcqg='; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 		-Server
 	}

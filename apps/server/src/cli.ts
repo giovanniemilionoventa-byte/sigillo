@@ -11,7 +11,7 @@ import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throt
 import { DailyExporter } from "./backup/daily-export.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
 import { ConnectionWatch } from "./connection/watch.js";
-import { cookieSecure, firebaseAccounts, ingestPause, llmGateway, llmToolRequests, port, positiveInteger, readSecret, trustProxy } from "./config.js";
+import { agentUpload, cookieSecure, firebaseAccounts, ingestPause, llmGateway, llmToolRequests, port, positiveInteger, readSecret, trustProxy } from "./config.js";
 import { FirebaseAuth } from "./auth/firebase.js";
 import { archiveFromStore, positionsIn, tokensIn } from "./export/from-store.js";
 import { loadOrCreateSealingKey, ProviderKeyStore } from "./gateway/provider-keys.js";
@@ -182,6 +182,7 @@ program
     const accounts = firebaseAccounts(process.env);
     const gatewayAccess = llmGateway(process.env);
     const toolRequests = llmToolRequests(process.env);
+    const agentUploadAccess = agentUpload(process.env);
     // Where backup.sh writes its copies; the daily export keeps its files here too.
     const backupDirectory = process.env["SIGILLO_BACKUP_DIR"] || undefined;
     const organizationMonthlyReceipts = positiveInteger(
@@ -277,6 +278,7 @@ program
               checkpointer,
               loginLimits,
               cookieSecure: secureCookie,
+              agentUpload: agentUploadAccess,
               ...(backupDirectory === undefined ? {} : { backupDirectory }),
               ...(accounts === null
                 ? {}

@@ -544,6 +544,7 @@ function homeBody(context: PageContext): string {
 <div class="wrap" id="demo"><div class="video">${video}</div></div>
 ${whySection(t)}
 ${howSection(t)}
+${dataSection(t)}
 ${aiActSection(t)}
 ${pricingSection(context)}
 ${connectSection(context)}
@@ -572,9 +573,17 @@ ${iconCards(h.difference, [ICON.lock, ICON.chain, ICON.eye, ICON.shield], "four"
 </div></section>`;
 }
 
+/** What Sigillo sees of a customer's data, and how the customer checks it without trusting us. */
+function dataSection(t: SiteTexts): string {
+  const d = t.home.data;
+  return `<section id="data"><div class="wrap">${sectionHead(d.title, d.lead)}
+${iconCards(d.points, [ICON.lock, ICON.eye, ICON.code, ICON.users], "four")}
+<p class="callout">${ICON.info}<span>${escape(d.seen)}</span></p></div></section>`;
+}
+
 function aiActSection(t: SiteTexts): string {
   const a = t.home.aiAct;
-  return `<section id="ai-act"><div class="wrap">${sectionHead(a.title, a.lead)}
+  return `<section id="ai-act" class="band"><div class="wrap">${sectionHead(a.title, a.lead)}
 <div class="grid three">
 ${a.articles.map((article) => `<div class="card"><span class="ref">${escape(article.ref)}</span><h3>${escape(article.title)}</h3><p>${escape(article.text)}</p></div>`).join("\n")}
 </div>
@@ -594,7 +603,7 @@ function pricingSection(context: PageContext): string {
 <ul>${plan.features.map((feature) => `<li>${ICON.check}${escape(feature)}</li>`).join("")}</ul>
 <a class="btn ${now ? "primary" : "outline"}" href="${escape(href)}"${now ? "" : ' target="_blank" rel="noopener"'}>${escape(plan.action)}</a></div>`;
   });
-  return `<section id="pricing" class="band"><div class="wrap">${sectionHead(p.title, p.lead)}
+  return `<section id="pricing"><div class="wrap">${sectionHead(p.title, p.lead)}
 <div class="plans">
 ${plans.join("\n")}
 </div>
@@ -610,7 +619,7 @@ function connectSection(context: PageContext): string {
   const c = t.connect;
   const tab = (id: string, label: string, checked: boolean): string =>
     `<input type="radio" name="way" id="way-${id}" class="sr"${checked ? " checked" : ""}><label for="way-${id}">${escape(label)}</label>`;
-  return `<section id="connect"><div class="wrap">${sectionHead(c.title)}
+  return `<section id="connect" class="band"><div class="wrap">${sectionHead(c.title)}
 <div class="flow">${c.steps.map((step, index) => `<div><span class="num">${index + 1}</span>${escape(step)}</div>`).join("")}</div>
 <div class="tabs">
 ${tab("python", c.ways.python, true)}

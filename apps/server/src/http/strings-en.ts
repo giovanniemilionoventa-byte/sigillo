@@ -202,6 +202,16 @@ const ui: Strings = {
     check: "Check",
     arrived: (when: string): string => `First receipt arrived: ${when}`,
     goToSystem: "Go to the system",
+    upload: {
+      drop: "Upload your agent's .py file",
+      done: "{file} downloaded, with sigillo already in it. Install with the command above, then run your agent as usual.",
+      doneNoFramework:
+        "{file} downloaded, with sigillo already in it. It uses neither LangChain, CrewAI nor OpenAI: sigillo records when it is connected and the actions you record yourself.",
+      already: "{file} already uses sigillo: there is nothing to add.",
+      notPython: "Choose the agent's Python file (.py, up to 1 MB).",
+      privacy: "The file stays in your browser: it is not sent to sigillo.",
+      or: "or add these lines yourself",
+    },
   },
   people: {
     title: "People",

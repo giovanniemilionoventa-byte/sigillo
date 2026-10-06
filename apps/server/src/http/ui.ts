@@ -11,6 +11,7 @@ import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { archiveFromStore, positionsIn, tokensIn } from "../export/from-store.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
 import { gatewayAllowed, type GatewayOptions } from "../gateway/llm.js";
+import { AGENT_SETUP_SCRIPT } from "./agent-setup.js";
 import { isProvider, ProviderKeyError } from "../gateway/provider-keys.js";
 import {
   normaliseDisplayName,
@@ -138,6 +139,12 @@ export interface UiOptions {
    * the "AI model" block, where its provider keys are saved and removed.
    */
   gateway?: GatewayOptions;
+  /**
+   * Who sees "upload your agent" on the connect page (agent-setup.ts):
+   * `operator`, the administrator's own systems only, until the owner opens
+   * it to `all`. Not given: nobody.
+   */
+  agentUpload?: "off" | "operator" | "all";
   accounts?: {
     firebase: FirebaseAuth;
     /** This installation's address as browsers reach it, e.g. https://sigillo.example.com. */
@@ -578,6 +585,19 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     return { used: allSystems.receiptsSince(viewer.organizationId, month.start), limit, resume: month.next };
   };
 
+  /**
+   * Whether the connect page offers "upload your agent" (agent-setup.ts): to
+   * the operator's own systems, and to every account's once it is opened.
+   */
+  const offersUpload = (record: SystemRecord): boolean =>
+    options.agentUpload === "all" || (options.agentUpload === "operator" && record.organization_id === null);
+
+  // The script of "upload your agent": the same for everyone, and nothing in
+  // it is secret, so it is served without a session.
+  app.get("/ui/agent-setup.js", async (_request, reply) =>
+    reply.type("text/javascript; charset=utf-8").header("cache-control", "no-cache").send(AGENT_SETUP_SCRIPT),
+  );
+
   /** Where agents send their actions, as the snippets of the connect page write it. */
   const endpointFor = (request: FastifyRequest): string =>
     options.accounts?.publicUrl.replace(/\/+$/, "") ?? `${request.protocol}://${request.headers.host ?? "localhost"}`;
@@ -716,7 +736,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
         render(session, {
           title: UI.connect.ready(systemTitle(record)),
           current: `system:${systemId}`,
-          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), model: offersModel(record) }),
+          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), model: offersModel(record), upload: offersUpload(record) }),
         }),
       );
     } catch (error) {
@@ -949,7 +969,7 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.newKey(systemTitle(record)),
         current: `system:${systemId}`,
-        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), model: offersModel(record) }),
+        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), model: offersModel(record), upload: offersUpload(record) }),
       }),
     );
   });

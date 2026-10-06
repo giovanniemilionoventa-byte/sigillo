@@ -3450,6 +3450,25 @@ può chiamare il modello senza passare da Sigillo, e ogni chiamata diventa una r
 - Limiti in `docs/SECURITY.md`: vale finché la chiave sta solo in Sigillo; non vede modelli locali
   o altre chiavi; domanda e risposta passano in chiaro nella memoria del server.
 
+### Sessione 39 — 2026-10-06 — privacy dimostrabile e "carica il tuo agente"
+
+Dal meeting con il possibile socio: (1) come fa un cliente a sapere che non vediamo i suoi dati,
+anche sul sito; (2) collegare un agente senza passi tecnici.
+
+- **SDK, `show_sent=True`**: stampa su stderr una riga per ogni cosa inviata (azioni e battiti),
+  esattamente come esce; il cliente vede da sé che escono solo nomi, orari e impronte.
+- **SDK, eccezioni**: un evento `exception` parte con la sola classe (`exception.type`), senza
+  messaggio né traceback, e lo stato di uno span senza la descrizione che OpenTelemetry ci scrive
+  ("ValueError: <messaggio>"). Prima potevano citare il contenuto.
+- **Console, "Carica il file .py del tuo agente"** (`apps/server/src/http/agent-setup.ts`): nella
+  pagina che mostra la chiave, il browser aggiunge `import sigillo` e `sigillo.init(...)` (chiave
+  compresa) dopo docstring e `from __future__`, riconosce LangChain/LangGraph, CrewAI o OpenAI, e
+  restituisce il file da scaricare con il comando `pip install` giusto. Il file non arriva al server.
+  Script servito come file (`/ui/agent-setup.js`), già permesso da `script-src 'self'`.
+  Regola 11: `SIGILLO_AGENT_UPLOAD=operator` di base, `all` dopo la conferma del titolare.
+- **Sito**: sezione "I tuoi dati restano tuoi" (`#data`) con il limite detto chiaro (cosa vediamo,
+  e il centralino che passa domanda e risposta in memoria); la pagina Privacy dice lo stesso.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
