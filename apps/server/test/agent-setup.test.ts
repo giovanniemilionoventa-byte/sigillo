@@ -52,9 +52,23 @@ function parses(text: string): boolean {
   return spawnSync("python3", ["-c", "import ast, sys; ast.parse(sys.stdin.read())"], { input: text }).status === 0;
 }
 
-const INIT = [
-  "import sigillo",
+/** The lines that install the SDK the first time the file runs, for these instrumentations. */
+const BOOTSTRAP = (extras: string, modules: string[]): string[] => [
+  "try:",
+  "    import sigillo",
+  ...modules.map((name) => `    import openinference.instrumentation.${name}`),
+  "except ImportError:",
+  "    import importlib",
+  "    import subprocess",
+  "    import sys",
   "",
+  `    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "sigillo${extras} @ ${SETTINGS.url}"])`,
+  "    importlib.invalidate_caches()",
+  "    import sigillo",
+  "",
+];
+
+const INIT = [
   "sigillo.init(",
   '    endpoint="https://get-sigillo.eu",',
   '    api_key="sigillo_abc_def",',
@@ -64,7 +78,7 @@ const INIT = [
 describe("adding sigillo to an agent's file", () => {
   it("puts the lines first in a plain file, with the LangChain instrumentation it uses", () => {
     const result = added("from langchain_openai import ChatOpenAI\n\nllm = ChatOpenAI()\n");
-    expect(result.text).toBe([...INIT, '    instrument=["langchain"],', ")", "", "from langchain_openai import ChatOpenAI", "", "llm = ChatOpenAI()", ""].join("\n"));
+    expect(result.text).toBe([...BOOTSTRAP("[langchain]", ["langchain"]), ...INIT, '    instrument=["langchain"],', ")", "", "from langchain_openai import ChatOpenAI", "", "llm = ChatOpenAI()", ""].join("\n"));
     expect(result.frameworks).toEqual(["langchain"]);
     expect(result.install).toBe(`pip install "sigillo[langchain] @ ${SETTINGS.url}"`);
   });
@@ -89,21 +103,21 @@ describe("adding sigillo to an agent's file", () => {
     const result = added(source);
     const lines = result.text.split("\n");
     expect(lines.slice(0, 11)).toEqual(source.split("\n").slice(0, 11));
-    expect(lines.slice(11, 19)).toEqual(["", ...INIT, '    instrument=["crewai"],']);
+    expect(lines.slice(11, 29)).toEqual(["", ...BOOTSTRAP("[crewai]", ["crewai"]), ...INIT, '    instrument=["crewai"],']);
     expect(result.text.endsWith(")\n\nimport crewai\n")).toBe(true);
     if (python) expect(parses(result.text)).toBe(true);
   });
 
   it("handles a one-line docstring and a file of nothing but comments", () => {
-    expect(added("'''One line.'''\nimport os\n").text.startsWith("'''One line.'''\n\nimport sigillo\n")).toBe(true);
+    expect(added("'''One line.'''\nimport os\n").text.startsWith("'''One line.'''\n\ntry:\n    import sigillo\n")).toBe(true);
     const comments = added("# nothing yet\n").text;
-    expect(comments.startsWith("# nothing yet\n\nimport sigillo\n")).toBe(true);
+    expect(comments.startsWith("# nothing yet\n\ntry:\n    import sigillo\n")).toBe(true);
     if (python) expect(parses(comments)).toBe(true);
   });
 
   it("keeps Windows line endings and a byte-order mark", () => {
-    const result = added("﻿import openai\r\nclient = openai.OpenAI()\r\n");
-    expect(result.text.startsWith("﻿import sigillo\r\n")).toBe(true);
+    const result = added("\uFEFFimport openai\r\nclient = openai.OpenAI()\r\n");
+    expect(result.text.startsWith("\uFEFFtry:\r\n    import sigillo\r\n")).toBe(true);
     expect(result.text).not.toMatch(/[^\r]\n/);
     expect(result.frameworks).toEqual(["openai"]);
   });
@@ -118,6 +132,8 @@ describe("adding sigillo to an agent's file", () => {
     const result = added("import requests\nprint(requests.get('https://example.com'))\n");
     expect(result.frameworks).toEqual([]);
     expect(result.text).not.toContain("instrument=");
+    expect(result.text).not.toContain("openinference");
+    expect(result.text).toContain(`"--quiet", "sigillo @ ${SETTINGS.url}"])`);
     expect(result.install).toBe(`pip install "sigillo @ ${SETTINGS.url}"`);
     if (python) expect(parses(result.text)).toBe(true);
   });

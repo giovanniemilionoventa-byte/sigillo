@@ -1,7 +1,9 @@
 /**
  * "Upload your agent" on the connect page: the customer picks the agent's .py
  * file, and the browser gives it back with the sigillo lines already in it,
- * the key included, plus the install command for the framework it uses. The
+ * the key included. Those lines install the SDK, with the instrumentation for
+ * the framework the file uses, the first time the file runs: nothing else to
+ * type. The install command is still shown, for whoever prefers to run it. The
  * file is read and rewritten in the browser: it is never sent to the server.
  *
  * AGENT_SETUP_SOURCE is the part that decides what the new file says, a pure
@@ -65,14 +67,31 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   }
   while (at > 0 && /^\\s*$/.test(lines[at - 1])) at -= 1;
 
-  var block = [
-    "import sigillo",
+  // The file installs what it needs by itself, the first time it runs, with
+  // the same Python that runs it: downloading it is the whole installation.
+  var extras = frameworks.length > 0 ? "[" + frameworks.join(",") + "]" : "";
+  var requirement = "sigillo" + extras + " @ " + settings.url;
+  var block = ["try:", "    import sigillo"];
+  frameworks.forEach(function (name) {
+    block.push("    import openinference.instrumentation." + name);
+  });
+  block.push(
+    "except ImportError:",
+    "    import importlib",
+    "    import subprocess",
+    "    import sys",
+    "",
+    '    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", ' + JSON.stringify(requirement) + "])",
+    "    importlib.invalidate_caches()",
+    "    import sigillo",
     "",
     "sigillo.init(",
+  );
+  block.push(
     "    endpoint=" + JSON.stringify(settings.endpoint) + ",",
     "    api_key=" + JSON.stringify(settings.key) + ",",
     "    system_id=" + JSON.stringify(settings.system) + ",",
-  ];
+  );
   if (frameworks.length > 0) block.push("    instrument=" + JSON.stringify(frameworks).replace(/,/g, ", ") + ",");
   block.push(")");
   var head = lines.slice(0, at);
@@ -80,12 +99,11 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   while (tail.length > 1 && /^\\s*$/.test(tail[0])) tail.shift();
   var parts = head.length > 0 ? head.concat([""], block) : block.slice();
   if (tail.length > 0) parts = parts.concat([""], tail);
-  var extras = frameworks.length > 0 ? "[" + frameworks.join(",") + "]" : "";
   return {
     status: "added",
     text: bom + parts.join(eol),
     frameworks: frameworks,
-    install: 'pip install "sigillo' + extras + " @ " + settings.url + '"',
+    install: 'pip install "' + requirement + '"',
   };
 }`;
 
