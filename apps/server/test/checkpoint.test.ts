@@ -180,6 +180,70 @@ describe("the timestamp request", () => {
   });
 });
 
+describe("a run asked for from the web view", () => {
+  // Found in the security review of 2026-10-07: the "seal now" button ran a
+  // whole checkpoint run per request, alongside any other, so a few requests
+  // at once asked the authority for the same checkpoint's token several
+  // times, and a script could keep the authority busy for every customer.
+  it("never runs alongside another, and asks the authority once per checkpoint", async () => {
+    await writeChain(5);
+    let calls = 0;
+    let release: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => (release = resolve));
+    const errors: string[] = [];
+    const checkpointer = new Checkpointer({
+      store,
+      now,
+      tsa: {
+        url: TSA_URL,
+        fetchImpl: fakeTsa(async () => {
+          calls += 1;
+          await answered;
+          return tokenResponse();
+        }),
+      },
+      sleep: async () => undefined,
+      onError: (message) => errors.push(message),
+    });
+
+    const first = checkpointer.requestRun();
+    // Asked while the first is running: one more run, after it, shared by all.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const later = [checkpointer.requestRun(), checkpointer.requestRun(), checkpointer.requestRun()];
+    expect(later[1]).toBe(later[0]);
+    expect(later[2]).toBe(later[0]);
+    release();
+    await Promise.all([first, ...later]);
+
+    expect(calls).toBe(1);
+    expect(errors).toEqual([]);
+    expect(store.readCheckpoints(SYSTEM)).toHaveLength(1);
+    expect(store.readTimestamps(store.latestCheckpoint(SYSTEM)?.id ?? 0)).toHaveLength(1);
+  });
+
+  it("waits out the gap since the last one, and still covers what was written meanwhile", async () => {
+    await writeChain(3);
+    const slept: number[] = [];
+    let clock = Date.parse("2026-03-29T15:00:00.000Z");
+    const checkpointer = new Checkpointer({
+      store,
+      now: () => new Date(clock),
+      requestGapMs: 10_000,
+      sleep: async (ms) => {
+        slept.push(ms);
+        clock += ms;
+      },
+    });
+    await checkpointer.requestRun();
+    expect(slept).toEqual([]);
+    await store.append({ ...event(3), system_id: SYSTEM });
+    clock += 4_000;
+    await checkpointer.requestRun();
+    expect(slept).toEqual([6_000]);
+    expect(store.readCheckpoints(SYSTEM)).toHaveLength(2);
+  });
+});
+
 describe("anchoring a checkpoint", () => {
   it("stores the token exactly as the authority returned it", async () => {
     await writeChain(5);

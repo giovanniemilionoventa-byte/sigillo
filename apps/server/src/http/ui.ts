@@ -633,8 +633,10 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const session = requireSession(request, reply);
     if (session === null) return reply;
     // The same checkpoint the timer runs, over every chain: sooner, not
-    // different, and nothing of anyone's is shown by it.
-    await options.checkpointer.runOnce();
+    // different, and nothing of anyone's is shown by it. Never two at once,
+    // and at most one every few seconds, however many accounts press it
+    // (Checkpointer.requestRun).
+    await options.checkpointer.requestRun();
     return reply.redirect("/ui?checkpoint=1", 303);
   });
 
@@ -1253,10 +1255,20 @@ ${exportSheet(record)}`,
   });
 }
 
-/** An HTML date input gives YYYY-MM-DD; this makes it an inclusive whole-day bound. */
+/**
+ * An HTML date input gives YYYY-MM-DD; this makes it an inclusive whole-day
+ * bound. A day that does not exist (2026-02-30, 9999-99-99, which a browser
+ * without a date picker lets anyone type) is no bound, as an empty field is:
+ * it used to reach the export as an impossible time and fail it with a 500.
+ */
 function dayBounds(from: unknown, to: unknown): { from?: string; to?: string } {
-  const DATE = /^\d{4}-\d{2}-\d{2}$/;
-  const start = typeof from === "string" && DATE.test(from) ? `${from}T00:00:00.000Z` : undefined;
-  const end = typeof to === "string" && DATE.test(to) ? `${to}T23:59:59.999Z` : undefined;
+  const bound = (value: unknown, time: string): string | undefined => {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+    const instant = `${value}T${time}Z`;
+    const parsed = Date.parse(instant);
+    return Number.isNaN(parsed) || new Date(parsed).toISOString() !== instant ? undefined : instant;
+  };
+  const start = bound(from, "00:00:00.000");
+  const end = bound(to, "23:59:59.999");
   return { ...(start === undefined ? {} : { from: start }), ...(end === undefined ? {} : { to: end }) };
 }

@@ -640,6 +640,23 @@ describe("the history's counts and selection (Interfaccia B)", () => {
     }
   });
 
+  // Found in the security review of 2026-10-07: the search text went into
+  // LIKE as it was, so "_" (in nearly every tool name) matched any character
+  // and "%" anything at all.
+  it("searches a name for the characters typed, \"_\" and \"%\" included", async () => {
+    await store.createSystem(SYSTEM, "2026-03-29T09:00:00.000Z");
+    for (const name of ["send_email", "sendXemail", "send-email", "rate_100%", "rate_1000", "path\\to"]) {
+      await store.append(event({ action: { kind: "tool_call", name } }));
+    }
+    const found = (name: string): string[] =>
+      store.searchReceipts({ systemId: SYSTEM, name }).map((receipt) => receipt.action.name).sort();
+    expect(found("send_email")).toEqual(["send_email"]);
+    expect(found("100%")).toEqual(["rate_100%"]);
+    expect(found("%")).toEqual(["rate_100%"]);
+    expect(found("path\\")).toEqual(["path\\to"]);
+    expect(store.countReceiptsByKind({ systemId: SYSTEM, name: "_" })).toEqual({ tool_call: 3 });
+  });
+
   it("reads one receipt by its position, or nothing", async () => {
     await mixedChain();
     const third = store.receiptAt(SYSTEM, 3);

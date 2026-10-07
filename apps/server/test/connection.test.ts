@@ -219,3 +219,58 @@ describe("the traffic light", () => {
     expect(health.message).toContain("disconnected");
   });
 });
+
+describe("a client that invents sessions", () => {
+  // Found in the security review of 2026-10-07: every session id never seen
+  // before wrote a receipt, and the endpoint was never refused for the
+  // monthly limit, so a fresh id per request wrote receipts without end.
+  const session = (n: number): string => n.toString(16).padStart(32, "0");
+
+  it("may open only so many sessions an hour per system; those already open go on beating", async () => {
+    await app.close();
+    watch = new ConnectionWatch({ store, now: () => new Date(clock), maxNewSessionsPerHour: 3 });
+    app = buildServer({ store, keys, now: () => new Date(clock), connections: watch });
+    await app.ready();
+
+    for (let n = 1; n <= 3; n += 1) expect((await beat("start", session(n))).statusCode).toBe(200);
+    const refused = await beat("start", session(4));
+    expect(refused.statusCode).toBe(429);
+    expect(Number(refused.headers["retry-after"])).toBeGreaterThan(0);
+    // Nor through a beat or a stop of a session never seen.
+    expect((await beat("beat", session(5))).statusCode).toBe(429);
+    expect((await beat("stop", session(6))).statusCode).toBe(429);
+    expect(names().filter((name) => name === CONNECTION.start)).toHaveLength(3);
+    expect(store.connectionsOf(SYSTEM)).toHaveLength(3);
+
+    // The open ones are untouched.
+    clock += MINUTE;
+    expect((await beat("beat", session(1))).json()).toEqual({ recorded: null });
+    expect((await beat("stop", session(2))).json()).toEqual({ recorded: { seq: 4, name: CONNECTION.stop } });
+
+    // An hour on, the allowance is back.
+    clock += 60 * MINUTE;
+    expect((await beat("start", session(7))).statusCode).toBe(200);
+  });
+
+  it("opens no new session for an organization past its monthly limit, and keeps the open ones", async () => {
+    await app.close();
+    const ADMIN = { actor: "cli test", ts: new Date(START - MINUTE).toISOString() };
+    await store.createOrganization("acme", "Acme", ADMIN, { approved: true });
+    await store.createSystem("acme.bot", new Date(START - MINUTE).toISOString(), "acme");
+    const acme = keys.issue("acme.bot", new Date(START - MINUTE).toISOString()).token;
+    app = buildServer({ store, keys, now: () => new Date(clock), connections: watch, organizationMonthlyReceipts: 2 });
+    await app.ready();
+
+    expect((await beat("start", session(1), acme)).statusCode).toBe(200);
+    expect((await beat("start", session(2), acme)).statusCode).toBe(200);
+    expect((await beat("start", session(3), acme)).statusCode).toBe(429);
+    clock += MINUTE;
+    expect((await beat("stop", session(1), acme)).statusCode).toBe(200);
+    expect(store.readChain("acme.bot").map((receipt) => receipt.action.name)).toEqual([
+      "acme.bot",
+      CONNECTION.start,
+      CONNECTION.start,
+      CONNECTION.stop,
+    ]);
+  });
+});

@@ -40,17 +40,38 @@ export type HeartbeatEvent = "start" | "beat" | "stop";
 /** The SDK beats every 60 seconds; three missed beats are a loss. */
 export const DEFAULT_LOST_AFTER_MS = 3 * 60_000;
 const SWEEP_EVERY_MS = 30_000;
+/**
+ * How many sessions one system may open in an hour. An agent opens one each
+ * time its program starts, so an honest one stays far below; what this stops
+ * is a client inventing a new session id per request, each of which would
+ * write a receipt (and later a `lost` one) past the organization's monthly
+ * limit, and a row the sweep reads every 30 seconds.
+ */
+export const DEFAULT_MAX_NEW_SESSIONS_PER_HOUR = 60;
+const HOUR_MS = 60 * 60_000;
 
 export interface ConnectionWatchOptions {
   store: ReceiptStore;
   now?: () => Date;
   lostAfterMs?: number;
+  maxNewSessionsPerHour?: number;
+}
+
+/** A session this system may not open now: it opened too many in the last hour. */
+export class TooManySessionsError extends Error {
+  constructor(readonly retryAfterSeconds: number) {
+    super("too many new heartbeat sessions for this system in the last hour");
+    this.name = "TooManySessionsError";
+  }
 }
 
 export class ConnectionWatch {
   private readonly store: ReceiptStore;
   private readonly now: () => Date;
   readonly lostAfterMs: number;
+  private readonly maxNewSessionsPerHour: number;
+  /** When each system opened its sessions of the last hour. In memory: a restart forgets it. */
+  private readonly opened = new Map<string, number[]>();
   /**
    * When this process started. A session whose beats stopped while the
    * server itself was down is not called lost until it has had a full
@@ -65,14 +86,21 @@ export class ConnectionWatch {
     this.store = options.store;
     this.now = options.now ?? ((): Date => new Date());
     this.lostAfterMs = options.lostAfterMs ?? DEFAULT_LOST_AFTER_MS;
+    this.maxNewSessionsPerHour = options.maxNewSessionsPerHour ?? DEFAULT_MAX_NEW_SESSIONS_PER_HOUR;
     this.since = this.now().getTime();
   }
 
-  /** A heartbeat from one running copy of an agent. Returns the receipt it caused, if any. */
+  /**
+   * A heartbeat from one running copy of an agent. Returns the receipt it
+   * caused, if any. A session not seen before counts against the system's
+   * hourly allowance, and past it is refused with TooManySessionsError,
+   * nothing written; sessions already open go on beating as before.
+   */
   heartbeat(systemId: string, sessionId: string, event: HeartbeatEvent): Promise<Receipt | null> {
     return this.serially(async () => {
       const at = this.now().toISOString();
       const known = this.store.connection(systemId, sessionId);
+      if (known === null) this.admitNewSession(systemId, Date.parse(at));
       const row = (state: ConnectionRow["state"]): ConnectionRow => ({
         system_id: systemId,
         session_id: sessionId,
@@ -128,6 +156,16 @@ export class ConnectionWatch {
   stop(): void {
     if (this.timer !== undefined) clearInterval(this.timer);
     this.timer = undefined;
+  }
+
+  private admitNewSession(systemId: string, now: number): void {
+    const recent = (this.opened.get(systemId) ?? []).filter((at) => now - at < HOUR_MS);
+    if (recent.length >= this.maxNewSessionsPerHour) {
+      this.opened.set(systemId, recent);
+      throw new TooManySessionsError(Math.max(1, Math.ceil((recent[0]! + HOUR_MS - now) / 1000)));
+    }
+    recent.push(now);
+    this.opened.set(systemId, recent);
   }
 
   private serially<T>(work: () => Promise<T>): Promise<T> {

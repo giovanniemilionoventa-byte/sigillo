@@ -4,7 +4,7 @@ import type { Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
 import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
-import { ConnectionWatch } from "../connection/watch.js";
+import { ConnectionWatch, TooManySessionsError } from "../connection/watch.js";
 import { registerGateway, type GatewayOptions } from "../gateway/llm.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
 import { adaptSpans } from "../ingest/adapter.js";
@@ -445,9 +445,11 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     registerGateway(app, options.gateway, { store, now, authenticate, pausedFor, overQuota });
   }
 
-  // The Python SDK's heartbeat. Not counted against the monthly limit, and
-  // never refused for it: a receipt saying an agent went silent is worth most
-  // exactly when nothing else is being written.
+  // The Python SDK's heartbeat. A session already open is never refused for
+  // the monthly limit: a receipt saying an agent went silent is worth most
+  // exactly when nothing else is being written. A new one is, like any other
+  // write, and each system may open only so many an hour (connection/watch.ts):
+  // otherwise a fresh session id per request would write receipts without end.
   app.post("/api/v1/heartbeat", async (request, reply) => {
     const systemId = await authenticate(request);
     if (systemId === null) {
@@ -460,7 +462,17 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         error: parsed.error.issues.map((issue) => `${issue.path.join(".") || "<body>"}: ${issue.message}`).join("; "),
       });
     }
-    const written = await connections.heartbeat(systemId, parsed.data.session, parsed.data.event);
+    if (store.connection(systemId, parsed.data.session) === null && overQuota(systemId, reply)) return reply;
+    let written;
+    try {
+      written = await connections.heartbeat(systemId, parsed.data.session, parsed.data.event);
+    } catch (error) {
+      if (!(error instanceof TooManySessionsError)) throw error;
+      return reply
+        .code(429)
+        .header("retry-after", String(error.retryAfterSeconds))
+        .send({ error: "this system has opened too many sessions in the last hour: try again later" });
+    }
     return reply.code(200).send({ recorded: written === null ? null : { seq: written.seq, name: written.action.name } });
   });
 

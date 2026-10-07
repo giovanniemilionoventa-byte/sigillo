@@ -654,6 +654,17 @@ token, a cookie and a forged `X-Forwarded-For`. The log line:
 and the backend received `X-Forwarded-For: 127.0.0.1`, the real client, not
 the forged address.
 
+That check did not cover the model gateway, which came later and takes a
+sigillo key in two more headers, `X-Api-Key` (Anthropic's SDKs) and
+`X-Goog-Api-Key` (Google's), and in `?key=`. Caddy wrote both headers in
+full, and a request it could not pass on (a 502 while the server restarts)
+was logged a second time by Caddy's default logger, outside the access log's
+filter, with its query string. Found in the review of 2026-10-07: the
+Caddyfile now deletes both headers, and gives the default logger the same
+filter. `apps/server/test/deploy-config.test.ts` runs Caddy on the Caddyfile,
+where Caddy is installed, sends a key in every one of the four places to a
+backend that is not there, and requires that neither log holds it.
+
 **Rotation.** Every container logs through Docker's `json-file` driver with
 `max-size: 10m` and `max-file: 5`: at most 50 MB per service, the oldest file
 dropped first. A server run without Docker writes to standard output and leaves

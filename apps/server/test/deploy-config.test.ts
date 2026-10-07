@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -126,6 +126,48 @@ describe.skipIf(caddy.status !== 0)("deploy/Caddyfile, as Caddy reads it", () =>
       env: { ...process.env, SIGILLO_DOMAIN: "sigillo.example.com", SIGILLO_TLS_EMAIL: "ops@example.com" },
     });
     expect(run.stderr + run.stdout).toContain("Valid configuration");
+  });
+
+  // Found in the security review of 2026-10-07: Caddy's access log leaves out
+  // Authorization and Cookie by itself, but it wrote X-Api-Key and
+  // X-Goog-Api-Key in full, and those are where the Anthropic and Google SDKs
+  // put the sigillo key they send to the model gateway.
+  it("writes no sigillo key to its access log, whichever header or parameter carries it", async () => {
+    const port = 20_000 + Math.floor(Math.random() * 20_000);
+    const child = spawn("caddy", ["run", "--config", join(DEPLOY, "Caddyfile"), "--adapter", "caddyfile"], {
+      env: {
+        ...process.env,
+        SIGILLO_DOMAIN: `http://127.0.0.1:${port}`,
+        SIGILLO_TLS_EMAIL: "ops@example.com",
+        XDG_DATA_HOME: mkdtempSync(join(tmpdir(), "sigillo-caddy-")),
+        XDG_CONFIG_HOME: mkdtempSync(join(tmpdir(), "sigillo-caddy-")),
+      },
+    });
+    let log = "";
+    child.stderr.on("data", (chunk: Buffer) => (log += chunk.toString("utf8")));
+    try {
+      const secret = (n: number): string => `sigillo_${"0".repeat(16)}_${String(n).repeat(64)}`;
+      for (let tries = 0; tries < 50 && !log.includes("handled request"); tries += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await fetch(`http://127.0.0.1:${port}/llm/gemini/v1beta/models?key=${secret(4)}`, {
+          headers: { authorization: `Bearer ${secret(1)}`, "x-api-key": secret(2), "x-goog-api-key": secret(3) },
+        }).catch(() => undefined);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(log).toContain("handled request");
+      for (const n of [1, 2, 3, 4]) expect(log).not.toContain(String(n).repeat(64));
+    } finally {
+      child.kill();
+    }
+  }, 20_000);
+});
+
+describe("deploy/Caddyfile, as written", () => {
+  it("deletes the headers a gateway client sends its sigillo key in from the access log", () => {
+    const caddyfile = readFileSync(join(DEPLOY, "Caddyfile"), "utf8");
+    expect(caddyfile).toContain("request>headers>X-Api-Key delete");
+    expect(caddyfile).toContain("request>headers>X-Goog-Api-Key delete");
+    expect(caddyfile).toMatch(/request>uri regexp "\\\?\.\*\$" ""/);
   });
 });
 

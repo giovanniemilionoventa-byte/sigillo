@@ -32,7 +32,11 @@ export interface CheckpointerOptions {
   intervalMinutes?: number;
   /** How soon to ask again for tokens a run could not obtain. Default 5. */
   retryMinutes?: number;
+  /** The least time between two runs asked for from the web view (requestRun). Default 10 seconds. */
+  requestGapMs?: number;
   onError?: (message: string) => void;
+  /** How a run asked for waits out the gap; tests pass one that does not. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface CheckpointRun {
@@ -45,6 +49,12 @@ export class Checkpointer {
   private timer: NodeJS.Timeout | undefined;
   private retryTimer: NodeJS.Timeout | undefined;
   private running = false;
+  /** Every run, the timer's and those asked for, one after the other: never two at once. */
+  private lock: Promise<unknown> = Promise.resolve();
+  /** A run asked for that has not started yet: whoever asks meanwhile is covered by it. */
+  private requested: Promise<void> | null = null;
+  /** When the last run asked for ended, for the gap. */
+  private requestedEndedAt = 0;
 
   constructor(private readonly options: CheckpointerOptions) {}
 
@@ -140,21 +150,62 @@ export class Checkpointer {
   }
 
   /**
+   * A run as the web view's "seal now" asks for it: one that starts after
+   * the request, so it covers every receipt written before it, but never
+   * alongside another run, and never sooner than `requestGapMs` after the
+   * last one asked for. Requests that arrive while one is waiting to start
+   * share it. Any number of clicks, from any number of accounts, costs at
+   * most one run per gap, and one token request per new checkpoint: two runs
+   * at once would each ask the authority for the same checkpoints' tokens.
+   */
+  requestRun(): Promise<void> {
+    if (this.requested !== null) return this.requested;
+    const sleep = this.options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    const run = this.serially(async () => {
+      const wait = this.requestedEndedAt + (this.options.requestGapMs ?? 10_000) - this.options.now().getTime();
+      if (wait > 0) await sleep(wait);
+      // From here on, a new request needs a run of its own.
+      this.requested = null;
+      try {
+        await this.whileRunning(() => this.runOnce());
+      } finally {
+        this.requestedEndedAt = this.options.now().getTime();
+      }
+    });
+    this.requested = run;
+    return run;
+  }
+
+  /** `work` once every run queued before it has finished. */
+  private serially<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.lock.then(work, work);
+    this.lock = next.catch(() => undefined);
+    return next;
+  }
+
+  /** `work` with the timer told a run is going, so that its tick skips rather than queues. */
+  private async whileRunning(work: () => Promise<{ pending: number }>): Promise<{ pending: number }> {
+    this.running = true;
+    try {
+      return await work();
+    } finally {
+      this.running = false;
+    }
+  }
+
+  /**
    * Runs `work` unless a run is already going, then schedules a retry of the
    * timestamps if any are still missing.
    */
   private async exclusively(work: () => Promise<{ pending: number }>): Promise<void> {
     if (this.running) return;
-    this.running = true;
     let pending = 0;
     try {
-      ({ pending } = await work());
+      ({ pending } = await this.serially(() => this.whileRunning(work)));
     } catch (error: unknown) {
       this.options.onError?.(
         `checkpoint run failed: ${error instanceof Error ? error.message : String(error)}`,
       );
-    } finally {
-      this.running = false;
     }
     if (pending > 0 && this.timer !== undefined && this.retryTimer === undefined) {
       this.retryTimer = setTimeout(() => {

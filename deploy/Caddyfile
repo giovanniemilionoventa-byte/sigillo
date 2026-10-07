@@ -4,6 +4,21 @@
 
 {
 	email {$SIGILLO_TLS_EMAIL}
+
+	# Every other log line Caddy writes, its own and the errors of a request
+	# it could not pass on (a 502 while the server restarts), goes through the
+	# same filter as the access log below: such a line quotes the request too,
+	# its query string and its headers included.
+	log default {
+		output stderr
+		format filter {
+			fields {
+				request>uri regexp "\?.*$" ""
+				request>headers>X-Api-Key delete
+				request>headers>X-Goog-Api-Key delete
+			}
+		}
+	}
 }
 
 {$SIGILLO_DOMAIN} {
@@ -50,8 +65,11 @@
 	reverse_proxy server:8080
 
 	# One line per request, without the query string: in the web view it holds
-	# document fingerprints and search terms, which do not belong in a log.
-	# Caddy already leaves out the values of Authorization and Cookie. Docker
+	# document fingerprints and search terms, which do not belong in a log, and
+	# on the model gateway a Gemini client's sigillo key (?key=). Caddy already
+	# leaves out the values of Authorization and Cookie, but not of the other
+	# two headers the gateway takes a sigillo key in, X-Api-Key (Anthropic's
+	# SDKs) and X-Goog-Api-Key (Google's): those are deleted here. Docker
 	# rotates what is written to stderr (see logging in docker-compose.yml).
 	log {
 		output stderr
@@ -59,6 +77,8 @@
 			wrap console
 			fields {
 				request>uri regexp "\?.*$" ""
+				request>headers>X-Api-Key delete
+				request>headers>X-Goog-Api-Key delete
 			}
 		}
 	}
