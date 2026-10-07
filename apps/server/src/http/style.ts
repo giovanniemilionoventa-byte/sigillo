@@ -339,6 +339,7 @@ details.search form { display: grid; grid-template-columns: minmax(0, 2fr) minma
   color: var(--text); scroll-margin: 12px; }
 .row:hover { background: var(--fill); text-decoration: none; }
 .row-time { width: 46px; flex: none; font-size: 13px; color: var(--secondary); }
+.label.run { margin: 14px 12px 4px; }
 .row-title { flex: 1; min-width: 0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* the selected row, where the inspector beside it shows it (on a phone the list is not shown with it) */
 @media (min-width: 900px) {

@@ -178,8 +178,9 @@ describe("the connect page", () => {
     // One line per system. PowerShell 5 has no &&, so Windows joins with ;.
     expect(page).toContain("main.zip#subdirectory=sdk-python&quot;; python -m sigillo.claude_code connect");
     expect(page).toContain("main.zip#subdirectory=sdk-python&quot; &amp;&amp; python3 -m sigillo.claude_code connect");
+    expect(page).not.toContain("cloud");
     expect(page).toContain("python -m pip install --upgrade &quot;sigillo @ https://");
-    for (const title of ["Windows (PowerShell)", "macOS (Terminal)", "Linux (terminal)", "Claude Code in the cloud"]) {
+    for (const title of ["Windows (PowerShell)", "macOS (Terminal)", "Linux (terminal)"]) {
       expect(page).toContain(title);
     }
     expect(await newKey(ACME, ACME_BOT)).not.toContain('id="way-claude"');
@@ -190,5 +191,39 @@ describe("the connect page", () => {
     expect(await newKey(ACME, ACME_BOT)).toContain('id="way-claude"');
     await start("off");
     expect(await newKey(OPERATOR, OPERATOR_BOT)).not.toContain('id="way-claude"');
+  });
+});
+
+describe("the history of a system with several Claude Code sessions", () => {
+  const receipt = (agent: string, name: string, minute: string) => ({
+    system_id: OPERATOR_BOT,
+    ts_event: `2026-10-07T11:${minute}:00.000Z`,
+    ts_received: `2026-10-07T11:${minute}:00.000Z`,
+    actor: { agent },
+    action: { kind: "tool_call" as const, name },
+    input_hash: null,
+    output_hash: null,
+    outcome: "ok" as const,
+    source: { type: "sdk" as const },
+  });
+
+  it("puts each session under a heading with its name, and leaves a single agent's list as it was", async () => {
+    await start();
+    await store.append(receipt("Claude Code · offers · a1b2c3d4", "Write", "01"));
+    await store.append(receipt("Claude Code · offers · a1b2c3d4", "Bash", "02"));
+    await store.append(receipt("Claude Code · contracts · 99887766", "Read", "03"));
+
+    const page = (await app!.inject({ method: "GET", url: `/ui/systems/${OPERATOR_BOT}`, headers: { cookie: cookie(OPERATOR) } })).body;
+    const headings = [...page.matchAll(/<p class="label run">([^<]*)<\/p>/g)].map((match) => match[1]);
+    // Newest first: the contracts session, then the offers session once, not once per receipt.
+    expect(headings).toEqual(["Claude Code · contracts · 99887766", "Claude Code · offers · a1b2c3d4"]);
+  });
+
+  it("shows no headings when one agent wrote everything", async () => {
+    await start();
+    await store.append(receipt("Claude Code · offers · a1b2c3d4", "Write", "01"));
+    await store.append(receipt("Claude Code · offers · a1b2c3d4", "Bash", "02"));
+    const page = (await app!.inject({ method: "GET", url: `/ui/systems/${OPERATOR_BOT}`, headers: { cookie: cookie(OPERATOR) } })).body;
+    expect(page).not.toContain('class="label run"');
   });
 });

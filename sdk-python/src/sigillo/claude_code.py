@@ -20,7 +20,9 @@ Recording does not depend on the model choosing to: Claude Code runs a hook
 whatever the model does. Like the rest of this package, only digests leave the
 computer: a prompt, a command or a file's text is hashed here, salted, before
 anything is sent (`_filtered_span`). Every receipt of one session
-shares one trace id, derived from Claude Code's session id.
+shares one trace id, derived from Claude Code's session id, and one agent name,
+"Claude Code · <project folder> · <session>", so the console lists each session
+apart. The folder name (not its path) is the one thing sent beyond digests.
 
 What it does not do: it cannot stop someone, or Claude itself with the user's
 permission, from removing the hooks or running `disconnect`. `disconnect`
@@ -40,6 +42,7 @@ import hashlib as _hashlib
 import json as _json
 import os as _os
 import pathlib as _pathlib
+import re as _re
 import sys as _sys
 import urllib.error as _urllib_error
 import urllib.request as _urllib_request
@@ -58,8 +61,9 @@ from . import _filtered_span, _show_span, _traces_endpoint
 __all__ = ["connect", "disconnect", "record", "main"]
 
 CLIENT = "claude-code"
-# Claude Code's own name for the agent on every receipt (service.name).
-AGENT = "claude-code"
+# The agent on every receipt (service.name) starts with this; `_agent_name`
+# adds the project folder and the session, so sessions read apart in the console.
+AGENT = "Claude Code"
 # What marks a hook as this module's, so that `connect` replaces it and
 # `disconnect` removes it without touching anyone else's.
 _MARK = "sigillo.claude_code"
@@ -98,6 +102,24 @@ class _SessionTraceIds(_RandomIdGenerator):
 
     def generate_trace_id(self) -> int:
         return self._trace_id
+
+
+def _agent_name(event: dict) -> str:
+    """"Claude Code · <project folder> · <first 8 of the session id>".
+
+    The folder is only the last name of Claude Code's working directory, never
+    the path; it tells two projects apart. `connect` and `disconnect` belong
+    to no session and are just "Claude Code".
+    """
+    session = str(event.get("session_id") or "")
+    if session in ("", "connect", "disconnect", "unknown"):
+        return AGENT
+    parts = [AGENT]
+    folder = [part for part in _re.split(r"[\\/]", str(event.get("cwd") or "")) if part]
+    if folder:
+        parts.append(folder[-1][:60])
+    parts.append(session[:8])
+    return " · ".join(parts)
 
 
 def _text(value: object) -> str:
@@ -189,7 +211,7 @@ def record(event: dict, endpoint: str, api_key: str, show: bool = False) -> None
     name, attributes, failed = span
     session = str(event.get("session_id") or "unknown")
     provider = _TracerProvider(
-        resource=_Resource.create({"service.name": AGENT, "sigillo.client": CLIENT}),
+        resource=_Resource.create({"service.name": _agent_name(event), "sigillo.client": CLIENT}),
         id_generator=_SessionTraceIds(session),
     )
     kept = _Keep()

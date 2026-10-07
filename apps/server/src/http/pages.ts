@@ -342,7 +342,7 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
         radio: `\n<input type="radio" name="way" id="way-claude" class="sr">`,
         way: `\n<label class="way" for="way-claude"><span class="tile-icon purple" aria-hidden="true">${ICONS.terminal}</span>${escape(t.ways.claudeCode)}</label>`,
         body: `<div class="claude-code"><p class="section">${escape(t.claudeCodeRun)}</p>
-${claudeBox(t.claudeSystems.windows, claudeLine("python", "; "))}${claudeBox(t.claudeSystems.mac, claudeLine("python3", " && "))}${claudeBox(t.claudeSystems.linux, claudeLine("python3", " && "))}${claudeBox(t.claudeSystems.cloud, claudeLine("python3", " && "))}</div>
+${claudeBox(t.claudeSystems.windows, claudeLine("python", "; "))}${claudeBox(t.claudeSystems.mac, claudeLine("python3", " && "))}${claudeBox(t.claudeSystems.linux, claudeLine("python3", " && "))}</div>
 `,
       }
     : { radio: "", way: "", body: "" };

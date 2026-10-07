@@ -3589,6 +3589,16 @@ setup dell'ambiente (che deve permettere il dominio di Sigillo). Solo per l'ammi
 --upgrade` e SDK a 0.2.0: la sua prova dava «No module named sigillo.claude_code» perché pip aveva
 tenuto la 0.1.0 già installata. Da provare dal titolare: il cloud non è stato verificato qui.
 
+### Sessione 47 — 2026-10-07 — le sessioni di Claude Code si distinguono nel Registro
+
+Il titolare ha provato Claude Code sul suo PC: funziona, ma le sessioni erano tutte sotto lo stesso
+agente «claude-code». Ora ogni sessione è un agente a sé: «Claude Code · cartella del progetto ·
+primi 8 caratteri dell'id di sessione» (solo l'ultimo nome della cartella, mai il percorso: è
+l'unica cosa inviata oltre agli hash). Nel Registro, quando le ricevute vengono da più agenti, ogni
+tratto dello stesso agente ha un titoletto col suo nome; con un agente solo la lista è identica a
+prima. Nella pagina «Collega» restano Windows, macOS e Linux; la riga per il cloud è stata tolta
+(il cloud si vedrà più avanti).
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

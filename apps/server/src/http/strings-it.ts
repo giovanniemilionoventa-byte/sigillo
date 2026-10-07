@@ -206,7 +206,6 @@ const ui = {
       windows: "Windows (PowerShell)",
       mac: "macOS (Terminale)",
       linux: "Linux (terminale)",
-      cloud: "Claude Code nel cloud (lo script di setup dell'ambiente)",
     },
     keyPlaceholder: "<la-chiave-del-sistema>",
     waiting: "In attesa della prima ricevuta…",

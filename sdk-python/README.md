@@ -219,9 +219,7 @@ python -m sigillo.claude_code disconnect
 ```
 
 On macOS and Linux, `python3` in place of `python`. The console shows the line
-for each system; for Claude Code in the cloud, paste it in the environment's
-setup script (the environment must allow the Sigillo server's
-domain in its network settings). `python -m` is used because pip's scripts
+for each system. `python -m` is used because pip's scripts
 folder (`sigillo-claude-code`) is not on the PATH on Windows.
 
 `connect` sends a first receipt (`claude_code.connected`), so a wrong key or an
@@ -238,7 +236,10 @@ and key in `~/.sigillo/claude-code.json` (owner-only) and adds five hooks to
 | `SessionEnd` | `claude_code.session_end`, agent_step | nothing |
 
 Content is hashed and salted on the computer, as everywhere in this package;
-the receipts of one session share a trace id. The hooks for prompts and tools
+the receipts of one session share a trace id and one agent name,
+"Claude Code · <project folder> · <first 8 of the session id>", so the console
+lists each session under its own heading. The folder's last name (never its
+path) is the one thing sent beyond digests. The hooks for prompts and tools
 run in the background, so Claude Code does not wait for the server. A hook that
 cannot record says so in Claude Code (a hook error) and never blocks it.
 

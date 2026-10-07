@@ -198,7 +198,6 @@ const ui: Strings = {
       windows: "Windows (PowerShell)",
       mac: "macOS (Terminal)",
       linux: "Linux (terminal)",
-      cloud: "Claude Code in the cloud (the environment's setup script)",
     },
     keyPlaceholder: "<the-system-key>",
     waiting: "Waiting for the first receipt…",
