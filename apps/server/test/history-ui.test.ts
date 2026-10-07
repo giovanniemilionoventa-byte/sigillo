@@ -371,4 +371,19 @@ describe("the system's header, tabs and evidence sheet", () => {
     expect((await zip("from=2026-09-30&to=2026-09-30")).trim().split("\n")).toHaveLength(1);
     expect((await zip("from=2026-09-29&to=2026-09-29&subjects=&openings=")).trim().split("\n")).toHaveLength(5);
   }, 30_000);
+
+  // Found in the security review of 2026-10-07: a day that does not exist,
+  // which a browser without a date picker lets anyone type, failed the
+  // export with a 500.
+  it("takes a day that does not exist for no bound, as an empty field", async () => {
+    for (const day of ["2026-02-30", "9999-99-99", "0000-00-00"]) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/ui/systems/${SYSTEM}/export`,
+        headers: { cookie, "content-type": "application/x-www-form-urlencoded" },
+        payload: `from=${day}&to=${day}`,
+      });
+      expect(response.statusCode, day).toBe(200);
+    }
+  }, 30_000);
 });

@@ -1229,8 +1229,10 @@ export class ReceiptStore {
       parameters["kind"] = query.kind;
     }
     if (query.name !== undefined && query.name.length > 0) {
-      clauses.push("action_name LIKE @name");
-      parameters["name"] = `%${query.name}%`;
+      // The text as typed: LIKE's own "%" and "_" (in nearly every tool
+      // name) are escaped, so they match themselves and nothing else.
+      clauses.push("action_name LIKE @name ESCAPE '\\'");
+      parameters["name"] = `%${query.name.replaceAll(/[\\%_]/g, "\\$&")}%`;
     }
     return { where: clauses.join(" AND "), parameters };
   }
