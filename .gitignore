@@ -31,3 +31,7 @@ __pycache__/
 
 # video/registra.ts: recorded frames, scenes, demo state
 video/out/
+
+# auto-update.sh (deploy/)
+auto-update.log
+deploy/.auto-update.lock

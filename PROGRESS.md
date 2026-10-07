@@ -3546,6 +3546,10 @@ file li decide il sistema operativo), quindi si mostra e si ferma, non si impedi
   `all` dopo il via del titolare, `off` per spegnerla. Nessuna UI nuova: solo la ricevuta nella
   cronologia, che le organizzazioni non ricevono.
 - **Cosa comprò in righe**: sotto le 100 nel verificatore (non toccato).
+- **Aggiornamento automatico**: `deploy/auto-update.sh` (`install` una volta sul server, `uninstall`
+  per fermarlo). Ogni tre ore, se `main` ha un commit nuovo, esegue `update.sh`; senza novità non fa
+  nulla. Registro in `auto-update.log` accanto alla cartella `deploy/`. Quel che entra in `main`
+  arriva sul server entro tre ore.
 - **Limite detto chiaramente** (docs/API.md, README SDK): chi può modificare il file può anche
   togliere l'SDK; si vede come `lost`. Per renderlo non modificabile serve un altro utente del
   sistema operativo: guida a parte, non nel file.

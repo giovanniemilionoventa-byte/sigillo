@@ -624,6 +624,19 @@ e `docker compose logs caddy` ne mostra il motivo. L'esito atteso:
 update.sh: done; Caddy restarted and serves the Caddyfile's script hash 'sha256-…'
 ```
 
+**Aggiornamento automatico, ogni tre ore.** Dopo il primo `update.sh` fatto a mano,
+una volta sola:
+
+```sh
+$ /root/sigillo/deploy/auto-update.sh install
+```
+
+Aggiunge una riga al `crontab` del server: ogni tre ore, se `main` ha un commit
+nuovo, esegue `update.sh`; se non c'è niente di nuovo non fa nulla (nessun
+riavvio). Il registro è `/root/sigillo/auto-update.log`. Per fermarlo:
+`auto-update.sh uninstall`. Quello che entra in `main` arriva sul server entro
+tre ore.
+
 seguito dall'elenco dei container (`signer` e `server` `(healthy)`, `caddy`
 `Up`). Per controllarlo anche dall'esterno, come lo vede un browser:
 
