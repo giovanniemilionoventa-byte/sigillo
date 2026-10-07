@@ -206,6 +206,42 @@ succeeds — the digest is simply absent, and a warning is logged, not raised.
 Both are optional, and either can be dropped without changing anything else:
 a receipt with neither is exactly as informative as before phase 2.
 
+## Claude Code
+
+`sigillo-claude-code` records every Claude Code session on a computer, with no
+code to write: it adds hooks to Claude Code's user settings, and Claude Code
+runs them whatever the model does.
+
+```sh
+sigillo-claude-code connect --endpoint https://sigillo.example --key sigillo_...
+sigillo-claude-code disconnect
+```
+
+`connect` sends a first receipt (`claude_code.connected`), so a wrong key or an
+unreachable server stops it before anything changes; then it saves the endpoint
+and key in `~/.sigillo/claude-code.json` (owner-only) and adds five hooks to
+`~/.claude/settings.json`, next to any already there:
+
+| Claude Code event | receipt | what is hashed |
+|---|---|---|
+| `SessionStart` | `claude_code.session_start`, agent_step | nothing |
+| `UserPromptSubmit` | `claude_code.prompt`, agent_step | the prompt |
+| `PostToolUse` | the tool's name, tool_call | its input and output |
+| `PostToolUseFailure` | the tool's name, tool_call, error | its input |
+| `SessionEnd` | `claude_code.session_end`, agent_step | nothing |
+
+Content is hashed and salted on the computer, as everywhere in this package;
+the receipts of one session share a trace id. The hooks for prompts and tools
+run in the background, so Claude Code does not wait for the server. A hook that
+cannot record says so in Claude Code (a hook error) and never blocks it.
+
+The limit, said plainly: whoever can edit Claude Code's settings, Claude
+included when the user allows it, can remove the hooks. `disconnect` writes
+`claude_code.disconnected` before removing them; a session without receipts is
+not written by anyone. The server accepts these spans only where
+`SIGILLO_CLAUDE_CODE` allows (`operator` by default). Claude Cowork is reported
+not to run plugin hooks yet, so it is not covered.
+
 ## Example
 
 `examples/langgraph_agent.py` is a minimal LangGraph agent with a fake model and

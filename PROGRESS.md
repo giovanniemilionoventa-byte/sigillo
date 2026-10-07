@@ -3554,6 +3554,29 @@ file li decide il sistema operativo), quindi si mostra e si ferma, non si impedi
   togliere l'SDK; si vede come `lost`. Per renderlo non modificabile serve un altro utente del
   sistema operativo: guida a parte, non nel file.
 
+### Sessione 45 — 2026-10-07 — Claude Code registrato su Sigillo, solo per l'amministratore
+
+Su richiesta del titolare (thread "Collegare Sigillo a Claude Code"): ogni sessione di Claude Code
+diventa una serie di ricevute, senza scrivere codice.
+- **SDK**: nuovo comando `sigillo-claude-code connect --endpoint … --key …` (modulo
+  `sigillo.claude_code`). Manda una prima ricevuta per controllare la chiave, salva endpoint e chiave
+  in `~/.sigillo/claude-code.json` (solo il proprietario) e aggiunge cinque hook alle impostazioni
+  utente di Claude Code: inizio sessione, prompt, strumento riuscito, strumento fallito, fine
+  sessione. Contenuti solo come hash salati, come nel resto dell'SDK. `disconnect` scrive
+  `claude_code.disconnected` e toglie solo i propri hook.
+- **Server**: gli span con `sigillo.client=claude-code` sulla risorsa sono accettati solo dove
+  `SIGILLO_CLAUDE_CODE` lo permette, altrimenti 403. Nessun cambio al formato delle ricevute.
+- **Console**: nella pagina «Collega», accanto a «SDK Python», la scheda «Claude Code» con i due
+  comandi da copiare (chiave inclusa), solo per i sistemi aperti.
+- **Regola 11**: `SIGILLO_CLAUDE_CODE=operator` di base, `all` dopo il via del titolare, `off` per
+  spegnerlo.
+- **Provato davvero**: server e firmatario reali, Claude Code 2.1 reale che scrive un file, lo legge
+  con Bash e fallisce una lettura: 7 ricevute (connessione, inizio, prompt, Write, Bash, Read in
+  errore, fine), nessun testo in chiaro nel database, l'archivio esportato si verifica.
+- **Limite detto chiaramente**: chi può modificare le impostazioni di Claude Code può togliere gli
+  hook. Cowork, da una segnalazione pubblica, oggi non esegue gli hook dei plugin: non è coperto.
+- **Verificatore**: non toccato.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

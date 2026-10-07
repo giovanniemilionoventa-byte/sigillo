@@ -305,7 +305,7 @@ export const SDK_REQUIREMENT =
  * endpoints still answer, the SDK itself sends to the first, but neither is
  * offered here.
  */
-function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean): string {
+function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, claudeCode: boolean): string {
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
   const agent = upload && token !== null ? agentUpload(systemId, endpoint, token) : "";
@@ -324,11 +324,27 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
   // The install command is a box of its own, one click selects all of it:
   // inside the code it would be a comment, and a copy of that line would not run.
   const install = `<pre class="code python install">${escape(`pip install "${SDK_REQUIREMENT}"`)}</pre>`;
-  return `<input type="radio" name="way" id="way-python" class="sr" checked>
+  // Claude Code (sigillo-claude-code, in the SDK): two commands in one box,
+  // copied together; no comment line, which zsh would try to run.
+  const claude = claudeCode
+    ? {
+        radio: `\n<input type="radio" name="way" id="way-claude" class="sr">`,
+        way: `\n<label class="way" for="way-claude"><span class="tile-icon purple" aria-hidden="true">${ICONS.terminal}</span>${escape(t.ways.claudeCode)}</label>`,
+        body: `<div class="claude-code"><p class="label">${escape(t.claudeCodeRun)}</p>
+<pre class="code install">${escape(
+          [
+            `pip install "${SDK_REQUIREMENT.replace("[langchain]", "")}"`,
+            `sigillo-claude-code connect --endpoint ${endpoint} --key ${key}`,
+          ].join("\n"),
+        )}</pre></div>
+`,
+      }
+    : { radio: "", way: "", body: "" };
+  return `<input type="radio" name="way" id="way-python" class="sr" checked>${claude.radio}
 <div class="ways">
-${pythonWay}
+${pythonWay}${claude.way}
 </div>
-${agent}${install}
+${agent}${claude.body}${install}
 <pre class="code python">${escape(python)}</pre>`;
 }
 
@@ -366,6 +382,8 @@ export function connectPage(view: {
   now: Date;
   /** Whether to offer "upload your agent" (agent-setup.ts), where the key is shown. */
   upload?: boolean;
+  /** Whether to offer Claude Code (sigillo-claude-code), opened per account by SIGILLO_CLAUDE_CODE. */
+  claudeCode?: boolean;
 }): string {
   const t = UI.connect;
   const { record, token, mode } = view;
@@ -381,7 +399,7 @@ export function connectPage(view: {
         : `${mode === "connect" ? '<meta http-equiv="refresh" content="10">' : ""}<div class="card wait-line" role="status"><span class="spinner" aria-hidden="true"></span><span>${escape(t.waiting)}</span><a class="end" href="${path}/collega">${escape(t.check)}</a></div>`;
   return `<div class="narrow">${pageHead(title)}
 ${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
-${connectWays(record.system_id, view.endpoint, token, view.upload ?? false)}
+${connectWays(record.system_id, view.endpoint, token, view.upload ?? false, view.claudeCode ?? false)}
 ${wait}
 </div>`;
 }

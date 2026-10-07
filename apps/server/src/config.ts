@@ -214,6 +214,19 @@ export function firebaseAccounts(env: Environment): { apiKey: string; projectId:
 }
 
 /**
+ * SIGILLO_CLAUDE_CODE: whose systems accept actions from Claude Code's hooks
+ * (sdk-python/src/sigillo/claude_code.py), and see that way on the connect
+ * page. `off`, `operator` (the default: new, so the administrator's own
+ * systems only, CLAUDE.md rule 11) or `all`.
+ */
+export function claudeCode(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_CLAUDE_CODE"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_CLAUDE_CODE must be off, operator or all, received ${JSON.stringify(value)}`);
+}
+
+/**
  * SIGILLO_SCRIPT_GUARD: whose agents' main script the heartbeat watches
  * (connection/watch.ts). `off`, `operator` (the default: new, so the
  * administrator's own systems only, CLAUDE.md rule 11) or `all`.
