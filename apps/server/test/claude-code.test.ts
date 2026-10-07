@@ -178,9 +178,11 @@ describe("the connect page", () => {
     // One line per system. PowerShell 5 has no &&, so Windows joins with ;.
     expect(page).toContain("main.zip#subdirectory=sdk-python&quot;; python -m sigillo.claude_code connect");
     expect(page).toContain("main.zip#subdirectory=sdk-python&quot; &amp;&amp; python3 -m sigillo.claude_code connect");
-    expect(page).not.toContain("cloud");
+    // The cloud line only says so when it fails, so it cannot stop an environment from starting.
+    expect(page).toMatch(/connect --endpoint [^\n]* \|\| echo &quot;Sigillo is not connected/);
+    expect(page.match(/\|\| echo/g)).toHaveLength(1);
     expect(page).toContain("python -m pip install --upgrade &quot;sigillo @ https://");
-    for (const title of ["Windows (PowerShell)", "macOS (Terminal)", "Linux (terminal)"]) {
+    for (const title of ["Windows (PowerShell)", "macOS (Terminal)", "Linux (terminal)", "Claude Code in the cloud"]) {
       expect(page).toContain(title);
     }
     expect(await newKey(ACME, ACME_BOT)).not.toContain('id="way-claude"');
@@ -225,5 +227,60 @@ describe("the history of a system with several Claude Code sessions", () => {
     await store.append(receipt("Claude Code · offers · a1b2c3d4", "Bash", "02"));
     const page = (await app!.inject({ method: "GET", url: `/ui/systems/${OPERATOR_BOT}`, headers: { cookie: cookie(OPERATOR) } })).body;
     expect(page).not.toContain('class="label run"');
+  });
+});
+
+describe("choosing one session in the history", () => {
+  const receipt = (agent: string, name: string, minute: string) => ({
+    system_id: OPERATOR_BOT,
+    ts_event: `2026-10-07T11:${minute}:00.000Z`,
+    ts_received: `2026-10-07T11:${minute}:00.000Z`,
+    actor: { agent },
+    action: { kind: "tool_call" as const, name },
+    input_hash: null,
+    output_hash: null,
+    outcome: "ok" as const,
+    source: { type: "sdk" as const },
+  });
+  const A = "Claude Code · offers · a1b2c3d4";
+  const B = "Claude Code · contracts · 99887766";
+  const rows = (page: string): string[] => [...page.matchAll(/<span class="row-title">([^<]*)<\/span>/g)].map((match) => match[1] ?? "");
+  const get = async (query = ""): Promise<string> =>
+    (await app!.inject({ method: "GET", url: `/ui/systems/${OPERATOR_BOT}${query}`, headers: { cookie: cookie(OPERATOR) } })).body;
+
+  beforeEach(async () => {
+    await start();
+    // Three sessions' worth of receipts, interleaved as concurrent sessions write them.
+    await store.append(receipt(A, "Write", "01"));
+    await store.append(receipt(B, "Read", "02"));
+    await store.append(receipt(A, "Bash", "03"));
+    await store.append(receipt(B, "Grep", "04"));
+  });
+
+  it("offers every session in the search panel, with how many receipts it wrote", async () => {
+    const page = await get();
+    expect(page).toContain('<select name="agent">');
+    expect(page).toContain(`<option value="${A.replaceAll("·", "·")}">${A} (2)</option>`);
+    expect(page).toContain(`${B} (2)</option>`);
+  });
+
+  it("shows only that session's receipts, with the panel open and the choice marked", async () => {
+    const page = await get(`?agent=${encodeURIComponent(A)}`);
+    expect(rows(page).filter((title) => title !== "Registro aperto" && !title.startsWith("Connection"))).toEqual(["Used «Bash»", "Used «Write»"]);
+    expect(page).toContain(`<option value="${A}" selected>`);
+    expect(page).toContain('<details class="search" open>');
+    expect(page).not.toContain('class="label run"');
+  });
+
+  it("counts the kinds under the chosen session too", async () => {
+    const page = await get(`?agent=${encodeURIComponent(B)}`);
+    expect(page).toMatch(/Tools?<span class="count">2<\/span>/);
+  });
+
+  it("keeps the choice in the links, and a made-up session shows an empty list, not an error", async () => {
+    const page = await get(`?agent=${encodeURIComponent(A)}`);
+    expect(page).toContain(`agent=${encodeURIComponent(A).replaceAll("%20", "+")}`);
+    const none = await get("?agent=nobody");
+    expect(none).toContain('<option value="nobody" selected>');
   });
 });

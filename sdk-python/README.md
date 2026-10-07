@@ -219,7 +219,15 @@ python -m sigillo.claude_code disconnect
 ```
 
 On macOS and Linux, `python3` in place of `python`. The console shows the line
-for each system. `python -m` is used because pip's scripts
+for each system, and one more for Claude Code in the cloud: it goes in the
+environment's Setup script, with the Sigillo server's address added to the
+allowed domains of Network access. It ends in `|| echo …` so that a failed
+connect cannot stop the environment from starting; the hooks themselves then
+report each action they could not record. (A cloud session reads user-level
+hooks from `~/.claude/settings.json` like a local one: tried in a real cloud
+session. Whether the environment keeps what the setup script wrote is the
+platform's behaviour, not checked here.) Whoever can edit the environment can
+read the key in its setup script. `python -m` is used because pip's scripts
 folder (`sigillo-claude-code`) is not on the PATH on Windows.
 
 `connect` sends a first receipt (`claude_code.connected`), so a wrong key or an

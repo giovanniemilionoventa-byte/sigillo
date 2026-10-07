@@ -105,6 +105,10 @@ export function storeFor(store: ReceiptStore, viewer: Viewer): ReceiptStore {
       require(query.systemId);
       return store.countReceiptsByKind(query);
     },
+    recentAgents: (systemId: string, window?: number) => {
+      require(systemId);
+      return store.recentAgents(systemId, window);
+    },
     countReceiptsByOutcome: (query: Parameters<ReceiptStore["countReceiptsByOutcome"]>[0]) => {
       require(query.systemId);
       return store.countReceiptsByOutcome(query);

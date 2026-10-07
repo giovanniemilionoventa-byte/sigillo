@@ -198,7 +198,9 @@ const ui: Strings = {
       windows: "Windows (PowerShell)",
       mac: "macOS (Terminal)",
       linux: "Linux (terminal)",
+      cloud: "Claude Code in the cloud (the environment's setup script)",
     },
+    claudeCloudNote: "For the cloud, open the environment's settings in Claude Code, paste the line in Setup script, and add this server's address to the allowed domains of Network access.",
     keyPlaceholder: "<the-system-key>",
     waiting: "Waiting for the first receipt…",
     check: "Check",
@@ -277,6 +279,8 @@ const ui: Strings = {
     fromLabel: "From",
     toLabel: "To",
     nameLabel: "Action name",
+    agentLabel: "Agent or session",
+    allAgents: "All",
     filterLabel: "Filter by kind",
     allKinds: "All",
     kinds: {
