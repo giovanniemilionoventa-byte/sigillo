@@ -69,6 +69,16 @@ killed, the computer switched off, the network down) and when it comes back.
 An ordinary beat writes nothing. See `POST /api/v1/heartbeat` in
 `docs/API.md`.
 
+Each beat also carries the SHA-256 of the agent's main script file (never its
+content). If the script is edited while the agent runs, or the agent restarts
+with a different one, the server writes `script_changed` on the chain. With
+`sigillo.init(..., strict=True)` the agent also stops itself (message on
+standard error, exit status 70; `on_halt=` replaces that) when the server
+reports the change or when three beats in a row do not get through. It shows
+tampering and refuses to run unrecorded; it cannot forbid it. To make the file
+read-only for the agent, run the agent as another operating-system user than the
+file's owner.
+
 A process stopped by `SIGTERM` (a computer shutting down, `systemctl stop`)
 does not run Python's exit handlers, so it shows as lost rather than closed,
 unless the program catches the signal and calls `shutdown()`.

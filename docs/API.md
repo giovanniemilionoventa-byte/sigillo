@@ -300,6 +300,20 @@ by the agent `sigillo`, named
 | `sigillo.connection.stop` | it closed normally | when it did |
 | `sigillo.connection.lost` | no beat for 3 minutes, without a stop | its last beat |
 | `sigillo.connection.restored` | a lost session beats again | when it did |
+| `sigillo.connection.script_changed` | the script guard (below) saw a different script | when it did |
+
+**Script guard.** A start or beat may also carry `"script_hash"`: the SHA-256
+(64 lowercase hex characters) of the agent's main script file, read again at
+every beat, or `null` when the file can no longer be read. The server keeps the
+one a session started with and writes `script_changed` once if a later beat
+differs, and once after the start of a session whose script differs from the
+last session's that sent one. While a session's script differs, the answer
+carries `"script_changed": true`, which an SDK started with `strict=True` takes
+as its order to stop. Only the operator's own systems are watched until
+`SIGILLO_SCRIPT_GUARD` is `all` (`off` disables it); for any other the field is
+ignored and the answer is as before. The guard shows a changed script, it does
+not prevent one: whoever can edit the file can also remove the SDK, and that
+shows as `lost`.
 
 `lost` covers every silence alike: sigillo's code removed from the agent, the
 process killed, the computer switched off, the network cut. The server does not

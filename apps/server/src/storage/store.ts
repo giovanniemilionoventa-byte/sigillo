@@ -107,6 +107,10 @@ export interface ConnectionRow {
   state: ConnectionState;
   started_at: string;
   last_beat_at: string;
+  /** SHA-256 of the agent's main script when the session started; null if the SDK sent none. */
+  script_hash: string | null;
+  /** 1 once a beat showed a script other than `script_hash` (the script guard). */
+  script_changed: number;
 }
 
 export interface ChainTip {
@@ -989,10 +993,10 @@ export class ReceiptStore {
     const save = (): void => {
       this.write
         .prepare(
-          `INSERT INTO connections (system_id, session_id, state, started_at, last_beat_at)
-           VALUES (@system_id, @session_id, @state, @started_at, @last_beat_at)
+          `INSERT INTO connections (system_id, session_id, state, started_at, last_beat_at, script_hash, script_changed)
+           VALUES (@system_id, @session_id, @state, @started_at, @last_beat_at, @script_hash, @script_changed)
            ON CONFLICT (system_id, session_id) DO UPDATE
-           SET state = excluded.state, last_beat_at = excluded.last_beat_at`,
+           SET state = excluded.state, last_beat_at = excluded.last_beat_at, script_changed = excluded.script_changed`,
         )
         .run(row);
     };

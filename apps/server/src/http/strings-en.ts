@@ -405,6 +405,12 @@ const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
       "the computer switched off or the network down. The event time is that of the last heartbeat received.",
   },
   "sigillo.connection.restored": { title: "Connection restored", sentence: "The agent sends its heartbeat again after an interruption." },
+  "sigillo.connection.script_changed": {
+    title: "Agent script changed",
+    sentence:
+      "The agent's main script is not the one it started with (or it can no longer be read), or it started with a " +
+      "different script than the last time. An agent in strict mode stops on the first case.",
+  },
 };
 
 const KIND_LABELS: Record<Receipt["action"]["kind"], string> = {

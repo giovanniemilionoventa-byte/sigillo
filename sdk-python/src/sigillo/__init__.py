@@ -31,7 +31,10 @@ anything is sent, instead of letting the raw text travel to the server: see
 `init` also starts a heartbeat: every minute, busy or idle, the agent tells
 the server it is still connected, so that an agent whose sigillo code was
 removed, or whose process or computer stopped, shows on the chain as
-disconnected from its last beat on. See `heartbeat_seconds` below.
+disconnected from its last beat on. See `heartbeat_seconds` below. Each beat
+also carries the SHA-256 of the agent's main script, so that a script edited
+while the agent runs (or before it restarts) is written on the chain too, and
+`strict=True` makes the agent stop when that happens or when it cannot record.
 
 What this package does not do: it does not sign anything, and it does not decide
 where a receipt lands. The API key does: a key belongs to exactly one system,
@@ -58,6 +61,7 @@ import secrets as _secrets
 import sys as _sys
 import threading as _threading
 import urllib.request as _urllib_request
+from typing import Callable as _Callable
 from typing import Iterator as _Iterator
 from typing import Sequence as _Sequence
 
@@ -89,6 +93,32 @@ _ARTIFACT_ROLES = ("input", "output")
 _MODEL_NAME_ATTRIBUTES = ("gen_ai.request.model", "gen_ai.response.model", "llm.model_name")
 
 
+_STRICT_MISSED_BEATS = 3
+
+
+def _main_script() -> str | None:
+    """The path of the program's main script, or None where there is none (a
+    notebook, an interactive session)."""
+    path = getattr(_sys.modules.get("__main__"), "__file__", None)
+    return str(path) if path else None
+
+
+def _hash_of_file(path: str) -> str | None:
+    """SHA-256 of a file's bytes, or None when it can no longer be read."""
+    try:
+        with open(path, "rb") as handle:
+            return _hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def _halt_process(reason: str) -> None:
+    """What strict mode does by default: say why on standard error and end the process."""
+    _sys.stderr.write(f"sigillo: stopping this agent: {reason}\n")
+    _sys.stderr.flush()
+    _os._exit(70)
+
+
 class _Heartbeat:
     """Tells the server, every `interval` seconds, that this agent is still
     connected: `start` once, `beat` while the process runs (whether the agent
@@ -102,9 +132,23 @@ class _Heartbeat:
     same thing.
     """
 
-    def __init__(self, url: str, api_key: str, interval: float, show: bool = False) -> None:
+    def __init__(
+        self,
+        url: str,
+        api_key: str,
+        interval: float,
+        show: bool = False,
+        strict: bool = False,
+        on_halt: _Callable[[str], None] | None = None,
+    ) -> None:
         self._url = url
         self._show = show
+        self._strict = strict
+        self._on_halt = on_halt or _halt_process
+        self._halted = False
+        self._missed = 0
+        # The main script is found once, here; its bytes are read at every beat.
+        self._script = _main_script()
         self._headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         self._interval = interval
         self.session = _secrets.token_hex(16)
@@ -134,15 +178,38 @@ class _Heartbeat:
             self._send("beat")
 
     def _send(self, event: str) -> None:
-        body = _json.dumps({"session": self.session, "event": event}).encode("utf-8")
+        payload: dict[str, object] = {"session": self.session, "event": event}
+        if self._script is not None and event != "stop":
+            payload["script_hash"] = _hash_of_file(self._script)
+        body = _json.dumps(payload).encode("utf-8")
         if self._show:
             _show_sent("heartbeat", body.decode("utf-8"))
         request = _urllib_request.Request(self._url, data=body, headers=self._headers, method="POST")
         try:
             with _urllib_request.urlopen(request, timeout=10) as response:
-                response.read()
+                answer = response.read()
         except Exception as error:  # noqa: BLE001 - a heartbeat must never take the agent down
             _LOG.warning("sigillo heartbeat %r not delivered: %s", event, type(error).__name__)
+            if event != "stop":
+                self._missed += 1
+                if self._missed >= _STRICT_MISSED_BEATS:
+                    self._halt(f"sigillo could not record for {self._missed} heartbeats in a row")
+            return
+        self._missed = 0
+        try:
+            changed = _json.loads(answer).get("script_changed") is True
+        except (ValueError, AttributeError):
+            changed = False
+        if changed:
+            self._halt("this agent's script is not the one it started with")
+
+    def _halt(self, reason: str) -> None:
+        """Strict mode only, and once: the agent is told to stop."""
+        if not self._strict or self._halted:
+            return
+        self._halted = True
+        _LOG.critical("sigillo strict mode: %s", reason)
+        self._on_halt(reason)
 
 
 class Tracing:
@@ -510,6 +577,8 @@ def init(
     salt_content: bool = True,
     heartbeat_seconds: float = 60.0,
     show_sent: bool = False,
+    strict: bool = False,
+    on_halt: _Callable[[str], None] | None = None,
 ) -> Tracing:
     """Point OpenTelemetry at a sigillo server and turn on the instrumentations.
 
@@ -559,6 +628,20 @@ def init(
             customer checks, on their own computer and without trusting
             sigillo, that no content leaves it.
 
+        strict: false by default. When true, the agent stops itself, with a
+            message on standard error and exit status 70, if the server says
+            its main script is not the one it started with, or if three
+            heartbeats in a row do not get through: it does not go on without
+            the record. Each beat carries the SHA-256 of the main script
+            file (the file `python` was started with, read again every beat,
+            never its content); the server compares it with the one the
+            session started with. Only a sigillo account with the script
+            guard switched on is told anything, so for any other this does
+            nothing about scripts, though the missed-beats rule still applies.
+        on_halt: replaces how strict mode stops the agent: called once, from
+            the heartbeat's thread, with the reason as a sentence. For a
+            program that wants to shut down cleanly in its own way.
+
     Returns:
         A handle with `flush()` and `shutdown()`, and the list of the
         instrumentations that were actually turned on.
@@ -595,7 +678,9 @@ def init(
     _trace.set_tracer_provider(provider)
     instrumented = tuple(name for name in instrument if _instrument(name, provider))
 
-    heartbeat = _Heartbeat(_heartbeat_endpoint(traces_endpoint), api_key, heartbeat_seconds, show=show_sent)
+    heartbeat = _Heartbeat(
+        _heartbeat_endpoint(traces_endpoint), api_key, heartbeat_seconds, show=show_sent, strict=strict, on_halt=on_halt
+    )
     heartbeat.start()
 
     return Tracing(

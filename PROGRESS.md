@@ -3530,6 +3530,30 @@ server. Per collegarsi resta solo l'SDK Python: l'agente usa le sue credenziali 
 Il gateway (`/llm/*`, `SIGILLO_LLM_GATEWAY`) e le chiavi già salvate restano intatti, così si può
 riattivare annullando questa modifica. Il verificatore non cambia.
 
+### Sessione 44 — 2026-10-07 — lo script dell'agente non si cambia di nascosto, solo per l'amministratore
+
+Su richiesta del titolare: un agente che modifica il proprio script non deve poterlo fare senza che
+si veda, e in modalità rigida deve fermarsi. Un file Python non può vietarlo da sé (i permessi sui
+file li decide il sistema operativo), quindi si mostra e si ferma, non si impedisce.
+- **SDK**: ogni battito porta lo SHA-256 del file dello script principale (riletto a ogni battito,
+  mai il contenuto; `null` se non si legge più). Nuovo `init(strict=True, on_halt=...)`: l'agente si
+  ferma (stderr, uscita 70) se il server dice che lo script è cambiato o se tre battiti di fila non
+  arrivano.
+- **Server**: `POST /api/v1/heartbeat` accetta `script_hash`; ricevuta `sigillo.connection.script_changed`
+  (una volta) se cambia durante la sessione o se una nuova sessione parte con uno script diverso
+  dall'ultima; la risposta dice `script_changed`. Schema 6 (due colonne in `connections`).
+- **Regola 11**: `SIGILLO_SCRIPT_GUARD=operator` di base (solo i sistemi senza organizzazione),
+  `all` dopo il via del titolare, `off` per spegnerla. Nessuna UI nuova: solo la ricevuta nella
+  cronologia, che le organizzazioni non ricevono.
+- **Cosa comprò in righe**: sotto le 100 nel verificatore (non toccato).
+- **Aggiornamento automatico**: `deploy/auto-update.sh` (`install` una volta sul server, `uninstall`
+  per fermarlo). Ogni tre ore, se `main` ha un commit nuovo, esegue `update.sh`; senza novità non fa
+  nulla. Registro in `auto-update.log` accanto alla cartella `deploy/`. Quel che entra in `main`
+  arriva sul server entro tre ore.
+- **Limite detto chiaramente** (docs/API.md, README SDK): chi può modificare il file può anche
+  togliere l'SDK; si vede come `lost`. Per renderlo non modificabile serve un altro utente del
+  sistema operativo: guida a parte, non nel file.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
