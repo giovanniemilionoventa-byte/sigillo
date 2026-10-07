@@ -95,6 +95,7 @@ class ClaudeCodeTest(unittest.TestCase):
             {
                 "hook_event_name": "PostToolUse",
                 "session_id": "session-1",
+                "cwd": "C:\\Users\\giova\\contracts",
                 "tool_name": "Bash",
                 "tool_input": {"command": "cat the-secret-contract.txt"},
                 "tool_response": {"stdout": "the confidential clause"},
@@ -103,7 +104,7 @@ class ClaudeCodeTest(unittest.TestCase):
             "sigillo_key",
         )
         resource, span = self._only_span()
-        self.assertEqual(resource["service.name"], "claude-code")
+        self.assertEqual(resource["service.name"], "Claude Code · contracts · session-")
         self.assertEqual(resource["sigillo.client"], "claude-code")
         attributes = _attributes(span)
         self.assertEqual(attributes["openinference.span.kind"], "TOOL")
@@ -142,6 +143,18 @@ class ClaudeCodeTest(unittest.TestCase):
         self.assertTrue(all(_attributes(span)["openinference.span.kind"] == "AGENT" for span in spans))
         self.assertIn("sigillo.input.sha256", _attributes(spans[1]))
         self.assertNotIn(b"private memo", b"".join(_Server.bodies))
+
+    def test_each_session_is_its_own_agent_named_by_folder_and_session(self) -> None:
+        names = []
+        for event in (
+            {"hook_event_name": "SessionStart", "session_id": "a1b2c3d4-eeee", "cwd": "/home/anna/projects/offers/"},
+            {"hook_event_name": "SessionStart", "session_id": "ffff0000-1111"},
+            {"hook_event_name": "SessionStart", "session_id": "connect"},
+        ):
+            _Server.bodies = []
+            claude_code.record(event, self.base, "k")
+            names.append(self._only_span()[0]["service.name"])
+        self.assertEqual(names, ["Claude Code · offers · a1b2c3d4", "Claude Code · ffff0000", "Claude Code"])
 
     def test_events_it_does_not_know_send_nothing(self) -> None:
         claude_code.record({"hook_event_name": "Notification", "session_id": "s"}, self.base, "k")
@@ -229,6 +242,18 @@ class ClaudeCodeTest(unittest.TestCase):
             env={**os.environ, **self.environment},
             timeout=60,
         )
+
+    def test_connect_runs_as_python_dash_m_where_the_script_is_not_on_the_path(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "sigillo.claude_code", "connect", "--endpoint", self.base, "--key", "k"],
+            capture_output=True,
+            text=True,
+            env={**os.environ, **self.environment},
+            timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Connected", result.stdout)
+        self.assertTrue(self.settings_file.exists())
 
     def test_the_hook_records_an_event_from_standard_input(self) -> None:
         claude_code.connect(self.base, "k")

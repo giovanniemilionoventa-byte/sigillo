@@ -168,18 +168,38 @@ ${receipt.outcome === "ok" ? "" : outcomePill(receipt.outcome)}
 </a></li>`;
 }
 
-/** The list, a day at a time, newest first. */
+/**
+ * The list, a day at a time, newest first. When the receipts come from more
+ * than one agent (Claude Code names each of its sessions as an agent), each
+ * run of one agent's receipts gets a heading with its name, so sessions read
+ * apart. The genesis receipt names no agent and takes no heading.
+ */
 function receiptList(systemId: string, receipts: Receipt[], query: HistoryQuery, selected: number | null, now: Date): string {
-  const days: { day: string; rows: string[] }[] = [];
+  const named = (receipt: Receipt): string => (receipt.action.kind === "genesis" ? "" : receipt.actor.agent);
+  const several = new Set(receipts.map(named).filter((agent) => agent !== "")).size > 1;
+  const days: { day: string; runs: { agent: string; rows: string[] }[] }[] = [];
   for (const receipt of receipts) {
     const day = formatDayHeading(receipt.ts_received, now);
     const href = historyUrl(systemId, query, { ricevuta: String(receipt.seq) }, `#r-${receipt.seq}`);
     const row = receiptRow(receipt, href, receipt.seq === selected);
-    const last = days[days.length - 1];
-    if (last !== undefined && last.day === day) last.rows.push(row);
-    else days.push({ day, rows: [row] });
+    let last = days[days.length - 1];
+    if (last === undefined || last.day !== day) {
+      last = { day, runs: [] };
+      days.push(last);
+    }
+    const agent = several ? named(receipt) : "";
+    const run = last.runs[last.runs.length - 1];
+    if (run !== undefined && (run.agent === agent || agent === "")) run.rows.push(row);
+    else last.runs.push({ agent, rows: [row] });
   }
-  return days.map(({ day, rows }) => `<h3 class="day">${escape(day)}</h3>\n<ol class="rows">${rows.join("\n")}</ol>`).join("\n");
+  return days
+    .map(({ day, runs }) => {
+      const lists = runs
+        .map(({ agent, rows }) => `${agent === "" ? "" : `<p class="label run">${escape(agent)}</p>\n`}<ol class="rows">${rows.join("\n")}</ol>`)
+        .join("\n");
+      return `<h3 class="day">${escape(day)}</h3>\n${lists}`;
+    })
+    .join("\n");
 }
 
 /** One label/value line of the inspector. */

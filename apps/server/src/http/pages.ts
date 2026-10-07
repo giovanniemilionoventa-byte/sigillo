@@ -324,19 +324,25 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
   // The install command is a box of its own, one click selects all of it:
   // inside the code it would be a comment, and a copy of that line would not run.
   const install = `<pre class="code python install">${escape(`pip install "${SDK_REQUIREMENT}"`)}</pre>`;
-  // Claude Code (sigillo-claude-code, in the SDK): two commands in one box,
-  // copied together; no comment line, which zsh would try to run.
+  // Claude Code (sigillo.claude_code, in the SDK): one line per system, each
+  // in a box of its own. `python -m`, not the sigillo-claude-code script:
+  // pip's scripts folder is not on a Windows PATH. Windows PowerShell 5 has
+  // no `&&`, so its line joins with `;`; `--upgrade` because the SDK may
+  // already be there from before Claude Code was added. No comment line,
+  // which zsh would try to run.
+  const claudeLine = (python: string, join: string): string =>
+    [
+      `${python} -m pip install --upgrade "${SDK_REQUIREMENT.replace("[langchain]", "")}"`,
+      `${python} -m sigillo.claude_code connect --endpoint ${endpoint} --key ${key}`,
+    ].join(join);
+  const claudeBox = (title: string, line: string): string =>
+    `<p class="label">${escape(title)}</p>\n<pre class="code install">${escape(line)}</pre>\n`;
   const claude = claudeCode
     ? {
         radio: `\n<input type="radio" name="way" id="way-claude" class="sr">`,
         way: `\n<label class="way" for="way-claude"><span class="tile-icon purple" aria-hidden="true">${ICONS.terminal}</span>${escape(t.ways.claudeCode)}</label>`,
-        body: `<div class="claude-code"><p class="label">${escape(t.claudeCodeRun)}</p>
-<pre class="code install">${escape(
-          [
-            `pip install "${SDK_REQUIREMENT.replace("[langchain]", "")}"`,
-            `sigillo-claude-code connect --endpoint ${endpoint} --key ${key}`,
-          ].join("\n"),
-        )}</pre></div>
+        body: `<div class="claude-code"><p class="section">${escape(t.claudeCodeRun)}</p>
+${claudeBox(t.claudeSystems.windows, claudeLine("python", "; "))}${claudeBox(t.claudeSystems.mac, claudeLine("python3", " && "))}${claudeBox(t.claudeSystems.linux, claudeLine("python3", " && "))}</div>
 `,
       }
     : { radio: "", way: "", body: "" };

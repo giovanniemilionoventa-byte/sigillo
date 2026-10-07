@@ -193,7 +193,12 @@ const ui: Strings = {
     title: (name: string): string => `Connect ${name}`,
     ways: { python: "Python SDK", claudeCode: "Claude Code" },
     pasteAtTop: "Paste this at the top of your agent's Python file:",
-    claudeCodeRun: "Run this in a terminal, on the computer where you use Claude Code, then restart Claude Code:",
+    claudeCodeRun: "Paste the line for your system, then restart Claude Code. It prints Connected when it worked.",
+    claudeSystems: {
+      windows: "Windows (PowerShell)",
+      mac: "macOS (Terminal)",
+      linux: "Linux (terminal)",
+    },
     keyPlaceholder: "<the-system-key>",
     waiting: "Waiting for the first receipt…",
     check: "Check",
