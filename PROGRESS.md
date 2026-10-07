@@ -3494,6 +3494,32 @@ resta nel tuo browser» e «il documento non lascia il tuo computer», e il sepa
 strade ora dice solo «oppure» / «or». I test che leggevano la chiave dal riquadro la leggono dal
 file o dal codice. Nessun codice aggiunto: il verificatore non cambia.
 
+### Sessione 42 — 2026-10-07 — revisione di sicurezza e bug, prima della demo a un CEO
+
+Su richiesta del titolare: una revisione completa di server, console, accessi, isolamento fra
+clienti, gateway dei modelli, SDK, deploy. La maggior parte regge (isolamento fra clienti chiuso
+per default, CSRF, sessioni firmate, limiti ai tentativi, CSP, nessuna dipendenza con
+vulnerabilità note; una prova con nomi ostili in ogni campo non trova HTML non escapato in nessuna
+pagina). Trovati e corretti, ciascuno con il suo test:
+
+- **Chiavi sigillo nei log di Caddy.** Le SDK di Anthropic e Google mandano la chiave al gateway
+  in `X-Api-Key` e `X-Goog-Api-Key`, che Caddy scriveva per intero; e una richiesta finita in 502
+  (server in riavvio) veniva scritta di nuovo dal logger predefinito, fuori dal filtro, con la
+  query (`?key=` di Gemini, impronte dei documenti). Ora le due intestazioni sono tolte e il
+  logger predefinito ha lo stesso filtro. Provato con Caddy 2.11.4 vero.
+- **Heartbeat oltre il limite mensile.** Ogni `session` mai vista scriveva una ricevuta, e
+  l'endpoint non era mai rifiutato: un id nuovo a ogni richiesta scriveva ricevute senza fine.
+  Ora un sistema apre al massimo 60 sessioni l'ora e un'organizzazione oltre il limite non ne apre
+  di nuove (429); quelle già aperte continuano come prima.
+- **«Sigilla ora» in parallelo.** Ogni richiesta faceva un giro completo di checkpoint accanto
+  agli altri: token chiesti due volte alla TSA per lo stesso checkpoint, e qualunque account
+  poteva tenere occupata la TSA condivisa. Ora un giro alla volta, al massimo uno ogni 10 secondi,
+  condiviso da chi chiede nel frattempo.
+- **Bug minori:** un'esportazione con un giorno inesistente (2026-02-30) dava 500; la ricerca nella
+  cronologia trattava `_` e `%` come jolly.
+
+Il verificatore non cambia.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
