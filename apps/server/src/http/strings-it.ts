@@ -206,7 +206,9 @@ const ui = {
       windows: "Windows (PowerShell)",
       mac: "macOS (Terminale)",
       linux: "Linux (terminale)",
+      cloud: "Claude Code nel cloud (lo script di setup dell'ambiente)",
     },
+    claudeCloudNote: "Per il cloud, apri le impostazioni dell'ambiente in Claude Code, incolla la riga in Script di setup e aggiungi l'indirizzo di questo server ai domini permessi di Accesso alla rete.",
     keyPlaceholder: "<la-chiave-del-sistema>",
     waiting: "In attesa della prima ricevuta…",
     check: "Controlla",
@@ -285,6 +287,8 @@ const ui = {
     fromLabel: "Dal",
     toLabel: "Al",
     nameLabel: "Nome azione",
+    agentLabel: "Agente o sessione",
+    allAgents: "Tutti",
     // The filter by kind, one segment each, with "Tutte" first.
     filterLabel: "Filtra per tipo",
     allKinds: "Tutte",

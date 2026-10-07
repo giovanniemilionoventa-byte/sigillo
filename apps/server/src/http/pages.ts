@@ -335,6 +335,9 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
       `${python} -m pip install --upgrade "${SDK_REQUIREMENT.replace("[langchain]", "")}"`,
       `${python} -m sigillo.claude_code connect --endpoint ${endpoint} --key ${key}`,
     ].join(join);
+  // In a cloud environment's setup script a failing line would stop the
+  // environment from starting at all, so a failed connect only says so.
+  const cloudLine = `${claudeLine("python3", " && ")} || echo "Sigillo is not connected: see the error above"`;
   const claudeBox = (title: string, line: string): string =>
     `<p class="label">${escape(title)}</p>\n<pre class="code install">${escape(line)}</pre>\n`;
   const claude = claudeCode
@@ -342,7 +345,7 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
         radio: `\n<input type="radio" name="way" id="way-claude" class="sr">`,
         way: `\n<label class="way" for="way-claude"><span class="tile-icon purple" aria-hidden="true">${ICONS.terminal}</span>${escape(t.ways.claudeCode)}</label>`,
         body: `<div class="claude-code"><p class="section">${escape(t.claudeCodeRun)}</p>
-${claudeBox(t.claudeSystems.windows, claudeLine("python", "; "))}${claudeBox(t.claudeSystems.mac, claudeLine("python3", " && "))}${claudeBox(t.claudeSystems.linux, claudeLine("python3", " && "))}</div>
+${claudeBox(t.claudeSystems.windows, claudeLine("python", "; "))}${claudeBox(t.claudeSystems.mac, claudeLine("python3", " && "))}${claudeBox(t.claudeSystems.linux, claudeLine("python3", " && "))}${claudeBox(t.claudeSystems.cloud, cloudLine)}<p class="section">${escape(t.claudeCloudNote)}</p></div>
 `,
       }
     : { radio: "", way: "", body: "" };

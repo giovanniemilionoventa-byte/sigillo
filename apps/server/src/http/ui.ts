@@ -798,7 +798,12 @@ ${exportSheet(record)}`,
     if (record === null) return notFound(session, reply);
 
     const query = historyQuery(request.query as Record<string, unknown>);
-    const filters = { systemId, ...storeRange(query), ...(query.name === undefined ? {} : { name: query.name }) };
+    const filters = {
+      systemId,
+      ...storeRange(query),
+      ...(query.name === undefined ? {} : { name: query.name }),
+      ...(query.agent === undefined ? {} : { agent: query.agent }),
+    };
     const receipts = store.searchReceipts({
       ...filters,
       ...(query.kind === undefined ? {} : { kind: query.kind }),
@@ -823,6 +828,7 @@ ${exportSheet(record)}`,
           query,
           receipts,
           counts: store.countReceiptsByKind(filters),
+          agents: store.recentAgents(systemId),
           selected,
           explicit: asked !== null,
           anchoredBelow: anchoredSize(store, systemId),

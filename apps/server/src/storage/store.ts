@@ -213,6 +213,8 @@ export interface ReceiptFilter {
   to?: string;
   /** Part of the action's name. */
   name?: string;
+  /** Exactly this actor, e.g. one Claude Code session (its agent name). */
+  agent?: string;
 }
 
 /** A system as the operator's view and the CLI list it. */
@@ -1238,7 +1240,30 @@ export class ReceiptStore {
       clauses.push("action_name LIKE @name ESCAPE '\\'");
       parameters["name"] = `%${query.name.replaceAll(/[\\%_]/g, "\\$&")}%`;
     }
+    if (query.agent !== undefined && query.agent.length > 0) {
+      clauses.push("json_extract(canonical, '$.actor.agent') = @agent");
+      parameters["agent"] = query.agent;
+    }
     return { where: clauses.join(" AND "), parameters };
+  }
+
+  /**
+   * The agents that wrote to a system lately, most recently active first,
+   * with how many receipts each wrote: the choices of the history's filter by
+   * agent. Looks at the newest `window` receipts only, so a very long chain
+   * costs the page no more than a short one; the opening of the register,
+   * which names no agent, is left out.
+   */
+  recentAgents(systemId: string, window = 2000): { agent: string; count: number }[] {
+    const rows = this.read
+      .prepare(
+        `SELECT json_extract(canonical, '$.actor.agent') AS agent, COUNT(*) AS count, MAX(seq) AS last
+         FROM (SELECT seq, canonical, action_kind FROM receipts WHERE system_id = ? ORDER BY seq DESC LIMIT ?)
+         WHERE action_kind != 'genesis'
+         GROUP BY agent ORDER BY last DESC`,
+      )
+      .all(systemId, window) as { agent: string; count: number }[];
+    return rows.map(({ agent, count }) => ({ agent, count }));
   }
 
   /** Receipts matching a filter, newest first, for the operator's view. */

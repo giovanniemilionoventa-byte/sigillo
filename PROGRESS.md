@@ -3599,6 +3599,24 @@ tratto dello stesso agente ha un titoletto col suo nome; con un agente solo la l
 prima. Nella pagina «Collega» restano Windows, macOS e Linux; la riga per il cloud è stata tolta
 (il cloud si vedrà più avanti).
 
+### Sessione 48 — 2026-10-07 — più sessioni di Claude Code insieme, e la riga per il cloud
+
+Il titolare ha visto che con più sessioni aperte insieme il Registro non si legge, e ha richiesto il
+cloud.
+- **Più sessioni insieme**: provate tre sessioni simultanee contro un server e un firmatario veri
+  (33 ricevute su 33, nessun errore): la perdita non c'è lato server. Il problema era la lettura:
+  le ricevute si alternano, e il Registro non permetteva di isolarne una. Nuovo filtro «Agente o
+  sessione» nel pannello di ricerca del Registro (compare con più di un agente; elenca gli agenti
+  degli ultimi 2000 ricevute con quante ne hanno scritte; `?agent=`); la lista filtrata non ha
+  titoletti. `ReceiptStore.recentAgents` e il filtro `agent` (SQLite `json_extract` sul canonico),
+  consentiti all'organizzazione solo sui suoi sistemi (`tenancy.ts`). Nessuna migrazione.
+- **Cloud**: provato in una sessione cloud vera che un hook scritto in `~/.claude/settings.json`
+  parte (e si ricarica a sessione aperta). La scheda «Collega» ha di nuovo il riquadro per il cloud,
+  per lo Script di setup dell'ambiente; la riga finisce con `|| echo …` perché un setup che fallisce
+  non deve impedire all'ambiente di partire. Da verificare dal titolare: che l'ambiente conservi
+  quanto scritto dallo script, e il dominio permesso nella rete.
+- **Regola 11**: sempre sotto `SIGILLO_CLAUDE_CODE=operator`.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

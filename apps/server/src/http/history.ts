@@ -30,12 +30,14 @@ import { ICONS } from "./style.js";
 export interface HistoryQuery {
   kind?: string;
   name?: string;
+  /** One agent's receipts only, e.g. one Claude Code session. */
+  agent?: string;
   from?: string;
   to?: string;
   ricevuta?: string;
 }
 
-const FILTERS = ["kind", "name", "from", "to"] as const;
+const FILTERS = ["kind", "name", "agent", "from", "to"] as const;
 const KINDS = ["tool_call", "llm_call", "agent_step", "decision", "genesis"] as const;
 /** The most receipts the list shows at once, newest first. */
 export const HISTORY_LIMIT = 200;
@@ -307,6 +309,8 @@ export interface HistoryView {
   receipts: Receipt[];
   /** How many receipts of each kind the filters other than the kind let through. */
   counts: Record<string, number>;
+  /** The agents that wrote to this system lately (store.recentAgents). */
+  agents: { agent: string; count: number }[];
   /** The receipt in the inspector, and whether the address asked for it. */
   selected: Receipt | null;
   explicit: boolean;
@@ -316,7 +320,7 @@ export interface HistoryView {
 
 /** The history of one system: header, filters, the list, and the inspector beside it. */
 export function historyPage(view: HistoryView): string {
-  const { record, query, receipts, counts, selected } = view;
+  const { record, query, receipts, counts, selected, agents } = view;
   const t = UI.history;
   const systemId = record.system_id;
   const currentKind = query.kind ?? "";
@@ -332,19 +336,30 @@ export function historyPage(view: HistoryView): string {
     ...KINDS.filter((kind) => (counts[kind] ?? 0) > 0 || kind === currentKind).map((kind) => segment(kind, t.kinds[kind], counts[kind] ?? 0)),
   ].join("");
 
-  const filtered = query.name !== undefined || query.from !== undefined || query.to !== undefined;
+  const filtered = query.name !== undefined || query.agent !== undefined || query.from !== undefined || query.to !== undefined;
+  // Offered when more than one agent wrote here, or one is already chosen (so it can be undone).
+  const agentChoices = agents.some((entry) => entry.agent === query.agent) || query.agent === undefined ? agents : [{ agent: query.agent, count: 0 }, ...agents];
+  const agentSelect =
+    agentChoices.length < 2 && query.agent === undefined
+      ? ""
+      : `<label>${escape(t.agentLabel)}<select name="agent"><option value="">${escape(t.allAgents)}</option>${agentChoices
+          .map(
+            (entry) =>
+              `<option value="${escape(entry.agent)}"${entry.agent === query.agent ? " selected" : ""}>${escape(entry.agent)}${entry.count === 0 ? "" : ` (${entry.count})`}</option>`,
+          )
+          .join("")}</select></label>\n`;
   const dateValue = (value: string | undefined): string => (value !== undefined && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : "");
   const search = `<details class="search"${filtered ? " open" : ""}><summary aria-label="${escape(t.searchTitle)}" title="${escape(t.searchTitle)}">${ICONS.search}</summary>
 <form method="get" action="${systemPath(systemId)}">
 ${query.kind === undefined ? "" : `<input type="hidden" name="kind" value="${escape(query.kind)}">`}
 <label>${escape(t.nameLabel)}<input type="text" name="name" value="${escape(query.name ?? "")}" autocomplete="off" spellcheck="false"></label>
-<label>${escape(t.fromLabel)}<input type="date" name="from" value="${escape(dateValue(query.from))}"></label>
+${agentSelect}<label>${escape(t.fromLabel)}<input type="date" name="from" value="${escape(dateValue(query.from))}"></label>
 <label>${escape(t.toLabel)}<input type="date" name="to" value="${escape(dateValue(query.to))}"></label>
 <button type="submit" class="primary">${escape(t.searchButton)}</button>
 </form>
 </details>`;
   const clear = filtered
-    ? `<p class="filter-line"><a href="${escape(historyUrl(systemId, query, { name: undefined, from: undefined, to: undefined, ricevuta: undefined }))}">${escape(t.clearFilters)}</a></p>`
+    ? `<p class="filter-line"><a href="${escape(historyUrl(systemId, query, { name: undefined, agent: undefined, from: undefined, to: undefined, ricevuta: undefined }))}">${escape(t.clearFilters)}</a></p>`
     : "";
 
   const list =
