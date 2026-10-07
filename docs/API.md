@@ -307,8 +307,11 @@ tell them apart, and does not call a session lost until it has itself been up
 for 3 minutes, so its own downtime is not blamed on the agent. A
 `sigillo.connection.*` name is refused from `/api/v1/receipts` (400) and
 dropped from `/v1/traces` (counted in `ignored`): only the server writes one.
-Heartbeat receipts do not count against an organization's monthly limit
-check, and are never refused for it.
+A session already open is never refused for an organization's monthly limit:
+its beats, its `stop` and its `lost` are written past it. A session not seen
+before is: `429`, with `Retry-After`, once the organization is over its limit,
+and once its system has opened 60 sessions in the last hour, so that a client
+cannot write receipts without end by sending a new `session` every time.
 
 Response `200` with `{"recorded": {"seq": 7, "name": "sigillo.connection.start"}}`,
 or `{"recorded": null}` for a beat that changed nothing.
