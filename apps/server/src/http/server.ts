@@ -14,6 +14,9 @@ import type { ReceiptStore } from "../storage/store.js";
 import type { UiSessions } from "../auth/sessions.js";
 import { registerUi, type UiOptions } from "./ui.js";
 
+/** The resource attribute a connector names itself under (sdk-python/src/sigillo/claude_code.py). */
+const CLIENT_ATTRIBUTE = "sigillo.client";
+
 /**
  * The ingest surface.
  *
@@ -73,6 +76,12 @@ export interface ServerOptions {
    * default: systems with no organization, CLAUDE.md rule 11) or `all`.
    */
   scriptGuard?: "off" | "operator" | "all";
+  /**
+   * Whose systems accept spans from the Claude Code connector (resource
+   * attribute sigillo.client=claude-code), and see it on the connect page:
+   * `off`, `operator` (the default, CLAUDE.md rule 11) or `all`.
+   */
+  claudeCode?: "off" | "operator" | "all";
   /** The model gateway (gateway/llm.ts). Not given: /llm/* is not served. */
   gateway?: GatewayOptions;
   /**
@@ -352,11 +361,17 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.ui.accounts === undefined ? {} : { accounts: options.ui.accounts }),
       ...(options.ui.backupDirectory === undefined ? {} : { backupDirectory: options.ui.backupDirectory }),
       ...(options.ui.agentUpload === undefined ? {} : { agentUpload: options.ui.agentUpload }),
+      claudeCode: options.claudeCode ?? "operator",
       ...(options.organizationMonthlyReceipts === undefined
         ? {}
         : { organizationMonthlyReceipts: options.organizationMonthlyReceipts }),
     });
   }
+
+  const claudeCodeMode = options.claudeCode ?? "operator";
+  const claudeCodeOpenTo = (systemId: string): boolean =>
+    claudeCodeMode === "all" ||
+    (claudeCodeMode === "operator" && (store.systemRecord(systemId)?.organization_id ?? null) === null);
 
   app.post("/v1/traces", async (request, reply) => {
     const systemId = await authenticate(request);
@@ -377,6 +392,12 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         return reply.code(400).send({ error: error.message });
       }
       throw error;
+    }
+
+    // The Claude Code connector says who it is on the resource; it is new, so
+    // only the systems it is opened to may use it (CLAUDE.md rule 11).
+    if (spans.some((span) => span.resource.get(CLIENT_ATTRIBUTE) === "claude-code") && !claudeCodeOpenTo(systemId)) {
+      return reply.code(403).send({ error: "Claude Code is not enabled for this account yet" });
     }
 
     const batch = adaptSpans(spans);

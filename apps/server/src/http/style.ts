@@ -409,9 +409,11 @@ details.tech .facts { margin-top: 10px; }
 .code { display: none; margin: 0; padding: 20px 22px; border-radius: 14px; background: var(--code); color: var(--on-code);
   font: 13px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .code.install { margin-bottom: 12px; user-select: all; -webkit-user-select: all; }
-#way-python:checked ~ .ways [for="way-python"] { box-shadow: 0 0 0 2px var(--action); }
-#way-python:focus-visible ~ .ways [for="way-python"] { outline: 2px solid var(--focus); outline-offset: 2px; }
-#way-python:checked ~ .code.python { display: block; }
+#way-python:checked ~ .ways [for="way-python"], #way-claude:checked ~ .ways [for="way-claude"] { box-shadow: 0 0 0 2px var(--action); }
+#way-python:focus-visible ~ .ways [for="way-python"], #way-claude:focus-visible ~ .ways [for="way-claude"] { outline: 2px solid var(--focus); outline-offset: 2px; }
+#way-python:checked ~ .code.python, #way-claude:checked ~ .claude-code { display: block; }
+.claude-code { display: none; }
+.claude-code .code { display: block; }
 .agent-upload { display: none; }
 #way-python:checked ~ .agent-upload.ready { display: block; }
 .agent-upload .notice { margin: 12px 0 0; }
@@ -608,6 +610,7 @@ export const ICONS = {
   mail: line('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>'),
   clock: line('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   upload: line('<path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 20h14"/>'),
+  terminal: line('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3"/><path d="M12 15h5"/>'),
   python: line(
     '<path d="M12 3c-4 0-4 2-4 3v2h5v1H6c-2 0-3 1-3 4s1 4 3 4h1v-2c0-2 1-3 3-3h5c1 0 2-1 2-2V6c0-2-2-3-5-3z"/><path d="M12 21c4 0 4-2 4-3v-2h-5v-1h7c2 0 3-1 3-4s-1-4-3-4h-1v2c0 2-1 3-3 3h-5c-1 0-2 1-2 2v4c0 2 2 3 5 3z"/>',
   ),
