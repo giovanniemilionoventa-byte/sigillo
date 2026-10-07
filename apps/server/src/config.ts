@@ -212,3 +212,15 @@ export function firebaseAccounts(env: Environment): { apiKey: string; projectId:
   }
   return { apiKey, projectId, publicUrl: url.origin };
 }
+
+/**
+ * SIGILLO_SCRIPT_GUARD: whose agents' main script the heartbeat watches
+ * (connection/watch.ts). `off`, `operator` (the default: new, so the
+ * administrator's own systems only, CLAUDE.md rule 11) or `all`.
+ */
+export function scriptGuard(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_SCRIPT_GUARD"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_SCRIPT_GUARD must be off, operator or all, received ${JSON.stringify(value)}`);
+}

@@ -54,12 +54,12 @@ afterEach(async () => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-const beat = (event: "start" | "beat" | "stop", session = SESSION, key = token) =>
+const beat = (event: "start" | "beat" | "stop", session = SESSION, key = token, script_hash?: string | null) =>
   app.inject({
     method: "POST",
     url: "/api/v1/heartbeat",
     headers: { authorization: `Bearer ${key}` },
-    payload: { session, event },
+    payload: script_hash === undefined ? { session, event } : { session, event, script_hash },
   });
 
 const names = (): string[] => store.readChain(SYSTEM).map((receipt) => receipt.action.name);
@@ -272,5 +272,76 @@ describe("a client that invents sessions", () => {
       CONNECTION.start,
       CONNECTION.stop,
     ]);
+  });
+});
+
+const SCRIPT_A = "a".repeat(64);
+const SCRIPT_B = "b".repeat(64);
+
+describe("the script guard", () => {
+  it("writes `script_changed` once when a running agent's script is not the one it started with, and says so in each answer", async () => {
+    expect((await beat("start", SESSION, token, SCRIPT_A)).json()).toEqual({
+      recorded: { seq: 1, name: CONNECTION.start },
+      script_changed: false,
+    });
+    clock += MINUTE;
+    expect((await beat("beat", SESSION, token, SCRIPT_A)).json()).toEqual({ recorded: null, script_changed: false });
+    clock += MINUTE;
+    expect((await beat("beat", SESSION, token, SCRIPT_B)).json()).toEqual({
+      recorded: { seq: 2, name: CONNECTION.scriptChanged },
+      script_changed: true,
+    });
+    // Once is enough: the same change is not written again, but it keeps being said.
+    clock += MINUTE;
+    expect((await beat("beat", SESSION, token, SCRIPT_B)).json()).toEqual({ recorded: null, script_changed: true });
+    expect(names()).toEqual([SYSTEM, CONNECTION.start, CONNECTION.scriptChanged]);
+    const receipt = store.readChain(SYSTEM).at(-1)!;
+    expect(receipt.outcome).toBe("error");
+    expect(verifyReceiptSignature(receipt, signer.publicKey)).toBe(true);
+  });
+
+  it("treats a script that can no longer be read (null) as a change", async () => {
+    await beat("start", SESSION, token, SCRIPT_A);
+    expect((await beat("beat", SESSION, token, null)).json()).toMatchObject({ script_changed: true });
+    expect(names().at(-1)).toBe(CONNECTION.scriptChanged);
+  });
+
+  it("writes `script_changed` after the start of a new session whose script differs from the last session's", async () => {
+    await beat("start", SESSION, token, SCRIPT_A);
+    await beat("stop", SESSION, token, SCRIPT_A);
+    clock += MINUTE;
+    expect((await beat("start", OTHER, token, SCRIPT_B)).json()).toMatchObject({ script_changed: false });
+    expect(names()).toEqual([SYSTEM, CONNECTION.start, CONNECTION.stop, CONNECTION.start, CONNECTION.scriptChanged]);
+    // The same script again changes nothing.
+    await beat("stop", OTHER, token, SCRIPT_B);
+    await beat("start", "1".repeat(32), token, SCRIPT_B);
+    expect(names().filter((name) => name === CONNECTION.scriptChanged)).toHaveLength(1);
+  });
+
+  it("writes nothing and says nothing when the agent sends no script hash (an older SDK, or a notebook)", async () => {
+    await beat("start", SESSION, token, SCRIPT_A);
+    expect((await beat("beat")).json()).toEqual({ recorded: null });
+    expect(names()).toEqual([SYSTEM, CONNECTION.start]);
+  });
+
+  it("refuses a script hash that is not 64 lowercase hex characters", async () => {
+    expect((await beat("start", SESSION, token, "nope")).statusCode).toBe(400);
+  });
+
+  it("is for the operator's own systems only until it is opened: an organization's heartbeat is as before", async () => {
+    await store.createOrganization("acme", "Acme", { actor: "cli test", ts: new Date(START).toISOString() }, { approved: true });
+    await store.createSystem("acme-bot", new Date(START).toISOString(), "acme");
+    const orgToken = keys.issue("acme-bot", new Date(START).toISOString()).token;
+    await beat("start", SESSION, orgToken, SCRIPT_A);
+    expect((await beat("beat", SESSION, orgToken, SCRIPT_B)).json()).toEqual({ recorded: null });
+    expect(store.readChain("acme-bot").map((r) => r.action.name)).toEqual(["acme-bot", CONNECTION.start]);
+  });
+
+  it("is off everywhere when the switch says off", async () => {
+    await app.close();
+    app = buildServer({ store, keys, now: () => new Date(clock), connections: watch, scriptGuard: "off" });
+    await app.ready();
+    expect((await beat("start", SESSION, token, SCRIPT_A)).json()).toEqual({ recorded: { seq: 1, name: CONNECTION.start } });
+    expect((await beat("beat", SESSION, token, SCRIPT_B)).json()).toEqual({ recorded: null });
   });
 });

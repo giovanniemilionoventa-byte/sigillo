@@ -452,6 +452,12 @@ const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
       "computer spento o rete assente. L'ora dell'evento è quella dell'ultimo segnale ricevuto.",
   },
   "sigillo.connection.restored": { title: "Collegamento ripreso", sentence: "L'agente ha ripreso a mandare il segnale di vita dopo un'interruzione." },
+  "sigillo.connection.script_changed": {
+    title: "Script dell'agente modificato",
+    sentence:
+      "Lo script principale dell'agente non è quello con cui era partito (o non si può più leggere), oppure è partito " +
+      "con uno script diverso dall'ultima volta. Un agente in modalità rigida si ferma nel primo caso.",
+  },
 };
 
 const KIND_LABELS: Record<Receipt["action"]["kind"], string> = {

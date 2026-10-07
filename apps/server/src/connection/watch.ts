@@ -23,6 +23,21 @@ import { CONNECTION_PREFIX } from "./names.js";
  * signed, chained, sealed and exported like any other, and an auditor reads
  * the gaps in an agent's connection from the archive alone.
  *
+ * The script guard. When the SDK also sends the SHA-256 of the agent's main
+ * script (taken again at every beat), the server remembers the one a session
+ * started with and writes `sigillo.connection.script_changed`:
+ *
+ *   - once, when a running session sends a different one (or null: the file
+ *     can no longer be read), and from then on answers `script_changed: true`
+ *     to every beat, which an SDK in strict mode takes as its order to stop;
+ *   - once, right after the start of a session whose script differs from the
+ *     last session's that sent one (the agent edited itself and restarted;
+ *     an owner's own update looks the same, and is written the same).
+ *
+ * New, so the operator's own systems only until the owner opens it
+ * (SIGILLO_SCRIPT_GUARD, CLAUDE.md rule 11): for any other system the server
+ * calls this without a hash and the beats are as they were.
+ *
  * What this does not tell: what happened while the agent was silent, nor why
  * it was silent. A program that rebuilds the heartbeat by hand, or keeps it
  * and switches the recording off, goes unseen (docs/SECURITY.md).
@@ -33,6 +48,7 @@ export const CONNECTION = {
   stop: `${CONNECTION_PREFIX}stop`,
   lost: `${CONNECTION_PREFIX}lost`,
   restored: `${CONNECTION_PREFIX}restored`,
+  scriptChanged: `${CONNECTION_PREFIX}script_changed`,
 } as const;
 
 export type HeartbeatEvent = "start" | "beat" | "stop";
@@ -96,17 +112,27 @@ export class ConnectionWatch {
    * hourly allowance, and past it is refused with TooManySessionsError,
    * nothing written; sessions already open go on beating as before.
    */
-  heartbeat(systemId: string, sessionId: string, event: HeartbeatEvent): Promise<Receipt | null> {
+  heartbeat(
+    systemId: string,
+    sessionId: string,
+    event: HeartbeatEvent,
+    script?: { hash: string | null },
+  ): Promise<Receipt | null> {
     return this.serially(async () => {
       const at = this.now().toISOString();
       const known = this.store.connection(systemId, sessionId);
       if (known === null) this.admitNewSession(systemId, Date.parse(at));
-      const row = (state: ConnectionRow["state"]): ConnectionRow => ({
+      // The script guard (see the head of this file) looks at a start or a
+      // beat that carried a hash; a stop never does.
+      const guard = event === "stop" ? undefined : script;
+      const row = (state: ConnectionRow["state"], changed = known?.script_changed ?? 0): ConnectionRow => ({
         system_id: systemId,
         session_id: sessionId,
         state,
         started_at: known?.started_at ?? at,
         last_beat_at: at,
+        script_hash: known === null ? (guard?.hash ?? null) : known.script_hash,
+        script_changed: changed,
       });
 
       if (event === "stop") {
@@ -116,13 +142,26 @@ export class ConnectionWatch {
       // A beat from a session never seen starting (its start was lost on the
       // way) starts it: the chain shows when the server first heard from it.
       if (known === null) {
-        return this.store.recordConnection(row("open"), receiptOf(systemId, CONNECTION.start, at, at, "ok", "sdk"));
+        // What the last session that sent a hash ran, read before this one is saved.
+        const before = guard === undefined ? undefined : this.store.connectionsOf(systemId).find((s) => s.script_hash !== null);
+        const started = await this.store.recordConnection(row("open"), receiptOf(systemId, CONNECTION.start, at, at, "ok", "sdk"));
+        if (before === undefined || guard === undefined || before.script_hash === guard.hash) return started;
+        return this.store.recordConnection(row("open"), receiptOf(systemId, CONNECTION.scriptChanged, at, at, "error", "sdk"));
       }
+      let written: Receipt | null = null;
       if (known.state !== "open") {
-        return this.store.recordConnection(row("open"), receiptOf(systemId, CONNECTION.restored, at, at, "ok", "sdk"));
+        written = await this.store.recordConnection(row("open"), receiptOf(systemId, CONNECTION.restored, at, at, "ok", "sdk"));
       }
-      return this.store.recordConnection(row("open"), null);
+      if (guard !== undefined && known.script_hash !== null && known.script_changed === 0 && guard.hash !== known.script_hash) {
+        return this.store.recordConnection(row("open", 1), receiptOf(systemId, CONNECTION.scriptChanged, at, at, "error", "sdk"));
+      }
+      return written ?? (await this.store.recordConnection(row("open"), null));
     });
+  }
+
+  /** Whether this session's script is no longer the one it started with. */
+  scriptChanged(systemId: string, sessionId: string): boolean {
+    return (this.store.connection(systemId, sessionId)?.script_changed ?? 0) === 1;
   }
 
   /** Writes `lost` for every session silent past the allowance. Returns how many. */

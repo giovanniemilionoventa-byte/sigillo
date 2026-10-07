@@ -15,10 +15,13 @@ import json
 import logging
 import shutil
 import subprocess
+import sys
 import tempfile
+import types
 import threading
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from opentelemetry import trace
@@ -107,16 +110,19 @@ class _Capture(http.server.BaseHTTPRequestHandler):
     paths: list[str] = []
     # The heartbeat's requests, kept apart from the spans the other tests read.
     heartbeats: list[tuple[dict, dict[str, str]]] = []
+    # What the heartbeat endpoint answers, and with which status.
+    heartbeat_reply: bytes = b'{"recorded": null}'
+    heartbeat_status: int = 200
 
     def do_POST(self):  # noqa: N802 - the name is fixed by the base class
         length = int(self.headers.get("Content-Length", "0"))
         if self.path.endswith("/api/v1/heartbeat"):
             headers = {key.lower(): value for key, value in self.headers.items()}
             type(self).heartbeats.append((json.loads(self.rfile.read(length)), headers))
-            self.send_response(200)
+            self.send_response(type(self).heartbeat_status)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(b'{"recorded": null}')
+            self.wfile.write(type(self).heartbeat_reply)
             return
         type(self).bodies.append(self.rfile.read(length))
         type(self).headers_seen.append({key.lower(): value for key, value in self.headers.items()})
@@ -738,7 +744,7 @@ class HeartbeatTest(unittest.TestCase):
         self.assertEqual(len(sessions), 1)
         self.assertRegex(sessions.pop(), r"^[0-9a-f]{32}$")
         for body, headers in _Capture.heartbeats:
-            self.assertEqual(set(body), {"session", "event"})
+            self.assertLessEqual(set(body), {"session", "event", "script_hash"})
             self.assertEqual(headers["authorization"], "Bearer sigillo_secret")
 
     def test_a_second_shutdown_sends_nothing_more(self) -> None:
@@ -757,6 +763,139 @@ class HeartbeatTest(unittest.TestCase):
     def test_refuses_an_interval_that_is_not_positive(self) -> None:
         with self.assertRaises(ValueError):
             sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], heartbeat_seconds=0)
+
+
+class ScriptGuardTest(unittest.TestCase):
+    """The script guard, SDK side: the SHA-256 of the agent's main script goes
+    with every beat, read again each time; in strict mode the agent stops when
+    the server says the script changed or when it cannot record for a while.
+    """
+
+    def setUp(self) -> None:
+        _Capture.heartbeats = []
+        _Capture.heartbeat_reply = b'{"recorded": null}'
+        _Capture.heartbeat_status = 200
+        self.addCleanup(setattr, _Capture, "heartbeat_reply", b'{"recorded": null}')
+        self.addCleanup(setattr, _Capture, "heartbeat_status", 200)
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), _Capture)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+        self.work = Path(tempfile.mkdtemp(prefix="sigillo-guard-"))
+        self.addCleanup(shutil.rmtree, self.work, ignore_errors=True)
+        self.script = self.work / "agent.py"
+        self.script.write_bytes(b"print('hello')\n")
+
+    def tearDown(self) -> None:
+        self.server.shutdown()
+        self.thread.join(timeout=5)
+        self.server.server_close()
+
+    def _main(self, path: Path | None):
+        module = types.ModuleType("__main__")
+        if path is not None:
+            module.__file__ = str(path)
+        return unittest.mock.patch.dict(sys.modules, {"__main__": module})
+
+    def _wait_for(self, condition, seconds: float = 5.0) -> None:
+        deadline = time.monotonic() + seconds
+        while not condition() and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+    def _hashes(self) -> list:
+        return [body.get("script_hash", "absent") for body, _ in _Capture.heartbeats if body["event"] != "stop"]
+
+    def test_sends_the_hash_of_the_main_script_and_reads_it_again_every_beat(self) -> None:
+        with self._main(self.script):
+            tracing = sigillo.init(
+                endpoint=self.base, api_key="k", system_id="s", instrument=[], heartbeat_seconds=0.05
+            )
+            self._wait_for(lambda: len(self._hashes()) >= 2)
+            first = hashlib.sha256(b"print('hello')\n").hexdigest()
+            self.assertEqual(set(self._hashes()), {first})
+            self.script.write_bytes(b"print('changed')\n")
+            second = hashlib.sha256(b"print('changed')\n").hexdigest()
+            self._wait_for(lambda: second in self._hashes())
+            tracing.shutdown()
+        self.assertIn(second, self._hashes())
+
+    def test_sends_null_when_the_script_can_no_longer_be_read(self) -> None:
+        with self._main(self.script):
+            tracing = sigillo.init(
+                endpoint=self.base, api_key="k", system_id="s", instrument=[], heartbeat_seconds=0.05
+            )
+            self._wait_for(lambda: len(self._hashes()) >= 1)
+            self.script.unlink()
+            self._wait_for(lambda: None in self._hashes())
+            tracing.shutdown()
+        self.assertIn(None, self._hashes())
+
+    def test_sends_no_hash_without_a_script_file(self) -> None:
+        with self._main(None):
+            tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+            tracing.shutdown()
+        self.assertEqual(set(self._hashes()), {"absent"})
+
+    def test_strict_stops_the_agent_when_the_server_says_the_script_changed(self) -> None:
+        _Capture.heartbeat_reply = b'{"recorded": null, "script_changed": true}'
+        halted: list[str] = []
+        with self._main(self.script):
+            tracing = sigillo.init(
+                endpoint=self.base,
+                api_key="k",
+                system_id="s",
+                instrument=[],
+                heartbeat_seconds=0.05,
+                strict=True,
+                on_halt=halted.append,
+            )
+            self._wait_for(lambda: len(halted) >= 1)
+            tracing.shutdown()
+        self.assertEqual(len(halted), 1)
+        self.assertIn("script", halted[0])
+
+    def test_without_strict_the_same_answer_changes_nothing(self) -> None:
+        _Capture.heartbeat_reply = b'{"recorded": null, "script_changed": true}'
+        with self._main(self.script):
+            tracing = sigillo.init(
+                endpoint=self.base, api_key="k", system_id="s", instrument=[], heartbeat_seconds=0.05
+            )
+            self._wait_for(lambda: len(self._hashes()) >= 3)
+            tracing.shutdown()
+        self.assertGreaterEqual(len(self._hashes()), 3)
+
+    def test_strict_stops_the_agent_after_three_beats_that_do_not_get_through(self) -> None:
+        halted: list[str] = []
+        with self._main(self.script):
+            tracing = sigillo.init(
+                endpoint="http://127.0.0.1:9",
+                api_key="k",
+                system_id="s",
+                instrument=[],
+                heartbeat_seconds=0.05,
+                strict=True,
+                on_halt=halted.append,
+            )
+            self._wait_for(lambda: len(halted) >= 1)
+            tracing.shutdown()
+        self.assertEqual(len(halted), 1)
+        self.assertIn("record", halted[0])
+
+    def test_strict_does_not_stop_an_agent_whose_beats_get_through(self) -> None:
+        halted: list[str] = []
+        with self._main(self.script):
+            tracing = sigillo.init(
+                endpoint=self.base,
+                api_key="k",
+                system_id="s",
+                instrument=[],
+                heartbeat_seconds=0.05,
+                strict=True,
+                on_halt=halted.append,
+            )
+            self._wait_for(lambda: len(self._hashes()) >= 6)
+            tracing.shutdown()
+        self.assertEqual(halted, [])
 
 
 class ContentFilterTest(unittest.TestCase):

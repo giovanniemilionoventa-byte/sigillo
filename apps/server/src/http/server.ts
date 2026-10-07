@@ -68,6 +68,11 @@ export interface ServerOptions {
    * whose sweep nobody runs: the caller that wants silence noticed starts it.
    */
   connections?: ConnectionWatch;
+  /**
+   * Who the script guard watches (connection/watch.ts): `off`, `operator` (the
+   * default: systems with no organization, CLAUDE.md rule 11) or `all`.
+   */
+  scriptGuard?: "off" | "operator" | "all";
   /** The model gateway (gateway/llm.ts). Not given: /llm/* is not served. */
   gateway?: GatewayOptions;
   /**
@@ -125,6 +130,9 @@ const heartbeatRequestSchema = z
   .object({
     session: z.string().regex(/^[0-9a-f]{32}$/, "must be 32 lowercase hex characters"),
     event: z.enum(["start", "beat", "stop"]),
+    // The script guard (connection/watch.ts): the SHA-256 of the agent's main
+    // script, or null when it can no longer be read. Absent: no guard.
+    script_hash: hex64.nullable().optional(),
   })
   .strict();
 
@@ -449,6 +457,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   // exactly when nothing else is being written. A new one is, like any other
   // write, and each system may open only so many an hour (connection/watch.ts):
   // otherwise a fresh session id per request would write receipts without end.
+  const guardMode = options.scriptGuard ?? "operator";
   app.post("/api/v1/heartbeat", async (request, reply) => {
     const systemId = await authenticate(request);
     if (systemId === null) {
@@ -464,7 +473,22 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (store.connection(systemId, parsed.data.session) === null && overQuota(systemId, reply)) return reply;
     let written;
     try {
-      written = await connections.heartbeat(systemId, parsed.data.session, parsed.data.event);
+      const watched =
+        parsed.data.script_hash !== undefined &&
+        guardMode !== "off" &&
+        (guardMode === "all" || (store.systemRecord(systemId)?.organization_id ?? null) === null);
+      written = await connections.heartbeat(
+        systemId,
+        parsed.data.session,
+        parsed.data.event,
+        watched ? { hash: parsed.data.script_hash ?? null } : undefined,
+      );
+      if (watched && parsed.data.event !== "stop") {
+        return reply.code(200).send({
+          recorded: written === null ? null : { seq: written.seq, name: written.action.name },
+          script_changed: connections.scriptChanged(systemId, parsed.data.session),
+        });
+      }
     } catch (error) {
       if (!(error instanceof TooManySessionsError)) throw error;
       return reply

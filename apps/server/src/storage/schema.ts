@@ -146,6 +146,11 @@ CREATE TABLE IF NOT EXISTS connections (
   state        TEXT NOT NULL CHECK (state IN ('open', 'lost', 'closed')),
   started_at   TEXT NOT NULL,
   last_beat_at TEXT NOT NULL,
+  -- The SHA-256 of the agent's main script as this session started, and
+  -- whether a later beat showed a different one (the script guard,
+  -- connection/watch.ts). Null: the SDK sent none.
+  script_hash  TEXT,
+  script_changed INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (system_id, session_id)
 ) STRICT;
 
@@ -312,7 +317,8 @@ function ensureColumn(db: Database.Database, table: string, column: string, type
 // 3: the people who sign in for an organization.
 // 4: the SDK heartbeat's sessions (connections).
 // 5: the cloud-model keys the gateway holds for a system (provider_keys).
-export const SCHEMA_VERSION = 5;
+// 6: the script guard's columns on connections (script_hash, script_changed).
+export const SCHEMA_VERSION = 6;
 
 export class NewerSchemaError extends Error {
   constructor(readonly found: number) {
@@ -366,6 +372,8 @@ export function applySchema(db: Database.Database): void {
   ensureColumn(db, "systems", "archived_at", "TEXT");
   ensureColumn(db, "systems", "organization_id", "TEXT REFERENCES organizations (organization_id)");
   ensureColumn(db, "artifacts", "text_canon", "TEXT");
+  ensureColumn(db, "connections", "script_hash", "TEXT");
+  ensureColumn(db, "connections", "script_changed", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "artifacts", "text_sha256", "TEXT");
   // Databases written before empty systems could be deleted carry the
   // unconditional delete triggers. The guards that replace them were created
