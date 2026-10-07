@@ -175,9 +175,13 @@ describe("the connect page", () => {
     const key = /--key (sigillo_[A-Za-z0-9_-]+)/.exec(page)?.[1];
     expect(key).toBeDefined();
     expect(page).toContain(`python -m sigillo.claude_code connect --endpoint http://localhost:80 --key ${key}`);
-    // One line, so it pastes the same in a terminal and in a cloud setup script.
-    expect(page).toContain("main.zip#subdirectory=sdk-python&quot; &amp;&amp; python -m sigillo.claude_code connect");
-    expect(page).not.toContain("sigillo[langchain] @ https://github.com/giovanniemilionoventa-byte/sigillo/archive/refs/heads/main.zip#subdirectory=sdk-python&quot; &amp;&amp;");
+    // One line per system. PowerShell 5 has no &&, so Windows joins with ;.
+    expect(page).toContain("main.zip#subdirectory=sdk-python&quot;; python -m sigillo.claude_code connect");
+    expect(page).toContain("main.zip#subdirectory=sdk-python&quot; &amp;&amp; python3 -m sigillo.claude_code connect");
+    expect(page).toContain("python -m pip install --upgrade &quot;sigillo @ https://");
+    for (const title of ["Windows (PowerShell)", "macOS (Terminal)", "Linux (terminal)", "Claude Code in the cloud"]) {
+      expect(page).toContain(title);
+    }
     expect(await newKey(ACME, ACME_BOT)).not.toContain('id="way-claude"');
   });
 

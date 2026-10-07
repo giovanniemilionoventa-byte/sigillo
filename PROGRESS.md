@@ -3584,7 +3584,10 @@ degli script di pip non c'è). La scheda «Claude Code» della console ora mostr
 `python -m pip install … && python -m sigillo.claude_code connect --endpoint … --key …`, che
 funziona in un terminale (Windows compreso) e, per Claude Code nel cloud, incollata nello script di
 setup dell'ambiente (che deve permettere il dominio di Sigillo). Solo per l'amministratore,
-`SIGILLO_CLAUDE_CODE`. Da provare dal titolare: il cloud non è stato verificato qui.
+`SIGILLO_CLAUDE_CODE`. Il titolare ha poi chiesto le righe distinte per sistema: la scheda ora ha quattro riquadri
+(Windows PowerShell con `;` perché PowerShell 5 non ha `&&`, macOS, Linux, cloud). `pip install
+--upgrade` e SDK a 0.2.0: la sua prova dava «No module named sigillo.claude_code» perché pip aveva
+tenuto la 0.1.0 già installata. Da provare dal titolare: il cloud non è stato verificato qui.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
