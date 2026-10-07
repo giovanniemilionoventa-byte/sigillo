@@ -330,8 +330,8 @@ function connectWays(systemId: string, endpoint: string, token: string | null, m
 <div class="ways">
 ${pythonWay}
 </div>
-${install}
-${agent}<pre class="code python">${escape(python)}</pre>`;
+${agent}${install}
+<pre class="code python">${escape(python)}</pre>`;
   }
   // The model gateway (gateway/llm.ts): the customer's model key stays in
   // sigillo, and the agent reaches its model only through it.
@@ -361,8 +361,8 @@ ${agent}<pre class="code python">${escape(python)}</pre>`;
 ${pythonWay}
 <label class="way" for="way-model"><span class="tile-icon blue" aria-hidden="true">${ICONS.link}</span>${escape(t.ways.model)}</label>
 </div>
-${install}
-${agent}<pre class="code python">${escape(python)}</pre>
+${agent}${install}
+<pre class="code python">${escape(python)}</pre>
 <pre class="code model">${escape(gateway)}</pre>`;
 }
 
@@ -379,7 +379,6 @@ function agentUpload(systemId: string, endpoint: string, token: string): string 
 <label class="drop"><span class="tile-icon blue" aria-hidden="true">${ICONS.upload}</span><strong>${escape(t.drop)}</strong><input type="file" id="sigillo-agent-file" accept=".py,text/x-python"></label>
 <p class="notice ok" id="sigillo-agent-done" role="status" hidden>${STATE_ICONS.ok}<span></span></p>
 <p class="notice warn" id="sigillo-agent-problem" role="alert" hidden>${STATE_ICONS.warn}<span></span></p>
-<p class="privacy">${ICONS.lock}<span>${escape(t.privacy)}</span></p>
 <p class="or">${escape(t.or)}</p>
 <script src="/ui/agent-setup.js" defer></script>
 </div>
@@ -409,12 +408,6 @@ export function connectPage(view: {
   const name = systemTitle(record);
   const title = mode === "created" ? t.ready(name) : mode === "newKey" ? t.newKey(name) : t.title(name);
   const path = systemPath(record.system_id);
-  const key =
-    token === null
-      ? ""
-      : `<p class="label">${escape(t.keyLabel)}</p>
-<code class="keybox">${escape(token)}</code>
-<p class="key-note" role="status">${STATE_ICONS.warn}<span>${escape(t.keyNote)}</span></p>`;
   const arrived = view.firstReceipt;
   const wait =
     arrived !== null
@@ -423,7 +416,6 @@ export function connectPage(view: {
         ? `<p class="section"><a class="button primary" href="${path}">${escape(t.goToSystem)}</a></p>`
         : `${mode === "connect" ? '<meta http-equiv="refresh" content="10">' : ""}<div class="card wait-line" role="status"><span class="spinner" aria-hidden="true"></span><span>${escape(t.waiting)}</span><a class="end" href="${path}/collega">${escape(t.check)}</a></div>`;
   return `<div class="narrow">${pageHead(title)}
-${key}
 ${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
 ${connectWays(record.system_id, view.endpoint, token, view.model ?? false, view.upload ?? false)}
 ${wait}
@@ -573,60 +565,6 @@ export function checkpointsPage(store: ReceiptStore, systemId: string, now: Date
 
   return `${checkpoints.length === 0 ? `<p class="card empty">${escape(t.none)}</p>` : `<ol class="card lines seals">${items}</ol>`}
 <form method="post" action="/ui/checkpoint" class="section"><button type="submit">${ICONS.seal}${escape(UI.home.checkpointNow)}</button></form>`;
-}
-
-/** The people page: search by identifier, through the subjects table, and the erasure of what it finds. */
-export function peoplePage(
-  store: ReceiptStore,
-  search: { identifier: string; token: string | null } | null,
-  extra: { notice?: string; error?: string },
-  now: Date,
-): string {
-  const t = UI.people;
-  const legacy = search === null ? 0 : store.legacyReceiptsNaming(search.identifier);
-  const legacyNotice =
-    legacy === 0 ? "" : `<p class="notice warn" role="status">${STATE_ICONS.warn}<span>${escape(t.legacy(legacy))}</span></p>\n`;
-  let result = "";
-  if (search !== null && search.token === null) {
-    result = `<p class="card empty" role="status">${escape(t.notFound)}</p>`;
-  } else if (search !== null && search.token !== null) {
-    const token = search.token;
-    const receipts = store.receiptsOnBehalfOf(token, 500);
-    const records = new Map(store.listSystemRecords().map((record) => [record.system_id, record]));
-    const items = receipts
-      .map((receipt) => {
-        const record = records.get(receipt.system_id);
-        return `<li class="person-receipt"><a class="line" href="${receiptPath(receipt.system_id, receipt.seq)}">${kindIcon(receipt.action.kind)}<span class="line-text">${escape(receiptTitle(receipt))}</span><span class="line-aside">${escape(
-          record === undefined ? receipt.system_id : systemTitle(record),
-        )} · ${escape(formatWhen(receipt.ts_received, now))}</span>${receipt.outcome === "ok" ? "" : outcomePill(receipt.outcome)}${chevron}</a></li>`;
-      })
-      .join("\n");
-    result = `<div class="cols">
-<section aria-labelledby="persona-ricevute"><h2 id="persona-ricevute">${escape(t.receipts(receipts.length))} <code class="muted">${escape(token)}</code></h2>
-${receipts.length === 0 ? "" : `<ol class="card lines">${items}</ol>`}
-</section>
-<section class="card padded" aria-labelledby="persona-cancella">
-<h2 id="persona-cancella" class="danger-title">${ICONS.trash}${escape(t.eraseTitle)}</h2>
-<p>${escape(t.eraseHint)}</p>
-<form method="post" action="/ui/persone/cancella" class="fields">
-  <input type="hidden" name="token" value="${escape(token)}">
-  <label>${escape(t.eraseConfirm(token))}
-    <input type="text" name="confirm" autocomplete="off" spellcheck="false" required>
-  </label>
-  <button type="submit" class="danger wide">${escape(t.eraseSubmit)}</button>
-</form>
-</section>
-</div>`;
-  }
-  return `${pageHead(t.heading)}
-${notices(extra)}
-<form method="post" action="/ui/persone" class="inline narrow section-gap">
-  <label><span class="sr">${escape(t.searchLabel)}</span>
-    <input type="text" name="identifier" value="${escape(search?.identifier ?? "")}" placeholder="${escape(t.searchPlaceholder)}" autocomplete="off" autocapitalize="off" spellcheck="false" required>
-  </label>
-  <button type="submit" class="primary">${ICONS.search}${escape(t.searchSubmit)}</button>
-</form>
-${legacyNotice}${result}`;
 }
 
 /** What the store found for a document's fingerprints, beside the form that computed them. */

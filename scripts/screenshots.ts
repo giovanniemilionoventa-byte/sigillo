@@ -294,14 +294,6 @@ const pages: [name: string, url: string, action?: Action][] = [
   ["16-collega", "/ui/systems/prova-per-errore/collega"],
   ["17-verifica-documento", "/ui/verify-document"],
   ["18-verifica-documento-trovato", `/ui/verify-document?sha256=${pasted.bytes}&text=${pasted.text ?? ""}&from=text`],
-  [
-    "19-persone",
-    "/ui/persone",
-    async (page) => {
-      await page.fill('input[name="identifier"]', "cliente-4821");
-      await Promise.all([page.waitForNavigation(), page.click('form[action="/ui/persone"] button[type="submit"]')]);
-    },
-  ],
   ["20-clienti", "/ui/clienti"],
   ["21-impostazioni", "/ui/impostazioni"],
   ["22-registro-amministrativo", "/ui/impostazioni/registro"],

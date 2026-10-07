@@ -183,7 +183,7 @@ const EN: SiteTexts = {
         },
         {
           title: "People can be erased",
-          text: "Erase the person an action was for, and the receipts stay valid but no longer lead to them.",
+          text: "On request, we erase the person an action was for: the receipts stay valid but no longer lead to them.",
         },
       ],
       seen: "What we do see: which tool or model an agent used, when, and whether it worked. If your agent reaches its AI model through Sigillo, the request and the answer cross our server in memory on their way and are never written down; to keep them from us entirely, let the agent call its model directly.",
@@ -388,7 +388,7 @@ const IT: SiteTexts = {
         },
         {
           title: "Le persone si possono cancellare",
-          text: "Cancella la persona per cui è stata fatta un'azione: le ricevute restano valide, ma non portano più a lei.",
+          text: "Su richiesta cancelliamo la persona per cui è stata fatta un'azione: le ricevute restano valide, ma non portano più a lei.",
         },
       ],
       seen: "Cosa vediamo: quale strumento o modello ha usato un agente, quando, e se ha funzionato. Se il tuo agente raggiunge il suo modello AI tramite Sigillo, la richiesta e la risposta attraversano il nostro server in memoria, per arrivare al modello, e non vengono mai scritte; per tenerle del tutto lontane da noi, fai chiamare il modello direttamente all'agente.",

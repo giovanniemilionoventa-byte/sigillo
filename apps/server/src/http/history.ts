@@ -213,7 +213,7 @@ function inspector(
   const who: string[] = [];
   if (!genesis) who.push(fact(t.agent, escape(receipt.actor.agent)));
   if (receipt.actor.on_behalf_of !== undefined) {
-    who.push(fact(t.onBehalfOf, `<a href="/ui/persone">${escape(receipt.actor.on_behalf_of)}</a>`));
+    who.push(fact(t.onBehalfOf, escape(receipt.actor.on_behalf_of)));
   }
   if (model !== undefined) {
     const where = modelWhere(model.provider);

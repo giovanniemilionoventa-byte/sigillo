@@ -174,7 +174,6 @@ describe("every form keeps its action, method and field names", () => {
           `post /ui/systems/${EMPTY}/export [from to subjects openings]`,
         ],
       ],
-      ["/ui/persone", ["post /ui/logout []", "post /ui/persone [identifier]"]],
       ["/ui/verify-document", ["post /ui/logout []"]],
       // The sign-out is there twice: in the sidebar, and in the account's block.
       ["/ui/impostazioni", ["post /ui/logout []", "post /ui/logout []", "post /ui/impostazioni/tema []", "post /ui/lingua [back]"]],
@@ -182,11 +181,6 @@ describe("every form keeps its action, method and field names", () => {
     for (const [url, forms] of pages) {
       expect(formsOf(await get(url)), url).toEqual(forms);
     }
-    expect(formsOf((await post("/ui/persone", `identifier=${PERSON}`)).body)).toEqual([
-      "post /ui/logout []",
-      "post /ui/persone [identifier]",
-      "post /ui/persone/cancella [token confirm]",
-    ]);
     await store.archiveSystem(EMPTY, { actor: "test", ts: NOW });
     expect(formsOf(await get(`/ui/systems/${EMPTY}/manage`))).toContain(`post /ui/systems/${EMPTY}/unarchive []`);
     const login = (await app.inject({ method: "GET", url: "/ui/login" })).body;
@@ -197,7 +191,7 @@ describe("every form keeps its action, method and field names", () => {
 
   it("carries no script anywhere but on 'verifica un documento', and there exactly the one the CSP allows", async () => {
     for (const url of ["/ui", "/ui/sistemi", "/ui/sistemi?vista=tutti", `/ui/systems/${SYSTEM}`, `/ui/systems/${SYSTEM}?ricevuta=1`,
-      `/ui/systems/${SYSTEM}/checkpoints`, `/ui/systems/${SYSTEM}/manage`, "/ui/persone", "/ui/impostazioni", "/ui/impostazioni/registro",
+      `/ui/systems/${SYSTEM}/checkpoints`, `/ui/systems/${SYSTEM}/manage`, "/ui/impostazioni", "/ui/impostazioni/registro",
       "/ui/sistemi/nuovo", `/ui/systems/${SYSTEM}/collega`]) {
       const body = await get(url);
       expect(body, url).not.toContain("<script");
@@ -259,7 +253,7 @@ describe("the systems page", () => {
     const created = await post("/ui/sistemi", "system_id=nuovo&display_name=Il%20nuovo");
     expect(created.status).toBe(200);
     const main = mainOf(created.body);
-    const token = /<code class="keybox">(sigillo_[0-9a-f]{16}_[0-9a-f]{64})<\/code>/.exec(main)?.[1] ?? "";
+    const token = /api_key=(?:"|&quot;)(sigillo_[0-9a-f]{16}_[0-9a-f]{64})/.exec(main)?.[1] ?? "";
     expect(token).not.toBe("");
     expect(main).toContain(`<h1>${UI.connect.ready("Il nuovo")}</h1>`);
     // Python only: its heartbeat is what tells when an agent was disconnected.
@@ -337,20 +331,9 @@ describe("verifying a document", () => {
 });
 
 describe("the people page", () => {
-  it("finds a person's receipts, each opening in its history, and offers the erasure beside them", async () => {
-    const found = await post("/ui/persone", `identifier=${PERSON}`);
-    const main = mainOf(found.body);
-    const token = store.readChain(SYSTEM)[1]?.actor.on_behalf_of ?? "";
-    expect(main).toContain(`<code class="muted">${token}</code>`);
-    expect(main).toContain(`<li class="person-receipt"><a class="line" href="/ui/systems/${SYSTEM}?ricevuta=1#r-1">`);
-    expect(main).toContain(`<section class="card padded" aria-labelledby="persona-cancella">`);
-    expect(main).toContain(`value="${PERSON}"`);
-  });
-
-  it("says plainly when nobody matches", async () => {
-    const main = mainOf((await post("/ui/persone", "identifier=nessuno")).body);
-    expect(main).toContain(UI.people.notFound);
-    expect(main).not.toContain("/ui/persone/cancella");
+  it("is gone: no page, no sidebar entry (erasing a person is the operator's command, on the server)", async () => {
+    expect((await app.inject({ method: "GET", url: "/ui/persone", headers: { cookie } })).statusCode).toBe(404);
+    expect(await get("/ui")).not.toContain("/ui/persone");
   });
 });
 

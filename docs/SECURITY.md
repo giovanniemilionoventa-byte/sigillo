@@ -332,8 +332,8 @@ a person lives outside the chain, in two tables that are not evidence and can
 be deleted from:
 
 - `subjects`: identifier ↔ `psn_` token. **Erasing a person** deletes their
-  row (web view: "persone", for people the operator's own systems acted for;
-  command line: `sigillo-server subject erase`, for anyone). The
+  row (command line only: `sigillo-server subject erase`; the web view's
+  "persone" page was removed on 2026-10-06). The
   administrative log records the erasure by the token alone. Their receipts
   stay valid, verifiable and in every export; nothing links the token to them
   any more, and if they come back they get a new, unrelated token.
@@ -368,9 +368,8 @@ What the erasure reaches, and what it does not:
 - **receipts written before version 4**: they carry `on_behalf_of` as the
   client sent it, a person's identifier in clear included, and plain digests.
   They are signed and chained, so nothing can change them, and erasing a
-  person does not reach them. `sigillo-server subject erase` and the web
-  view's "persone" page count them for the identifier being erased
-  (`legacyReceiptsNaming`) and say so, rather than claiming the person can no
+  person does not reach them. `sigillo-server subject erase` counts them for
+  the identifier being erased (`legacyReceiptsNaming`) and say so, rather than claiming the person can no
   longer be found. How many a database holds is counted by the query at step 0
   of `DEPLOY.md`; the operator's privacy notice should say they are kept, and
   on what basis. Redacting them in an export (replacing each receipt with its

@@ -154,6 +154,10 @@ svg { flex: none; }
 .who strong { font-size: 13px; font-weight: 600; }
 .who span { font-size: 12px; color: var(--secondary); }
 .account form { margin: 0; }
+.account-link { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; min-height: 44px; margin: 0 0 -10px -10px;
+  padding: 0 6px 0 10px; border-radius: 10px; color: inherit; }
+.account-link:hover { background: var(--hover); text-decoration: none; }
+.account-link[aria-current="page"] { background: var(--current); }
 .icon-button { width: 34px; min-height: 34px; padding: 0; border: 0; background: transparent; color: var(--secondary); }
 .icon-button:hover { background: var(--hover); }
 
@@ -397,8 +401,6 @@ details.tech .facts { margin-top: 10px; }
 .label { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--label); }
 .keybox { display: block; padding: 14px 16px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-card);
   font-family: var(--mono); font-size: 13.5px; word-break: break-all; user-select: all; -webkit-user-select: all; }
-.key-note { display: flex; gap: 8px; align-items: center; margin: 10px 0 30px; color: var(--warn); font-weight: 500; }
-.key-note svg { width: 16px; height: 16px; }
 .ways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 16px; }
 .way { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 14px; background: var(--surface);
   box-shadow: var(--shadow-card); color: var(--text); font-size: 15px; font-weight: 600; cursor: pointer; }
@@ -440,8 +442,6 @@ details.tech .facts { margin-top: 10px; }
 .or { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--secondary); font-size: 13px; font-weight: 400; }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--separator); }
 #sigillo-doc-button { width: 100%; margin-top: 12px; }
-.privacy { display: flex; gap: 6px; align-items: center; margin-top: 12px; color: var(--secondary); font-size: 13px; }
-.privacy svg { width: 15px; height: 15px; }
 .result { display: flex; gap: 14px; align-items: flex-start; padding: 20px; }
 .result h3 { margin: 2px 0 6px; font-size: 16px; }
 .result p { margin: 0 0 6px; line-height: 1.5; }
@@ -583,9 +583,6 @@ export const ICONS = {
   ),
   docCheck: line('<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 14l2 2 4-4"/>'),
   doc: line('<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/>'),
-  people: line(
-    '<circle cx="9" cy="9" r="3.2"/><path d="M3.5 19c.9-3 3-4.5 5.5-4.5s4.6 1.5 5.5 4.5"/><circle cx="17" cy="8" r="2.4"/><path d="M16 13.2c2.3.1 3.9 1.6 4.5 4.3"/>',
-  ),
   key: line('<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 6l3 3"/>'),
   logout: line('<path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/>'),
   search: line('<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>'),

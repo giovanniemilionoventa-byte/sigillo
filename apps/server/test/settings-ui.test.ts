@@ -212,7 +212,7 @@ describe("a new key for a system", () => {
 
     const response = await post(`/ui/systems/${SYSTEM}/key`, "");
     expect(response.statusCode).toBe(200);
-    const token = /<code class="keybox">(sigillo_[0-9a-f]{16}_[0-9a-f]{64})<\/code>/.exec(response.body)?.[1] ?? "";
+    const token = /api_key=(?:"|&quot;)(sigillo_[0-9a-f]{16}_[0-9a-f]{64})/.exec(response.body)?.[1] ?? "";
     expect(token).not.toBe("");
     expect(token).not.toBe(old.token);
     expect(response.body).toContain(UI.connect.newKey(SYSTEM));

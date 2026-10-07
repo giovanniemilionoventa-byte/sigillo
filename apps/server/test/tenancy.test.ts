@@ -379,16 +379,15 @@ describe("the web view, signed in as an organization", () => {
     expect(subjects).not.toContain("only.globex@example.com");
   });
 
-  it("does not have the people pages, which work across every system", async () => {
-    const page = await get(ACME, "/ui");
-    expect(page.body).not.toContain('href="/ui/persone"');
-    expect((await get(ACME, "/ui/persone")).statusCode).toBe(404);
-    expect((await post(ACME, "/ui/persone", { identifier: SHARED_PERSON })).statusCode).toBe(404);
-    const token = store.subjectToken(SHARED_PERSON) ?? "";
-    expect((await post(ACME, "/ui/persone/cancella", { token, confirm: token })).statusCode).toBe(404);
-    expect(store.subjectIdentifier(token)).toBe(SHARED_PERSON);
-    // The operator still has them.
-    expect((await get(OPERATOR, "/ui/persone")).statusCode).toBe(200);
+  it("has no people page, for anyone: nothing to open, and nothing erased through the web view", async () => {
+    expect((await get(ACME, "/ui")).body).not.toContain("/ui/persone");
+    for (const viewer of [ACME, OPERATOR]) {
+      expect((await get(viewer, "/ui/persone")).statusCode).toBe(404);
+      expect((await post(viewer, "/ui/persone", { identifier: SHARED_PERSON })).statusCode).toBe(404);
+      const token = store.subjectToken(SHARED_PERSON) ?? "";
+      expect((await post(viewer, "/ui/persone/cancella", { token, confirm: token })).statusCode).toBe(404);
+      expect(store.subjectIdentifier(token)).toBe(SHARED_PERSON);
+    }
   });
 
   it("finds a document in its own systems only", async () => {
@@ -491,20 +490,6 @@ describe("the web view, signed in as the operator", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toContain(encodeURIComponent(OPERATOR_BOT));
     for (const customer of CUSTOMER_SYSTEMS) expect(response.body).not.toContain(customer);
-  });
-
-  it("finds people through its own systems only, and cannot erase a customer's", async () => {
-    await store.append(event(GLOBEX_BOT, 5, { actor: { agent: "screener", on_behalf_of: "only.globex@example.com" } }));
-    const found = await post(OPERATOR, "/ui/persone", { identifier: SHARED_PERSON });
-    expect(found.statusCode).toBe(200);
-    expect(found.body).toContain(OPERATOR_BOT);
-    for (const customer of CUSTOMER_SYSTEMS) expect(found.body).not.toContain(customer);
-    const theirs = await post(OPERATOR, "/ui/persone", { identifier: "only.globex@example.com" });
-    const token = store.subjectToken("only.globex@example.com") ?? "";
-    expect(theirs.body).not.toContain(token);
-    expect(theirs.body).not.toContain(GLOBEX_BOT);
-    expect((await post(OPERATOR, "/ui/persone/cancella", { token, confirm: token })).statusCode).toBe(404);
-    expect(store.subjectIdentifier(token)).toBe("only.globex@example.com");
   });
 
   it("does not show a customer's systems in the settings or the administrative log", async () => {

@@ -11,7 +11,6 @@ const ui = {
   nav: {
     registro: "Registro",
     sistemi: "Sistemi",
-    persone: "Persone",
     clienti: "Clienti",
     verificaDocumento: "Verifica documento",
     impostazioni: "Impostazioni",
@@ -198,8 +197,6 @@ const ui = {
   connect: {
     ready: (name: string): string => `${name} è pronto`,
     newKey: (name: string): string => `Nuova chiave per ${name}`,
-    keyLabel: "Chiave del sistema",
-    keyNote: "La vedi solo ora: copiala e conservala.",
     heading: "Collega il tuo agente",
     title: (name: string): string => `Collega ${name}`,
     ways: { python: "SDK Python", model: "Modello AI" },
@@ -218,26 +215,8 @@ const ui = {
         "{file} scaricato, con sigillo già dentro, che la prima volta si installa da solo. Non usa LangChain, CrewAI né OpenAI: sigillo registra quando è collegato e le azioni che registri tu.",
       already: "{file} usa già sigillo: non c'è niente da aggiungere.",
       notPython: "Scegli il file Python dell'agente (.py, fino a 1 MB).",
-      privacy: "Il file resta nel tuo browser: non viene inviato a sigillo.",
-      or: "oppure aggiungi tu queste righe",
+      or: "oppure",
     },
-  },
-  people: {
-    title: "Persone",
-    heading: "Persone",
-    searchLabel: "Identificativo della persona",
-    searchPlaceholder: "cliente-4821",
-    searchSubmit: "Cerca",
-    notFound: "Nessuna ricevuta per questa persona.",
-    receipts: (count: number): string => `${count} ${count === 1 ? "ricevuta" : "ricevute"}`,
-    eraseTitle: "Cancella la persona",
-    eraseHint: "Le ricevute restano valide, ma non si potranno più collegare a lei.",
-    eraseConfirm: (token: string): string => `Scrivi ${token} per confermare`,
-    eraseSubmit: "Cancella definitivamente",
-    erased: (token: string): string => `Fatto: ${token} non è più collegabile a nessuna persona.`,
-    confirmMismatch: "Il testo scritto non corrisponde allo pseudonimo: niente è stato cancellato.",
-    legacy: (count: number): string =>
-      `${count} ${count === 1 ? "ricevuta scritta" : "ricevute scritte"} prima di ottobre 2026 ${count === 1 ? "contiene" : "contengono"} questo identificativo in chiaro, e nessuna cancellazione le raggiunge.`,
   },
   manage: {
     nameTitle: "Nome",
@@ -383,7 +362,6 @@ const ui = {
   verifyDocument: {
     title: "Verifica documento",
     heading: "Verifica documento",
-    privacyNote: "Il documento non lascia il tuo computer.",
     textLabel: "oppure incolla il testo",
     submit: "Verifica",
     // Shown until the page's script runs, and so left on screen when the
