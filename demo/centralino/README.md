@@ -8,6 +8,8 @@ Connecting it is what a customer would do:
 
 1. In the console, create a system and keep its sigillo key.
 2. On the system's Manage page, block "AI model", save the Gemini key.
+   (That block was removed from the console on 2026-10-07; a key saved before
+   then keeps working.)
 3. In the agent, change two settings and nothing else:
 
        GEMINI_URL = "https://get-sigillo.eu/llm/gemini"

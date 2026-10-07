@@ -411,7 +411,9 @@ describe("the model gateway", () => {
   });
 });
 
-describe("the AI model block of a system's page", () => {
+// The console no longer offers the gateway (removed on the project owner's
+// instruction of 2026-10-07): /llm/* still answers, with keys already saved.
+describe("the console, with the gateway open", () => {
   const cookie = (viewer: Viewer): string => `sigillo_session=${sessions.issue(viewer, Date.parse(NOW)).value}`;
   const get = (viewer: Viewer, url: string) => app.inject({ method: "GET", url, headers: { cookie: cookie(viewer) } });
   const post = (viewer: Viewer, url: string, form: Record<string, string>) =>
@@ -422,52 +424,18 @@ describe("the AI model block of a system's page", () => {
       payload: new URLSearchParams(form).toString(),
     });
 
-  it("lets the operator save and remove a provider key, showing only its last four characters", async () => {
-    providerKeys.remove(OPERATOR_BOT, "openai");
-    providerKeys.remove(OPERATOR_BOT, "anthropic");
-    const page = await get(OPERATOR, `/ui/systems/${OPERATOR_BOT}/manage`);
-    expect(page.body).toContain("AI model");
-    expect(page.body).toContain("/llm/openai/v1");
-    expect(page.body).toContain("ANTHROPIC_BASE_URL=");
-
-    const saved = await post(OPERATOR, `/ui/systems/${OPERATOR_BOT}/llm-key`, { provider: "openai", key: OPENAI_KEY });
-    expect(saved.statusCode).toBe(303);
-    expect(providerKeys.get(OPERATOR_BOT, "openai")).toBe(OPENAI_KEY);
-    const after = await get(OPERATOR, `/ui/systems/${OPERATOR_BOT}/manage`);
-    expect(after.body).toContain("OpenAI ••••6789");
-    expect(after.body).not.toContain(OPENAI_KEY);
-
-    const refused = await post(OPERATOR, `/ui/systems/${OPERATOR_BOT}/llm-key`, { provider: "openai", key: "not a key" });
-    expect(refused.statusCode).toBe(400);
-    expect(providerKeys.get(OPERATOR_BOT, "openai")).toBe(OPENAI_KEY);
-
-    expect((await post(OPERATOR, `/ui/systems/${OPERATOR_BOT}/llm-key/delete`, { provider: "openai" })).statusCode).toBe(303);
-    expect(providerKeys.get(OPERATOR_BOT, "openai")).toBeNull();
-  });
-
-  it("is not shown to a customer, nor can it be used by one, until the gateway is opened to all", async () => {
-    const page = await get(ACME, `/ui/systems/${ACME_BOT}/manage`);
-    expect(page.statusCode).toBe(200);
-    expect(page.body).not.toContain("AI model");
-    expect(page.body).not.toContain("/llm/");
-    expect((await post(ACME, `/ui/systems/${ACME_BOT}/llm-key`, { provider: "openai", key: `${OPENAI_KEY}X` })).statusCode).toBe(404);
-    expect(providerKeys.get(ACME_BOT, "openai")).toBe(OPENAI_KEY);
-
-    expect((await get(ACME, `/ui/systems/${ACME_BOT}/collega`)).body).not.toContain("/llm/");
-
+  it("shows no AI model block, gateway snippet or key form, to the operator or to a customer", async () => {
     await start("all");
-    expect((await get(ACME, `/ui/systems/${ACME_BOT}/manage`)).body).toContain("AI model");
-    const connect = (await get(ACME, `/ui/systems/${ACME_BOT}/collega`)).body;
-    expect(connect).toContain('id="way-model"');
-    expect(connect).toContain("/llm/openai/v1");
-    expect(connect).toContain("ANTHROPIC_BASE_URL=");
-  });
-
-  it("leaves the operator's connect page as it was: the operator sets the gateway up from the manage page", async () => {
-    await start("all");
-    const connect = (await get(OPERATOR, `/ui/systems/${OPERATOR_BOT}/collega`)).body;
-    expect(connect).not.toContain('id="way-model"');
-    expect(connect).not.toContain("/llm/");
+    for (const [viewer, system] of [[OPERATOR, OPERATOR_BOT], [ACME, ACME_BOT]] as const) {
+      for (const page of ["manage", "collega"]) {
+        const response = await get(viewer, `/ui/systems/${system}/${page}`);
+        expect(response.statusCode).toBe(200);
+        expect(response.body).not.toContain("AI model");
+        expect(response.body).not.toContain('id="way-model"');
+        expect(response.body).not.toContain("/llm/");
+      }
+      expect((await post(viewer, `/ui/systems/${system}/llm-key`, { provider: "openai", key: OPENAI_KEY })).statusCode).toBe(404);
+    }
   });
 });
 
