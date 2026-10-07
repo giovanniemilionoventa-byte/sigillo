@@ -633,8 +633,10 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const session = requireSession(request, reply);
     if (session === null) return reply;
     // The same checkpoint the timer runs, over every chain: sooner, not
-    // different, and nothing of anyone's is shown by it.
-    await options.checkpointer.runOnce();
+    // different, and nothing of anyone's is shown by it. Never two at once,
+    // and at most one every few seconds, however many accounts press it
+    // (Checkpointer.requestRun).
+    await options.checkpointer.requestRun();
     return reply.redirect("/ui?checkpoint=1", 303);
   });
 
