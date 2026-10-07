@@ -412,9 +412,6 @@ details.tech .facts { margin-top: 10px; }
 #way-python:checked ~ .ways [for="way-python"] { box-shadow: 0 0 0 2px var(--action); }
 #way-python:focus-visible ~ .ways [for="way-python"] { outline: 2px solid var(--focus); outline-offset: 2px; }
 #way-python:checked ~ .code.python { display: block; }
-#way-model:checked ~ .ways [for="way-model"] { box-shadow: 0 0 0 2px var(--action); }
-#way-model:focus-visible ~ .ways [for="way-model"] { outline: 2px solid var(--focus); outline-offset: 2px; }
-#way-model:checked ~ .code.model { display: block; }
 .agent-upload { display: none; }
 #way-python:checked ~ .agent-upload.ready { display: block; }
 .agent-upload .notice { margin: 12px 0 0; }

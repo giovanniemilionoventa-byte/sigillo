@@ -319,9 +319,15 @@ or `{"recorded": null}` for a beat that changed nothing.
 ## `/llm/openai/v1/…`, `/llm/anthropic/v1/…`, `/llm/gemini/…` — the model gateway
 
 An agent can call its cloud model through sigillo instead of directly. The
-customer saves their own OpenAI, Anthropic or Google Gemini key on the system's page in the
-console (block "AI model"); the agent is given only the sigillo key of the
-system, and points its model client at sigillo:
+provider's key (OpenAI, Anthropic or Google Gemini) is held by sigillo; the agent
+is given only the sigillo key of the system, and points its model client at
+sigillo:
+
+> **Not offered in the console since 2026-10-07.** The "AI model" block where
+> a customer saved that key was removed on the project owner's instruction, so
+> the Python SDK is the one way the console shows. The endpoints below still
+> answer for keys saved before then; bringing the block back is a revert of
+> that change.
 
 | client | setting |
 | --- | --- |

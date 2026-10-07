@@ -186,7 +186,7 @@ const EN: SiteTexts = {
           text: "On request, we erase the person an action was for: the receipts stay valid but no longer lead to them.",
         },
       ],
-      seen: "What we do see: which tool or model an agent used, when, and whether it worked. If your agent reaches its AI model through Sigillo, the request and the answer cross our server in memory on their way and are never written down; to keep them from us entirely, let the agent call its model directly.",
+      seen: "What we do see: which tool or model an agent used, when, and whether it worked.",
     },
     aiAct: {
       title: "What the AI Act asks, and where Sigillo helps",
@@ -288,7 +288,6 @@ const EN: SiteTexts = {
         paragraphs: [
           "For each person who signs in: the email address, the company name given at sign-up, and when the account was approved. Sign-in goes through Google's Firebase Authentication, which holds the account and its password; no password reaches our server.",
           "For each action your agents send: the receipt, which holds fingerprints (SHA-256) of inputs and outputs, never their text, together with the names of tools and models and the time. Who an action was for is replaced by a pseudonym.",
-          "If your agent reaches its AI model through Sigillo, the request and the answer cross our server in memory, to reach the model and come back, and are never written down: the receipt holds only their fingerprints.",
         ],
       },
       {
@@ -391,7 +390,7 @@ const IT: SiteTexts = {
           text: "Su richiesta cancelliamo la persona per cui è stata fatta un'azione: le ricevute restano valide, ma non portano più a lei.",
         },
       ],
-      seen: "Cosa vediamo: quale strumento o modello ha usato un agente, quando, e se ha funzionato. Se il tuo agente raggiunge il suo modello AI tramite Sigillo, la richiesta e la risposta attraversano il nostro server in memoria, per arrivare al modello, e non vengono mai scritte; per tenerle del tutto lontane da noi, fai chiamare il modello direttamente all'agente.",
+      seen: "Cosa vediamo: quale strumento o modello ha usato un agente, quando, e se ha funzionato.",
     },
     aiAct: {
       title: "Cosa chiede l'AI Act e dove aiuta Sigillo",
@@ -493,7 +492,6 @@ const IT: SiteTexts = {
         paragraphs: [
           "Per ogni persona che entra: l'indirizzo email, il nome dell'azienda dato alla registrazione e quando l'account è stato approvato. L'accesso passa da Firebase Authentication di Google, che custodisce l'account e la password; nessuna password arriva al nostro server.",
           "Per ogni azione che i tuoi agenti inviano: la ricevuta, con le impronte (SHA-256) di ingressi e uscite, mai il loro testo, insieme ai nomi di strumenti e modelli e all'ora. La persona per cui è stata fatta un'azione è sostituita da uno pseudonimo.",
-          "Se il tuo agente raggiunge il suo modello AI tramite Sigillo, la richiesta e la risposta attraversano il nostro server in memoria, per arrivare al modello e tornare, e non vengono mai scritte: la ricevuta ne contiene solo le impronte.",
         ],
       },
       {

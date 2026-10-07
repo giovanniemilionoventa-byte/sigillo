@@ -10,9 +10,7 @@ import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { archiveFromStore, positionsIn, tokensIn } from "../export/from-store.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
-import { gatewayAllowed, type GatewayOptions } from "../gateway/llm.js";
 import { AGENT_SETUP_SCRIPT } from "./agent-setup.js";
-import { isProvider, ProviderKeyError } from "../gateway/provider-keys.js";
 import {
   normaliseDisplayName,
   StorageError,
@@ -133,11 +131,6 @@ export interface UiOptions {
    * daily export on or off and download its files.
    */
   backupDirectory?: string;
-  /**
-   * The model gateway (gateway/llm.ts): given, a system it is open to shows
-   * the "AI model" block, where its provider keys are saved and removed.
-   */
-  gateway?: GatewayOptions;
   /**
    * Who sees "upload your agent" on the connect page (agent-setup.ts):
    * `operator`, the administrator's own systems only, until the owner opens
@@ -736,7 +729,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
         render(session, {
           title: UI.connect.ready(systemTitle(record)),
           current: `system:${systemId}`,
-          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), model: offersModel(record), upload: offersUpload(record) }),
+          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), upload: offersUpload(record) }),
         }),
       );
     } catch (error) {
@@ -864,7 +857,7 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.title(systemTitle(record)),
         current: `system:${systemId}`,
-        body: connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now(), model: offersModel(record) }),
+        body: connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now() }),
       }),
     );
   });
@@ -878,40 +871,25 @@ ${exportSheet(record)}`,
       .filter((key) => key.revokedAt === null)
       .map((key) => key.keyId);
 
-  /** The gateway, where it is open to this system: the operator's own systems only, until it is opened to all. */
-  const gatewayOf = (record: SystemRecord): GatewayOptions | null =>
-    options.gateway !== undefined && gatewayAllowed(options.gateway.access, record.organization_id) ? options.gateway : null;
-
-  /**
-   * Whether the connect page offers the model gateway: to a customer's
-   * system it is open to. The operator sets it up from the manage page.
-   */
-  const offersModel = (record: SystemRecord): boolean => record.organization_id !== null && gatewayOf(record) !== null;
-
   const renderManage = (
     session: Session,
     record: SystemRecord,
-    request: FastifyRequest,
     extra: { notice?: string; error?: string } = {},
   ): string => {
-    const gateway = gatewayOf(record);
-    const model = gateway === null ? null : { endpoint: endpointFor(request), saved: gateway.keys.list(record.system_id) };
     return systemPage(
       session,
       record,
       "manage",
       `${systemTitle(record)} — ${UI.settings.title}`,
-      managePage(record, extra, activeKeys(record.system_id), model),
+      managePage(record, extra, activeKeys(record.system_id)),
     );
   };
 
   // Keys into UI.manage, read when a page is written, in its reader's language.
-  const DONE: Record<string, "renamed" | "archived" | "unarchived" | "modelSaved" | "modelRemoved"> = {
+  const DONE: Record<string, "renamed" | "archived" | "unarchived"> = {
     nome: "renamed",
     archiviato: "archived",
     riattivato: "unarchived",
-    modello: "modelSaved",
-    "modello-rimosso": "modelRemoved",
   };
 
   app.get("/ui/systems/:systemId/manage", async (request, reply) => {
@@ -924,7 +902,7 @@ ${exportSheet(record)}`,
     const done = (request.query as { fatto?: string }).fatto;
     const key = done !== undefined && Object.hasOwn(DONE, done) ? DONE[done] : undefined;
     const notice = key === undefined ? undefined : UI.manage[key];
-    return html(reply, renderManage(session, record, request, notice === undefined ? {} : { notice }));
+    return html(reply, renderManage(session, record, notice === undefined ? {} : { notice }));
   });
 
   const manageUrl = (systemId: string, done: string): string =>
@@ -943,7 +921,7 @@ ${exportSheet(record)}`,
       await store.renameSystem(systemId, displayName, adminRequest(request, session.viewer));
     } catch (error) {
       if (!(error instanceof StorageError)) throw error;
-      return html(reply, renderManage(session, record, request, { error: error.message }), 400);
+      return html(reply, renderManage(session, record, { error: error.message }), 400);
     }
     return reply.redirect(manageUrl(systemId, "nome"), 303);
   });
@@ -969,49 +947,9 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.newKey(systemTitle(record)),
         current: `system:${systemId}`,
-        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), model: offersModel(record), upload: offersUpload(record) }),
+        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record) }),
       }),
     );
-  });
-
-  // The model gateway's keys: the customer's own provider key, sealed
-  // (gateway/provider-keys.ts), never shown again past its last four characters.
-  app.post("/ui/systems/:systemId/llm-key", async (request, reply) => {
-    const session = requireSession(request, reply);
-    if (session === null) return reply;
-    const { store } = session;
-    const { systemId } = request.params as { systemId: string };
-    const record = store.systemRecord(systemId);
-    if (record === null) return notFound(session, reply);
-    const gateway = gatewayOf(record);
-    if (gateway === null) return notFound(session, reply);
-    const body = request.body as { provider?: unknown; key?: unknown } | undefined;
-    if (!isProvider(body?.provider) || typeof body?.key !== "string") {
-      return html(reply, renderManage(session, record, request, { error: UI.manage.modelKeyInvalid }), 400);
-    }
-    try {
-      gateway.keys.set(systemId, body.provider, body.key, options.now().toISOString());
-    } catch (error) {
-      if (!(error instanceof ProviderKeyError)) throw error;
-      return html(reply, renderManage(session, record, request, { error: UI.manage.modelKeyInvalid }), 400);
-    }
-    request.log.info({ system: systemId, action: "llm-key.set", provider: body.provider }, "a model key was saved for a system");
-    return reply.redirect(manageUrl(systemId, "modello"), 303);
-  });
-
-  app.post("/ui/systems/:systemId/llm-key/delete", async (request, reply) => {
-    const session = requireSession(request, reply);
-    if (session === null) return reply;
-    const { store } = session;
-    const { systemId } = request.params as { systemId: string };
-    const record = store.systemRecord(systemId);
-    if (record === null) return notFound(session, reply);
-    const gateway = gatewayOf(record);
-    if (gateway === null) return notFound(session, reply);
-    const provider = (request.body as { provider?: unknown } | undefined)?.provider;
-    if (isProvider(provider)) gateway.keys.remove(systemId, provider);
-    request.log.info({ system: systemId, action: "llm-key.remove", provider }, "a model key was removed from a system");
-    return reply.redirect(manageUrl(systemId, "modello-rimosso"), 303);
   });
 
   app.post("/ui/systems/:systemId/archive", async (request, reply) => {
@@ -1045,7 +983,7 @@ ${exportSheet(record)}`,
     // The exact system_id, typed out: not a "sei sicuro?" a thumb can tap.
     const body = request.body as { confirm?: unknown } | undefined;
     if (body?.confirm !== systemId) {
-      return html(reply, renderManage(session, record, request, { error: UI.manage.confirmMismatch }), 400);
+      return html(reply, renderManage(session, record, { error: UI.manage.confirmMismatch }), 400);
     }
 
     try {
@@ -1056,7 +994,7 @@ ${exportSheet(record)}`,
     } catch (error) {
       if (!(error instanceof SystemNotDeletableError)) throw error;
       const now = store.systemRecord(systemId) ?? record;
-      return html(reply, renderManage(session, now, request, { error: UI.manage.deleteRefused(error.receipts) }), 409);
+      return html(reply, renderManage(session, now, { error: UI.manage.deleteRefused(error.receipts) }), 409);
     }
     options.healthMonitor.forget(systemId);
     request.log.info({ system: systemId, action: "system.delete" }, "an empty system was deleted");

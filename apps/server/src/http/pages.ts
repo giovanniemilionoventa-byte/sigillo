@@ -3,7 +3,6 @@ import type { AdminLogEntry, DocumentMatch, ReceiptStore, SystemRecord } from ".
 import type { ChainStatus } from "../health/chain-health.js";
 import type { StoredExport } from "../backup/daily-export.js";
 import { connectionStatus } from "../connection/watch.js";
-import type { ProviderKeyRecord } from "../gateway/provider-keys.js";
 import { discloseFields } from "./history.js";
 import {
   archivedButShown,
@@ -306,7 +305,7 @@ export const SDK_REQUIREMENT =
  * endpoints still answer, the SDK itself sends to the first, but neither is
  * offered here.
  */
-function connectWays(systemId: string, endpoint: string, token: string | null, model: boolean, upload: boolean): string {
+function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean): string {
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
   const agent = upload && token !== null ? agentUpload(systemId, endpoint, token) : "";
@@ -325,45 +324,12 @@ function connectWays(systemId: string, endpoint: string, token: string | null, m
   // The install command is a box of its own, one click selects all of it:
   // inside the code it would be a comment, and a copy of that line would not run.
   const install = `<pre class="code python install">${escape(`pip install "${SDK_REQUIREMENT}"`)}</pre>`;
-  if (!model) {
-    return `<input type="radio" name="way" id="way-python" class="sr" checked>
+  return `<input type="radio" name="way" id="way-python" class="sr" checked>
 <div class="ways">
 ${pythonWay}
 </div>
 ${agent}${install}
 <pre class="code python">${escape(python)}</pre>`;
-  }
-  // The model gateway (gateway/llm.ts): the customer's model key stays in
-  // sigillo, and the agent reaches its model only through it.
-  const gateway = [
-    `# 1. ${t.modelStep1}`,
-    `# 2. ${t.modelStep2}`,
-    "from openai import OpenAI",
-    "",
-    "client = OpenAI(",
-    `    base_url="${endpoint}/llm/openai/v1",`,
-    `    api_key="${key}",`,
-    ")",
-    "",
-    "# Anthropic, Claude Code",
-    `ANTHROPIC_BASE_URL=${endpoint}/llm/anthropic`,
-    `ANTHROPIC_API_KEY=${key}`,
-    "",
-    "# Google Gemini (google-genai)",
-    "client = genai.Client(",
-    `    api_key="${key}",`,
-    `    http_options={"base_url": "${endpoint}/llm/gemini"},`,
-    ")",
-  ].join("\n");
-  return `<input type="radio" name="way" id="way-python" class="sr" checked>
-<input type="radio" name="way" id="way-model" class="sr">
-<div class="ways">
-${pythonWay}
-<label class="way" for="way-model"><span class="tile-icon blue" aria-hidden="true">${ICONS.link}</span>${escape(t.ways.model)}</label>
-</div>
-${agent}${install}
-<pre class="code python">${escape(python)}</pre>
-<pre class="code model">${escape(gateway)}</pre>`;
 }
 
 /**
@@ -398,8 +364,6 @@ export function connectPage(view: {
   mode: "created" | "newKey" | "connect";
   firstReceipt: Receipt | null;
   now: Date;
-  /** Whether to offer the model gateway as a second way (a customer's system the gateway is open to). */
-  model?: boolean;
   /** Whether to offer "upload your agent" (agent-setup.ts), where the key is shown. */
   upload?: boolean;
 }): string {
@@ -417,25 +381,16 @@ export function connectPage(view: {
         : `${mode === "connect" ? '<meta http-equiv="refresh" content="10">' : ""}<div class="card wait-line" role="status"><span class="spinner" aria-hidden="true"></span><span>${escape(t.waiting)}</span><a class="end" href="${path}/collega">${escape(t.check)}</a></div>`;
   return `<div class="narrow">${pageHead(title)}
 ${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
-${connectWays(record.system_id, view.endpoint, token, view.model ?? false, view.upload ?? false)}
+${connectWays(record.system_id, view.endpoint, token, view.upload ?? false)}
 ${wait}
 </div>`;
 }
-
-/** The model gateway's block on a system's page (gateway/llm.ts): present only where the gateway is open to the system. */
-export interface ManageModel {
-  endpoint: string;
-  saved: ProviderKeyRecord[];
-}
-
-const PROVIDER_NAMES: Record<ProviderKeyRecord["provider"], string> = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Google Gemini" };
 
 /** A system's settings: its name, identifier and key, connecting it, archiving it, and deleting it while its chain is empty. */
 export function managePage(
   record: SystemRecord,
   extra: { notice?: string; error?: string },
   keyIds: string[],
-  model: ManageModel | null = null,
 ): string {
   const t = UI.manage;
   const path = systemPath(record.system_id);
@@ -466,50 +421,6 @@ export function managePage(
 </form></div>
 </section>`;
 
-  const modelBlock =
-    model === null
-      ? ""
-      : block(
-          "blue",
-          ICONS.link,
-          t.modelTitle,
-          `${model.saved
-            .map(
-              (saved) => `<form method="post" action="${path}/llm-key/delete" class="inline">
-  <input type="hidden" name="provider" value="${saved.provider}">
-  <code class="keybox">${escape(`${PROVIDER_NAMES[saved.provider]} ••••${saved.last4}`)}</code>
-  <button type="submit">${ICONS.trash}${escape(t.modelRemove)}</button>
-</form>`,
-            )
-            .join("\n")}
-<form method="post" action="${path}/llm-key" class="inline${model.saved.length === 0 ? "" : " section"}">
-  <label><span class="sr">${escape(t.modelProvider)}</span>
-    <select name="provider">${Object.entries(PROVIDER_NAMES)
-      .map(([value, name]) => `<option value="${value}">${escape(name)}</option>`)
-      .join("")}</select>
-  </label>
-  <label><span class="sr">${escape(t.modelKeyLabel)}</span>
-    <input type="password" name="key" placeholder="${escape(t.modelKeyLabel)}" autocomplete="off" spellcheck="false" required>
-  </label>
-  <button type="submit" class="primary">${escape(t.modelSave)}</button>
-</form>
-<pre class="code section">${escape(
-            [
-              `# OpenAI`,
-              `base_url="${model.endpoint}/llm/openai/v1"`,
-              `api_key="${UI.connect.keyPlaceholder}"`,
-              "",
-              `# Anthropic, Claude Code`,
-              `ANTHROPIC_BASE_URL=${model.endpoint}/llm/anthropic`,
-              `ANTHROPIC_API_KEY=${UI.connect.keyPlaceholder}`,
-              "",
-              `# Google Gemini`,
-              `base_url="${model.endpoint}/llm/gemini"`,
-              `api_key="${UI.connect.keyPlaceholder}"`,
-            ].join("\n"),
-          )}</pre>`,
-        );
-
   return `${notices(extra)}
 <div class="blocks">
 ${block(
@@ -531,7 +442,6 @@ ${block(
   `<div class="inline"><code class="keybox" aria-label="${escape(t.keyLabel)}">${escape(current)}</code><a class="button" href="#nuova-chiave">${escape(t.newKey)}</a></div>
 <p class="section"><a href="${path}/collega">${escape(t.connect)}</a></p>`,
 )}
-${modelBlock}
 ${block("grey", ICONS.archive, t.archiveTitle, archive)}
 ${block("red", ICONS.trash, t.deleteTitle, removal)}
 </div>

@@ -3520,6 +3520,16 @@ pagina). Trovati e corretti, ciascuno con il suo test:
 
 Il verificatore non cambia.
 
+### Sessione 43 — 2026-10-07 — tolto il blocco «Modello AI» dalla console
+
+Su richiesta del titolare, perché confondeva i casi d'uso: la console non offre più il gateway dei
+modelli. Tolti il blocco «Modello AI» dalla pagina di gestione del sistema (salva e rimuovi la
+chiave del fornitore), la seconda strada «Modello AI» nella pagina «Collega» e i loro testi; tolte
+dal sito (sezione dati e informativa privacy) le frasi su richieste e risposte che passano dal
+server. Per collegarsi resta solo l'SDK Python: l'agente usa le sue credenziali del modello.
+Il gateway (`/llm/*`, `SIGILLO_LLM_GATEWAY`) e le chiavi già salvate restano intatti, così si può
+riattivare annullando questa modifica. Il verificatore non cambia.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
