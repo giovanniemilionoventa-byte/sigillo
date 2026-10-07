@@ -189,8 +189,6 @@ const ui: Strings = {
   connect: {
     ready: (name: string): string => `${name} is ready`,
     newKey: (name: string): string => `New key for ${name}`,
-    keyLabel: "System key",
-    keyNote: "You can only see it now: copy it and keep it safe.",
     heading: "Connect your agent",
     title: (name: string): string => `Connect ${name}`,
     ways: { python: "Python SDK", model: "AI model" },
@@ -208,8 +206,7 @@ const ui: Strings = {
         "{file} downloaded, with sigillo already in it, which installs itself the first time. It uses neither LangChain, CrewAI nor OpenAI: sigillo records when it is connected and the actions you record yourself.",
       already: "{file} already uses sigillo: there is nothing to add.",
       notPython: "Choose the agent's Python file (.py, up to 1 MB).",
-      privacy: "The file stays in your browser: it is not sent to sigillo.",
-      or: "or do it by hand, with these two commands",
+      or: "or",
     },
   },
   manage: {
@@ -353,7 +350,6 @@ const ui: Strings = {
   verifyDocument: {
     title: "Verify document",
     heading: "Verify document",
-    privacyNote: "The document never leaves your computer.",
     textLabel: "or paste the text",
     submit: "Verify",
     scriptInactive:

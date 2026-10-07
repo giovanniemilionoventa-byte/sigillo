@@ -237,7 +237,7 @@ describe("who is offered the upload", () => {
     expect(page.indexOf('id="sigillo-agent"')).toBeGreaterThan(-1);
     expect(page.indexOf('id="sigillo-agent"')).toBeLessThan(commands);
     expect(commands).toBeLessThan(page.indexOf('<pre class="code python">'));
-    const key = /<code class="keybox">(sigillo_[^<]+)<\/code>/.exec(page)?.[1];
+    const key = /data-key="(sigillo_[^"]+)"/.exec(page)?.[1];
     expect(key).toBeDefined();
     expect(page).toContain(`data-key="${key}"`);
     expect(page).toContain('data-system="operator-bot"');

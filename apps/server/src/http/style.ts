@@ -401,8 +401,6 @@ details.tech .facts { margin-top: 10px; }
 .label { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--label); }
 .keybox { display: block; padding: 14px 16px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-card);
   font-family: var(--mono); font-size: 13.5px; word-break: break-all; user-select: all; -webkit-user-select: all; }
-.key-note { display: flex; gap: 8px; align-items: center; margin: 10px 0 30px; color: var(--warn); font-weight: 500; }
-.key-note svg { width: 16px; height: 16px; }
 .ways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 16px; }
 .way { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 14px; background: var(--surface);
   box-shadow: var(--shadow-card); color: var(--text); font-size: 15px; font-weight: 600; cursor: pointer; }
@@ -444,8 +442,6 @@ details.tech .facts { margin-top: 10px; }
 .or { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--secondary); font-size: 13px; font-weight: 400; }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--separator); }
 #sigillo-doc-button { width: 100%; margin-top: 12px; }
-.privacy { display: flex; gap: 6px; align-items: center; margin-top: 12px; color: var(--secondary); font-size: 13px; }
-.privacy svg { width: 15px; height: 15px; }
 .result { display: flex; gap: 14px; align-items: flex-start; padding: 20px; }
 .result h3 { margin: 2px 0 6px; font-size: 16px; }
 .result p { margin: 0 0 6px; line-height: 1.5; }

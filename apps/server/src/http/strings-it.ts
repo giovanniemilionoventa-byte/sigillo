@@ -197,8 +197,6 @@ const ui = {
   connect: {
     ready: (name: string): string => `${name} è pronto`,
     newKey: (name: string): string => `Nuova chiave per ${name}`,
-    keyLabel: "Chiave del sistema",
-    keyNote: "La vedi solo ora: copiala e conservala.",
     heading: "Collega il tuo agente",
     title: (name: string): string => `Collega ${name}`,
     ways: { python: "SDK Python", model: "Modello AI" },
@@ -216,8 +214,7 @@ const ui = {
         "{file} scaricato, con sigillo già dentro, che la prima volta si installa da solo. Non usa LangChain, CrewAI né OpenAI: sigillo registra quando è collegato e le azioni che registri tu.",
       already: "{file} usa già sigillo: non c'è niente da aggiungere.",
       notPython: "Scegli il file Python dell'agente (.py, fino a 1 MB).",
-      privacy: "Il file resta nel tuo browser: non viene inviato a sigillo.",
-      or: "oppure a mano, con questi due comandi",
+      or: "oppure",
     },
   },
   manage: {
@@ -364,7 +361,6 @@ const ui = {
   verifyDocument: {
     title: "Verifica documento",
     heading: "Verifica documento",
-    privacyNote: "Il documento non lascia il tuo computer.",
     textLabel: "oppure incolla il testo",
     submit: "Verifica",
     // Shown until the page's script runs, and so left on screen when the

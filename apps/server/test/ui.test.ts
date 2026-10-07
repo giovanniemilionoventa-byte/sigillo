@@ -443,7 +443,7 @@ describe("the sistemi page", () => {
     // The command is a box of its own, so a copy of it runs as typed.
     expect(response.body).toMatch(/<pre class="code python install">pip install &quot;sigillo\[langchain\] @ https:\/\/github\.com\/[^<]*sdk-python&quot;<\/pre>/);
     expect(response.body).toContain("nuovo-sistema");
-    expect(response.body).toContain(UI.connect.keyNote);
+    expect(response.body).not.toContain(`<code class="keybox">`);
 
     // The system is real: the ordinary systems listing knows about it too.
     const list = await app.inject({ method: "GET", url: "/ui/sistemi", headers: { cookie } });
@@ -704,7 +704,6 @@ describe("the verify-document page", () => {
       headers: { cookie },
     });
     expect(response.statusCode).toBe(200);
-    expect(response.body).toContain("non lascia il tuo computer");
     expect(response.body).toContain('id="sigillo-doc-file"');
     expect(response.body).toContain('id="sigillo-doc-text"');
     expect(response.body).toContain("<script>");

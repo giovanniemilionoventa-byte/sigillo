@@ -86,7 +86,7 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, in a real browse
 
     await page.goto(`${base}/ui/systems/${SYSTEM}/manage#nuova-chiave`);
     await Promise.all([page.waitForURL(`${base}/ui/systems/${SYSTEM}/key`), page.click('form[action$="/key"] button[type="submit"]')]);
-    const key = (await page.textContent("code.keybox"))?.trim() ?? "";
+    const key = (await page.getAttribute("#sigillo-agent", "data-key")) ?? "";
     expect(key).toMatch(/^sigillo_/);
     expect(await page.isVisible("#sigillo-agent-file")).toBe(true);
 

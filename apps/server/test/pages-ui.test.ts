@@ -253,7 +253,7 @@ describe("the systems page", () => {
     const created = await post("/ui/sistemi", "system_id=nuovo&display_name=Il%20nuovo");
     expect(created.status).toBe(200);
     const main = mainOf(created.body);
-    const token = /<code class="keybox">(sigillo_[0-9a-f]{16}_[0-9a-f]{64})<\/code>/.exec(main)?.[1] ?? "";
+    const token = /api_key=(?:"|&quot;)(sigillo_[0-9a-f]{16}_[0-9a-f]{64})/.exec(main)?.[1] ?? "";
     expect(token).not.toBe("");
     expect(main).toContain(`<h1>${UI.connect.ready("Il nuovo")}</h1>`);
     // Python only: its heartbeat is what tells when an agent was disconnected.

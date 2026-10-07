@@ -254,7 +254,6 @@ function verifyDocumentForm(): string {
 <label class="drop"><span class="tile-icon blue" aria-hidden="true">${ICONS.upload}</span><strong>${escape(t.dropTitle)}</strong><span class="muted">${escape(t.dropHint)}</span><input type="file" id="sigillo-doc-file"></label>
 <label><span class="or">${escape(t.textLabel)}</span><textarea id="sigillo-doc-text" rows="6" cols="60"></textarea></label>
 <button type="button" id="sigillo-doc-button" class="big" disabled>${escape(t.submit)}</button>
-<p class="privacy">${ICONS.lock}<span>${escape(t.privacyNote)}</span></p>
 <p class="notice bad" id="sigillo-doc-failed" role="alert" hidden>${STATE_ICONS.bad}<span>${escape(t.computeFailed)} ${escape(t.browserError)}: <span id="sigillo-doc-error"></span>.</span></p>
 <script>${VERIFY_DOCUMENT_SCRIPT}</script>
 </section>`;

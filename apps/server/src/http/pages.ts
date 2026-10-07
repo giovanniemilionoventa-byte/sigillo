@@ -378,7 +378,6 @@ function agentUpload(systemId: string, endpoint: string, token: string): string 
 <label class="drop"><span class="tile-icon blue" aria-hidden="true">${ICONS.upload}</span><strong>${escape(t.drop)}</strong><input type="file" id="sigillo-agent-file" accept=".py,text/x-python"></label>
 <p class="notice ok" id="sigillo-agent-done" role="status" hidden>${STATE_ICONS.ok}<span></span></p>
 <p class="notice warn" id="sigillo-agent-problem" role="alert" hidden>${STATE_ICONS.warn}<span></span></p>
-<p class="privacy">${ICONS.lock}<span>${escape(t.privacy)}</span></p>
 <p class="or">${escape(t.or)}</p>
 <script src="/ui/agent-setup.js" defer></script>
 </div>
@@ -408,12 +407,6 @@ export function connectPage(view: {
   const name = systemTitle(record);
   const title = mode === "created" ? t.ready(name) : mode === "newKey" ? t.newKey(name) : t.title(name);
   const path = systemPath(record.system_id);
-  const key =
-    token === null
-      ? ""
-      : `<p class="label">${escape(t.keyLabel)}</p>
-<code class="keybox">${escape(token)}</code>
-<p class="key-note" role="status">${STATE_ICONS.warn}<span>${escape(t.keyNote)}</span></p>`;
   const arrived = view.firstReceipt;
   const wait =
     arrived !== null
@@ -422,7 +415,6 @@ export function connectPage(view: {
         ? `<p class="section"><a class="button primary" href="${path}">${escape(t.goToSystem)}</a></p>`
         : `${mode === "connect" ? '<meta http-equiv="refresh" content="10">' : ""}<div class="card wait-line" role="status"><span class="spinner" aria-hidden="true"></span><span>${escape(t.waiting)}</span><a class="end" href="${path}/collega">${escape(t.check)}</a></div>`;
   return `<div class="narrow">${pageHead(title)}
-${key}
 ${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
 ${connectWays(record.system_id, view.endpoint, token, view.model ?? false, view.upload ?? false)}
 ${wait}

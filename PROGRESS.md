@@ -3486,6 +3486,14 @@ Su richiesta del titolare, dopo aver provato "carica l'agente", direttamente per
 - **Impostazioni dall'account**: tolta la voce "Impostazioni" dalla barra; l'icona e il nome
   dell'account in basso aprono le Impostazioni (il tasto Esci resta accanto).
 
+### Sessione 41 — 2026-10-07 — meno scritte nella pagina «Collega»
+
+Su richiesta del titolare: tolto il riquadro «Chiave del sistema» dalla pagina di collegamento
+(la chiave sta già nel file scaricato e nei due comandi), tolte le frasi di contorno «il file
+resta nel tuo browser» e «il documento non lascia il tuo computer», e il separatore tra le due
+strade ora dice solo «oppure» / «or». I test che leggevano la chiave dal riquadro la leggono dal
+file o dal codice. Nessun codice aggiunto: il verificatore non cambia.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
