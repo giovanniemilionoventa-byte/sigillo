@@ -213,9 +213,14 @@ code to write: it adds hooks to Claude Code's user settings, and Claude Code
 runs them whatever the model does.
 
 ```sh
-sigillo-claude-code connect --endpoint https://sigillo.example --key sigillo_...
-sigillo-claude-code disconnect
+python -m pip install "sigillo @ <the SDK's address>" && python -m sigillo.claude_code connect --endpoint https://sigillo.example --key sigillo_...
+python -m sigillo.claude_code disconnect
 ```
+
+The same line works in a terminal and, for Claude Code in the cloud, in the
+environment's setup script (the environment must allow the Sigillo server's
+domain in its network settings). `python -m` is used because pip's scripts
+folder (`sigillo-claude-code`) is not on the PATH on Windows.
 
 `connect` sends a first receipt (`claude_code.connected`), so a wrong key or an
 unreachable server stops it before anything changes; then it saves the endpoint

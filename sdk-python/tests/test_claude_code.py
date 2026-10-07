@@ -230,6 +230,18 @@ class ClaudeCodeTest(unittest.TestCase):
             timeout=60,
         )
 
+    def test_connect_runs_as_python_dash_m_where_the_script_is_not_on_the_path(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "sigillo.claude_code", "connect", "--endpoint", self.base, "--key", "k"],
+            capture_output=True,
+            text=True,
+            env={**os.environ, **self.environment},
+            timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Connected", result.stdout)
+        self.assertTrue(self.settings_file.exists())
+
     def test_the_hook_records_an_event_from_standard_input(self) -> None:
         claude_code.connect(self.base, "k")
         _Server.bodies = []

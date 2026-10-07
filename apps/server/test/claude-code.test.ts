@@ -174,9 +174,10 @@ describe("the connect page", () => {
     expect(page).toContain('id="way-claude"');
     const key = /--key (sigillo_[A-Za-z0-9_-]+)/.exec(page)?.[1];
     expect(key).toBeDefined();
-    expect(page).toContain(`sigillo-claude-code connect --endpoint http://localhost:80 --key ${key}`);
-    expect(page).toContain("main.zip#subdirectory=sdk-python&quot;\nsigillo-claude-code");
-    expect(page).not.toContain("sigillo[langchain] @ https://github.com/giovanniemilionoventa-byte/sigillo/archive/refs/heads/main.zip#subdirectory=sdk-python&quot;\nsigillo-claude-code");
+    expect(page).toContain(`python -m sigillo.claude_code connect --endpoint http://localhost:80 --key ${key}`);
+    // One line, so it pastes the same in a terminal and in a cloud setup script.
+    expect(page).toContain("main.zip#subdirectory=sdk-python&quot; &amp;&amp; python -m sigillo.claude_code connect");
+    expect(page).not.toContain("sigillo[langchain] @ https://github.com/giovanniemilionoventa-byte/sigillo/archive/refs/heads/main.zip#subdirectory=sdk-python&quot; &amp;&amp;");
     expect(await newKey(ACME, ACME_BOT)).not.toContain('id="way-claude"');
   });
 

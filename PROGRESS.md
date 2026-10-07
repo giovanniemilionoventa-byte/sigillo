@@ -3577,6 +3577,15 @@ diventa una serie di ricevute, senza scrivere codice.
   hook. Cowork, da una segnalazione pubblica, oggi non esegue gli hook dei plugin: non è coperto.
 - **Verificatore**: non toccato.
 
+### Sessione 46 — 2026-10-07 — Claude Code: una riga sola, uguale in locale e nel cloud
+
+Il titolare ha provato il comando su Windows: `sigillo-claude-code` non era nel PATH (la cartella
+degli script di pip non c'è). La scheda «Claude Code» della console ora mostra una sola riga,
+`python -m pip install … && python -m sigillo.claude_code connect --endpoint … --key …`, che
+funziona in un terminale (Windows compreso) e, per Claude Code nel cloud, incollata nello script di
+setup dell'ambiente (che deve permettere il dominio di Sigillo). Solo per l'amministratore,
+`SIGILLO_CLAUDE_CODE`. Da provare dal titolare: il cloud non è stato verificato qui.
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password

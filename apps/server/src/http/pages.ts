@@ -324,8 +324,10 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
   // The install command is a box of its own, one click selects all of it:
   // inside the code it would be a comment, and a copy of that line would not run.
   const install = `<pre class="code python install">${escape(`pip install "${SDK_REQUIREMENT}"`)}</pre>`;
-  // Claude Code (sigillo-claude-code, in the SDK): two commands in one box,
-  // copied together; no comment line, which zsh would try to run.
+  // Claude Code (sigillo.claude_code, in the SDK): one line, the same in a
+  // terminal and in a cloud environment's setup script. `python -m`, not the
+  // sigillo-claude-code script: pip's scripts folder is not on a Windows PATH.
+  // No comment line, which zsh would try to run.
   const claude = claudeCode
     ? {
         radio: `\n<input type="radio" name="way" id="way-claude" class="sr">`,
@@ -333,9 +335,9 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
         body: `<div class="claude-code"><p class="label">${escape(t.claudeCodeRun)}</p>
 <pre class="code install">${escape(
           [
-            `pip install "${SDK_REQUIREMENT.replace("[langchain]", "")}"`,
-            `sigillo-claude-code connect --endpoint ${endpoint} --key ${key}`,
-          ].join("\n"),
+            `python -m pip install "${SDK_REQUIREMENT.replace("[langchain]", "")}"`,
+            `python -m sigillo.claude_code connect --endpoint ${endpoint} --key ${key}`,
+          ].join(" && "),
         )}</pre></div>
 `,
       }

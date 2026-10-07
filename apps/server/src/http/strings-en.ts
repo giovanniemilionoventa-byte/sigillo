@@ -193,7 +193,7 @@ const ui: Strings = {
     title: (name: string): string => `Connect ${name}`,
     ways: { python: "Python SDK", claudeCode: "Claude Code" },
     pasteAtTop: "Paste this at the top of your agent's Python file:",
-    claudeCodeRun: "Run this in a terminal, on the computer where you use Claude Code, then restart Claude Code:",
+    claudeCodeRun: "Paste this line in a terminal on the computer where you use Claude Code, then restart it. For Claude Code in the cloud, paste it in the environment's setup script instead:",
     keyPlaceholder: "<the-system-key>",
     waiting: "Waiting for the first receipt…",
     check: "Check",

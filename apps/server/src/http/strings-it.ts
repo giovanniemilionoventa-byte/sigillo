@@ -201,7 +201,7 @@ const ui = {
     title: (name: string): string => `Collega ${name}`,
     ways: { python: "SDK Python", claudeCode: "Claude Code" },
     pasteAtTop: "Incolla questo all'inizio del file Python del tuo agente:",
-    claudeCodeRun: "Esegui in un terminale, sul computer dove usi Claude Code, poi riavvia Claude Code:",
+    claudeCodeRun: "Incolla questa riga in un terminale sul computer dove usi Claude Code, poi riavvialo. Per Claude Code nel cloud, incollala invece nello script di setup dell'ambiente:",
     keyPlaceholder: "<la-chiave-del-sistema>",
     waiting: "In attesa della prima ricevuta…",
     check: "Controlla",
