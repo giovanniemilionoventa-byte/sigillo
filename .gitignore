@@ -35,3 +35,4 @@ video/out/
 # auto-update.sh (deploy/)
 auto-update.log
 deploy/.auto-update.lock
+deploy/.auto-update.failed
