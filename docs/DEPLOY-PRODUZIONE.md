@@ -615,7 +615,7 @@ o due secondi di interruzione; quando il `Caddyfile` non è cambiato non fa
 nessun danno.
 
 Il controllo finale legge la configurazione che Caddy ha caricato
-dall'interfaccia di amministrazione di Caddy stesso (`localhost:2019`, dentro
+dall'interfaccia di amministrazione di Caddy stesso (`127.0.0.1:2019`, dentro
 il container, non raggiungibile da fuori) e la confronta con l'impronta scritta
 nel `Caddyfile`. Se non coincidono, lo script esce con un errore che lo dice,
 e `docker compose logs caddy` ne mostra il motivo. L'esito atteso:

@@ -257,7 +257,7 @@ describe.skipIf(process.platform === "win32")("deploy/update.sh", () => {
       "docker compose build",
       "docker compose up -d",
       "docker compose restart caddy",
-      "docker compose exec -T caddy wget -qO- http://localhost:2019/config/",
+      "docker compose exec -T caddy wget -qO- http://127.0.0.1:2019/config/",
     ]);
   });
 
@@ -265,7 +265,7 @@ describe.skipIf(process.platform === "win32")("deploy/update.sh", () => {
     const { status, calls, stdout } = runUpdate(caddyfileHash);
     expect(status).toBe(0);
     expect(calls.indexOf("docker compose exec -T server node dist/cli.js signer check")).toBeGreaterThan(
-      calls.indexOf("docker compose exec -T caddy wget -qO- http://localhost:2019/config/"),
+      calls.indexOf("docker compose exec -T caddy wget -qO- http://127.0.0.1:2019/config/"),
     );
     expect(stdout).toContain("bot\tdatabase seq 4\tsigner seq 4\tsame");
   });
