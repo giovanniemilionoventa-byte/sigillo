@@ -143,6 +143,12 @@ export interface UiOptions {
    * accepts its actions (server.ts). Not given: nobody.
    */
   claudeCode?: "off" | "operator" | "all";
+  /**
+   * Who is given the "stdlib" recording by "upload your agent" for an agent
+   * with no framework (SIGILLO_PLAIN_AGENTS): `operator` until the owner opens
+   * it to `all`, as the server accepts it (server.ts). Not given: nobody.
+   */
+  plainAgents?: "off" | "operator" | "all";
   accounts?: {
     firebase: FirebaseAuth;
     /** This installation's address as browsers reach it, e.g. https://sigillo.example.com. */
@@ -593,6 +599,10 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   const offersClaudeCode = (record: SystemRecord): boolean =>
     options.claudeCode === "all" || (options.claudeCode === "operator" && record.organization_id === null);
 
+  /** Whether the file "upload your agent" gives back records a framework-less agent: the same rule, under its own switch. */
+  const offersPlainAgents = (record: SystemRecord): boolean =>
+    options.plainAgents === "all" || (options.plainAgents === "operator" && record.organization_id === null);
+
   // The script of "upload your agent": the same for everyone, and nothing in
   // it is secret, so it is served without a session.
   app.get("/ui/agent-setup.js", async (_request, reply) =>
@@ -739,7 +749,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
         render(session, {
           title: UI.connect.ready(systemTitle(record)),
           current: `system:${systemId}`,
-          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), upload: offersUpload(record), claudeCode: offersClaudeCode(record) }),
+          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), claudeCode: offersClaudeCode(record) }),
         }),
       );
     } catch (error) {
@@ -963,7 +973,7 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.newKey(systemTitle(record)),
         current: `system:${systemId}`,
-        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record), claudeCode: offersClaudeCode(record) }),
+        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), claudeCode: offersClaudeCode(record) }),
       }),
     );
   });

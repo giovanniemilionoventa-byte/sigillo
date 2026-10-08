@@ -14,6 +14,22 @@ sigillo.init(
 )
 ```
 
+
+## Agents without a framework
+
+An agent that calls its model with `urllib` and writes files with `pathlib` has
+no framework to instrument. Name `"stdlib"` and its model calls, its other web
+requests and the files it writes are recorded, as digests only:
+
+```python
+sigillo.init(endpoint="https://sigillo.example/", api_key="sigillo_...",
+             system_id="my-agent", instrument=["stdlib"])
+```
+
+Only the agent's own code is recorded, not the standard library's or an
+installed package's. The model's answer is not (the agent reads it after the
+request returns). It is on only when named.
+
 ## Install
 
 ```sh

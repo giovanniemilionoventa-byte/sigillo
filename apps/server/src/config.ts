@@ -227,6 +227,20 @@ export function claudeCode(env: Environment): "off" | "operator" | "all" {
 }
 
 /**
+ * SIGILLO_PLAIN_AGENTS: whose agents with no framework are recorded from the
+ * standard library's own calls (the SDK's "stdlib" instrumentation: urllib,
+ * file writes), in the file "upload your agent" gives back, and whose systems
+ * accept that. `off`, `operator` (the default: new, so the administrator's own
+ * systems only, CLAUDE.md rule 11) or `all`.
+ */
+export function plainAgents(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_PLAIN_AGENTS"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_PLAIN_AGENTS must be off, operator or all, received ${JSON.stringify(value)}`);
+}
+
+/**
  * SIGILLO_SCRIPT_GUARD: whose agents' main script the heartbeat watches
  * (connection/watch.ts). `off`, `operator` (the default: new, so the
  * administrator's own systems only, CLAUDE.md rule 11) or `all`.
