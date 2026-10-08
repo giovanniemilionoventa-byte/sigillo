@@ -24,11 +24,13 @@ docker compose build
 docker compose up -d
 docker compose restart caddy
 
+# 127.0.0.1, not localhost: inside the container busybox's wget can resolve
+# localhost to ::1, where the admin endpoint is not listening (connection refused).
 expected=$(grep -o "'sha256-[A-Za-z0-9+/]*=*'" Caddyfile)
 loaded=""
 tries=0
 while [ -z "$loaded" ] && [ "$tries" -lt 30 ]; do
-  loaded=$(docker compose exec -T caddy wget -qO- http://localhost:2019/config/ 2>/dev/null |
+  loaded=$(docker compose exec -T caddy wget -qO- http://127.0.0.1:2019/config/ 2>/dev/null |
     grep -o "'sha256-[A-Za-z0-9+/]*=*'" | head -n 1 || true)
   if [ -z "$loaded" ]; then
     tries=$((tries + 1))
