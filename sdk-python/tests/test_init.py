@@ -306,6 +306,25 @@ class SigilloInitTest(unittest.TestCase):
         self._emit_span(tracing)
         self.assertEqual(len(_Capture.bodies), 1)
 
+    def test_does_not_complain_about_instrumentations_nobody_asked_for(self) -> None:
+        # An agent with no framework calls init without `instrument=`. The
+        # default tries every instrumentation that is installed, and the ones
+        # that are not must pass in silence: nobody requested them.
+        import sys
+        from unittest import mock
+
+        # None in sys.modules makes the import raise ModuleNotFoundError.
+        blocked = {
+            f"openinference.instrumentation.{name}": None
+            for name in ("langchain", "crewai", "openai")
+        }
+        with mock.patch.dict(sys.modules, blocked):
+            with self.assertNoLogs("sigillo", level=logging.WARNING):
+                tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s")
+        self.addCleanup(tracing.shutdown)
+
+        self.assertEqual(tracing.instrumented, ())
+
     def test_says_what_failed_when_an_installed_instrumentation_cannot_start(self) -> None:
         # The instrumentation is there, but importing the framework under it
         # fails (on Windows, typically a DLL that will not load). Calling that
