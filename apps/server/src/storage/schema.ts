@@ -59,6 +59,23 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
 CREATE INDEX IF NOT EXISTS api_keys_by_system ON api_keys (system_id);
 
+-- A link that hands a system to whoever signs in and accepts it
+-- (transfers.ts). Not evidence. Only the SHA-256 of the secret in the link is
+-- stored, so a copy of this database does not let anyone take the system.
+-- used_at is set once, by the organization that accepted; revoked_at when the
+-- giver took the link back or a newer one replaced it.
+CREATE TABLE IF NOT EXISTS transfer_links (
+  token_hash TEXT PRIMARY KEY,
+  system_id  TEXT NOT NULL REFERENCES systems (system_id),
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at    TEXT,
+  used_by    TEXT,
+  revoked_at TEXT
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS transfer_links_by_system ON transfer_links (system_id);
+
 CREATE TABLE IF NOT EXISTS receipts (
   id          INTEGER PRIMARY KEY,
   system_id   TEXT    NOT NULL,

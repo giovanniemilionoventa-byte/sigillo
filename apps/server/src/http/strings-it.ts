@@ -224,6 +224,21 @@ const ui = {
       or: "oppure",
     },
   },
+  transfer: {
+    linkTitle: (name: string): string => `Link di trasferimento per ${name}`,
+    linkIntro: "Mandalo a chi deve ricevere il sistema. Lo vedi solo ora: dopo non è più recuperabile, ma puoi crearne un altro.",
+    linkLabel: "Link di trasferimento",
+    linkExpires: (when: string): string => `Vale fino al ${when}, una volta sola. Dopo il trasferimento perdi l'accesso al sistema.`,
+    back: "Torna alle impostazioni",
+    acceptTitle: "Aggiungi al tuo account",
+    acceptIntro: (name: string, account: string): string => `Il sistema «${name}» passerà all'account ${account}, con tutta la sua cronologia.`,
+    acceptSubmit: "Aggiungi al mio account",
+    done: (name: string): string => `«${name}» ora è nel tuo account.`,
+    invalidTitle: "Link non valido",
+    invalid: "Questo link non è più valido: è scaduto, è già stato usato o è stato annullato. Chiedi un nuovo link a chi te l'ha mandato.",
+    operator: "Questo link va aperto con l'account di un cliente, non con quello dell'amministratore.",
+    alreadyYours: "Questo sistema è già nel tuo account.",
+  },
   manage: {
     nameTitle: "Nome",
     nameLabel: "Nome mostrato",
@@ -248,6 +263,12 @@ const ui = {
     deleteSubmit: "Elimina definitivamente",
     deleteRefused: (receipts: number): string =>
       `Contiene ${receipts - 1} ${receipts - 1 === 1 ? "azione registrata" : "azioni registrate"}: si può solo archiviare.`,
+    transferTitle: "Passa a un altro account",
+    transferIntro: "Crea un link: chi lo apre accede al proprio account e il sistema passa a lui. Il link vale una volta sola e per sette giorni.",
+    transferSubmit: "Crea link di trasferimento",
+    transferOpen: "C'è già un link aperto. Crearne uno nuovo annulla quello vecchio.",
+    transferRevoke: "Annulla il link",
+    transferRevoked: "Link annullato.",
     confirmMismatch: "Il testo scritto non corrisponde all'identificativo del sistema: niente è stato eliminato.",
   },
   settings: {
@@ -449,6 +470,7 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "organization.approve": "organizzazione approvata",
   "user.register": "nuova registrazione",
   "system.assign": "assegnato a un'organizzazione",
+  "system.transfer.create": "creato un link di trasferimento",
 };
 
 /** The server's own receipts for the SDK heartbeat (connection/watch.ts): a title and a sentence each. */

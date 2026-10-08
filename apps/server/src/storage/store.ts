@@ -1,4 +1,4 @@
-import { randomBytes, type KeyObject } from "node:crypto";
+import { createHash, randomBytes, type KeyObject } from "node:crypto";
 import Database from "better-sqlite3";
 import {
   canonicalReceiptBytes,
@@ -187,6 +187,20 @@ export class StorageError extends Error {
   }
 }
 
+/** A transfer link that cannot be used: unknown, expired, used or taken back. One message for all, so a guess learns nothing. */
+export class TransferUnavailableError extends StorageError {
+  constructor() {
+    super("this transfer link is not valid any more");
+    this.name = "TransferUnavailableError";
+  }
+}
+
+/** The SHA-256 of a transfer link's secret: all the database keeps of it. */
+export const transferHash = (secret: string): string => createHash("sha256").update(secret).digest("hex");
+
+/** How long a transfer link works, from the moment it is made. */
+export const TRANSFER_TTL_MS = 7 * 24 * 60 * 60_000;
+
 /**
  * A deletion refused because the chain holds more than its genesis. Never a
  * question of confirming harder: such a system can be archived, not deleted.
@@ -294,7 +308,9 @@ export type AdminAction =
   /** Someone signed up and was given a new organization, waiting for approval. */
   | "user.register"
   /** A system was given to an organization, moved to another, or taken back by the operator. */
-  | "system.assign";
+  | "system.assign"
+  /** A link was made that hands a system to whoever accepts it (transfers). */
+  | "system.transfer.create";
 
 /** One line of the administrative log: something done to a system outside its chain. */
 export interface AdminLogEntry {
@@ -835,6 +851,98 @@ export class ReceiptStore {
   }
 
   /**
+   * Makes a link that hands `systemId` to whoever signs in and accepts it, and
+   * takes back any link the system still had open. Returns the secret, which
+   * is not kept anywhere: the database holds its hash.
+   */
+  async createTransfer(systemId: string, request: AdminRequest): Promise<{ secret: string; expiresAt: string }> {
+    const secret = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(Date.parse(request.ts) + TRANSFER_TTL_MS).toISOString();
+    await this.administer(systemId, () => {
+      this.write
+        .prepare("UPDATE transfer_links SET revoked_at = ? WHERE system_id = ? AND used_at IS NULL AND revoked_at IS NULL")
+        .run(request.ts, systemId);
+      this.write
+        .prepare("INSERT INTO transfer_links (token_hash, system_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
+        .run(transferHash(secret), systemId, request.ts, expiresAt);
+      this.logAdmin("system.transfer.create", systemId, request, { expires_at: expiresAt });
+    });
+    return { secret, expiresAt };
+  }
+
+  /** The system a link would hand over, while it still can; null for any link that cannot be used. */
+  transferTarget(secret: string, now: string): { system_id: string; display_name: string | null; expires_at: string } | null {
+    const row = this.read
+      .prepare(
+        `SELECT t.system_id, s.display_name, t.expires_at FROM transfer_links t
+           JOIN systems s ON s.system_id = t.system_id
+          WHERE t.token_hash = ? AND t.used_at IS NULL AND t.revoked_at IS NULL AND t.expires_at > ?`,
+      )
+      .get(transferHash(secret), now) as { system_id: string; display_name: string | null; expires_at: string } | undefined;
+    return row ?? null;
+  }
+
+  /** Whether a system has a link that can still be used. */
+  hasOpenTransfer(systemId: string, now: string): boolean {
+    return (
+      this.read
+        .prepare("SELECT 1 FROM transfer_links WHERE system_id = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?")
+        .get(systemId, now) !== undefined
+    );
+  }
+
+  /** Takes back the links a system has open. Returns how many there were. */
+  async revokeTransfers(systemId: string, request: AdminRequest): Promise<number> {
+    return this.administer(systemId, () =>
+      this.write
+        .prepare("UPDATE transfer_links SET revoked_at = ? WHERE system_id = ? AND used_at IS NULL AND revoked_at IS NULL")
+        .run(request.ts, systemId).changes,
+    );
+  }
+
+  /**
+   * The one use of a link: the system becomes the organization's. The chain is
+   * not touched. Throws TransferUnavailableError for a link that is unknown,
+   * expired, used or taken back, and StorageError for an organization that is
+   * not approved or that already has the system. Returns the system and the
+   * organization it came from.
+   */
+  async acceptTransfer(
+    secret: string,
+    organizationId: string,
+    request: AdminRequest,
+  ): Promise<{ system_id: string; from: string | null }> {
+    return this.enqueue(() =>
+      this.inTransaction(async () => {
+        const link = this.write
+          .prepare(
+            `SELECT system_id FROM transfer_links
+              WHERE token_hash = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?`,
+          )
+          .get(transferHash(secret), request.ts) as { system_id: string } | undefined;
+        if (link === undefined) throw new TransferUnavailableError();
+        const organization = this.organization(organizationId, this.write);
+        if (organization === null || organization.approved_at === null) {
+          throw new StorageError("only an approved organization can accept a system");
+        }
+        const record = this.write.prepare(`${SYSTEM_RECORDS} WHERE s.system_id = ?`).get(link.system_id) as SystemRecord | undefined;
+        if (record === undefined) throw new TransferUnavailableError();
+        if (record.organization_id === organizationId) throw new StorageError("this system is already in your account");
+        this.write.prepare("UPDATE systems SET organization_id = ? WHERE system_id = ?").run(organizationId, link.system_id);
+        this.write
+          .prepare("UPDATE transfer_links SET used_at = ?, used_by = ? WHERE token_hash = ?")
+          .run(request.ts, organizationId, transferHash(secret));
+        this.logAdmin("system.assign", link.system_id, request, {
+          from: record.organization_id,
+          to: organizationId,
+          via: "transfer link",
+        });
+        return { system_id: link.system_id, from: record.organization_id };
+      }),
+    );
+  }
+
+  /**
    * Sets the label shown for a system, or clears it with an empty string.
    * Nothing about the chain changes: not the system_id, not a receipt, not an
    * export already made. Returns the label it replaced.
@@ -918,6 +1026,7 @@ export class ReceiptStore {
       this.write.prepare("DELETE FROM checkpoints WHERE system_id = ?").run(systemId);
       this.write.prepare("DELETE FROM receipts WHERE system_id = ? AND seq = 0").run(systemId);
       this.write.prepare("DELETE FROM api_keys WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM transfer_links WHERE system_id = ?").run(systemId);
       this.write.prepare("DELETE FROM connections WHERE system_id = ?").run(systemId);
       this.write.prepare("DELETE FROM provider_keys WHERE system_id = ?").run(systemId);
       this.write.prepare("DELETE FROM systems WHERE system_id = ?").run(systemId);

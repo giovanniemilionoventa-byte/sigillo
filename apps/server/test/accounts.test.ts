@@ -434,6 +434,37 @@ describe("customers' accounts in the web view", () => {
     expect((await app.inject({ method: "GET", url: "/ui/clienti", headers: { cookie: session } })).statusCode).toBe(404);
   });
 
+  it("takes someone who opened a transfer link, once signed in, to the link, and the system becomes theirs", async () => {
+    account("bruno@acme.it", "una password lunga", true);
+    const bruno = fake.accounts.get("bruno@acme.it");
+    await store.registerOrganization({ uid: bruno?.uid ?? "", email: "bruno@acme.it" }, "Bruno S.r.l.", ADMIN);
+    const organizationId = store.userByUid(bruno?.uid ?? "")?.organization_id ?? "";
+    await store.approveOrganization(organizationId, ADMIN);
+
+    const made = await form("/ui/systems/operator-bot/transfer", {}, operatorCookie());
+    const secret = /\/ui\/trasferimento\/([A-Za-z0-9_-]{43})/.exec(made.body)?.[1] ?? "";
+    expect(secret).not.toBe("");
+
+    const opened = await app.inject({ method: "GET", url: `/ui/trasferimento/${secret}` });
+    expect(opened.headers.location).toBe("/ui/login");
+    const pending = cookieSet(opened, "sigillo_transfer");
+
+    const signedIn = await form("/ui/login/email", { email: "bruno@acme.it", password: "una password lunga" }, pending);
+    expect(signedIn.statusCode).toBe(303);
+    expect(signedIn.headers.location).toBe(`/ui/trasferimento/${secret}`);
+    const session = cookieSet(signedIn, "sigillo_session");
+
+    // Without the cookie, the same sign-in goes to the main page; a forged one is ignored.
+    const plain = await form("/ui/login/email", { email: "bruno@acme.it", password: "una password lunga" });
+    expect(plain.headers.location).toBe("/ui");
+    const forged = await form("/ui/login/email", { email: "bruno@acme.it", password: "una password lunga" }, "sigillo_transfer=forged");
+    expect(forged.headers.location).toBe("/ui");
+
+    const accepted = await form(`/ui/trasferimento/${secret}`, {}, session);
+    expect(accepted.statusCode).toBe(303);
+    expect(store.systemRecord("operator-bot")?.organization_id).toBe(organizationId);
+  });
+
   it("refuses a sign-up ticket that was forged, expired, or sealed for something else", async () => {
     const at = Date.parse(NOW);
     const payload = JSON.stringify({ uid: "intruder1", email: "x@example.com" });

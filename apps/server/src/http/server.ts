@@ -83,6 +83,11 @@ export interface ServerOptions {
    */
   claudeCode?: "off" | "operator" | "all";
   /**
+   * Whose systems can be handed to another account with a link: `off`,
+   * `operator` (the default, CLAUDE.md rule 11) or `all`.
+   */
+  transfer?: "off" | "operator" | "all";
+  /**
    * Whose systems accept spans from the SDK's "stdlib" instrumentation
    * (resource attribute sigillo.client=stdlib), and are given it by "upload
    * your agent": `off`, `operator` (the default, CLAUDE.md rule 11) or `all`.
@@ -368,6 +373,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.ui.backupDirectory === undefined ? {} : { backupDirectory: options.ui.backupDirectory }),
       ...(options.ui.agentUpload === undefined ? {} : { agentUpload: options.ui.agentUpload }),
       claudeCode: options.claudeCode ?? "operator",
+      transfer: options.transfer ?? "operator",
       plainAgents: options.plainAgents ?? "operator",
       ...(options.organizationMonthlyReceipts === undefined
         ? {}

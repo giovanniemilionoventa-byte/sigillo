@@ -227,6 +227,20 @@ export function claudeCode(env: Environment): "off" | "operator" | "all" {
 }
 
 /**
+ * SIGILLO_TRANSFER: whose systems can be handed to another account with a
+ * link (the "Transfer" block of a system's settings). `off`, `operator` (the
+ * default: new, so the administrator's own systems only, CLAUDE.md rule 11)
+ * or `all`. Accepting a link is never switched: a link only exists if this
+ * allowed it to be made.
+ */
+export function transfer(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_TRANSFER"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_TRANSFER must be off, operator or all, received ${JSON.stringify(value)}`);
+}
+
+/**
  * SIGILLO_PLAIN_AGENTS: whose agents with no framework are recorded from the
  * standard library's own calls (the SDK's "stdlib" instrumentation: urllib,
  * file writes), in the file "upload your agent" gives back, and whose systems
