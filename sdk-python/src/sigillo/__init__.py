@@ -82,7 +82,7 @@ from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
 from . import _text
 
 __all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"]
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 _LOG = _logging.getLogger("sigillo")
 _TRACES_PATH = "/v1/traces"
@@ -297,7 +297,7 @@ def _heartbeat_endpoint(traces_endpoint: str) -> str:
     return traces_endpoint[: -len(_TRACES_PATH)] + _HEARTBEAT_PATH
 
 
-def _instrument(name: str, provider: _TracerProvider) -> bool:
+def _instrument(name: str, provider: _TracerProvider, requested: bool) -> bool:
     try:
         if name == "langchain":
             from openinference.instrumentation.langchain import LangChainInstrumentor
@@ -311,13 +311,34 @@ def _instrument(name: str, provider: _TracerProvider) -> bool:
             from openinference.instrumentation.openai import OpenAIInstrumentor
 
             OpenAIInstrumentor().instrument(tracer_provider=provider)
-    except ImportError:
-        _LOG.warning(
-            "sigillo: %s instrumentation was requested but is not installed; "
-            "install it with: pip install openinference-instrumentation-%s",
-            name,
-            name,
-        )
+    except ImportError as error:
+        # Only a missing instrumentation package is "not installed". An import
+        # that fails inside it, or inside the framework it wraps (a DLL that
+        # will not load, a dependency of the wrong version), is a different
+        # problem, and saying "install it" would send the reader the wrong way.
+        #
+        # When `instrument=` was not given, every instrumentation is only tried:
+        # one that is absent or will not start is not something the caller asked
+        # for, so it is noted at debug level and nothing is printed.
+        missing = isinstance(error, ModuleNotFoundError) and (error.name or "").startswith("openinference")
+        if not requested:
+            _LOG.debug("sigillo: %s instrumentation not turned on (%s: %s)", name, type(error).__name__, error)
+        elif missing:
+            _LOG.warning(
+                "sigillo: %s instrumentation was requested but is not installed; "
+                "install it with: pip install openinference-instrumentation-%s",
+                name,
+                name,
+            )
+        else:
+            _LOG.warning(
+                "sigillo: %s instrumentation is installed but could not start (%s: %s); "
+                "the agent runs, but its %s calls are not recorded",
+                name,
+                type(error).__name__,
+                error,
+                name,
+            )
         return False
     return True
 
@@ -571,7 +592,7 @@ def init(
     endpoint: str,
     api_key: str,
     system_id: str,
-    instrument: _Sequence[str] = _SUPPORTED,
+    instrument: _Sequence[str] | None = None,
     ollama_url: str | None = None,
     redact_content: bool = True,
     salt_content: bool = True,
@@ -587,9 +608,11 @@ def init(
         api_key: the key issued with `sigillo-server key create`. It decides
             which system's chain the receipts join.
         system_id: reported as `service.name`.
-        instrument: which OpenInference instrumentations to enable. One that is
-            not installed is skipped with a warning, not an error, so that a
-            deployment with only LangChain does not have to install CrewAI.
+        instrument: which OpenInference instrumentations to enable. Left out,
+            every one that is installed is turned on and the others are passed
+            over in silence. Named explicitly, one that is not installed is
+            skipped with a warning, not an error, so that a deployment with
+            only LangChain does not have to install CrewAI.
         ollama_url: when given, `GET {ollama_url}/api/tags` is read once, here,
             and the digest of the model actually used is added to each LLM
             span as `sigillo.model.digest`. If Ollama does not answer, `init`
@@ -653,6 +676,9 @@ def init(
     if not heartbeat_seconds > 0:
         raise ValueError("heartbeat_seconds must be a positive number of seconds")
 
+    requested = instrument is not None
+    if instrument is None:
+        instrument = _SUPPORTED
     unknown = [name for name in instrument if name not in _SUPPORTED]
     if unknown:
         raise ValueError(
@@ -676,7 +702,7 @@ def init(
     # Instrumentations are attached to this provider explicitly, so they keep
     # working even where the global provider was already set by something else.
     _trace.set_tracer_provider(provider)
-    instrumented = tuple(name for name in instrument if _instrument(name, provider))
+    instrumented = tuple(name for name in instrument if _instrument(name, provider, requested))
 
     heartbeat = _Heartbeat(
         _heartbeat_endpoint(traces_endpoint), api_key, heartbeat_seconds, show=show_sent, strict=strict, on_halt=on_halt

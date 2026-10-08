@@ -68,7 +68,10 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   while (at > 0 && /^\\s*$/.test(lines[at - 1])) at -= 1;
 
   // The file installs what it needs by itself, the first time it runs, with
-  // the same Python that runs it: downloading it is the whole installation.
+  // the same Python that runs it: downloading it is the whole installation. An
+  // SDK installed earlier but older than 0.3 is replaced the same way, and the
+  // file then runs itself again, so that nothing from the old one stays
+  // loaded. SIGILLO_SETUP_DONE stops that from repeating if the install did not help.
   var extras = frameworks.length > 0 ? "[" + frameworks.join(",") + "]" : "";
   var requirement = "sigillo" + extras + " @ " + settings.url;
   var block = ["try:", "    import sigillo"];
@@ -76,14 +79,19 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     block.push("    import openinference.instrumentation." + name);
   });
   block.push(
+    "    import importlib.metadata",
+    '    if tuple(map(int, importlib.metadata.version("sigillo").split(".")[:2])) < (0, 3):',
+    '        raise ImportError("sigillo is too old")',
     "except ImportError:",
-    "    import importlib",
+    "    import os",
     "    import subprocess",
     "    import sys",
     "",
-    '    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", ' + JSON.stringify(requirement) + "])",
-    "    importlib.invalidate_caches()",
-    "    import sigillo",
+    '    if os.environ.get("SIGILLO_SETUP_DONE"):',
+    "        raise",
+    '    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "--upgrade", ' + JSON.stringify(requirement) + "])",
+    '    os.environ["SIGILLO_SETUP_DONE"] = "1"',
+    "    raise SystemExit(subprocess.call([sys.executable, *sys.argv]))",
     "",
     "sigillo.init(",
   );
@@ -92,7 +100,9 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     "    api_key=" + JSON.stringify(settings.key) + ",",
     "    system_id=" + JSON.stringify(settings.system) + ",",
   );
-  if (frameworks.length > 0) block.push("    instrument=" + JSON.stringify(frameworks).replace(/,/g, ", ") + ",");
+  // Always said, even when empty: left out, the SDK would try every
+  // instrumentation, which is how a plain agent came to be told about crewai.
+  block.push("    instrument=" + JSON.stringify(frameworks).replace(/,/g, ", ") + ",");
   block.push(")");
   var head = lines.slice(0, at);
   var tail = lines.slice(at);
