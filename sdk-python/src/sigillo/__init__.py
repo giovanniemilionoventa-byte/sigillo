@@ -82,12 +82,16 @@ from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
 from . import _text
 
 __all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"]
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 _LOG = _logging.getLogger("sigillo")
 _TRACES_PATH = "/v1/traces"
 _HEARTBEAT_PATH = "/api/v1/heartbeat"
-_SUPPORTED = ("langchain", "crewai", "openai")
+# What `init` tries when `instrument=` is not given. "stdlib" (see _stdlib.py)
+# is not among them: it hooks urllib and file writing in the whole process, so
+# it is turned on only by naming it.
+_DEFAULT_INSTRUMENT = ("langchain", "crewai", "openai")
+_SUPPORTED = _DEFAULT_INSTRUMENT + ("stdlib",)
 _ARTIFACT_ROLES = ("input", "output")
 # Both dialects an LLM span's model name arrives under, tried in order.
 _MODEL_NAME_ATTRIBUTES = ("gen_ai.request.model", "gen_ai.response.model", "llm.model_name")
@@ -299,7 +303,11 @@ def _heartbeat_endpoint(traces_endpoint: str) -> str:
 
 def _instrument(name: str, provider: _TracerProvider, requested: bool) -> bool:
     try:
-        if name == "langchain":
+        if name == "stdlib":
+            from . import _stdlib
+
+            _stdlib.install(provider)
+        elif name == "langchain":
             from openinference.instrumentation.langchain import LangChainInstrumentor
 
             LangChainInstrumentor().instrument(tracer_provider=provider)
@@ -608,9 +616,12 @@ def init(
         api_key: the key issued with `sigillo-server key create`. It decides
             which system's chain the receipts join.
         system_id: reported as `service.name`.
-        instrument: which OpenInference instrumentations to enable. Left out,
-            every one that is installed is turned on and the others are passed
-            over in silence. Named explicitly, one that is not installed is
+        instrument: which instrumentations to enable: "langchain", "crewai",
+            "openai", and "stdlib" for an agent with no framework, which
+            records its `urllib` calls (a model server, a web search) and its
+            file writes, as digests. Left out, every OpenInference one that is
+            installed is turned on and the others are passed over in silence;
+            "stdlib" is only on when named. Named explicitly, one that is not installed is
             skipped with a warning, not an error, so that a deployment with
             only LangChain does not have to install CrewAI.
         ollama_url: when given, `GET {ollama_url}/api/tags` is read once, here,
@@ -678,7 +689,7 @@ def init(
 
     requested = instrument is not None
     if instrument is None:
-        instrument = _SUPPORTED
+        instrument = _DEFAULT_INSTRUMENT
     unknown = [name for name in instrument if name not in _SUPPORTED]
     if unknown:
         raise ValueError(
@@ -686,7 +697,11 @@ def init(
         )
 
     traces_endpoint = _traces_endpoint(endpoint)
-    provider = _TracerProvider(resource=_Resource.create({"service.name": system_id}))
+    resource = {"service.name": system_id}
+    if "stdlib" in instrument:
+        # Says who is sending, so that the server can keep this to the accounts it is opened to.
+        resource["sigillo.client"] = "stdlib"
+    provider = _TracerProvider(resource=_Resource.create(resource))
 
     if ollama_url:
         provider.add_span_processor(_ModelDigestProcessor(_fetch_ollama_digests(ollama_url)))

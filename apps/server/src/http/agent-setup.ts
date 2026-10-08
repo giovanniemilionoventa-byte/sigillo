@@ -32,6 +32,13 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   if (imported("crewai\\\\w*")) frameworks.push("crewai");
   if (frameworks.length === 0 && imported("openai")) frameworks.push("openai");
 
+  // An agent with no framework at all (urllib to reach its model, pathlib to
+  // write its files) has no library to record it from. Where the account is
+  // opened to it, the SDK's "stdlib" instrumentation records those calls
+  // themselves: a model server, any other address, a file written.
+  var instrument = frameworks.slice();
+  if (frameworks.length === 0 && settings.stdlib === true) instrument.push("stdlib");
+
   // Where Python allows the lines: after the comments the file opens with
   // (a #! line, an encoding line), its docstring, and any
   // \`from __future__\` import, which must stay first.
@@ -69,7 +76,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
 
   // The file installs what it needs by itself, the first time it runs, with
   // the same Python that runs it: downloading it is the whole installation. An
-  // SDK installed earlier but older than 0.3 is replaced the same way, and the
+  // SDK installed earlier but older than 0.4 is replaced the same way, and the
   // file then runs itself again, so that nothing from the old one stays
   // loaded. SIGILLO_SETUP_DONE stops that from repeating if the install did not help.
   var extras = frameworks.length > 0 ? "[" + frameworks.join(",") + "]" : "";
@@ -80,7 +87,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   });
   block.push(
     "    import importlib.metadata",
-    '    if tuple(map(int, importlib.metadata.version("sigillo").split(".")[:2])) < (0, 3):',
+    '    if tuple(map(int, importlib.metadata.version("sigillo").split(".")[:2])) < (0, 4):',
     '        raise ImportError("sigillo is too old")',
     "except ImportError:",
     "    import os",
@@ -102,7 +109,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   );
   // Always said, even when empty: left out, the SDK would try every
   // instrumentation, which is how a plain agent came to be told about crewai.
-  block.push("    instrument=" + JSON.stringify(frameworks).replace(/,/g, ", ") + ",");
+  block.push("    instrument=" + JSON.stringify(instrument).replace(/,/g, ", ") + ",");
   block.push(")");
   var head = lines.slice(0, at);
   var tail = lines.slice(at);
@@ -113,6 +120,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     status: "added",
     text: bom + parts.join(eol),
     frameworks: frameworks,
+    instrument: instrument,
     install: 'pip install "' + requirement + '"',
   };
 }`;
@@ -144,6 +152,7 @@ ${AGENT_SETUP_SOURCE}
       key: box.dataset.key,
       system: box.dataset.system,
       url: box.dataset.url,
+      stdlib: box.dataset.stdlib === "1",
     });
     if (result.status === "already") {
       show(problem, box.dataset.already.replace("{file}", file.name));
@@ -155,7 +164,7 @@ ${AGENT_SETUP_SOURCE}
     document.body.appendChild(link);
     link.click();
     link.remove();
-    show(done, (result.frameworks.length > 0 ? box.dataset.done : box.dataset.doneNoFramework).replace("{file}", file.name));
+    show(done, (result.instrument.length > 0 ? box.dataset.done : box.dataset.doneNoFramework).replace("{file}", file.name));
     input.value = "";
   });
 })();

@@ -26,6 +26,7 @@ interface Added {
   status: "added";
   text: string;
   frameworks: string[];
+  instrument: string[];
   install: string;
 }
 type Result = Added | { status: "already" };
@@ -35,6 +36,7 @@ const SETTINGS = {
   key: "sigillo_abc_def",
   system: "cv-bot",
   url: "https://github.com/giovanniemilionoventa-byte/sigillo/archive/refs/heads/main.zip#subdirectory=sdk-python",
+  stdlib: false,
 };
 
 const setup = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: typeof SETTINGS) => Result;
@@ -58,7 +60,7 @@ const BOOTSTRAP = (extras: string, modules: string[]): string[] => [
   "    import sigillo",
   ...modules.map((name) => `    import openinference.instrumentation.${name}`),
   "    import importlib.metadata",
-  '    if tuple(map(int, importlib.metadata.version("sigillo").split(".")[:2])) < (0, 3):',
+  '    if tuple(map(int, importlib.metadata.version("sigillo").split(".")[:2])) < (0, 4):',
   '        raise ImportError("sigillo is too old")',
   "except ImportError:",
   "    import os",
@@ -142,6 +144,21 @@ describe("adding sigillo to an agent's file", () => {
     expect(result.text).toContain(`"--quiet", "--upgrade", "sigillo @ ${SETTINGS.url}"])`);
     expect(result.install).toBe(`pip install "sigillo @ ${SETTINGS.url}"`);
     if (python) expect(parses(result.text)).toBe(true);
+  });
+
+  it("records a framework-less agent from the standard library's calls, only where the account is opened to it", () => {
+    const plain = "import urllib.request\nfrom pathlib import Path\n";
+    const opened = setup(plain, { ...SETTINGS, stdlib: true });
+    if (opened.status !== "added") throw new Error("expected added");
+    expect(opened.text).toContain('    instrument=["stdlib"],\n');
+    expect(opened.install).toBe(`pip install "sigillo @ ${SETTINGS.url}"`);
+    if (python) expect(parses(opened.text)).toBe(true);
+    // Not opened: as before, nothing is recorded but the connection.
+    expect(added(plain).text).toContain("    instrument=[],\n");
+    // A framework wins: it already records its own calls, so the standard library's are not hooked twice.
+    const framework = setup("import langchain\n", { ...SETTINGS, stdlib: true });
+    if (framework.status !== "added") throw new Error("expected added");
+    expect(framework.text).toContain('    instrument=["langchain"],\n');
   });
 
   it("changes nothing in a file that already uses sigillo", () => {

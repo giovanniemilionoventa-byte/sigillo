@@ -82,6 +82,12 @@ export interface ServerOptions {
    * `off`, `operator` (the default, CLAUDE.md rule 11) or `all`.
    */
   claudeCode?: "off" | "operator" | "all";
+  /**
+   * Whose systems accept spans from the SDK's "stdlib" instrumentation
+   * (resource attribute sigillo.client=stdlib), and are given it by "upload
+   * your agent": `off`, `operator` (the default, CLAUDE.md rule 11) or `all`.
+   */
+  plainAgents?: "off" | "operator" | "all";
   /** The model gateway (gateway/llm.ts). Not given: /llm/* is not served. */
   gateway?: GatewayOptions;
   /**
@@ -362,6 +368,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.ui.backupDirectory === undefined ? {} : { backupDirectory: options.ui.backupDirectory }),
       ...(options.ui.agentUpload === undefined ? {} : { agentUpload: options.ui.agentUpload }),
       claudeCode: options.claudeCode ?? "operator",
+      plainAgents: options.plainAgents ?? "operator",
       ...(options.organizationMonthlyReceipts === undefined
         ? {}
         : { organizationMonthlyReceipts: options.organizationMonthlyReceipts }),
@@ -372,6 +379,11 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   const claudeCodeOpenTo = (systemId: string): boolean =>
     claudeCodeMode === "all" ||
     (claudeCodeMode === "operator" && (store.systemRecord(systemId)?.organization_id ?? null) === null);
+
+  const plainAgentsMode = options.plainAgents ?? "operator";
+  const plainAgentsOpenTo = (systemId: string): boolean =>
+    plainAgentsMode === "all" ||
+    (plainAgentsMode === "operator" && (store.systemRecord(systemId)?.organization_id ?? null) === null);
 
   app.post("/v1/traces", async (request, reply) => {
     const systemId = await authenticate(request);
@@ -398,6 +410,10 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     // only the systems it is opened to may use it (CLAUDE.md rule 11).
     if (spans.some((span) => span.resource.get(CLIENT_ATTRIBUTE) === "claude-code") && !claudeCodeOpenTo(systemId)) {
       return reply.code(403).send({ error: "Claude Code is not enabled for this account yet" });
+    }
+
+    if (spans.some((span) => span.resource.get(CLIENT_ATTRIBUTE) === "stdlib") && !plainAgentsOpenTo(systemId)) {
+      return reply.code(403).send({ error: "recording agents without a framework is not enabled for this account yet" });
     }
 
     const batch = adaptSpans(spans);

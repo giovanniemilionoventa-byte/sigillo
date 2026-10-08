@@ -3740,3 +3740,30 @@ senza `instrument=`, e il default dell'SDK era provarle tutte e tre, avvisando p
   sigillo installato prima della 0.3 (pip `--upgrade`) e si rilancia, quindi al cliente basta
   riscaricare il file e avviarlo: nessun comando a mano.
 - Costo: circa 10 righe in più nel file generato, nessuna nel verificatore.
+
+## Agente senza framework: registrare chiamate al modello, ricerche e file (2026-10-08)
+
+Segnalazione: un agente fatto solo di libreria standard (`urllib` verso Ollama e per la ricerca web,
+`pathlib` per scrivere i file) si collegava («Agent connected») ma nella cronologia non compariva
+nessuna azione: senza LangChain, CrewAI o OpenAI non c'è nulla a cui agganciare una strumentazione.
+
+- SDK 0.4.0, nuova strumentazione `instrument=["stdlib"]` (`sdk-python/src/sigillo/_stdlib.py`):
+  aggancia `urllib.request.urlopen` (indirizzo di un modello Ollama/OpenAI/Anthropic/Gemini = chiamata
+  al modello col nome del modello; qualunque altro indirizzo = chiamata a strumento col solo host),
+  `Path.write_text`/`write_bytes` e `open()` in scrittura (strumento `write_file`). Indirizzo, corpo
+  della richiesta, percorso e testo scritto passano dal filtro dei contenuti dell'SDK: partono solo
+  come hash salati, mai in chiaro (`show_sent` lo mostra). Non registra le chiamate della libreria
+  standard, dei pacchetti installati e dell'SDK stesso (heartbeat). Resta attiva solo se nominata:
+  il default di `init` non cambia.
+- Configuratore («carica agente»): per un file senza framework riconosciuto scrive
+  `instrument=["stdlib"]` invece di `[]`, e il controllo di versione nel file passa a 0.4 (un SDK 0.3
+  già installato viene aggiornato da solo, altrimenti `init` rifiuterebbe il nome nuovo).
+- Regola 11: interruttore `SIGILLO_PLAIN_AGENTS=operator|all|off`, default `operator`. Per i clienti il
+  configuratore continua a scrivere `[]` e il server rifiuta (403) le azioni con
+  `sigillo.client=stdlib`. Si apre a tutti solo dopo il via del proprietario.
+- Limiti noti: la risposta del modello non è registrata (l'agente la legge dopo `urlopen`), solo la
+  richiesta; `subprocess` non è agganciato; chi aveva già scaricato il file con `instrument=[]` deve
+  ricaricare l'originale dalla console.
+- Verifica: `mondis.py` allegato, con un Ollama finto e un server vero (firmatore, esportazione e
+  verificatore veri): 7 ricevute (ricerca, 2 chiamate al modello, scrittura file), nessun testo in chiaro.
+- Costo: nessuna riga nel verificatore.

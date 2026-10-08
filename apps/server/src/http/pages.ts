@@ -305,10 +305,10 @@ export const SDK_REQUIREMENT =
  * endpoints still answer, the SDK itself sends to the first, but neither is
  * offered here.
  */
-function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, claudeCode: boolean): string {
+function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, plainAgents: boolean, claudeCode: boolean): string {
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
-  const agent = upload && token !== null ? agentUpload(systemId, endpoint, token) : "";
+  const agent = upload && token !== null ? agentUpload(systemId, endpoint, token, plainAgents) : "";
   const python = [
     `# ${t.pasteAtTop}`,
     "import sigillo",
@@ -363,10 +363,10 @@ ${agent}${claude.body}${install}
  * run (the `ready` class), so a browser without scripts sees the code alone.
  * What the script writes is in the data attributes, in the reader's language.
  */
-function agentUpload(systemId: string, endpoint: string, token: string): string {
+function agentUpload(systemId: string, endpoint: string, token: string, plainAgents: boolean): string {
   const t = UI.connect.upload;
   const url = SDK_REQUIREMENT.slice(SDK_REQUIREMENT.indexOf("@") + 1).trim();
-  return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}" data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}">
+  return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}"${plainAgents ? ' data-stdlib="1"' : ""} data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}">
 <label class="drop"><span class="tile-icon blue" aria-hidden="true">${ICONS.upload}</span><strong>${escape(t.drop)}</strong><input type="file" id="sigillo-agent-file" accept=".py,text/x-python"></label>
 <p class="notice ok" id="sigillo-agent-done" role="status" hidden>${STATE_ICONS.ok}<span></span></p>
 <p class="notice warn" id="sigillo-agent-problem" role="alert" hidden>${STATE_ICONS.warn}<span></span></p>
@@ -391,6 +391,8 @@ export function connectPage(view: {
   now: Date;
   /** Whether to offer "upload your agent" (agent-setup.ts), where the key is shown. */
   upload?: boolean;
+  /** Whether the uploaded agent is recorded from the standard library's calls when it uses no framework (SIGILLO_PLAIN_AGENTS). */
+  plainAgents?: boolean;
   /** Whether to offer Claude Code (sigillo-claude-code), opened per account by SIGILLO_CLAUDE_CODE. */
   claudeCode?: boolean;
 }): string {
@@ -408,7 +410,7 @@ export function connectPage(view: {
         : `${mode === "connect" ? '<meta http-equiv="refresh" content="10">' : ""}<div class="card wait-line" role="status"><span class="spinner" aria-hidden="true"></span><span>${escape(t.waiting)}</span><a class="end" href="${path}/collega">${escape(t.check)}</a></div>`;
   return `<div class="narrow">${pageHead(title)}
 ${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
-${connectWays(record.system_id, view.endpoint, token, view.upload ?? false, view.claudeCode ?? false)}
+${connectWays(record.system_id, view.endpoint, token, view.upload ?? false, view.plainAgents ?? false, view.claudeCode ?? false)}
 ${wait}
 </div>`;
 }
