@@ -94,6 +94,8 @@ export interface ServerOptions {
     backupDirectory?: string;
     /** Who sees "upload your agent" on the connect page (ui.ts, UiOptions.agentUpload). */
     agentUpload?: UiOptions["agentUpload"];
+    /** Whether uploaded agents get protection with strict mode (ui.ts, UiOptions.agentProtection). */
+    agentProtection?: UiOptions["agentProtection"];
   };
 }
 
@@ -352,6 +354,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.ui.accounts === undefined ? {} : { accounts: options.ui.accounts }),
       ...(options.ui.backupDirectory === undefined ? {} : { backupDirectory: options.ui.backupDirectory }),
       ...(options.ui.agentUpload === undefined ? {} : { agentUpload: options.ui.agentUpload }),
+      ...(options.ui.agentProtection === undefined ? {} : { agentProtection: options.ui.agentProtection }),
       ...(options.organizationMonthlyReceipts === undefined
         ? {}
         : { organizationMonthlyReceipts: options.organizationMonthlyReceipts }),

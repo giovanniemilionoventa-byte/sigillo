@@ -137,6 +137,12 @@ export interface UiOptions {
    * it to `all`. Not given: nobody.
    */
   agentUpload?: "off" | "operator" | "all";
+  /**
+   * Uploaded agents' protection level (agent-setup.ts): whether to wrap them
+   * with strict mode and script change detection. `operator`, the administrator's
+   * own systems only, until opened to `all`. Not given: nobody.
+   */
+  agentProtection?: "off" | "operator" | "all";
   accounts?: {
     firebase: FirebaseAuth;
     /** This installation's address as browsers reach it, e.g. https://sigillo.example.com. */
@@ -583,6 +589,13 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   const offersUpload = (record: SystemRecord): boolean =>
     options.agentUpload === "all" || (options.agentUpload === "operator" && record.organization_id === null);
 
+  /**
+   * Whether uploaded agents are protected with strict mode and script change detection:
+   * to the operator's own systems, and to every account's once it is opened.
+   */
+  const offersProtection = (record: SystemRecord): boolean =>
+    options.agentProtection === "all" || (options.agentProtection === "operator" && record.organization_id === null);
+
   // The script of "upload your agent": the same for everyone, and nothing in
   // it is secret, so it is served without a session.
   app.get("/ui/agent-setup.js", async (_request, reply) =>
@@ -729,7 +742,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
         render(session, {
           title: UI.connect.ready(systemTitle(record)),
           current: `system:${systemId}`,
-          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), upload: offersUpload(record) }),
+          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), upload: offersUpload(record), protection: offersProtection(record) }),
         }),
       );
     } catch (error) {
@@ -857,7 +870,7 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.title(systemTitle(record)),
         current: `system:${systemId}`,
-        body: connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now() }),
+        body: connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now(), protection: offersProtection(record) }),
       }),
     );
   });
@@ -947,7 +960,7 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.newKey(systemTitle(record)),
         current: `system:${systemId}`,
-        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record) }),
+        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record), protection: offersProtection(record) }),
       }),
     );
   });

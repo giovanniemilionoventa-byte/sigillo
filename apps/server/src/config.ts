@@ -224,3 +224,16 @@ export function scriptGuard(env: Environment): "off" | "operator" | "all" {
   if (value === "off" || value === "operator" || value === "all") return value;
   throw new ConfigError(`SIGILLO_SCRIPT_GUARD must be off, operator or all, received ${JSON.stringify(value)}`);
 }
+
+/**
+ * SIGILLO_AGENT_PROTECTION: whether uploaded agents are wrapped with
+ * strict mode and script change detection (http/agent-setup.ts). `off`,
+ * `operator` (the default: new, so the administrator's own systems only,
+ * CLAUDE.md rule 11) or `all`.
+ */
+export function agentProtection(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_AGENT_PROTECTION"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_AGENT_PROTECTION must be off, operator or all, received ${JSON.stringify(value)}`);
+}

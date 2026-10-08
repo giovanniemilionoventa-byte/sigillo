@@ -93,6 +93,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     "    system_id=" + JSON.stringify(settings.system) + ",",
   );
   if (frameworks.length > 0) block.push("    instrument=" + JSON.stringify(frameworks).replace(/,/g, ", ") + ",");
+  if (settings.protection) block.push("    strict=True,");
   block.push(")");
   var head = lines.slice(0, at);
   var tail = lines.slice(at);
@@ -134,6 +135,7 @@ ${AGENT_SETUP_SOURCE}
       key: box.dataset.key,
       system: box.dataset.system,
       url: box.dataset.url,
+      protection: box.dataset.protection === "true",
     });
     if (result.status === "already") {
       show(problem, box.dataset.already.replace("{file}", file.name));

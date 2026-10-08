@@ -9,7 +9,7 @@ import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { UiSessions } from "../src/auth/sessions.js";
 import { OPERATOR, type Viewer } from "../src/auth/tenancy.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
-import { agentUpload } from "../src/config.js";
+import { agentProtection, agentUpload } from "../src/config.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { AGENT_SETUP_SCRIPT, AGENT_SETUP_SOURCE } from "../src/http/agent-setup.js";
 import { buildServer } from "../src/http/server.js";
@@ -181,7 +181,7 @@ async function start(access?: "off" | "operator" | "all"): Promise<void> {
       healthMonitor: new ChainHealthMonitor(store, signer.publicKey, 24 * 60 * 60_000),
       checkpointer: new Checkpointer({ store, now: () => new Date(NOW) }),
       sessions,
-      ...(access === undefined ? {} : { agentUpload: access }),
+      ...(access === undefined ? {} : { agentUpload: access, agentProtection: access }),
     },
   });
   await app.ready();
@@ -267,4 +267,68 @@ describe("who is offered the upload", () => {
     expect(script.headers["content-type"]).toContain("text/javascript");
     expect(script.body).toBe(AGENT_SETUP_SCRIPT);
   });
+});
+
+describe("agent protection: strict mode when uploaded", () => {
+  it("defaults to operator's own systems, and opens to all only when told (rule 11)", () => {
+    expect(agentProtection({})).toBe("operator");
+    expect(agentProtection({ SIGILLO_AGENT_PROTECTION: "" })).toBe("operator");
+    expect(agentProtection({ SIGILLO_AGENT_PROTECTION: "all" })).toBe("all");
+    expect(agentProtection({ SIGILLO_AGENT_PROTECTION: "off" })).toBe("off");
+    expect(() => agentProtection({ SIGILLO_AGENT_PROTECTION: "invalid" })).toThrow(/SIGILLO_AGENT_PROTECTION/);
+  });
+
+  it("adds strict=True to sigillo.init when protection is enabled", () => {
+    const source = "from langchain_openai import ChatOpenAI\nllm = ChatOpenAI()\n";
+    const setupWithoutProtection = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: any) => Result;
+    const setupWithProtection = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: any) => Result;
+    
+    const withoutProtection = setupWithoutProtection(source, { ...SETTINGS, protection: false });
+    const withProtection = setupWithProtection(source, { ...SETTINGS, protection: true });
+    
+    if (withoutProtection.status !== "added" || withProtection.status !== "added") {
+      throw new Error("Expected added status");
+    }
+
+    expect(withoutProtection.text).not.toContain("strict=True");
+    expect(withProtection.text).toContain("strict=True");
+    
+    // With protection, strict mode line should be just before the closing paren
+    const strictLine = withProtection.text.split("\n").find(line => line.includes("strict=True"));
+    expect(strictLine).toBeDefined();
+    const nextLine = withProtection.text.split("\n")[withProtection.text.split("\n").indexOf(strictLine!) + 1];
+    expect(nextLine).toBe(")");
+  });
+
+  it("adds strict=True after instrument when both are present", () => {
+    const source = "from langchain_openai import ChatOpenAI\nllm = ChatOpenAI()\n";
+    const setup = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: any) => Result;
+    const result = setup(source, { ...SETTINGS, protection: true });
+    
+    if (result.status !== "added") {
+      throw new Error("Expected added status");
+    }
+
+    const lines = result.text.split("\n");
+    const instrumentIndex = lines.findIndex(line => line.includes("instrument="));
+    const strictIndex = lines.findIndex(line => line.includes("strict=True"));
+    
+    expect(instrumentIndex).toBeGreaterThan(-1);
+    expect(strictIndex).toBeGreaterThan(-1);
+    expect(strictIndex).toBeGreaterThan(instrumentIndex);
+  });
+
+  if (python) {
+    it("produces valid Python when protection is enabled", () => {
+      const source = "from langchain_openai import ChatOpenAI\nllm = ChatOpenAI()\n";
+      const setup = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: any) => Result;
+      const result = setup(source, { ...SETTINGS, protection: true });
+      
+      if (result.status !== "added") {
+        throw new Error("Expected added status");
+      }
+
+      expect(parses(result.text)).toBe(true);
+    });
+  }
 });
