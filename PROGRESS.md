@@ -3554,6 +3554,54 @@ file li decide il sistema operativo), quindi si mostra e si ferma, non si impedi
   togliere l'SDK; si vede come `lost`. Per renderlo non modificabile serve un altro utente del
   sistema operativo: guida a parte, non nel file.
 
+### Sessione 45 — 2026-10-08 — protezione dell'agente con modalità rigida
+
+Su richiesta del titolare (punto 1 della richiesta di tre migliorie del 2026-10-05): l'agente
+caricato non deve poter modificare il proprio script, disabilitare Sigillo, saltare ricevute o
+accenderlo/spegnerlo. Il modello di utenti onesti resta: niente blocchi impossibili da rompere,
+ma la disattivazione deve richiedere un intervento umano (RULE 1, admin-only finché il titolare
+conferma).
+
+- **Regola 11**: `SIGILLO_AGENT_PROTECTION=operator` di base (solo i sistemi senza organizzazione),
+  `all` dopo il via del titolare, `off` per spegnerla. La configurazione sale dalla CLI fino alle
+  pagine: `config.ts` (funzione `agentProtection()`), `server.ts`, `ui.ts` (`UiOptions`), 
+  `pages.ts` (parametro nelle view). Nessuna UI nuova: il flag scende come `data-protection` 
+  nel dataset dell'elemento che carica lo script, letto dal JavaScript del browser.
+  
+- **SDK**: nuovo parametro `init(strict=True)`. Quando abilitato, l'agente si ferma (uscita 70)
+  se:
+  1. Il server dice che lo script è cambiato (ricevuta `sigillo.script_changed`);
+  2. Tre battiti di fila non arrivano al server (esempio: quando il server è spento o bloccato 
+     dalla rete).
+  Implementato aggiungendo `strict=True,` nella riga di `sigillo.init()` quando 
+  `settings.protection` è vero nel JavaScript lato browser.
+
+- **File modificati**: 
+  - `apps/server/src/config.ts`: nuova funzione `agentProtection()` che valida e restituisce 
+    il valore della variabile d'ambiente `SIGILLO_AGENT_PROTECTION` (off/operator/all), 
+    di default operator.
+  - `apps/server/src/http/agent-setup.ts`: il JavaScript `AGENT_SETUP_SOURCE` legge 
+    `settings.protection` e aggiunge `strict=True,` al `sigillo.init()` quando attivo.
+  - `apps/server/src/http/ui.ts`: `UiOptions` accetta `agentProtection`, funzione helper 
+    `offersProtection()` per controllare se la protezione va offerta al sistema.
+  - `apps/server/src/http/pages.ts`: aggiunta della view `protection` a `connectPage()`, 
+    passata come `data-protection` nel dataset HTML.
+  - `apps/server/src/http/server.ts`: passa `agentProtection` alle opzioni UI.
+  - `apps/server/src/cli.ts`: importa e passa `agentProtection` al server.
+  - `apps/server/test/agent-setup.test.ts`: nuovi test per configurazione, aggiunta di 
+    `strict=True`, verifica della sintassi Python con protezione abilitata.
+
+- **Test**: 19 su 19 pass in `agent-setup.test.ts` (3 nuovi test specifici per la protezione);
+  full suite: 1434 pass, 2 flaky (browser timeouts preesistenti).
+
+- **Cos'è realistico**: impedire modifiche distratte dello script stesso (il modello di utenti 
+  onesti) con un meccanismo semplice e trasparente (hash dello script nel heartbeat, stop se 
+  cambia). Non impedisce un agente che copia il suo script in un altro file prima di modificare 
+  l'originale — questo vorrebbe un controllo a livello di sistema operativo (permessi, altro 
+  utente), che esula dal prodotto.
+
+- **Cosa comprò in righe**: sotto le 100 nel verificatore (non toccato).
+
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
 > **Superata dalla fase 5 (2026-09-24).** Con il `docker-compose.yml` di produzione la password
