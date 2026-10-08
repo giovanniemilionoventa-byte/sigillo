@@ -3727,3 +3727,16 @@ Caddy non c'è TLS, quindi non ci si mandano dati veri.
 - La TSA: `TSA_URL` punta di default a FreeTSA, che **non è qualificata eIDAS**. Se FreeTSA è giù,
   il checkpoint viene comunque salvato e firmato e il token viene preso al giro successivo — è un
   comportamento voluto, non un errore.
+
+## Agente senza framework: niente avviso su crewai (2026-10-08)
+
+Segnalazione: un agente configurato da «carica agente» stampava «crewai instrumentation was requested
+but is not installed». Causa: per un file senza framework il configuratore scriveva `sigillo.init(...)`
+senza `instrument=`, e il default dell'SDK era provarle tutte e tre, avvisando per ogni mancante.
+
+- SDK 0.3.0: senza `instrument=` attiva quello che trova e tace sul resto; avvisa solo se richiesto
+  esplicitamente. Un'integrazione installata che non parte ora dice l'errore vero, non «non installata».
+- Configuratore: scrive sempre `instrument=[...]` (anche vuoto). Il file scaricato aggiorna da solo un
+  sigillo installato prima della 0.3 (pip `--upgrade`) e si rilancia, quindi al cliente basta
+  riscaricare il file e avviarlo: nessun comando a mano.
+- Costo: circa 10 righe in più nel file generato, nessuna nel verificatore.

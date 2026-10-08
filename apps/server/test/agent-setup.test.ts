@@ -52,19 +52,24 @@ function parses(text: string): boolean {
   return spawnSync("python3", ["-c", "import ast, sys; ast.parse(sys.stdin.read())"], { input: text }).status === 0;
 }
 
-/** The lines that install the SDK the first time the file runs, for these instrumentations. */
+/** The lines that install the SDK, or a newer one, the first time the file runs, for these instrumentations. */
 const BOOTSTRAP = (extras: string, modules: string[]): string[] => [
   "try:",
   "    import sigillo",
   ...modules.map((name) => `    import openinference.instrumentation.${name}`),
+  "    import importlib.metadata",
+  '    if tuple(map(int, importlib.metadata.version("sigillo").split(".")[:2])) < (0, 3):',
+  '        raise ImportError("sigillo is too old")',
   "except ImportError:",
-  "    import importlib",
+  "    import os",
   "    import subprocess",
   "    import sys",
   "",
-  `    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "sigillo${extras} @ ${SETTINGS.url}"])`,
-  "    importlib.invalidate_caches()",
-  "    import sigillo",
+  '    if os.environ.get("SIGILLO_SETUP_DONE"):',
+  "        raise",
+  `    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "--upgrade", "sigillo${extras} @ ${SETTINGS.url}"])`,
+  '    os.environ["SIGILLO_SETUP_DONE"] = "1"',
+  "    raise SystemExit(subprocess.call([sys.executable, *sys.argv]))",
   "",
 ];
 
@@ -103,7 +108,8 @@ describe("adding sigillo to an agent's file", () => {
     const result = added(source);
     const lines = result.text.split("\n");
     expect(lines.slice(0, 11)).toEqual(source.split("\n").slice(0, 11));
-    expect(lines.slice(11, 29)).toEqual(["", ...BOOTSTRAP("[crewai]", ["crewai"]), ...INIT, '    instrument=["crewai"],']);
+    const block = ["", ...BOOTSTRAP("[crewai]", ["crewai"]), ...INIT, '    instrument=["crewai"],'];
+    expect(lines.slice(11, 11 + block.length)).toEqual(block);
     expect(result.text.endsWith(")\n\nimport crewai\n")).toBe(true);
     if (python) expect(parses(result.text)).toBe(true);
   });
@@ -128,12 +134,12 @@ describe("adding sigillo to an agent's file", () => {
     expect(added("from openai import OpenAI\n").install).toBe(`pip install "sigillo[openai] @ ${SETTINGS.url}"`);
   });
 
-  it("leaves the instrumentations to the SDK's default where it finds none, and says the plain package", () => {
+  it("asks for no instrumentation where it finds no framework, and says the plain package", () => {
     const result = added("import requests\nprint(requests.get('https://example.com'))\n");
     expect(result.frameworks).toEqual([]);
-    expect(result.text).not.toContain("instrument=");
+    expect(result.text).toContain("    instrument=[],\n");
     expect(result.text).not.toContain("openinference");
-    expect(result.text).toContain(`"--quiet", "sigillo @ ${SETTINGS.url}"])`);
+    expect(result.text).toContain(`"--quiet", "--upgrade", "sigillo @ ${SETTINGS.url}"])`);
     expect(result.install).toBe(`pip install "sigillo @ ${SETTINGS.url}"`);
     if (python) expect(parses(result.text)).toBe(true);
   });
