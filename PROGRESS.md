@@ -3767,3 +3767,13 @@ nessuna azione: senza LangChain, CrewAI o OpenAI non c'è nulla a cui agganciare
 - Verifica: `mondis.py` allegato, con un Ollama finto e un server vero (firmatore, esportazione e
   verificatore veri): 7 ricevute (ricerca, 2 chiamate al modello, scrittura file), nessun testo in chiaro.
 - Costo: nessuna riga nel verificatore.
+
+## Agenti senza framework: anche `requests` e `httpx` (2026-10-08)
+
+Seguito della richiesta del proprietario («qualsiasi agente Python, sempre con lo stesso metodo»):
+la strumentazione `stdlib` aggancia ora anche `requests` (`Session.send`) e `httpx` (`Client.send`,
+`AsyncClient.send`) se installati, con la stessa regola di `urllib` (modello noto = chiamata al modello,
+altro = chiamata a strumento col solo host; indirizzo e corpo solo come hash). Nessuna modifica al
+configuratore né al server: il metodo resta caricare il file .py e riscaricarlo; resta valido
+l'interruttore `SIGILLO_PLAIN_AGENTS`. Non coperti: `aiohttp`, gli SDK dei provider che non passano da
+queste librerie, `subprocess`.
