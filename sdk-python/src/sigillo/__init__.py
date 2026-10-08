@@ -311,13 +311,27 @@ def _instrument(name: str, provider: _TracerProvider) -> bool:
             from openinference.instrumentation.openai import OpenAIInstrumentor
 
             OpenAIInstrumentor().instrument(tracer_provider=provider)
-    except ImportError:
-        _LOG.warning(
-            "sigillo: %s instrumentation was requested but is not installed; "
-            "install it with: pip install openinference-instrumentation-%s",
-            name,
-            name,
-        )
+    except ImportError as error:
+        # Only a missing instrumentation package is "not installed". An import
+        # that fails inside it, or inside the framework it wraps (a DLL that
+        # will not load, a dependency of the wrong version), is a different
+        # problem, and saying "install it" would send the reader the wrong way.
+        if isinstance(error, ModuleNotFoundError) and (error.name or "").startswith("openinference"):
+            _LOG.warning(
+                "sigillo: %s instrumentation was requested but is not installed; "
+                "install it with: pip install openinference-instrumentation-%s",
+                name,
+                name,
+            )
+        else:
+            _LOG.warning(
+                "sigillo: %s instrumentation is installed but could not start (%s: %s); "
+                "the agent runs, but its %s calls are not recorded",
+                name,
+                type(error).__name__,
+                error,
+                name,
+            )
         return False
     return True
 
