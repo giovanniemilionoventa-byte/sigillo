@@ -3878,3 +3878,11 @@ altro = chiamata a strumento col solo host; indirizzo e corpo solo come hash). N
 configuratore né al server: il metodo resta caricare il file .py e riscaricarlo; resta valido
 l'interruttore `SIGILLO_PLAIN_AGENTS`. Non coperti: `aiohttp`, gli SDK dei provider che non passano da
 queste librerie, `subprocess`.
+
+## Red-team dell'agente malevolo, percorso cloud (2026-10-09)
+
+Prova con un agente malevolo vero (processo Python con SDK e guardia, server reale, provider finto) e con una suite di attacchi HTTP (`apps/server/test/gateway-redteam.test.ts`, 18 test).
+
+- Trovati e corretti due buchi nel gateway (`gateway/llm.ts`): (F1) le richieste GET inoltrate al provider con la chiave vera non lasciavano ricevuta, ora ne lasciano una e rispettano pausa e quota (unica eccezione: l'elenco dei nomi dei modelli); (F2) se l'agente interrompeva la connessione a metà non restava alcuna ricevuta, ora ne resta una di errore.
+- Reggono: chiave vera mai nel file, nell'ambiente, nei processi, nelle risposte o negli errori; path traversal, header che cambiano destinazione, `?key=`, isolamento tra sistemi e tra provider; spegnere la guardia ferma l'agente (uscita 70) e scrive `script_changed`.
+- Limite noto, per costruzione: un agente con gli stessi permessi del sistema operativo può mandare battiti finti con l'hash vecchio (non rilevato) o usare una chiave vecchia rimasta altrove. Il cliente deve cancellare la vecchia chiave dal provider.
