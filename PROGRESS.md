@@ -3779,3 +3779,13 @@ Per le software house che configurano gli agenti per i loro clienti: la software
 - Non cambia il formato delle ricevute. Il verificatore non è toccato.
 - Test: `apps/server/test/transfer.test.ts` (12) e un caso in `accounts.test.ts` per il percorso login → link → sistema passato.
 - Non fatto: gli spazi per cliente finale dentro l'account della software house (`strategia/SOFTWARE-HOUSE-MODELLO-PARTNER.md`, opzione A) e il link di sola lettura (opzione C).
+
+## Agenti senza framework: anche `requests` e `httpx` (2026-10-08)
+
+Seguito della richiesta del proprietario («qualsiasi agente Python, sempre con lo stesso metodo»):
+la strumentazione `stdlib` aggancia ora anche `requests` (`Session.send`) e `httpx` (`Client.send`,
+`AsyncClient.send`) se installati, con la stessa regola di `urllib` (modello noto = chiamata al modello,
+altro = chiamata a strumento col solo host; indirizzo e corpo solo come hash). Nessuna modifica al
+configuratore né al server: il metodo resta caricare il file .py e riscaricarlo; resta valido
+l'interruttore `SIGILLO_PLAIN_AGENTS`. Non coperti: `aiohttp`, gli SDK dei provider che non passano da
+queste librerie, `subprocess`.

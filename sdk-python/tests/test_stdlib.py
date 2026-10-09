@@ -94,6 +94,37 @@ class StdlibInstrumentationTest(unittest.TestCase):
             self.assertRegex(span["sigillo.input.sha256"], "^[0-9a-f]{64}$")
         self.assertIn("sigillo.output.sha256", spans[2])
 
+    def test_requests_and_httpx_are_recorded_by_the_same_rule(self) -> None:
+        import asyncio
+
+        import httpx
+        import requests
+
+        body = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "SEGRETO"}]}
+        # An OpenAI-style path on the local server: any server answering POST works.
+        requests.post(self.base + "/api/chat", json=body)
+        requests.get(self.base + "/search?q=SEGRETO-QUERY")
+        httpx.post(self.base + "/api/chat", json=body)
+        with httpx.Client() as client:
+            client.get(self.base + "/search?q=SEGRETO-QUERY")
+
+        async def call() -> None:
+            async with httpx.AsyncClient() as client:
+                await client.post(self.base + "/api/chat", json=body)
+
+        asyncio.run(call())
+
+        spans = self._spans()
+        self.assertEqual(
+            [s["name"] for s in spans],
+            ["llm gpt-4o-mini", "http 127.0.0.1", "llm gpt-4o-mini", "http 127.0.0.1", "llm gpt-4o-mini"],
+        )
+        sent = b"".join(_Capture.bodies)
+        for secret in (b"SEGRETO", b"/search"):
+            self.assertNotIn(secret, sent)
+        for span in spans:
+            self.assertRegex(span["sigillo.input.sha256"], "^[0-9a-f]{64}$")
+
     def test_a_failure_is_recorded_by_class_only(self) -> None:
         with self.assertRaises(OSError):
             pathlib.Path(self.out / "missing" / "a.txt").write_text("x")

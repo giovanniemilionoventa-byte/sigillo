@@ -17,8 +17,8 @@ sigillo.init(
 
 ## Agents without a framework
 
-An agent that calls its model with `urllib` and writes files with `pathlib` has
-no framework to instrument. Name `"stdlib"` and its model calls, its other web
+An agent that calls its model with `urllib`, `requests` or `httpx` and writes
+files with `pathlib` has no framework to instrument. Name `"stdlib"` and its model calls, its other web
 requests and the files it writes are recorded, as digests only:
 
 ```python
