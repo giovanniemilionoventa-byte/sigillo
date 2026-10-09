@@ -415,6 +415,8 @@ details.tech .facts { margin-top: 10px; }
 .agent-upload { display: none; }
 #way-python:checked ~ .agent-upload.ready { display: block; }
 .agent-upload .notice { margin: 12px 0 0; }
+.model-key[hidden] { display: none; }
+.model-key label { display: block; margin: 8px 0; }
 .wait-line { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 14px 18px; font-weight: 500; }
 .wait-line .end { margin-left: auto; }
 .wait-line.green { color: var(--ok); }

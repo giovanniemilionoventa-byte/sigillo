@@ -10,6 +10,7 @@ import { UiSessions } from "../src/auth/sessions.js";
 import { OPERATOR, type Viewer } from "../src/auth/tenancy.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { agentProtection, agentUpload } from "../src/config.js";
+import { loadOrCreateSealingKey, ProviderKeyStore } from "../src/gateway/provider-keys.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { AGENT_SETUP_SCRIPT, AGENT_SETUP_SOURCE } from "../src/http/agent-setup.js";
 import { buildServer } from "../src/http/server.js";
@@ -167,6 +168,7 @@ let store: ReceiptStore;
 let keys: ApiKeyStore;
 let sessions: UiSessions;
 let app: FastifyInstance | undefined;
+let providerKeys: ProviderKeyStore;
 
 async function start(access?: "off" | "operator" | "all"): Promise<void> {
   if (app !== undefined) await app.close();
@@ -174,6 +176,7 @@ async function start(access?: "off" | "operator" | "all"): Promise<void> {
   app = buildServer({
     store,
     keys,
+    gateway: { keys: providerKeys, access: "all" },
     now: () => new Date(NOW),
     ui: {
       password: "an administrator password",
@@ -196,11 +199,13 @@ beforeEach(async () => {
   await store.createSystem(OPERATOR_BOT, NOW);
   await store.createSystem(ACME_BOT, NOW, "acme");
   keys = ApiKeyStore.open(databasePath);
+  providerKeys = ProviderKeyStore.open(databasePath, loadOrCreateSealingKey(join(directory, "llm-gateway.key")));
 });
 
 afterEach(async () => {
   await app?.close();
   app = undefined;
+  providerKeys.close();
   keys.close();
   store.close();
   rmSync(directory, { recursive: true, force: true });
@@ -331,4 +336,77 @@ describe("agent protection: strict mode when uploaded", () => {
       expect(parses(result.text)).toBe(true);
     });
   }
+});
+
+const OPENAI_KEY = "sk-proj-" + "a1B2c3D4e5F6g7H8i9J0k1L2";
+const ANTHROPIC_KEY = "sk-ant-api03-" + "Z9y8X7w6V5u4T3s2R1q0P9o8";
+const GATEWAY = "https://get-sigillo.eu/llm";
+
+describe("an uploaded agent through the model gateway", () => {
+  const through = (source: string): Added => {
+    const result = setup(source, { ...SETTINGS, gateway: GATEWAY } as typeof SETTINGS);
+    if (result.status !== "added") throw new Error("expected added");
+    return result;
+  };
+
+  it("replaces the OpenAI key in the file by the sigillo key, points the client at the gateway, and hands the real key back", () => {
+    const result = through(`from openai import OpenAI\nclient = OpenAI(api_key="${OPENAI_KEY}")\n`) as Added & { providers: Record<string, string> };
+    expect(result.providers).toEqual({ openai: OPENAI_KEY });
+    expect(result.text).not.toContain(OPENAI_KEY);
+    expect(result.text).toContain('client = OpenAI(api_key="sigillo_abc_def")');
+    expect(result.text.startsWith('import os\nos.environ["OPENAI_BASE_URL"] = "https://get-sigillo.eu/llm/openai/v1"\nos.environ["OPENAI_API_KEY"] = "sigillo_abc_def"\n\ntry:')).toBe(true);
+    if (python) expect(parses(result.text)).toBe(true);
+  });
+
+  it("does the same for Anthropic, and tells the two apart", () => {
+    const result = through(`import anthropic\nk = "${ANTHROPIC_KEY}"\n`) as Added & { providers: Record<string, string> };
+    expect(result.providers).toEqual({ anthropic: ANTHROPIC_KEY });
+    expect(result.text).toContain('os.environ["ANTHROPIC_BASE_URL"] = "https://get-sigillo.eu/llm/anthropic"');
+    expect(result.text).not.toContain("OPENAI_BASE_URL");
+  });
+
+  it("routes a client whose key is not in the file too, with no key to hand back: the page asks for it", () => {
+    const result = through("import openai\nclient = openai.OpenAI()\n") as Added & { providers: Record<string, string> };
+    expect(result.providers).toEqual({ openai: "" });
+    expect(result.text).toContain("OPENAI_BASE_URL");
+  });
+
+  it("leaves a file alone that uses no provider, and does not take 'task-' for a key", () => {
+    const result = through('name = "task-manager-for-the-whole-team-today"\nprint(name)\n') as Added & { providers: Record<string, string> };
+    expect(result.providers).toEqual({});
+    expect(result.text).toContain("task-manager-for-the-whole-team-today");
+    expect(result.text).not.toContain("os.environ");
+  });
+
+  it("changes nothing without the gateway", () => {
+    const result = added(`from openai import OpenAI\nOpenAI(api_key="${OPENAI_KEY}")\n`);
+    expect(result.text).toContain(OPENAI_KEY);
+    expect(result.text).not.toContain("os.environ");
+  });
+
+  it("is offered with protection, and its form posts to the key route", async () => {
+    await start("operator");
+    const page = await newKey(OPERATOR, OPERATOR_BOT);
+    expect(page).toContain('data-gateway="http://');
+    expect(page).toContain(`action="/ui/systems/${OPERATOR_BOT}/llm-key"`);
+    expect(await newKey(ACME, ACME_BOT)).not.toContain("data-gateway");
+  });
+
+  it("saves the key sealed, and refuses one that is not a key, and a customer's system until it is opened", async () => {
+    await start("operator");
+    const post = (viewer: Viewer, systemId: string, payload: string) =>
+      app!.inject({
+        method: "POST",
+        url: `/ui/systems/${systemId}/llm-key`,
+        headers: { cookie: cookie(viewer), "content-type": "application/x-www-form-urlencoded" },
+        payload,
+      });
+    const saved = await post(OPERATOR, OPERATOR_BOT, `provider=openai&key=${OPENAI_KEY}`);
+    expect(saved.statusCode).toBe(303);
+    expect(providerKeys.get(OPERATOR_BOT, "openai")).toBe(OPENAI_KEY);
+    expect((await post(OPERATOR, OPERATOR_BOT, "provider=openai&key=nope")).statusCode).toBe(400);
+    expect((await post(OPERATOR, OPERATOR_BOT, "provider=other&key=" + OPENAI_KEY)).statusCode).toBe(400);
+    expect((await post(ACME, ACME_BOT, `provider=openai&key=${OPENAI_KEY}`)).statusCode).toBe(404);
+    expect(providerKeys.get(ACME_BOT, "openai")).toBeNull();
+  });
 });

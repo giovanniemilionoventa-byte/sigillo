@@ -3622,6 +3622,20 @@ conferma).
   - Test: 3 nuovi SDK (processo vero, script modificato, guardiano morto) più 1 sul pacchetto; 2
     nuovi server.
 
+- **Chiave del modello su Sigillo, al caricamento del file (2026-10-09)**, solo amministratore
+  (stesso interruttore `SIGILLO_AGENT_PROTECTION`, e dove il gateway è aperto): il browser riscrive il
+  file mettendo la chiave Sigillo al posto delle chiavi OpenAI/Anthropic trovate nel testo e
+  `OPENAI_BASE_URL`/`ANTHROPIC_BASE_URL` + `*_API_KEY` in `os.environ` prima di tutto il resto
+  (variabili lette dai due client, verificato con `openai` e `anthropic` veri). La chiave vera
+  torna alla pagina, che mostra un modulo normale (la CSP non ammette richieste dalla pagina) che
+  la salva sigillata con la rotta `POST /ui/systems/:id/llm-key` (rimessa; la sezione «Modello AI»
+  della pagina di gestione non è tornata). Se la chiave non è nel file (`.env`) il campo è vuoto e
+  la incolla il cliente. Il modulo dice di cancellare la vecchia chiave dal fornitore: senza quel
+  passo un agente malevolo può usarla. Gemini non è riscritto automaticamente. Non costruito
+  ancora: modello locale con indirizzo e chiave propri (Ollama su un'altra macchina); serve un
+  cambio di schema nel gateway.
+  Test: 7 nuovi in `agent-setup.test.ts` (riscrittura, falso positivo `task-…`, rotta, regola 11).
+
 - **Cosa comprò in righe**: sotto le 100 nel verificatore (non toccato).
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)

@@ -21,6 +21,43 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
 
   if (/^\\s*(import sigillo\\b|sigillo\\.init\\()/m.test(source)) return { status: "already" };
 
+  // The model gateway (settings.gateway, an address): the provider keys in the
+  // file are replaced by the system's sigillo key, and the OpenAI and
+  // Anthropic clients are pointed at the gateway through the variables they
+  // read themselves, set before anything else runs. The real keys come back
+  // in \`providers\` so that the page can offer to save them in sigillo; the
+  // new file has none of them. A key not in the file (a .env, the shell) is
+  // not seen here: the page asks for it.
+  var providers = {};
+  var gatewayLines = [];
+  if (settings.gateway) {
+    var shapes = [
+      ["anthropic", /\\bsk-ant-[A-Za-z0-9_-]{20,}/g],
+      ["openai", /\\bsk-(?!ant-)[A-Za-z0-9_-]{20,}/g],
+    ];
+    shapes.forEach(function (shape) {
+      var found = source.match(shape[1]);
+      if (found !== null) providers[shape[0]] = found[0];
+      source = source.replace(shape[1], settings.key);
+    });
+    lines = source.slice(bom.length).split(/\\r?\\n/);
+    var via = [
+      ["openai", "OPENAI", "/openai/v1"],
+      ["anthropic", "ANTHROPIC", "/anthropic"],
+    ];
+    via.forEach(function (provider) {
+      var uses = Object.prototype.hasOwnProperty.call(providers, provider[0]) ||
+        new RegExp("^\\\\s*(from|import)\\\\s+" + provider[0] + "\\\\b", "m").test(source);
+      if (!uses) return;
+      if (!Object.prototype.hasOwnProperty.call(providers, provider[0])) providers[provider[0]] = "";
+      gatewayLines.push(
+        "os.environ[" + JSON.stringify(provider[1] + "_BASE_URL") + "] = " + JSON.stringify(settings.gateway + provider[2]),
+        "os.environ[" + JSON.stringify(provider[1] + "_API_KEY") + "] = " + JSON.stringify(settings.key),
+      );
+    });
+    if (gatewayLines.length > 0) gatewayLines.unshift("import os");
+  }
+
   // Which instrumentation: LangChain and LangGraph, CrewAI, or the OpenAI
   // client on its own. The first two already record the model calls they make,
   // so the OpenAI one is added only where neither is used, never twice.
@@ -71,7 +108,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   // the same Python that runs it: downloading it is the whole installation.
   var extras = frameworks.length > 0 ? "[" + frameworks.join(",") + "]" : "";
   var requirement = "sigillo" + extras + " @ " + settings.url;
-  var block = ["try:", "    import sigillo"];
+  var block = gatewayLines.concat(gatewayLines.length > 0 ? [""] : [], ["try:", "    import sigillo"]);
   frameworks.forEach(function (name) {
     block.push("    import openinference.instrumentation." + name);
   });
@@ -105,6 +142,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     text: bom + parts.join(eol),
     frameworks: frameworks,
     install: 'pip install "' + requirement + '"',
+    providers: providers,
   };
 }`;
 
@@ -136,6 +174,7 @@ ${AGENT_SETUP_SOURCE}
       system: box.dataset.system,
       url: box.dataset.url,
       protection: box.dataset.protection === "true",
+      gateway: box.dataset.gateway || "",
     });
     if (result.status === "already") {
       show(problem, box.dataset.already.replace("{file}", file.name));
@@ -149,6 +188,16 @@ ${AGENT_SETUP_SOURCE}
     link.remove();
     show(done, (result.frameworks.length > 0 ? box.dataset.done : box.dataset.doneNoFramework).replace("{file}", file.name));
     input.value = "";
+    // The model gateway: the key found in the file (or none) goes into a form
+    // the person submits, since this page may not make requests of its own.
+    var names = Object.keys(result.providers || {});
+    var save = document.getElementById("sigillo-agent-model");
+    if (save !== null && names.length > 0) {
+      var pick = names.filter(function (name) { return result.providers[name] !== ""; })[0] || names[0];
+      save.elements.provider.value = pick;
+      save.elements.key.value = result.providers[pick];
+      save.hidden = false;
+    }
   });
 })();
 `;

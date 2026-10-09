@@ -305,10 +305,10 @@ export const SDK_REQUIREMENT =
  * endpoints still answer, the SDK itself sends to the first, but neither is
  * offered here.
  */
-function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, protection: boolean = false): string {
+function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, protection: boolean = false, gateway: boolean = false): string {
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
-  const agent = upload && token !== null ? agentUpload(systemId, endpoint, token, protection) : "";
+  const agent = upload && token !== null ? agentUpload(systemId, endpoint, token, protection, gateway) : "";
   const python = [
     `# ${t.pasteAtTop}`,
     "import sigillo",
@@ -338,16 +338,35 @@ ${agent}${install}
  * run (the `ready` class), so a browser without scripts sees the code alone.
  * What the script writes is in the data attributes, in the reader's language.
  */
-function agentUpload(systemId: string, endpoint: string, token: string, protection: boolean): string {
+function agentUpload(systemId: string, endpoint: string, token: string, protection: boolean, gateway: boolean): string {
   const t = UI.connect.upload;
   const url = SDK_REQUIREMENT.slice(SDK_REQUIREMENT.indexOf("@") + 1).trim();
-  return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}" data-protection="${protection}" data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}">
+  return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}" data-protection="${protection}"${gateway ? ` data-gateway="${escape(endpoint.replace(/\/+$/, ""))}/llm"` : ""} data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}">
 <label class="drop"><span class="tile-icon blue" aria-hidden="true">${ICONS.upload}</span><strong>${escape(t.drop)}</strong><input type="file" id="sigillo-agent-file" accept=".py,text/x-python"></label>
 <p class="notice ok" id="sigillo-agent-done" role="status" hidden>${STATE_ICONS.ok}<span></span></p>
 <p class="notice warn" id="sigillo-agent-problem" role="alert" hidden>${STATE_ICONS.warn}<span></span></p>
-<p class="or">${escape(t.or)}</p>
+${gateway ? modelKeyForm(systemId) : ""}<p class="or">${escape(t.or)}</p>
 <script src="/ui/agent-setup.js" defer></script>
 </div>
+`;
+}
+
+/**
+ * The step that follows an upload through the model gateway: the provider key
+ * the file held (or the one the person pastes) is saved in sigillo, sealed, and
+ * the old key is to be deleted at the provider, or an agent that wanted to
+ * could still use it and skip sigillo. A plain form: the page makes no
+ * requests of its own (Content-Security-Policy).
+ */
+function modelKeyForm(systemId: string): string {
+  const t = UI.connect.upload;
+  return `<form class="card model-key" id="sigillo-agent-model" method="post" action="/ui/systems/${encodeURIComponent(systemId)}/llm-key" hidden>
+<p>${escape(t.modelFound)}</p>
+<label>${escape(t.modelProvider)} <select name="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></label>
+<label>${escape(t.modelKey)} <input type="password" name="key" autocomplete="off" required></label>
+<p>${escape(t.modelRevoke)}</p>
+<button class="button primary" type="submit">${escape(t.modelSave)}</button>
+</form>
 `;
 }
 
@@ -368,6 +387,8 @@ export function connectPage(view: {
   upload?: boolean;
   /** Whether uploaded agents get strict mode protection (agent-setup.ts). */
   protection?: boolean;
+  /** Whether an uploaded agent is also pointed at the model gateway (agent-setup.ts). */
+  gateway?: boolean;
 }): string {
   const t = UI.connect;
   const { record, token, mode } = view;
@@ -383,7 +404,7 @@ export function connectPage(view: {
         : `${mode === "connect" ? '<meta http-equiv="refresh" content="10">' : ""}<div class="card wait-line" role="status"><span class="spinner" aria-hidden="true"></span><span>${escape(t.waiting)}</span><a class="end" href="${path}/collega">${escape(t.check)}</a></div>`;
   return `<div class="narrow">${pageHead(title)}
 ${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
-${connectWays(record.system_id, view.endpoint, token, view.upload ?? false, view.protection ?? false)}
+${connectWays(record.system_id, view.endpoint, token, view.upload ?? false, view.protection ?? false, view.gateway ?? false)}
 ${wait}
 </div>`;
 }
