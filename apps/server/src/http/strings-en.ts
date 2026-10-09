@@ -206,6 +206,7 @@ const ui: Strings = {
       already: "{file} already uses sigillo: there is nothing to add.",
       notPython: "Choose the agent's Python file (.py, up to 1 MB).",
       or: "or",
+      secure: "More security: the model key moves to sigillo, and the agent can only reach the model through it. Your file's own key is replaced.",
       modelFound: "Your file now calls the model through sigillo. Save the model key here so sigillo can use it on your behalf.",
       modelProvider: "Provider",
       modelKey: "Model key",

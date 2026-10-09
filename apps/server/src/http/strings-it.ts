@@ -214,6 +214,7 @@ const ui = {
       already: "{file} usa già sigillo: non c'è niente da aggiungere.",
       notPython: "Scegli il file Python dell'agente (.py, fino a 1 MB).",
       or: "oppure",
+      secure: "Più sicurezza: la chiave del modello passa a sigillo e l'agente può raggiungere il modello solo da lì. La chiave presente nel tuo file viene sostituita.",
       modelFound: "Il tuo file ora chiama il modello attraverso sigillo. Salva qui la chiave del modello, così sigillo la usa al posto tuo.",
       modelProvider: "Fornitore",
       modelKey: "Chiave del modello",

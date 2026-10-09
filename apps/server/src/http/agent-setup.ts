@@ -152,6 +152,7 @@ ${AGENT_SETUP_SOURCE}
   var box = document.getElementById("sigillo-agent");
   if (box === null) return;
   var input = document.getElementById("sigillo-agent-file");
+  var secure = document.getElementById("sigillo-agent-secure");
   var done = document.getElementById("sigillo-agent-done");
   var problem = document.getElementById("sigillo-agent-problem");
   box.classList.add("ready");
@@ -174,7 +175,8 @@ ${AGENT_SETUP_SOURCE}
       system: box.dataset.system,
       url: box.dataset.url,
       protection: box.dataset.protection === "true",
-      gateway: box.dataset.gateway || "",
+      // Only when the person ticks the box: the file keeps its own key otherwise.
+      gateway: secure !== null && secure.checked ? box.dataset.gateway || "" : "",
     });
     if (result.status === "already") {
       show(problem, box.dataset.already.replace("{file}", file.name));
