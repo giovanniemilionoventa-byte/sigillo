@@ -3635,8 +3635,12 @@ conferma).
   ancora: modello locale con indirizzo e chiave propri (Ollama su un'altra macchina); serve un
   cambio di schema nel gateway.
   Test: 7 nuovi in `agent-setup.test.ts` (riscrittura, falso positivo `task-…`, rotta, regola 11).
-  Su richiesta del titolare è facoltativa: una casella «Più sicurezza» (spenta di base, prima del
-  selettore del file); senza spunta il file resta com'era e la sua chiave non si tocca.
+  Su richiesta del titolare è facoltativa e in due tempi: caricato il file, la pagina lo legge e dice
+  cosa usa (modello cloud con il nome del fornitore, oppure nessun modello cloud: gira sul computer);
+  solo per un agente cloud compare la casella «Più sicurezza» (spenta di base, con la spiegazione) e
+  il pulsante «Scarica il file». Senza spunta il file resta com'era, con la sua chiave; con la spunta
+  la chiave esce dal file e va a Sigillo dal modulo. Provato in un Chromium vero con la CSP di
+  produzione (`agent-upload-browser.test.ts`, 3 test).
 
 - **Cosa comprò in righe**: sotto le 100 nel verificatore (non toccato).
 

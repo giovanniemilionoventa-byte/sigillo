@@ -152,9 +152,9 @@ ${AGENT_SETUP_SOURCE}
   var box = document.getElementById("sigillo-agent");
   if (box === null) return;
   var input = document.getElementById("sigillo-agent-file");
-  var secure = document.getElementById("sigillo-agent-secure");
   var done = document.getElementById("sigillo-agent-done");
   var problem = document.getElementById("sigillo-agent-problem");
+  var choice = document.getElementById("sigillo-agent-choice");
   box.classList.add("ready");
   var show = function (element, text) {
     done.hidden = true;
@@ -162,44 +162,71 @@ ${AGENT_SETUP_SOURCE}
     element.querySelector("span").textContent = text;
     element.hidden = false;
   };
+  var base = {
+    endpoint: box.dataset.endpoint,
+    key: box.dataset.key,
+    system: box.dataset.system,
+    url: box.dataset.url,
+    protection: box.dataset.protection === "true",
+  };
+  var give = function (name, result) {
+    var link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([result.text], { type: "text/x-python" }));
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    show(done, (result.frameworks.length > 0 ? box.dataset.done : box.dataset.doneNoFramework).replace("{file}", name));
+  };
   input.addEventListener("change", async function () {
     var file = input.files[0];
     if (file === undefined) return;
+    if (choice !== null) choice.hidden = true;
     if (!/\\.py$/i.test(file.name) || file.size > 1048576) {
       show(problem, box.dataset.notPython);
       return;
     }
-    var result = sigilloAgentSetup(await file.text(), {
-      endpoint: box.dataset.endpoint,
-      key: box.dataset.key,
-      system: box.dataset.system,
-      url: box.dataset.url,
-      protection: box.dataset.protection === "true",
-      // Only when the person ticks the box: the file keeps its own key otherwise.
-      gateway: secure !== null && secure.checked ? box.dataset.gateway || "" : "",
-    });
-    if (result.status === "already") {
+    var text = await file.text();
+    var plain = sigilloAgentSetup(text, base);
+    if (plain.status === "already") {
       show(problem, box.dataset.already.replace("{file}", file.name));
       return;
     }
-    var link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([result.text], { type: "text/x-python" }));
-    link.download = file.name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    show(done, (result.frameworks.length > 0 ? box.dataset.done : box.dataset.doneNoFramework).replace("{file}", file.name));
     input.value = "";
-    // The model gateway: the key found in the file (or none) goes into a form
-    // the person submits, since this page may not make requests of its own.
-    var names = Object.keys(result.providers || {});
-    var save = document.getElementById("sigillo-agent-model");
-    if (save !== null && names.length > 0) {
-      var pick = names.filter(function (name) { return result.providers[name] !== ""; })[0] || names[0];
-      save.elements.provider.value = pick;
-      save.elements.key.value = result.providers[pick];
-      save.hidden = false;
+    if (choice === null) {
+      give(file.name, plain);
+      return;
     }
+    // The model gateway: the file is read first, and what it uses is said
+    // before anything is downloaded. Only an agent that calls a cloud model
+    // is offered the choice; the file keeps its own key unless it is ticked.
+    var routed = sigilloAgentSetup(text, Object.assign({ gateway: box.dataset.gateway }, base));
+    var names = Object.keys(routed.providers);
+    var tick = document.getElementById("sigillo-agent-secure");
+    var label = document.getElementById("sigillo-agent-secure-label");
+    var save = document.getElementById("sigillo-agent-model");
+    save.hidden = true;
+    done.hidden = true;
+    problem.hidden = true;
+    tick.checked = false;
+    label.hidden = names.length === 0;
+    document.getElementById("sigillo-agent-analysis").textContent = names.length > 0
+      ? box.dataset.analysisCloud.replace("{providers}", names.join(", "))
+      : box.dataset.analysisOther;
+    choice.hidden = false;
+    document.getElementById("sigillo-agent-download").onclick = function () {
+      var result = tick.checked ? routed : plain;
+      give(file.name, result);
+      choice.hidden = true;
+      if (tick.checked) {
+        // The key found in the file (or none) goes into a form the person
+        // submits, since this page may not make requests of its own.
+        var pick = names.filter(function (name) { return routed.providers[name] !== ""; })[0] || names[0];
+        save.elements.provider.value = pick;
+        save.elements.key.value = routed.providers[pick];
+        save.hidden = false;
+      }
+    };
   });
 })();
 `;

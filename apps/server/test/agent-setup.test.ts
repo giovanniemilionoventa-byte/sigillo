@@ -389,10 +389,11 @@ describe("an uploaded agent through the model gateway", () => {
     const page = await newKey(OPERATOR, OPERATOR_BOT);
     expect(page).toContain('data-gateway="http://');
     expect(page).toContain(`action="/ui/systems/${OPERATOR_BOT}/llm-key"`);
-    // Off until the person ticks it: the box comes before the file picker.
-    expect(page).toContain('id="sigillo-agent-secure"');
+    // Read first, then asked: the choice and the download button come after the file picker, hidden, unticked.
+    expect(page).toContain('id="sigillo-agent-choice" hidden');
     expect(page).not.toMatch(/id="sigillo-agent-secure"[^>]*checked/);
-    expect(page.indexOf('id="sigillo-agent-secure"')).toBeLessThan(page.indexOf('id="sigillo-agent-file"'));
+    expect(page.indexOf('id="sigillo-agent-choice"')).toBeGreaterThan(page.indexOf('id="sigillo-agent-file"'));
+    expect(page).toContain('id="sigillo-agent-download"');
     expect(await newKey(ACME, ACME_BOT)).not.toContain("data-gateway");
   });
 

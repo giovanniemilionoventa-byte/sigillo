@@ -341,12 +341,23 @@ ${agent}${install}
 function agentUpload(systemId: string, endpoint: string, token: string, protection: boolean, gateway: boolean): string {
   const t = UI.connect.upload;
   const url = SDK_REQUIREMENT.slice(SDK_REQUIREMENT.indexOf("@") + 1).trim();
-  return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}" data-protection="${protection}"${gateway ? ` data-gateway="${escape(endpoint.replace(/\/+$/, ""))}/llm"` : ""} data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}">
-${gateway ? `<label class="secure"><input type="checkbox" id="sigillo-agent-secure"> ${escape(t.secure)}</label>\n` : ""}<label class="drop"><span class="tile-icon blue" aria-hidden="true">${ICONS.upload}</span><strong>${escape(t.drop)}</strong><input type="file" id="sigillo-agent-file" accept=".py,text/x-python"></label>
+  return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}" data-protection="${protection}"${gateway ? ` data-gateway="${escape(endpoint.replace(/\/+$/, ""))}/llm"` : ""} data-analysis-cloud="${escape(t.analysisCloud)}" data-analysis-other="${escape(t.analysisOther)}" data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}">
+<label class="drop"><span class="tile-icon blue" aria-hidden="true">${ICONS.upload}</span><strong>${escape(t.drop)}</strong><input type="file" id="sigillo-agent-file" accept=".py,text/x-python"></label>
 <p class="notice ok" id="sigillo-agent-done" role="status" hidden>${STATE_ICONS.ok}<span></span></p>
 <p class="notice warn" id="sigillo-agent-problem" role="alert" hidden>${STATE_ICONS.warn}<span></span></p>
-${gateway ? modelKeyForm(systemId) : ""}<p class="or">${escape(t.or)}</p>
+${gateway ? `${choiceBox()}${modelKeyForm(systemId)}` : ""}<p class="or">${escape(t.or)}</p>
 <script src="/ui/agent-setup.js" defer></script>
+</div>
+`;
+}
+
+/** After the file is read: what the agent uses, the option for more security (only for a cloud model), and the download. */
+function choiceBox(): string {
+  const t = UI.connect.upload;
+  return `<div class="card choice" id="sigillo-agent-choice" hidden>
+<p id="sigillo-agent-analysis"></p>
+<label class="secure" id="sigillo-agent-secure-label" hidden><input type="checkbox" id="sigillo-agent-secure"> ${escape(t.secure)}</label>
+<button class="button primary" type="button" id="sigillo-agent-download">${escape(t.download)}</button>
 </div>
 `;
 }
