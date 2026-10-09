@@ -10,6 +10,8 @@ import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { archiveFromStore, positionsIn, tokensIn } from "../export/from-store.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
+import { gatewayAllowed, type GatewayOptions } from "../gateway/llm.js";
+import { isProvider, ProviderKeyError } from "../gateway/provider-keys.js";
 import { AGENT_SETUP_SCRIPT } from "./agent-setup.js";
 import {
   normaliseDisplayName,
@@ -137,11 +139,22 @@ export interface UiOptions {
    */
   backupDirectory?: string;
   /**
+   * The model gateway (gateway/llm.ts): given, an uploaded agent is also
+   * pointed at it and its provider key saved, where agentProtection allows.
+   */
+  gateway?: GatewayOptions;
+  /**
    * Who sees "upload your agent" on the connect page (agent-setup.ts):
    * `operator`, the administrator's own systems only, until the owner opens
    * it to `all`. Not given: nobody.
    */
   agentUpload?: "off" | "operator" | "all";
+  /**
+   * Uploaded agents' protection level (agent-setup.ts): whether to wrap them
+   * with strict mode and script change detection. `operator`, the administrator's
+   * own systems only, until opened to `all`. Not given: nobody.
+   */
+  agentProtection?: "off" | "operator" | "all";
   /**
    * Who sees "Claude Code" on the connect page (sigillo-claude-code, in the
    * Python SDK): `operator` until the owner opens it to `all`, as the server
@@ -606,6 +619,20 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   const offersUpload = (record: SystemRecord): boolean =>
     options.agentUpload === "all" || (options.agentUpload === "operator" && record.organization_id === null);
 
+  /**
+   * Whether uploaded agents are protected with strict mode and script change detection:
+   * to the operator's own systems, and to every account's once it is opened.
+   */
+  const offersProtection = (record: SystemRecord): boolean =>
+    options.agentProtection === "all" || (options.agentProtection === "operator" && record.organization_id === null);
+
+  /** The gateway, where it is open to this system. */
+  const gatewayOf = (record: SystemRecord): GatewayOptions | null =>
+    options.gateway !== undefined && gatewayAllowed(options.gateway.access, record.organization_id) ? options.gateway : null;
+
+  /** Whether an uploaded agent is also routed through the gateway: protection's audience, where the gateway is open. */
+  const offersGateway = (record: SystemRecord): boolean => offersProtection(record) && gatewayOf(record) !== null;
+
   /** Whether a system's settings offer to hand it to another account: the same rule, under its own switch. */
   const offersTransfer = (record: SystemRecord): boolean =>
     options.transfer === "all" || (options.transfer === "operator" && record.organization_id === null);
@@ -764,7 +791,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
         render(session, {
           title: UI.connect.ready(systemTitle(record)),
           current: `system:${systemId}`,
-          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), claudeCode: offersClaudeCode(record) }),
+          body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), claudeCode: offersClaudeCode(record), protection: offersProtection(record), gateway: offersGateway(record) }),
         }),
       );
     } catch (error) {
@@ -898,7 +925,7 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.title(systemTitle(record)),
         current: `system:${systemId}`,
-        body: connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now(), claudeCode: offersClaudeCode(record) }),
+        body: connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now(), claudeCode: offersClaudeCode(record), protection: offersProtection(record) }),
       }),
     );
   });
@@ -927,7 +954,8 @@ ${exportSheet(record)}`,
   };
 
   // Keys into UI.manage, read when a page is written, in its reader's language.
-  const DONE: Record<string, "renamed" | "archived" | "unarchived" | "transferRevoked"> = {
+  const DONE: Record<string, "renamed" | "archived" | "unarchived" | "modelSaved" | "transferRevoked"> = {
+    modello: "modelSaved",
     annullato: "transferRevoked",
     nome: "renamed",
     archiviato: "archived",
@@ -949,6 +977,28 @@ ${exportSheet(record)}`,
 
   const manageUrl = (systemId: string, done: string): string =>
     `/ui/systems/${encodeURIComponent(systemId)}/manage?fatto=${done}`;
+
+  // The provider key of an uploaded agent (agent-setup.ts), sealed
+  // (gateway/provider-keys.ts) and never shown again.
+  app.post("/ui/systems/:systemId/llm-key", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { store } = session;
+    const { systemId } = request.params as { systemId: string };
+    const record = store.systemRecord(systemId);
+    const gateway = record === null ? null : gatewayOf(record);
+    if (record === null || gateway === null || !offersGateway(record)) return notFound(session, reply);
+    const body = request.body as { provider?: unknown; key?: unknown } | undefined;
+    try {
+      if (!isProvider(body?.provider) || typeof body?.key !== "string") throw new ProviderKeyError("invalid");
+      gateway.keys.set(systemId, body.provider, body.key, options.now().toISOString());
+    } catch (error) {
+      if (!(error instanceof ProviderKeyError)) throw error;
+      return html(reply, renderManage(session, record, { error: UI.manage.modelKeyInvalid }), 400);
+    }
+    request.log.info({ system: systemId, action: "llm-key.set", provider: body.provider }, "a model key was saved for a system");
+    return reply.redirect(manageUrl(systemId, "modello"), 303);
+  });
 
   app.post("/ui/systems/:systemId/rename", async (request, reply) => {
     const session = requireSession(request, reply);
@@ -989,7 +1039,7 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.newKey(systemTitle(record)),
         current: `system:${systemId}`,
-        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), claudeCode: offersClaudeCode(record) }),
+        body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), claudeCode: offersClaudeCode(record), protection: offersProtection(record), gateway: offersGateway(record) }),
       }),
     );
   });

@@ -21,6 +21,43 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
 
   if (/^\\s*(import sigillo\\b|sigillo\\.init\\()/m.test(source)) return { status: "already" };
 
+  // The model gateway (settings.gateway, an address): the provider keys in the
+  // file are replaced by the system's sigillo key, and the OpenAI and
+  // Anthropic clients are pointed at the gateway through the variables they
+  // read themselves, set before anything else runs. The real keys come back
+  // in \`providers\` so that the page can offer to save them in sigillo; the
+  // new file has none of them. A key not in the file (a .env, the shell) is
+  // not seen here: the page asks for it.
+  var providers = {};
+  var gatewayLines = [];
+  if (settings.gateway) {
+    var shapes = [
+      ["anthropic", /\\bsk-ant-[A-Za-z0-9_-]{20,}/g],
+      ["openai", /\\bsk-(?!ant-)[A-Za-z0-9_-]{20,}/g],
+    ];
+    shapes.forEach(function (shape) {
+      var found = source.match(shape[1]);
+      if (found !== null) providers[shape[0]] = found[0];
+      source = source.replace(shape[1], settings.key);
+    });
+    lines = source.slice(bom.length).split(/\\r?\\n/);
+    var via = [
+      ["openai", "OPENAI", "/openai/v1"],
+      ["anthropic", "ANTHROPIC", "/anthropic"],
+    ];
+    via.forEach(function (provider) {
+      var uses = Object.prototype.hasOwnProperty.call(providers, provider[0]) ||
+        new RegExp("^\\\\s*(from|import)\\\\s+" + provider[0] + "\\\\b", "m").test(source);
+      if (!uses) return;
+      if (!Object.prototype.hasOwnProperty.call(providers, provider[0])) providers[provider[0]] = "";
+      gatewayLines.push(
+        "os.environ[" + JSON.stringify(provider[1] + "_BASE_URL") + "] = " + JSON.stringify(settings.gateway + provider[2]),
+        "os.environ[" + JSON.stringify(provider[1] + "_API_KEY") + "] = " + JSON.stringify(settings.key),
+      );
+    });
+    if (gatewayLines.length > 0) gatewayLines.unshift("import os");
+  }
+
   // Which instrumentation: LangChain and LangGraph, CrewAI, or the OpenAI
   // client on its own. The first two already record the model calls they make,
   // so the OpenAI one is added only where neither is used, never twice.
@@ -81,7 +118,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   // loaded. SIGILLO_SETUP_DONE stops that from repeating if the install did not help.
   var extras = frameworks.length > 0 ? "[" + frameworks.join(",") + "]" : "";
   var requirement = "sigillo" + extras + " @ " + settings.url;
-  var block = ["try:", "    import sigillo"];
+  var block = gatewayLines.concat(gatewayLines.length > 0 ? [""] : [], ["try:", "    import sigillo"]);
   frameworks.forEach(function (name) {
     block.push("    import openinference.instrumentation." + name);
   });
@@ -110,6 +147,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   // Always said, even when empty: left out, the SDK would try every
   // instrumentation, which is how a plain agent came to be told about crewai.
   block.push("    instrument=" + JSON.stringify(instrument).replace(/,/g, ", ") + ",");
+  if (settings.protection) block.push("    strict=True,");
   block.push(")");
   var head = lines.slice(0, at);
   var tail = lines.slice(at);
@@ -122,6 +160,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     frameworks: frameworks,
     instrument: instrument,
     install: 'pip install "' + requirement + '"',
+    providers: providers,
   };
 }`;
 
@@ -133,6 +172,7 @@ ${AGENT_SETUP_SOURCE}
   var input = document.getElementById("sigillo-agent-file");
   var done = document.getElementById("sigillo-agent-done");
   var problem = document.getElementById("sigillo-agent-problem");
+  var choice = document.getElementById("sigillo-agent-choice");
   box.classList.add("ready");
   var show = function (element, text) {
     done.hidden = true;
@@ -140,32 +180,72 @@ ${AGENT_SETUP_SOURCE}
     element.querySelector("span").textContent = text;
     element.hidden = false;
   };
+  var base = {
+    endpoint: box.dataset.endpoint,
+    key: box.dataset.key,
+    system: box.dataset.system,
+    url: box.dataset.url,
+    protection: box.dataset.protection === "true",
+    stdlib: box.dataset.stdlib === "1",
+  };
+  var give = function (name, result) {
+    var link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([result.text], { type: "text/x-python" }));
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    show(done, (result.instrument.length > 0 ? box.dataset.done : box.dataset.doneNoFramework).replace("{file}", name));
+  };
   input.addEventListener("change", async function () {
     var file = input.files[0];
     if (file === undefined) return;
+    if (choice !== null) choice.hidden = true;
     if (!/\\.py$/i.test(file.name) || file.size > 1048576) {
       show(problem, box.dataset.notPython);
       return;
     }
-    var result = sigilloAgentSetup(await file.text(), {
-      endpoint: box.dataset.endpoint,
-      key: box.dataset.key,
-      system: box.dataset.system,
-      url: box.dataset.url,
-      stdlib: box.dataset.stdlib === "1",
-    });
-    if (result.status === "already") {
+    var text = await file.text();
+    var plain = sigilloAgentSetup(text, base);
+    if (plain.status === "already") {
       show(problem, box.dataset.already.replace("{file}", file.name));
       return;
     }
-    var link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([result.text], { type: "text/x-python" }));
-    link.download = file.name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    show(done, (result.instrument.length > 0 ? box.dataset.done : box.dataset.doneNoFramework).replace("{file}", file.name));
     input.value = "";
+    if (choice === null) {
+      give(file.name, plain);
+      return;
+    }
+    // The model gateway: the file is read first, and what it uses is said
+    // before anything is downloaded. Only an agent that calls a cloud model
+    // is offered the choice; the file keeps its own key unless it is ticked.
+    var routed = sigilloAgentSetup(text, Object.assign({ gateway: box.dataset.gateway }, base));
+    var names = Object.keys(routed.providers);
+    var tick = document.getElementById("sigillo-agent-secure");
+    var label = document.getElementById("sigillo-agent-secure-label");
+    var save = document.getElementById("sigillo-agent-model");
+    save.hidden = true;
+    done.hidden = true;
+    problem.hidden = true;
+    tick.checked = false;
+    label.hidden = names.length === 0;
+    document.getElementById("sigillo-agent-analysis").textContent = names.length > 0
+      ? box.dataset.analysisCloud.replace("{providers}", names.join(", "))
+      : box.dataset.analysisOther;
+    choice.hidden = false;
+    document.getElementById("sigillo-agent-download").onclick = function () {
+      var result = tick.checked ? routed : plain;
+      give(file.name, result);
+      choice.hidden = true;
+      if (tick.checked) {
+        // The key found in the file (or none) goes into a form the person
+        // submits, since this page may not make requests of its own.
+        var pick = names.filter(function (name) { return routed.providers[name] !== ""; })[0] || names[0];
+        save.elements.provider.value = pick;
+        save.elements.key.value = routed.providers[pick];
+        save.hidden = false;
+      }
+    };
   });
 })();
 `;

@@ -9,7 +9,8 @@ import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { UiSessions } from "../src/auth/sessions.js";
 import { OPERATOR, type Viewer } from "../src/auth/tenancy.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
-import { agentUpload } from "../src/config.js";
+import { agentProtection, agentUpload } from "../src/config.js";
+import { loadOrCreateSealingKey, ProviderKeyStore } from "../src/gateway/provider-keys.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { AGENT_SETUP_SCRIPT, AGENT_SETUP_SOURCE } from "../src/http/agent-setup.js";
 import { buildServer } from "../src/http/server.js";
@@ -190,6 +191,7 @@ let store: ReceiptStore;
 let keys: ApiKeyStore;
 let sessions: UiSessions;
 let app: FastifyInstance | undefined;
+let providerKeys: ProviderKeyStore;
 
 async function start(access?: "off" | "operator" | "all"): Promise<void> {
   if (app !== undefined) await app.close();
@@ -197,6 +199,7 @@ async function start(access?: "off" | "operator" | "all"): Promise<void> {
   app = buildServer({
     store,
     keys,
+    gateway: { keys: providerKeys, access: "all" },
     now: () => new Date(NOW),
     ui: {
       password: "an administrator password",
@@ -204,7 +207,7 @@ async function start(access?: "off" | "operator" | "all"): Promise<void> {
       healthMonitor: new ChainHealthMonitor(store, signer.publicKey, 24 * 60 * 60_000),
       checkpointer: new Checkpointer({ store, now: () => new Date(NOW) }),
       sessions,
-      ...(access === undefined ? {} : { agentUpload: access }),
+      ...(access === undefined ? {} : { agentUpload: access, agentProtection: access }),
     },
   });
   await app.ready();
@@ -219,11 +222,13 @@ beforeEach(async () => {
   await store.createSystem(OPERATOR_BOT, NOW);
   await store.createSystem(ACME_BOT, NOW, "acme");
   keys = ApiKeyStore.open(databasePath);
+  providerKeys = ProviderKeyStore.open(databasePath, loadOrCreateSealingKey(join(directory, "llm-gateway.key")));
 });
 
 afterEach(async () => {
   await app?.close();
   app = undefined;
+  providerKeys.close();
   keys.close();
   store.close();
   rmSync(directory, { recursive: true, force: true });
@@ -289,5 +294,147 @@ describe("who is offered the upload", () => {
     expect(script.statusCode).toBe(200);
     expect(script.headers["content-type"]).toContain("text/javascript");
     expect(script.body).toBe(AGENT_SETUP_SCRIPT);
+  });
+});
+
+describe("agent protection: strict mode when uploaded", () => {
+  it("defaults to operator's own systems, and opens to all only when told (rule 11)", () => {
+    expect(agentProtection({})).toBe("operator");
+    expect(agentProtection({ SIGILLO_AGENT_PROTECTION: "" })).toBe("operator");
+    expect(agentProtection({ SIGILLO_AGENT_PROTECTION: "all" })).toBe("all");
+    expect(agentProtection({ SIGILLO_AGENT_PROTECTION: "off" })).toBe("off");
+    expect(() => agentProtection({ SIGILLO_AGENT_PROTECTION: "invalid" })).toThrow(/SIGILLO_AGENT_PROTECTION/);
+  });
+
+  it("adds strict=True to sigillo.init when protection is enabled", () => {
+    const source = "from langchain_openai import ChatOpenAI\nllm = ChatOpenAI()\n";
+    const setupWithoutProtection = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: typeof SETTINGS & { protection?: boolean }) => Result;
+    const setupWithProtection = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: typeof SETTINGS & { protection?: boolean }) => Result;
+    
+    const withoutProtection = setupWithoutProtection(source, { ...SETTINGS, protection: false });
+    const withProtection = setupWithProtection(source, { ...SETTINGS, protection: true });
+    
+    if (withoutProtection.status !== "added" || withProtection.status !== "added") {
+      throw new Error("Expected added status");
+    }
+
+    expect(withoutProtection.text).not.toContain("strict=True");
+    expect(withProtection.text).toContain("strict=True");
+    
+    // With protection, strict mode line should be just before the closing paren
+    const strictLine = withProtection.text.split("\n").find(line => line.includes("strict=True"));
+    expect(strictLine).toBeDefined();
+    const nextLine = withProtection.text.split("\n")[withProtection.text.split("\n").indexOf(strictLine!) + 1];
+    expect(nextLine).toBe(")");
+  });
+
+  it("adds strict=True after instrument when both are present", () => {
+    const source = "from langchain_openai import ChatOpenAI\nllm = ChatOpenAI()\n";
+    const setup = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: typeof SETTINGS & { protection?: boolean }) => Result;
+    const result = setup(source, { ...SETTINGS, protection: true });
+    
+    if (result.status !== "added") {
+      throw new Error("Expected added status");
+    }
+
+    const lines = result.text.split("\n");
+    const instrumentIndex = lines.findIndex(line => line.includes("instrument="));
+    const strictIndex = lines.findIndex(line => line.includes("strict=True"));
+    
+    expect(instrumentIndex).toBeGreaterThan(-1);
+    expect(strictIndex).toBeGreaterThan(-1);
+    expect(strictIndex).toBeGreaterThan(instrumentIndex);
+  });
+
+  if (python) {
+    it("produces valid Python when protection is enabled", () => {
+      const source = "from langchain_openai import ChatOpenAI\nllm = ChatOpenAI()\n";
+      const setup = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: typeof SETTINGS & { protection?: boolean }) => Result;
+      const result = setup(source, { ...SETTINGS, protection: true });
+      
+      if (result.status !== "added") {
+        throw new Error("Expected added status");
+      }
+
+      expect(parses(result.text)).toBe(true);
+    });
+  }
+});
+
+const OPENAI_KEY = "sk-proj-" + "a1B2c3D4e5F6g7H8i9J0k1L2";
+const ANTHROPIC_KEY = "sk-ant-api03-" + "Z9y8X7w6V5u4T3s2R1q0P9o8";
+const GATEWAY = "https://get-sigillo.eu/llm";
+
+describe("an uploaded agent through the model gateway", () => {
+  const through = (source: string): Added => {
+    const result = setup(source, { ...SETTINGS, gateway: GATEWAY } as typeof SETTINGS);
+    if (result.status !== "added") throw new Error("expected added");
+    return result;
+  };
+
+  it("replaces the OpenAI key in the file by the sigillo key, points the client at the gateway, and hands the real key back", () => {
+    const result = through(`from openai import OpenAI\nclient = OpenAI(api_key="${OPENAI_KEY}")\n`) as Added & { providers: Record<string, string> };
+    expect(result.providers).toEqual({ openai: OPENAI_KEY });
+    expect(result.text).not.toContain(OPENAI_KEY);
+    expect(result.text).toContain('client = OpenAI(api_key="sigillo_abc_def")');
+    expect(result.text.startsWith('import os\nos.environ["OPENAI_BASE_URL"] = "https://get-sigillo.eu/llm/openai/v1"\nos.environ["OPENAI_API_KEY"] = "sigillo_abc_def"\n\ntry:')).toBe(true);
+    if (python) expect(parses(result.text)).toBe(true);
+  });
+
+  it("does the same for Anthropic, and tells the two apart", () => {
+    const result = through(`import anthropic\nk = "${ANTHROPIC_KEY}"\n`) as Added & { providers: Record<string, string> };
+    expect(result.providers).toEqual({ anthropic: ANTHROPIC_KEY });
+    expect(result.text).toContain('os.environ["ANTHROPIC_BASE_URL"] = "https://get-sigillo.eu/llm/anthropic"');
+    expect(result.text).not.toContain("OPENAI_BASE_URL");
+  });
+
+  it("routes a client whose key is not in the file too, with no key to hand back: the page asks for it", () => {
+    const result = through("import openai\nclient = openai.OpenAI()\n") as Added & { providers: Record<string, string> };
+    expect(result.providers).toEqual({ openai: "" });
+    expect(result.text).toContain("OPENAI_BASE_URL");
+  });
+
+  it("leaves a file alone that uses no provider, and does not take 'task-' for a key", () => {
+    const result = through('name = "task-manager-for-the-whole-team-today"\nprint(name)\n') as Added & { providers: Record<string, string> };
+    expect(result.providers).toEqual({});
+    expect(result.text).toContain("task-manager-for-the-whole-team-today");
+    expect(result.text).not.toContain("_BASE_URL");
+  });
+
+  it("changes nothing without the gateway", () => {
+    const result = added(`from openai import OpenAI\nOpenAI(api_key="${OPENAI_KEY}")\n`);
+    expect(result.text).toContain(OPENAI_KEY);
+    expect(result.text).not.toContain("_BASE_URL");
+  });
+
+  it("is offered with protection, and its form posts to the key route", async () => {
+    await start("operator");
+    const page = await newKey(OPERATOR, OPERATOR_BOT);
+    expect(page).toContain('data-gateway="http://');
+    expect(page).toContain(`action="/ui/systems/${OPERATOR_BOT}/llm-key"`);
+    // Read first, then asked: the choice and the download button come after the file picker, hidden, unticked.
+    expect(page).toContain('id="sigillo-agent-choice" hidden');
+    expect(page).not.toMatch(/id="sigillo-agent-secure"[^>]*checked/);
+    expect(page.indexOf('id="sigillo-agent-choice"')).toBeGreaterThan(page.indexOf('id="sigillo-agent-file"'));
+    expect(page).toContain('id="sigillo-agent-download"');
+    expect(await newKey(ACME, ACME_BOT)).not.toContain("data-gateway");
+  });
+
+  it("saves the key sealed, and refuses one that is not a key, and a customer's system until it is opened", async () => {
+    await start("operator");
+    const post = (viewer: Viewer, systemId: string, payload: string) =>
+      app!.inject({
+        method: "POST",
+        url: `/ui/systems/${systemId}/llm-key`,
+        headers: { cookie: cookie(viewer), "content-type": "application/x-www-form-urlencoded" },
+        payload,
+      });
+    const saved = await post(OPERATOR, OPERATOR_BOT, `provider=openai&key=${OPENAI_KEY}`);
+    expect(saved.statusCode).toBe(303);
+    expect(providerKeys.get(OPERATOR_BOT, "openai")).toBe(OPENAI_KEY);
+    expect((await post(OPERATOR, OPERATOR_BOT, "provider=openai&key=nope")).statusCode).toBe(400);
+    expect((await post(OPERATOR, OPERATOR_BOT, "provider=other&key=" + OPENAI_KEY)).statusCode).toBe(400);
+    expect((await post(ACME, ACME_BOT, `provider=openai&key=${OPENAI_KEY}`)).statusCode).toBe(404);
+    expect(providerKeys.get(ACME_BOT, "openai")).toBeNull();
   });
 });

@@ -58,6 +58,7 @@ import mimetypes as _mimetypes
 import os as _os
 import pathlib as _pathlib
 import secrets as _secrets
+import subprocess as _subprocess
 import sys as _sys
 import threading as _threading
 import urllib.request as _urllib_request
@@ -79,7 +80,7 @@ from opentelemetry.sdk.trace import SpanProcessor as _SpanProcessor
 from opentelemetry.sdk.trace import TracerProvider as _TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor as _BatchSpanProcessor
 from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
-from . import _text
+from . import _text, _watchdog
 
 __all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"]
 __version__ = "0.4.0"
@@ -144,6 +145,7 @@ class _Heartbeat:
         show: bool = False,
         strict: bool = False,
         on_halt: _Callable[[str], None] | None = None,
+        guard_seconds: float = 5.0,
     ) -> None:
         self._url = url
         self._show = show
@@ -153,6 +155,9 @@ class _Heartbeat:
         self._missed = 0
         # The main script is found once, here; its bytes are read at every beat.
         self._script = _main_script()
+        self._api_key = api_key
+        self._guard: _subprocess.Popen | None = None
+        self._guard_period = guard_seconds
         self._headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         self._interval = interval
         self.session = _secrets.token_hex(16)
@@ -162,9 +167,41 @@ class _Heartbeat:
         self._thread = _threading.Thread(target=self._run, name="sigillo-heartbeat", daemon=True)
 
     def start(self) -> None:
+        # Strict mode that ends the process by itself also starts the guard
+        # process (_watchdog.py); an `on_halt` of the caller's own replaces how
+        # the agent is stopped, so there is nothing for a guard to kill.
+        if self._strict and self._on_halt is _halt_process:
+            self._start_guard()
         self._thread.start()
         # A process that ends without calling shutdown() still says it closed.
         _atexit.register(self.close)
+
+    def _start_guard(self) -> None:
+        directory = _os.path.dirname(_os.path.abspath(_watchdog.__file__))
+        config = {
+            "url": self._url,
+            "api_key": self._api_key,
+            "session": self.session,
+            "script": self._script,
+            "script_hash": _hash_of_file(self._script) if self._script is not None else None,
+            "sdk_hash": _watchdog.package_hash(directory),
+            "parent": _os.getpid(),
+            "period": self._guard_period,
+        }
+        try:
+            guard = _subprocess.Popen(
+                [_sys.executable, "-I", _watchdog.__file__],
+                stdin=_subprocess.PIPE,
+                stdout=_subprocess.DEVNULL,
+                text=True,
+            )
+            assert guard.stdin is not None
+            guard.stdin.write(_json.dumps(config) + "\n")
+            guard.stdin.flush()
+        except (OSError, AssertionError) as error:
+            _LOG.warning("sigillo guard process not started: %s", type(error).__name__)
+            return
+        self._guard = guard
 
     def close(self) -> None:
         with self._lock:
@@ -174,6 +211,8 @@ class _Heartbeat:
         self._stopped.set()
         self._thread.join(timeout=self._interval + 15)
         self._send("stop")
+        if self._guard is not None and self._guard.stdin is not None:
+            self._guard.stdin.close()
         _atexit.unregister(self.close)
 
     def _run(self) -> None:
@@ -185,6 +224,10 @@ class _Heartbeat:
         payload: dict[str, object] = {"session": self.session, "event": event}
         if self._script is not None and event != "stop":
             payload["script_hash"] = _hash_of_file(self._script)
+        if event != "stop":
+            payload["sdk_hash"] = _watchdog.package_hash(_os.path.dirname(_os.path.abspath(_watchdog.__file__)))
+            if self._guard is not None and self._guard.poll() is not None:
+                self._halt("the sigillo guard process is no longer running")
         body = _json.dumps(payload).encode("utf-8")
         if self._show:
             _show_sent("heartbeat", body.decode("utf-8"))

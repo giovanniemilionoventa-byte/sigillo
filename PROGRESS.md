@@ -3554,6 +3554,95 @@ file li decide il sistema operativo), quindi si mostra e si ferma, non si impedi
   togliere l'SDK; si vede come `lost`. Per renderlo non modificabile serve un altro utente del
   sistema operativo: guida a parte, non nel file.
 
+### Sessione 49 — 2026-10-08 — protezione dell'agente con modalità rigida
+
+Su richiesta del titolare (punto 1 della richiesta di tre migliorie del 2026-10-05): l'agente
+caricato non deve poter modificare il proprio script, disabilitare Sigillo, saltare ricevute o
+accenderlo/spegnerlo. Il modello di utenti onesti resta: niente blocchi impossibili da rompere,
+ma la disattivazione deve richiedere un intervento umano (RULE 1, admin-only finché il titolare
+conferma).
+
+- **Regola 11**: `SIGILLO_AGENT_PROTECTION=operator` di base (solo i sistemi senza organizzazione),
+  `all` dopo il via del titolare, `off` per spegnerla. La configurazione sale dalla CLI fino alle
+  pagine: `config.ts` (funzione `agentProtection()`), `server.ts`, `ui.ts` (`UiOptions`), 
+  `pages.ts` (parametro nelle view). Nessuna UI nuova: il flag scende come `data-protection` 
+  nel dataset dell'elemento che carica lo script, letto dal JavaScript del browser.
+  
+- **SDK**: nuovo parametro `init(strict=True)`. Quando abilitato, l'agente si ferma (uscita 70)
+  se:
+  1. Il server dice che lo script è cambiato (ricevuta `sigillo.script_changed`);
+  2. Tre battiti di fila non arrivano al server (esempio: quando il server è spento o bloccato 
+     dalla rete).
+  Implementato aggiungendo `strict=True,` nella riga di `sigillo.init()` quando 
+  `settings.protection` è vero nel JavaScript lato browser.
+
+- **File modificati**: 
+  - `apps/server/src/config.ts`: nuova funzione `agentProtection()` che valida e restituisce 
+    il valore della variabile d'ambiente `SIGILLO_AGENT_PROTECTION` (off/operator/all), 
+    di default operator.
+  - `apps/server/src/http/agent-setup.ts`: il JavaScript `AGENT_SETUP_SOURCE` legge 
+    `settings.protection` e aggiunge `strict=True,` al `sigillo.init()` quando attivo.
+  - `apps/server/src/http/ui.ts`: `UiOptions` accetta `agentProtection`, funzione helper 
+    `offersProtection()` per controllare se la protezione va offerta al sistema.
+  - `apps/server/src/http/pages.ts`: aggiunta della view `protection` a `connectPage()`, 
+    passata come `data-protection` nel dataset HTML.
+  - `apps/server/src/http/server.ts`: passa `agentProtection` alle opzioni UI.
+  - `apps/server/src/cli.ts`: importa e passa `agentProtection` al server.
+  - `apps/server/test/agent-setup.test.ts`: nuovi test per configurazione, aggiunta di 
+    `strict=True`, verifica della sintassi Python con protezione abilitata.
+
+- **Test**: 19 su 19 pass in `agent-setup.test.ts` (3 nuovi test specifici per la protezione);
+  full suite: 1434 pass, 2 flaky (browser timeouts preesistenti).
+
+- **Cos'è realistico**: impedire modifiche distratte dello script stesso (il modello di utenti 
+  onesti) con un meccanismo semplice e trasparente (hash dello script nel heartbeat, stop se 
+  cambia). Non impedisce un agente che copia il suo script in un altro file prima di modificare 
+  l'originale — questo vorrebbe un controllo a livello di sistema operativo (permessi, altro 
+  utente), che esula dal prodotto.
+
+- **Contro un agente malevolo (stessa sessione, 2026-10-09)**, su richiesta del titolare, senza
+  configurazione per il cliente, solo amministratore (stessa regola 11 della guardia):
+  - ogni battito porta anche `sdk_hash`, lo SHA-256 dei file `.py` del pacchetto sigillo; il server
+    lo guarda insieme all'impronta dello script: un cambiamento dell'uno o dell'altro è un solo
+    `script_changed` (il pacchetto illeggibile conta come cambiamento);
+  - in modalità rigida l'SDK avvia un processo guardiano (`sigillo/_watchdog.py`, solo libreria
+    standard, interprete a parte): ogni 5 secondi rilegge script e pacchetto; se cambiano, manda
+    subito un battito con le impronte nuove (il server scrive `script_changed` all'istante) e
+    uccide l'agente. Si ferma da solo quando l'agente sparisce (chiusura dello standard input,
+    uguale su ogni sistema). Un `on_halt` scelto dal chiamante lo disattiva: non c'è niente da
+    uccidere. Un battito che trova il guardiano morto ferma l'agente rigido;
+  - `lost` e la cronologia c'erano già: se i battiti smettono, il server scrive `lost` con l'ora
+    dell'ultimo battito. Il semaforo per una perdita resta giallo (il design non è stato toccato);
+  - limiti: un agente con gli stessi permessi può togliere le righe di Sigillo, uccidere SDK e
+    guardiano o inviare battiti falsi con la chiave che sta nel file. Resta visibile (`lost`,
+    ricevute già scritte intoccabili), non impedito. Chiuderlo davvero richiede che la chiave del
+    modello stia sul server (gateway), cioè una configurazione: non costruito, decisione al titolare.
+  - La modifica prima del primo avvio non è confrontata con il file esportato (nessuna impronta
+    approvata all'esportazione): il confronto parte dalla prima sessione.
+  - Test: 3 nuovi SDK (processo vero, script modificato, guardiano morto) più 1 sul pacchetto; 2
+    nuovi server.
+
+- **Chiave del modello su Sigillo, al caricamento del file (2026-10-09)**, solo amministratore
+  (stesso interruttore `SIGILLO_AGENT_PROTECTION`, e dove il gateway è aperto): il browser riscrive il
+  file mettendo la chiave Sigillo al posto delle chiavi OpenAI/Anthropic trovate nel testo e
+  `OPENAI_BASE_URL`/`ANTHROPIC_BASE_URL` + `*_API_KEY` in `os.environ` prima di tutto il resto
+  (variabili lette dai due client, verificato con `openai` e `anthropic` veri). La chiave vera
+  torna alla pagina, che mostra un modulo normale (la CSP non ammette richieste dalla pagina) che
+  la salva sigillata con la rotta `POST /ui/systems/:id/llm-key` (rimessa; la sezione «Modello AI»
+  della pagina di gestione non è tornata). Se la chiave non è nel file (`.env`) il campo è vuoto e
+  la incolla il cliente. Il modulo dice di cancellare la vecchia chiave dal fornitore: senza quel
+  passo un agente malevolo può usarla. Gemini non è riscritto automaticamente. Non costruito
+  ancora: modello locale con indirizzo e chiave propri (Ollama su un'altra macchina); serve un
+  cambio di schema nel gateway.
+  Test: 7 nuovi in `agent-setup.test.ts` (riscrittura, falso positivo `task-…`, rotta, regola 11).
+  Su richiesta del titolare è facoltativa e in due tempi: caricato il file, la pagina lo legge e dice
+  cosa usa (modello cloud con il nome del fornitore, oppure nessun modello cloud: gira sul computer);
+  solo per un agente cloud compare la casella «Più sicurezza» (spenta di base, con la spiegazione) e
+  il pulsante «Scarica il file». Senza spunta il file resta com'era, con la sua chiave; con la spunta
+  la chiave esce dal file e va a Sigillo dal modulo. Provato in un Chromium vero con la CSP di
+  produzione (`agent-upload-browser.test.ts`, 3 test).
+
+- **Cosa comprò in righe**: sotto le 100 nel verificatore (non toccato).
 ### Sessione 45 — 2026-10-07 — Claude Code registrato su Sigillo, solo per l'amministratore
 
 Su richiesta del titolare (thread "Collegare Sigillo a Claude Code"): ogni sessione di Claude Code
