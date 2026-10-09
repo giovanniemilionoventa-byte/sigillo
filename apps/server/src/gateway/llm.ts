@@ -86,6 +86,9 @@ const FORWARDED_RESPONSE_HEADER = /^(content-type|retry-after|x-request-id|reque
 
 const MAX_NAME = 256;
 
+/** The paths that list model names (`v1/models`, `v1beta/models/<name>`): nothing of the customer's, so not a receipt each. */
+const MODEL_LIST = /^v1(beta)?\/models(\/[A-Za-z0-9._:-]+)?$/;
+
 /** The action name of a tool the model asked for: `model_requested.send_email`. */
 export const TOOL_REQUEST_PREFIX = "model_requested.";
 
@@ -116,11 +119,14 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
     if (providerKey === null) {
       return reply.code(409).send({ error: `no ${provider} key is set for ${systemId}: add one in the console, on the system's page` });
     }
-    const recorded = request.method === "POST";
+    // Every use of the customer's key is a receipt, so a GET too, which can
+    // read what the key can read (stored files, responses, batch results). The
+    // one exception is the list of model names, which holds nothing of the customer's.
+    const recorded = request.method === "POST" || !MODEL_LIST.test(rest);
     if (recorded && (guards.pausedFor(systemId, reply) || guards.overQuota(systemId, reply))) return reply;
 
     const body = request.method === "POST" ? request.body : undefined;
-    if (recorded && (typeof body !== "object" || body === null)) {
+    if (request.method === "POST" && (typeof body !== "object" || body === null)) {
       return reply.code(415).send({ error: "the gateway carries JSON requests only" });
     }
 
@@ -141,24 +147,6 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
       if (!reply.raw.writableEnded) abort.abort();
     });
 
-    let upstream: Response;
-    try {
-      upstream = await fetch(`${upstreamOf(provider)}/${rest}${query}`, {
-        method: request.method,
-        headers,
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: abort.signal,
-      });
-    } catch (error) {
-      request.log.warn({ system: systemId, provider, err: error }, "the model provider did not answer");
-      return reply.code(502).send({ error: `${provider} did not answer` });
-    }
-
-    const passOn: Record<string, string> = {};
-    upstream.headers.forEach((value, name) => {
-      if (FORWARDED_RESPONSE_HEADER.test(name)) passOn[name] = value;
-    });
-
     const recordTools = options.toolRequests !== undefined && options.toolRequests !== "off" &&
       gatewayAllowed(options.toolRequests, store.systemRecord(systemId)?.organization_id ?? null);
 
@@ -171,7 +159,7 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
         action: { kind: "llm_call", name: rest.slice(0, MAX_NAME) },
         input_hash: null,
         output_hash: null,
-        raw_input: { value: body },
+        ...(body === undefined ? {} : { raw_input: { value: body } }),
         raw_output: { value: parsedOrText(answer) },
         outcome,
         source: { type: "api" },
@@ -197,6 +185,34 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
       }
       return call;
     };
+
+    let upstream: Response;
+    try {
+      upstream = await fetch(`${upstreamOf(provider)}/${rest}${query}`, {
+        method: request.method,
+        headers,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: abort.signal,
+      });
+    } catch (error) {
+      request.log.warn({ system: systemId, provider, err: error }, "the model provider did not answer");
+      // The call may have reached the provider before it failed or before the
+      // agent went away (a dropped connection stops the fetch, not the
+      // provider): it is recorded, as of unknown outcome.
+      if (recorded) {
+        try {
+          await record("", "unknown", false);
+        } catch (recordError) {
+          request.log.error({ system: systemId, provider, err: recordError }, "a model call that may have reached the provider could not be recorded");
+        }
+      }
+      return reply.code(502).send({ error: `${provider} did not answer` });
+    }
+
+    const passOn: Record<string, string> = {};
+    upstream.headers.forEach((value, name) => {
+      if (FORWARDED_RESPONSE_HEADER.test(name)) passOn[name] = value;
+    });
 
     if (!recorded) {
       return reply.code(upstream.status).headers(passOn).send(Buffer.from(await upstream.arrayBuffer()));
