@@ -199,8 +199,16 @@ const ui = {
     newKey: (name: string): string => `Nuova chiave per ${name}`,
     heading: "Collega il tuo agente",
     title: (name: string): string => `Collega ${name}`,
-    ways: { python: "SDK Python" },
+    ways: { python: "SDK Python", claudeCode: "Claude Code" },
     pasteAtTop: "Incolla questo all'inizio del file Python del tuo agente:",
+    claudeCodeRun: "Incolla la riga per il tuo sistema, poi riavvia Claude Code. Scrive Connected quando è andata bene.",
+    claudeSystems: {
+      windows: "Windows (PowerShell)",
+      mac: "macOS (Terminale)",
+      linux: "Linux (terminale)",
+      cloud: "Claude Code nel cloud (lo script di setup dell'ambiente)",
+    },
+    claudeCloudNote: "Per il cloud, apri le impostazioni dell'ambiente in Claude Code, incolla la riga in Script di setup e aggiungi l'indirizzo di questo server ai domini permessi di Accesso alla rete.",
     keyPlaceholder: "<la-chiave-del-sistema>",
     waiting: "In attesa della prima ricevuta…",
     check: "Controlla",
@@ -224,6 +232,21 @@ const ui = {
       modelRevoke: "Poi cancella la vecchia chiave dal sito del fornitore: se resta valida, un agente che volesse potrebbe usarla senza passare da sigillo.",
       modelSave: "Salva la chiave",
     },
+  },
+  transfer: {
+    linkTitle: (name: string): string => `Link di trasferimento per ${name}`,
+    linkIntro: "Mandalo a chi deve ricevere il sistema. Lo vedi solo ora: dopo non è più recuperabile, ma puoi crearne un altro.",
+    linkLabel: "Link di trasferimento",
+    linkExpires: (when: string): string => `Vale fino al ${when}, una volta sola. Dopo il trasferimento perdi l'accesso al sistema.`,
+    back: "Torna alle impostazioni",
+    acceptTitle: "Aggiungi al tuo account",
+    acceptIntro: (name: string, account: string): string => `Il sistema «${name}» passerà all'account ${account}, con tutta la sua cronologia.`,
+    acceptSubmit: "Aggiungi al mio account",
+    done: (name: string): string => `«${name}» ora è nel tuo account.`,
+    invalidTitle: "Link non valido",
+    invalid: "Questo link non è più valido: è scaduto, è già stato usato o è stato annullato. Chiedi un nuovo link a chi te l'ha mandato.",
+    operator: "Questo link va aperto con l'account di un cliente, non con quello dell'amministratore.",
+    alreadyYours: "Questo sistema è già nel tuo account.",
   },
   manage: {
     nameTitle: "Nome",
@@ -251,6 +274,12 @@ const ui = {
     deleteSubmit: "Elimina definitivamente",
     deleteRefused: (receipts: number): string =>
       `Contiene ${receipts - 1} ${receipts - 1 === 1 ? "azione registrata" : "azioni registrate"}: si può solo archiviare.`,
+    transferTitle: "Passa a un altro account",
+    transferIntro: "Crea un link: chi lo apre accede al proprio account e il sistema passa a lui. Il link vale una volta sola e per sette giorni.",
+    transferSubmit: "Crea link di trasferimento",
+    transferOpen: "C'è già un link aperto. Crearne uno nuovo annulla quello vecchio.",
+    transferRevoke: "Annulla il link",
+    transferRevoked: "Link annullato.",
     confirmMismatch: "Il testo scritto non corrisponde all'identificativo del sistema: niente è stato eliminato.",
   },
   settings: {
@@ -290,6 +319,8 @@ const ui = {
     fromLabel: "Dal",
     toLabel: "Al",
     nameLabel: "Nome azione",
+    agentLabel: "Agente o sessione",
+    allAgents: "Tutti",
     // The filter by kind, one segment each, with "Tutte" first.
     filterLabel: "Filtra per tipo",
     allKinds: "Tutte",
@@ -450,6 +481,7 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "organization.approve": "organizzazione approvata",
   "user.register": "nuova registrazione",
   "system.assign": "assegnato a un'organizzazione",
+  "system.transfer.create": "creato un link di trasferimento",
 };
 
 /** The server's own receipts for the SDK heartbeat (connection/watch.ts): a title and a sentence each. */

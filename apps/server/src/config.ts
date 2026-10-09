@@ -214,6 +214,47 @@ export function firebaseAccounts(env: Environment): { apiKey: string; projectId:
 }
 
 /**
+ * SIGILLO_CLAUDE_CODE: whose systems accept actions from Claude Code's hooks
+ * (sdk-python/src/sigillo/claude_code.py), and see that way on the connect
+ * page. `off`, `operator` (the default: new, so the administrator's own
+ * systems only, CLAUDE.md rule 11) or `all`.
+ */
+export function claudeCode(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_CLAUDE_CODE"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_CLAUDE_CODE must be off, operator or all, received ${JSON.stringify(value)}`);
+}
+
+/**
+ * SIGILLO_TRANSFER: whose systems can be handed to another account with a
+ * link (the "Transfer" block of a system's settings). `off`, `operator` (the
+ * default: new, so the administrator's own systems only, CLAUDE.md rule 11)
+ * or `all`. Accepting a link is never switched: a link only exists if this
+ * allowed it to be made.
+ */
+export function transfer(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_TRANSFER"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_TRANSFER must be off, operator or all, received ${JSON.stringify(value)}`);
+}
+
+/**
+ * SIGILLO_PLAIN_AGENTS: whose agents with no framework are recorded from the
+ * standard library's own calls (the SDK's "stdlib" instrumentation: urllib,
+ * file writes), in the file "upload your agent" gives back, and whose systems
+ * accept that. `off`, `operator` (the default: new, so the administrator's own
+ * systems only, CLAUDE.md rule 11) or `all`.
+ */
+export function plainAgents(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_PLAIN_AGENTS"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_PLAIN_AGENTS must be off, operator or all, received ${JSON.stringify(value)}`);
+}
+
+/**
  * SIGILLO_SCRIPT_GUARD: whose agents' main script the heartbeat watches
  * (connection/watch.ts). `off`, `operator` (the default: new, so the
  * administrator's own systems only, CLAUDE.md rule 11) or `all`.

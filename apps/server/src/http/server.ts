@@ -15,6 +15,9 @@ import type { ReceiptStore } from "../storage/store.js";
 import type { UiSessions } from "../auth/sessions.js";
 import { registerUi, type UiOptions } from "./ui.js";
 
+/** The resource attribute a connector names itself under (sdk-python/src/sigillo/claude_code.py). */
+const CLIENT_ATTRIBUTE = "sigillo.client";
+
 /**
  * The ingest surface.
  *
@@ -74,6 +77,23 @@ export interface ServerOptions {
    * default: systems with no organization, CLAUDE.md rule 11) or `all`.
    */
   scriptGuard?: "off" | "operator" | "all";
+  /**
+   * Whose systems accept spans from the Claude Code connector (resource
+   * attribute sigillo.client=claude-code), and see it on the connect page:
+   * `off`, `operator` (the default, CLAUDE.md rule 11) or `all`.
+   */
+  claudeCode?: "off" | "operator" | "all";
+  /**
+   * Whose systems can be handed to another account with a link: `off`,
+   * `operator` (the default, CLAUDE.md rule 11) or `all`.
+   */
+  transfer?: "off" | "operator" | "all";
+  /**
+   * Whose systems accept spans from the SDK's "stdlib" instrumentation
+   * (resource attribute sigillo.client=stdlib), and are given it by "upload
+   * your agent": `off`, `operator` (the default, CLAUDE.md rule 11) or `all`.
+   */
+  plainAgents?: "off" | "operator" | "all";
   /** The model gateway (gateway/llm.ts). Not given: /llm/* is not served. */
   gateway?: GatewayOptions;
   /**
@@ -364,11 +384,24 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.ui.agentUpload === undefined ? {} : { agentUpload: options.ui.agentUpload }),
       ...(options.gateway === undefined ? {} : { gateway: options.gateway }),
       ...(options.ui.agentProtection === undefined ? {} : { agentProtection: options.ui.agentProtection }),
+      claudeCode: options.claudeCode ?? "operator",
+      transfer: options.transfer ?? "operator",
+      plainAgents: options.plainAgents ?? "operator",
       ...(options.organizationMonthlyReceipts === undefined
         ? {}
         : { organizationMonthlyReceipts: options.organizationMonthlyReceipts }),
     });
   }
+
+  const claudeCodeMode = options.claudeCode ?? "operator";
+  const claudeCodeOpenTo = (systemId: string): boolean =>
+    claudeCodeMode === "all" ||
+    (claudeCodeMode === "operator" && (store.systemRecord(systemId)?.organization_id ?? null) === null);
+
+  const plainAgentsMode = options.plainAgents ?? "operator";
+  const plainAgentsOpenTo = (systemId: string): boolean =>
+    plainAgentsMode === "all" ||
+    (plainAgentsMode === "operator" && (store.systemRecord(systemId)?.organization_id ?? null) === null);
 
   app.post("/v1/traces", async (request, reply) => {
     const systemId = await authenticate(request);
@@ -389,6 +422,16 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         return reply.code(400).send({ error: error.message });
       }
       throw error;
+    }
+
+    // The Claude Code connector says who it is on the resource; it is new, so
+    // only the systems it is opened to may use it (CLAUDE.md rule 11).
+    if (spans.some((span) => span.resource.get(CLIENT_ATTRIBUTE) === "claude-code") && !claudeCodeOpenTo(systemId)) {
+      return reply.code(403).send({ error: "Claude Code is not enabled for this account yet" });
+    }
+
+    if (spans.some((span) => span.resource.get(CLIENT_ATTRIBUTE) === "stdlib") && !plainAgentsOpenTo(systemId)) {
+      return reply.code(403).send({ error: "recording agents without a framework is not enabled for this account yet" });
     }
 
     const batch = adaptSpans(spans);

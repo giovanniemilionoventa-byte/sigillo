@@ -3554,7 +3554,7 @@ file li decide il sistema operativo), quindi si mostra e si ferma, non si impedi
   togliere l'SDK; si vede come `lost`. Per renderlo non modificabile serve un altro utente del
   sistema operativo: guida a parte, non nel file.
 
-### Sessione 45 — 2026-10-08 — protezione dell'agente con modalità rigida
+### Sessione 49 — 2026-10-08 — protezione dell'agente con modalità rigida
 
 Su richiesta del titolare (punto 1 della richiesta di tre migliorie del 2026-10-05): l'agente
 caricato non deve poter modificare il proprio script, disabilitare Sigillo, saltare ricevute o
@@ -3643,6 +3643,68 @@ conferma).
   produzione (`agent-upload-browser.test.ts`, 3 test).
 
 - **Cosa comprò in righe**: sotto le 100 nel verificatore (non toccato).
+### Sessione 45 — 2026-10-07 — Claude Code registrato su Sigillo, solo per l'amministratore
+
+Su richiesta del titolare (thread "Collegare Sigillo a Claude Code"): ogni sessione di Claude Code
+diventa una serie di ricevute, senza scrivere codice.
+- **SDK**: nuovo comando `sigillo-claude-code connect --endpoint … --key …` (modulo
+  `sigillo.claude_code`). Manda una prima ricevuta per controllare la chiave, salva endpoint e chiave
+  in `~/.sigillo/claude-code.json` (solo il proprietario) e aggiunge cinque hook alle impostazioni
+  utente di Claude Code: inizio sessione, prompt, strumento riuscito, strumento fallito, fine
+  sessione. Contenuti solo come hash salati, come nel resto dell'SDK. `disconnect` scrive
+  `claude_code.disconnected` e toglie solo i propri hook.
+- **Server**: gli span con `sigillo.client=claude-code` sulla risorsa sono accettati solo dove
+  `SIGILLO_CLAUDE_CODE` lo permette, altrimenti 403. Nessun cambio al formato delle ricevute.
+- **Console**: nella pagina «Collega», accanto a «SDK Python», la scheda «Claude Code» con i due
+  comandi da copiare (chiave inclusa), solo per i sistemi aperti.
+- **Regola 11**: `SIGILLO_CLAUDE_CODE=operator` di base, `all` dopo il via del titolare, `off` per
+  spegnerlo.
+- **Provato davvero**: server e firmatario reali, Claude Code 2.1 reale che scrive un file, lo legge
+  con Bash e fallisce una lettura: 7 ricevute (connessione, inizio, prompt, Write, Bash, Read in
+  errore, fine), nessun testo in chiaro nel database, l'archivio esportato si verifica.
+- **Limite detto chiaramente**: chi può modificare le impostazioni di Claude Code può togliere gli
+  hook. Cowork, da una segnalazione pubblica, oggi non esegue gli hook dei plugin: non è coperto.
+- **Verificatore**: non toccato.
+
+### Sessione 46 — 2026-10-07 — Claude Code: una riga sola, uguale in locale e nel cloud
+
+Il titolare ha provato il comando su Windows: `sigillo-claude-code` non era nel PATH (la cartella
+degli script di pip non c'è). La scheda «Claude Code» della console ora mostra una sola riga,
+`python -m pip install … && python -m sigillo.claude_code connect --endpoint … --key …`, che
+funziona in un terminale (Windows compreso) e, per Claude Code nel cloud, incollata nello script di
+setup dell'ambiente (che deve permettere il dominio di Sigillo). Solo per l'amministratore,
+`SIGILLO_CLAUDE_CODE`. Il titolare ha poi chiesto le righe distinte per sistema: la scheda ora ha quattro riquadri
+(Windows PowerShell con `;` perché PowerShell 5 non ha `&&`, macOS, Linux, cloud). `pip install
+--upgrade` e SDK a 0.2.0: la sua prova dava «No module named sigillo.claude_code» perché pip aveva
+tenuto la 0.1.0 già installata. Da provare dal titolare: il cloud non è stato verificato qui.
+
+### Sessione 47 — 2026-10-07 — le sessioni di Claude Code si distinguono nel Registro
+
+Il titolare ha provato Claude Code sul suo PC: funziona, ma le sessioni erano tutte sotto lo stesso
+agente «claude-code». Ora ogni sessione è un agente a sé: «Claude Code · cartella del progetto ·
+primi 8 caratteri dell'id di sessione» (solo l'ultimo nome della cartella, mai il percorso: è
+l'unica cosa inviata oltre agli hash). Nel Registro, quando le ricevute vengono da più agenti, ogni
+tratto dello stesso agente ha un titoletto col suo nome; con un agente solo la lista è identica a
+prima. Nella pagina «Collega» restano Windows, macOS e Linux; la riga per il cloud è stata tolta
+(il cloud si vedrà più avanti).
+
+### Sessione 48 — 2026-10-07 — più sessioni di Claude Code insieme, e la riga per il cloud
+
+Il titolare ha visto che con più sessioni aperte insieme il Registro non si legge, e ha richiesto il
+cloud.
+- **Più sessioni insieme**: provate tre sessioni simultanee contro un server e un firmatario veri
+  (33 ricevute su 33, nessun errore): la perdita non c'è lato server. Il problema era la lettura:
+  le ricevute si alternano, e il Registro non permetteva di isolarne una. Nuovo filtro «Agente o
+  sessione» nel pannello di ricerca del Registro (compare con più di un agente; elenca gli agenti
+  degli ultimi 2000 ricevute con quante ne hanno scritte; `?agent=`); la lista filtrata non ha
+  titoletti. `ReceiptStore.recentAgents` e il filtro `agent` (SQLite `json_extract` sul canonico),
+  consentiti all'organizzazione solo sui suoi sistemi (`tenancy.ts`). Nessuna migrazione.
+- **Cloud**: provato in una sessione cloud vera che un hook scritto in `~/.claude/settings.json`
+  parte (e si ricarica a sessione aperta). La scheda «Collega» ha di nuovo il riquadro per il cloud,
+  per lo Script di setup dell'ambiente; la riga finisce con `|| echo …` perché un setup che fallisce
+  non deve impedire all'ambiente di partire. Da verificare dal titolare: che l'ambiente conservi
+  quanto scritto dallo script, e il dominio permesso nella rete.
+- **Regola 11**: sempre sotto `SIGILLO_CLAUDE_CODE=operator`.
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)
 
@@ -3754,3 +3816,65 @@ Caddy non c'è TLS, quindi non ci si mandano dati veri.
 - La TSA: `TSA_URL` punta di default a FreeTSA, che **non è qualificata eIDAS**. Se FreeTSA è giù,
   il checkpoint viene comunque salvato e firmato e il token viene preso al giro successivo — è un
   comportamento voluto, non un errore.
+
+## Agente senza framework: niente avviso su crewai (2026-10-08)
+
+Segnalazione: un agente configurato da «carica agente» stampava «crewai instrumentation was requested
+but is not installed». Causa: per un file senza framework il configuratore scriveva `sigillo.init(...)`
+senza `instrument=`, e il default dell'SDK era provarle tutte e tre, avvisando per ogni mancante.
+
+- SDK 0.3.0: senza `instrument=` attiva quello che trova e tace sul resto; avvisa solo se richiesto
+  esplicitamente. Un'integrazione installata che non parte ora dice l'errore vero, non «non installata».
+- Configuratore: scrive sempre `instrument=[...]` (anche vuoto). Il file scaricato aggiorna da solo un
+  sigillo installato prima della 0.3 (pip `--upgrade`) e si rilancia, quindi al cliente basta
+  riscaricare il file e avviarlo: nessun comando a mano.
+- Costo: circa 10 righe in più nel file generato, nessuna nel verificatore.
+
+## Agente senza framework: registrare chiamate al modello, ricerche e file (2026-10-08)
+
+Segnalazione: un agente fatto solo di libreria standard (`urllib` verso Ollama e per la ricerca web,
+`pathlib` per scrivere i file) si collegava («Agent connected») ma nella cronologia non compariva
+nessuna azione: senza LangChain, CrewAI o OpenAI non c'è nulla a cui agganciare una strumentazione.
+
+- SDK 0.4.0, nuova strumentazione `instrument=["stdlib"]` (`sdk-python/src/sigillo/_stdlib.py`):
+  aggancia `urllib.request.urlopen` (indirizzo di un modello Ollama/OpenAI/Anthropic/Gemini = chiamata
+  al modello col nome del modello; qualunque altro indirizzo = chiamata a strumento col solo host),
+  `Path.write_text`/`write_bytes` e `open()` in scrittura (strumento `write_file`). Indirizzo, corpo
+  della richiesta, percorso e testo scritto passano dal filtro dei contenuti dell'SDK: partono solo
+  come hash salati, mai in chiaro (`show_sent` lo mostra). Non registra le chiamate della libreria
+  standard, dei pacchetti installati e dell'SDK stesso (heartbeat). Resta attiva solo se nominata:
+  il default di `init` non cambia.
+- Configuratore («carica agente»): per un file senza framework riconosciuto scrive
+  `instrument=["stdlib"]` invece di `[]`, e il controllo di versione nel file passa a 0.4 (un SDK 0.3
+  già installato viene aggiornato da solo, altrimenti `init` rifiuterebbe il nome nuovo).
+- Regola 11: interruttore `SIGILLO_PLAIN_AGENTS=operator|all|off`, default `operator`. Per i clienti il
+  configuratore continua a scrivere `[]` e il server rifiuta (403) le azioni con
+  `sigillo.client=stdlib`. Si apre a tutti solo dopo il via del proprietario.
+- Limiti noti: la risposta del modello non è registrata (l'agente la legge dopo `urlopen`), solo la
+  richiesta; `subprocess` non è agganciato; chi aveva già scaricato il file con `instrument=[]` deve
+  ricaricare l'originale dalla console.
+- Verifica: `mondis.py` allegato, con un Ollama finto e un server vero (firmatore, esportazione e
+  verificatore veri): 7 ricevute (ricerca, 2 chiamate al modello, scrittura file), nessun testo in chiaro.
+- Costo: nessuna riga nel verificatore.
+
+## Passare un sistema a un altro account con un link (2026-10-08)
+
+Per le software house che configurano gli agenti per i loro clienti: la software house crea il sistema e il file .py, poi manda al cliente un link; il cliente accede al proprio account e il sistema passa a lui. Solo per l'amministratore (CLAUDE.md, regola 11).
+
+- Nelle impostazioni di un sistema, blocco «Passa a un altro account»: crea un link che vale una volta sola e sette giorni. Si vede solo alla creazione; nel database resta solo il suo SHA-256 (`transfer_links`). Un nuovo link annulla il precedente; si può anche annullare.
+- Chi apre `/ui/trasferimento/<segreto>` senza essere entrato viene mandato al login, con il link tenuto in un cookie sigillato (30 minuti, SameSite=Lax per il ritorno da Google); dopo l'accesso torna al link, vede «Aggiungi al tuo account» e conferma con un pulsante (la GET non cambia nulla).
+- Accettare sposta `systems.organization_id` (come `sigillo-server system assign`) e registra `system.assign` nel registro amministrativo; la catena non si tocca e la chiave dell'agente continua a funzionare (il nuovo proprietario può cambiarla). Solo un'organizzazione approvata può accettare; l'amministratore no.
+- Interruttore `SIGILLO_TRANSFER=off|operator|all`, predefinito `operator`: decide di chi sono i sistemi che mostrano il blocco e accettano di creare link. Accettare un link non ha interruttore, perché esiste solo se è stato creato.
+- Non cambia il formato delle ricevute. Il verificatore non è toccato.
+- Test: `apps/server/test/transfer.test.ts` (12) e un caso in `accounts.test.ts` per il percorso login → link → sistema passato.
+- Non fatto: gli spazi per cliente finale dentro l'account della software house (`strategia/SOFTWARE-HOUSE-MODELLO-PARTNER.md`, opzione A) e il link di sola lettura (opzione C).
+
+## Agenti senza framework: anche `requests` e `httpx` (2026-10-08)
+
+Seguito della richiesta del proprietario («qualsiasi agente Python, sempre con lo stesso metodo»):
+la strumentazione `stdlib` aggancia ora anche `requests` (`Session.send`) e `httpx` (`Client.send`,
+`AsyncClient.send`) se installati, con la stessa regola di `urllib` (modello noto = chiamata al modello,
+altro = chiamata a strumento col solo host; indirizzo e corpo solo come hash). Nessuna modifica al
+configuratore né al server: il metodo resta caricare il file .py e riscaricarlo; resta valido
+l'interruttore `SIGILLO_PLAIN_AGENTS`. Non coperti: `aiohttp`, gli SDK dei provider che non passano da
+queste librerie, `subprocess`.

@@ -83,12 +83,16 @@ from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
 from . import _text, _watchdog
 
 __all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"]
-__version__ = "0.1.0"
+__version__ = "0.4.0"
 
 _LOG = _logging.getLogger("sigillo")
 _TRACES_PATH = "/v1/traces"
 _HEARTBEAT_PATH = "/api/v1/heartbeat"
-_SUPPORTED = ("langchain", "crewai", "openai")
+# What `init` tries when `instrument=` is not given. "stdlib" (see _stdlib.py)
+# is not among them: it hooks urllib and file writing in the whole process, so
+# it is turned on only by naming it.
+_DEFAULT_INSTRUMENT = ("langchain", "crewai", "openai")
+_SUPPORTED = _DEFAULT_INSTRUMENT + ("stdlib",)
 _ARTIFACT_ROLES = ("input", "output")
 # Both dialects an LLM span's model name arrives under, tried in order.
 _MODEL_NAME_ATTRIBUTES = ("gen_ai.request.model", "gen_ai.response.model", "llm.model_name")
@@ -340,9 +344,13 @@ def _heartbeat_endpoint(traces_endpoint: str) -> str:
     return traces_endpoint[: -len(_TRACES_PATH)] + _HEARTBEAT_PATH
 
 
-def _instrument(name: str, provider: _TracerProvider) -> bool:
+def _instrument(name: str, provider: _TracerProvider, requested: bool) -> bool:
     try:
-        if name == "langchain":
+        if name == "stdlib":
+            from . import _stdlib
+
+            _stdlib.install(provider)
+        elif name == "langchain":
             from openinference.instrumentation.langchain import LangChainInstrumentor
 
             LangChainInstrumentor().instrument(tracer_provider=provider)
@@ -354,13 +362,34 @@ def _instrument(name: str, provider: _TracerProvider) -> bool:
             from openinference.instrumentation.openai import OpenAIInstrumentor
 
             OpenAIInstrumentor().instrument(tracer_provider=provider)
-    except ImportError:
-        _LOG.warning(
-            "sigillo: %s instrumentation was requested but is not installed; "
-            "install it with: pip install openinference-instrumentation-%s",
-            name,
-            name,
-        )
+    except ImportError as error:
+        # Only a missing instrumentation package is "not installed". An import
+        # that fails inside it, or inside the framework it wraps (a DLL that
+        # will not load, a dependency of the wrong version), is a different
+        # problem, and saying "install it" would send the reader the wrong way.
+        #
+        # When `instrument=` was not given, every instrumentation is only tried:
+        # one that is absent or will not start is not something the caller asked
+        # for, so it is noted at debug level and nothing is printed.
+        missing = isinstance(error, ModuleNotFoundError) and (error.name or "").startswith("openinference")
+        if not requested:
+            _LOG.debug("sigillo: %s instrumentation not turned on (%s: %s)", name, type(error).__name__, error)
+        elif missing:
+            _LOG.warning(
+                "sigillo: %s instrumentation was requested but is not installed; "
+                "install it with: pip install openinference-instrumentation-%s",
+                name,
+                name,
+            )
+        else:
+            _LOG.warning(
+                "sigillo: %s instrumentation is installed but could not start (%s: %s); "
+                "the agent runs, but its %s calls are not recorded",
+                name,
+                type(error).__name__,
+                error,
+                name,
+            )
         return False
     return True
 
@@ -614,7 +643,7 @@ def init(
     endpoint: str,
     api_key: str,
     system_id: str,
-    instrument: _Sequence[str] = _SUPPORTED,
+    instrument: _Sequence[str] | None = None,
     ollama_url: str | None = None,
     redact_content: bool = True,
     salt_content: bool = True,
@@ -630,9 +659,14 @@ def init(
         api_key: the key issued with `sigillo-server key create`. It decides
             which system's chain the receipts join.
         system_id: reported as `service.name`.
-        instrument: which OpenInference instrumentations to enable. One that is
-            not installed is skipped with a warning, not an error, so that a
-            deployment with only LangChain does not have to install CrewAI.
+        instrument: which instrumentations to enable: "langchain", "crewai",
+            "openai", and "stdlib" for an agent with no framework, which
+            records its `urllib` calls (a model server, a web search) and its
+            file writes, as digests. Left out, every OpenInference one that is
+            installed is turned on and the others are passed over in silence;
+            "stdlib" is only on when named. Named explicitly, one that is not installed is
+            skipped with a warning, not an error, so that a deployment with
+            only LangChain does not have to install CrewAI.
         ollama_url: when given, `GET {ollama_url}/api/tags` is read once, here,
             and the digest of the model actually used is added to each LLM
             span as `sigillo.model.digest`. If Ollama does not answer, `init`
@@ -696,6 +730,9 @@ def init(
     if not heartbeat_seconds > 0:
         raise ValueError("heartbeat_seconds must be a positive number of seconds")
 
+    requested = instrument is not None
+    if instrument is None:
+        instrument = _DEFAULT_INSTRUMENT
     unknown = [name for name in instrument if name not in _SUPPORTED]
     if unknown:
         raise ValueError(
@@ -703,7 +740,11 @@ def init(
         )
 
     traces_endpoint = _traces_endpoint(endpoint)
-    provider = _TracerProvider(resource=_Resource.create({"service.name": system_id}))
+    resource = {"service.name": system_id}
+    if "stdlib" in instrument:
+        # Says who is sending, so that the server can keep this to the accounts it is opened to.
+        resource["sigillo.client"] = "stdlib"
+    provider = _TracerProvider(resource=_Resource.create(resource))
 
     if ollama_url:
         provider.add_span_processor(_ModelDigestProcessor(_fetch_ollama_digests(ollama_url)))
@@ -719,7 +760,7 @@ def init(
     # Instrumentations are attached to this provider explicitly, so they keep
     # working even where the global provider was already set by something else.
     _trace.set_tracer_provider(provider)
-    instrumented = tuple(name for name in instrument if _instrument(name, provider))
+    instrumented = tuple(name for name in instrument if _instrument(name, provider, requested))
 
     heartbeat = _Heartbeat(
         _heartbeat_endpoint(traces_endpoint), api_key, heartbeat_seconds, show=show_sent, strict=strict, on_halt=on_halt

@@ -99,7 +99,7 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, in a real browse
     await download.saveAs(saved);
     const text = readFileSync(saved, "utf8");
     expect(text.startsWith('"""My agent."""\n\ntry:\n    import sigillo\n    import openinference.instrumentation.crewai\n')).toBe(true);
-    expect(text).toContain(`"--quiet", "sigillo[crewai] @ https://github.com/`);
+    expect(text).toContain(`"--quiet", "--upgrade", "sigillo[crewai] @ https://github.com/`);
     expect(text).toContain(`    api_key="${key}",\n`);
     expect(text).toContain(`    system_id="${SYSTEM}",\n`);
     expect(text).toContain('    instrument=["crewai"],\n');
@@ -108,7 +108,7 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, in a real browse
     expect(await page.isVisible("#sigillo-agent-done")).toBe(true);
     expect(await page.textContent("#sigillo-agent-done")).toContain("my_agent.py");
     // The commands below are the other way, by hand: the upload leaves them as they were.
-    expect(await page.textContent(".code.install")).toMatch(/^pip install "sigillo\[langchain\] @ https:\/\/github\.com\//);
+    expect(await page.textContent(".code.python.install")).toMatch(/^pip install "sigillo\[langchain\] @ https:\/\/github\.com\//);
     // The file went nowhere: no request at all while it was handled.
     expect(requests).toEqual([]);
     expect(problems).toEqual([]);

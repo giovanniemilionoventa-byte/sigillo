@@ -191,8 +191,16 @@ const ui: Strings = {
     newKey: (name: string): string => `New key for ${name}`,
     heading: "Connect your agent",
     title: (name: string): string => `Connect ${name}`,
-    ways: { python: "Python SDK" },
+    ways: { python: "Python SDK", claudeCode: "Claude Code" },
     pasteAtTop: "Paste this at the top of your agent's Python file:",
+    claudeCodeRun: "Paste the line for your system, then restart Claude Code. It prints Connected when it worked.",
+    claudeSystems: {
+      windows: "Windows (PowerShell)",
+      mac: "macOS (Terminal)",
+      linux: "Linux (terminal)",
+      cloud: "Claude Code in the cloud (the environment's setup script)",
+    },
+    claudeCloudNote: "For the cloud, open the environment's settings in Claude Code, paste the line in Setup script, and add this server's address to the allowed domains of Network access.",
     keyPlaceholder: "<the-system-key>",
     waiting: "Waiting for the first receipt…",
     check: "Check",
@@ -216,6 +224,21 @@ const ui: Strings = {
       modelRevoke: "Then delete the old key at the provider, or an agent that wanted to could still use it without sigillo.",
       modelSave: "Save the key",
     },
+  },
+  transfer: {
+    linkTitle: (name: string): string => `Transfer link for ${name}`,
+    linkIntro: "Send it to whoever should receive the system. You see it only now: it cannot be shown again, but you can create another.",
+    linkLabel: "Transfer link",
+    linkExpires: (when: string): string => `Works until ${when}, once. After the transfer you lose access to the system.`,
+    back: "Back to settings",
+    acceptTitle: "Add to your account",
+    acceptIntro: (name: string, account: string): string => `The system “${name}” will move to the account ${account}, with all its history.`,
+    acceptSubmit: "Add to my account",
+    done: (name: string): string => `“${name}” is now in your account.`,
+    invalidTitle: "Link not valid",
+    invalid: "This link is no longer valid: it has expired, been used, or been cancelled. Ask whoever sent it for a new one.",
+    operator: "This link must be opened with a customer's account, not the administrator's.",
+    alreadyYours: "This system is already in your account.",
   },
   manage: {
     nameTitle: "Name",
@@ -243,6 +266,12 @@ const ui: Strings = {
     deleteSubmit: "Delete permanently",
     deleteRefused: (receipts: number): string =>
       `It holds ${receipts - 1} recorded ${receipts - 1 === 1 ? "action" : "actions"}: it can only be archived.`,
+    transferTitle: "Hand over to another account",
+    transferIntro: "Create a link: whoever opens it signs in to their own account and the system moves to it. The link works once and for seven days.",
+    transferSubmit: "Create transfer link",
+    transferOpen: "A link is already open. Creating a new one cancels the old one.",
+    transferRevoke: "Cancel the link",
+    transferRevoked: "Link cancelled.",
     confirmMismatch: "The text you typed does not match the system identifier: nothing was deleted.",
   },
   settings: {
@@ -282,6 +311,8 @@ const ui: Strings = {
     fromLabel: "From",
     toLabel: "To",
     nameLabel: "Action name",
+    agentLabel: "Agent or session",
+    allAgents: "All",
     filterLabel: "Filter by kind",
     allKinds: "All",
     kinds: {
@@ -403,6 +434,7 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "organization.approve": "organization approved",
   "user.register": "new sign-up",
   "system.assign": "assigned to an organization",
+  "system.transfer.create": "transfer link created",
 };
 
 /** The server's own receipts for the SDK heartbeat (connection/watch.ts): a title and a sentence each. */

@@ -27,6 +27,7 @@ interface Added {
   status: "added";
   text: string;
   frameworks: string[];
+  instrument: string[];
   install: string;
 }
 type Result = Added | { status: "already" };
@@ -36,6 +37,7 @@ const SETTINGS = {
   key: "sigillo_abc_def",
   system: "cv-bot",
   url: "https://github.com/giovanniemilionoventa-byte/sigillo/archive/refs/heads/main.zip#subdirectory=sdk-python",
+  stdlib: false,
 };
 
 const setup = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: typeof SETTINGS) => Result;
@@ -53,19 +55,24 @@ function parses(text: string): boolean {
   return spawnSync("python3", ["-c", "import ast, sys; ast.parse(sys.stdin.read())"], { input: text }).status === 0;
 }
 
-/** The lines that install the SDK the first time the file runs, for these instrumentations. */
+/** The lines that install the SDK, or a newer one, the first time the file runs, for these instrumentations. */
 const BOOTSTRAP = (extras: string, modules: string[]): string[] => [
   "try:",
   "    import sigillo",
   ...modules.map((name) => `    import openinference.instrumentation.${name}`),
+  "    import importlib.metadata",
+  '    if tuple(map(int, importlib.metadata.version("sigillo").split(".")[:2])) < (0, 4):',
+  '        raise ImportError("sigillo is too old")',
   "except ImportError:",
-  "    import importlib",
+  "    import os",
   "    import subprocess",
   "    import sys",
   "",
-  `    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "sigillo${extras} @ ${SETTINGS.url}"])`,
-  "    importlib.invalidate_caches()",
-  "    import sigillo",
+  '    if os.environ.get("SIGILLO_SETUP_DONE"):',
+  "        raise",
+  `    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "--upgrade", "sigillo${extras} @ ${SETTINGS.url}"])`,
+  '    os.environ["SIGILLO_SETUP_DONE"] = "1"',
+  "    raise SystemExit(subprocess.call([sys.executable, *sys.argv]))",
   "",
 ];
 
@@ -104,7 +111,8 @@ describe("adding sigillo to an agent's file", () => {
     const result = added(source);
     const lines = result.text.split("\n");
     expect(lines.slice(0, 11)).toEqual(source.split("\n").slice(0, 11));
-    expect(lines.slice(11, 29)).toEqual(["", ...BOOTSTRAP("[crewai]", ["crewai"]), ...INIT, '    instrument=["crewai"],']);
+    const block = ["", ...BOOTSTRAP("[crewai]", ["crewai"]), ...INIT, '    instrument=["crewai"],'];
+    expect(lines.slice(11, 11 + block.length)).toEqual(block);
     expect(result.text.endsWith(")\n\nimport crewai\n")).toBe(true);
     if (python) expect(parses(result.text)).toBe(true);
   });
@@ -129,14 +137,29 @@ describe("adding sigillo to an agent's file", () => {
     expect(added("from openai import OpenAI\n").install).toBe(`pip install "sigillo[openai] @ ${SETTINGS.url}"`);
   });
 
-  it("leaves the instrumentations to the SDK's default where it finds none, and says the plain package", () => {
+  it("asks for no instrumentation where it finds no framework, and says the plain package", () => {
     const result = added("import requests\nprint(requests.get('https://example.com'))\n");
     expect(result.frameworks).toEqual([]);
-    expect(result.text).not.toContain("instrument=");
+    expect(result.text).toContain("    instrument=[],\n");
     expect(result.text).not.toContain("openinference");
-    expect(result.text).toContain(`"--quiet", "sigillo @ ${SETTINGS.url}"])`);
+    expect(result.text).toContain(`"--quiet", "--upgrade", "sigillo @ ${SETTINGS.url}"])`);
     expect(result.install).toBe(`pip install "sigillo @ ${SETTINGS.url}"`);
     if (python) expect(parses(result.text)).toBe(true);
+  });
+
+  it("records a framework-less agent from the standard library's calls, only where the account is opened to it", () => {
+    const plain = "import urllib.request\nfrom pathlib import Path\n";
+    const opened = setup(plain, { ...SETTINGS, stdlib: true });
+    if (opened.status !== "added") throw new Error("expected added");
+    expect(opened.text).toContain('    instrument=["stdlib"],\n');
+    expect(opened.install).toBe(`pip install "sigillo @ ${SETTINGS.url}"`);
+    if (python) expect(parses(opened.text)).toBe(true);
+    // Not opened: as before, nothing is recorded but the connection.
+    expect(added(plain).text).toContain("    instrument=[],\n");
+    // A framework wins: it already records its own calls, so the standard library's are not hooked twice.
+    const framework = setup("import langchain\n", { ...SETTINGS, stdlib: true });
+    if (framework.status !== "added") throw new Error("expected added");
+    expect(framework.text).toContain('    instrument=["langchain"],\n');
   });
 
   it("changes nothing in a file that already uses sigillo", () => {
@@ -375,13 +398,13 @@ describe("an uploaded agent through the model gateway", () => {
     const result = through('name = "task-manager-for-the-whole-team-today"\nprint(name)\n') as Added & { providers: Record<string, string> };
     expect(result.providers).toEqual({});
     expect(result.text).toContain("task-manager-for-the-whole-team-today");
-    expect(result.text).not.toContain("os.environ");
+    expect(result.text).not.toContain("_BASE_URL");
   });
 
   it("changes nothing without the gateway", () => {
     const result = added(`from openai import OpenAI\nOpenAI(api_key="${OPENAI_KEY}")\n`);
     expect(result.text).toContain(OPENAI_KEY);
-    expect(result.text).not.toContain("os.environ");
+    expect(result.text).not.toContain("_BASE_URL");
   });
 
   it("is offered with protection, and its form posts to the key route", async () => {

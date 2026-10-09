@@ -157,6 +157,10 @@ services:
       SIGILLO_AGENT_UPLOAD: ${SIGILLO_AGENT_UPLOAD:-all}
       # Script guard (connection/watch.ts): the administrator's systems only, until the owner opens it.
       SIGILLO_SCRIPT_GUARD: ${SIGILLO_SCRIPT_GUARD:-operator}
+      # Claude Code connector (sigillo-claude-code): the administrator's systems only, until the owner opens it.
+      SIGILLO_CLAUDE_CODE: ${SIGILLO_CLAUDE_CODE:-operator}
+      # Agents with no framework recorded from urllib and file writes (sdk "stdlib"): the administrator's systems only, until the owner opens it.
+      SIGILLO_PLAIN_AGENTS: ${SIGILLO_PLAIN_AGENTS:-operator}
     healthcheck:
       # /healthz also asks the signer: 503 while the server cannot sign.
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

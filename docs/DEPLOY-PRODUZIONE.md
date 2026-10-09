@@ -615,7 +615,7 @@ o due secondi di interruzione; quando il `Caddyfile` non è cambiato non fa
 nessun danno.
 
 Il controllo finale legge la configurazione che Caddy ha caricato
-dall'interfaccia di amministrazione di Caddy stesso (`localhost:2019`, dentro
+dall'interfaccia di amministrazione di Caddy stesso (`127.0.0.1:2019`, dentro
 il container, non raggiungibile da fuori) e la confronta con l'impronta scritta
 nel `Caddyfile`. Se non coincidono, lo script esce con un errore che lo dice,
 e `docker compose logs caddy` ne mostra il motivo. L'esito atteso:
@@ -624,18 +624,24 @@ e `docker compose logs caddy` ne mostra il motivo. L'esito atteso:
 update.sh: done; Caddy restarted and serves the Caddyfile's script hash 'sha256-…'
 ```
 
-**Aggiornamento automatico, ogni tre ore.** Dopo il primo `update.sh` fatto a mano,
-una volta sola:
+**Aggiornamento automatico, ogni minuto.** Dopo il primo `update.sh` fatto a mano,
+una volta sola (si può rifare: sostituisce la riga che c'era, ad esempio quella
+vecchia delle tre ore):
 
 ```sh
 $ /root/sigillo/deploy/auto-update.sh install
 ```
 
-Aggiunge una riga al `crontab` del server: ogni tre ore, se `main` ha un commit
-nuovo, esegue `update.sh`; se non c'è niente di nuovo non fa nulla (nessun
-riavvio). Il registro è `/root/sigillo/auto-update.log`. Per fermarlo:
-`auto-update.sh uninstall`. Quello che entra in `main` arriva sul server entro
-tre ore.
+Aggiunge una riga al `crontab` del server: ogni minuto controlla se `main` ha un
+commit nuovo (un `git fetch` e un confronto, nient'altro) e solo in quel caso
+esegue `update.sh`; se non c'è niente di nuovo non fa nulla (nessuna build,
+nessun riavvio, nessuna riga nel registro). Un aggiornamento ancora in corso non
+ne fa partire un secondo. Il registro è `/root/sigillo/auto-update.log`. Se un
+aggiornamento fallisce, lo scrive nel registro e non riprova lo stesso commit
+finché in `main` non ne arriva uno nuovo (per riprovarlo subito:
+`rm /root/sigillo/deploy/.auto-update.failed`). Per fermarlo:
+`auto-update.sh uninstall`. Per un'altra frequenza:
+`SIGILLO_AUTO_UPDATE_SCHEDULE="0 */3 * * *" /root/sigillo/deploy/auto-update.sh install`.
 
 seguito dall'elenco dei container (`signer` e `server` `(healthy)`, `caddy`
 `Up`). Per controllarlo anche dall'esterno, come lo vede un browser:

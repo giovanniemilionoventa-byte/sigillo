@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sigillo"
-version = "0.1.0"
+version = "0.4.0"
 description = "Send an AI agent's actions to a sigillo server as OpenTelemetry spans."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,6 +13,9 @@ dependencies = [
   "opentelemetry-sdk>=1.30",
   "opentelemetry-exporter-otlp-proto-http>=1.30",
 ]
+
+[project.scripts]
+sigillo-claude-code = "sigillo.claude_code:main"
 
 [project.optional-dependencies]
 langchain = ["openinference-instrumentation-langchain"]

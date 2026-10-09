@@ -115,7 +115,7 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     expect(await page.locator("#sigillo-agent-done").isVisible()).toBe(false);
     const file = await downloaded(page);
     expect(file).toContain(OPENAI_KEY);
-    expect(file).not.toContain("os.environ");
+    expect(file).not.toContain("_BASE_URL");
     expect(await page.locator("#sigillo-agent-model").isVisible()).toBe(false);
     expect(problems).toEqual([]);
   });
@@ -141,6 +141,6 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     await page.locator("#sigillo-agent-choice").waitFor({ state: "visible" });
     expect(await page.locator("#sigillo-agent-secure-label").isVisible()).toBe(false);
     const file = await downloaded(page);
-    expect(file).not.toContain("os.environ");
+    expect(file).not.toContain("_BASE_URL");
   });
 });

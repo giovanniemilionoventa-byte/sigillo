@@ -14,6 +14,22 @@ sigillo.init(
 )
 ```
 
+
+## Agents without a framework
+
+An agent that calls its model with `urllib`, `requests` or `httpx` and writes
+files with `pathlib` has no framework to instrument. Name `"stdlib"` and its model calls, its other web
+requests and the files it writes are recorded, as digests only:
+
+```python
+sigillo.init(endpoint="https://sigillo.example/", api_key="sigillo_...",
+             system_id="my-agent", instrument=["stdlib"])
+```
+
+Only the agent's own code is recorded, not the standard library's or an
+installed package's. The model's answer is not (the agent reads it after the
+request returns). It is on only when named.
+
 ## Install
 
 ```sh
@@ -205,6 +221,58 @@ succeeds — the digest is simply absent, and a warning is logged, not raised.
 
 Both are optional, and either can be dropped without changing anything else:
 a receipt with neither is exactly as informative as before phase 2.
+
+## Claude Code
+
+`sigillo-claude-code` records every Claude Code session on a computer, with no
+code to write: it adds hooks to Claude Code's user settings, and Claude Code
+runs them whatever the model does.
+
+```sh
+python -m pip install --upgrade "sigillo @ <the SDK's address>"
+python -m sigillo.claude_code connect --endpoint https://sigillo.example --key sigillo_...
+python -m sigillo.claude_code disconnect
+```
+
+On macOS and Linux, `python3` in place of `python`. The console shows the line
+for each system, and one more for Claude Code in the cloud: it goes in the
+environment's Setup script, with the Sigillo server's address added to the
+allowed domains of Network access. It ends in `|| echo …` so that a failed
+connect cannot stop the environment from starting; the hooks themselves then
+report each action they could not record. (A cloud session reads user-level
+hooks from `~/.claude/settings.json` like a local one: tried in a real cloud
+session. Whether the environment keeps what the setup script wrote is the
+platform's behaviour, not checked here.) Whoever can edit the environment can
+read the key in its setup script. `python -m` is used because pip's scripts
+folder (`sigillo-claude-code`) is not on the PATH on Windows.
+
+`connect` sends a first receipt (`claude_code.connected`), so a wrong key or an
+unreachable server stops it before anything changes; then it saves the endpoint
+and key in `~/.sigillo/claude-code.json` (owner-only) and adds five hooks to
+`~/.claude/settings.json`, next to any already there:
+
+| Claude Code event | receipt | what is hashed |
+|---|---|---|
+| `SessionStart` | `claude_code.session_start`, agent_step | nothing |
+| `UserPromptSubmit` | `claude_code.prompt`, agent_step | the prompt |
+| `PostToolUse` | the tool's name, tool_call | its input and output |
+| `PostToolUseFailure` | the tool's name, tool_call, error | its input |
+| `SessionEnd` | `claude_code.session_end`, agent_step | nothing |
+
+Content is hashed and salted on the computer, as everywhere in this package;
+the receipts of one session share a trace id and one agent name,
+"Claude Code · <project folder> · <first 8 of the session id>", so the console
+lists each session under its own heading. The folder's last name (never its
+path) is the one thing sent beyond digests. The hooks for prompts and tools
+run in the background, so Claude Code does not wait for the server. A hook that
+cannot record says so in Claude Code (a hook error) and never blocks it.
+
+The limit, said plainly: whoever can edit Claude Code's settings, Claude
+included when the user allows it, can remove the hooks. `disconnect` writes
+`claude_code.disconnected` before removing them; a session without receipts is
+not written by anyone. The server accepts these spans only where
+`SIGILLO_CLAUDE_CODE` allows (`operator` by default). Claude Cowork is reported
+not to run plugin hooks yet, so it is not covered.
 
 ## Example
 

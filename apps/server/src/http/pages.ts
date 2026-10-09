@@ -305,10 +305,10 @@ export const SDK_REQUIREMENT =
  * endpoints still answer, the SDK itself sends to the first, but neither is
  * offered here.
  */
-function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, protection: boolean = false, gateway: boolean = false): string {
+function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, plainAgents: boolean, claudeCode: boolean, protection: boolean = false, gateway: boolean = false): string {
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
-  const agent = upload && token !== null ? agentUpload(systemId, endpoint, token, protection, gateway) : "";
+  const agent = upload && token !== null ? agentUpload(systemId, endpoint, token, plainAgents, protection, gateway) : "";
   const python = [
     `# ${t.pasteAtTop}`,
     "import sigillo",
@@ -324,11 +324,36 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
   // The install command is a box of its own, one click selects all of it:
   // inside the code it would be a comment, and a copy of that line would not run.
   const install = `<pre class="code python install">${escape(`pip install "${SDK_REQUIREMENT}"`)}</pre>`;
-  return `<input type="radio" name="way" id="way-python" class="sr" checked>
+  // Claude Code (sigillo.claude_code, in the SDK): one line per system, each
+  // in a box of its own. `python -m`, not the sigillo-claude-code script:
+  // pip's scripts folder is not on a Windows PATH. Windows PowerShell 5 has
+  // no `&&`, so its line joins with `;`; `--upgrade` because the SDK may
+  // already be there from before Claude Code was added. No comment line,
+  // which zsh would try to run.
+  const claudeLine = (python: string, join: string): string =>
+    [
+      `${python} -m pip install --upgrade "${SDK_REQUIREMENT.replace("[langchain]", "")}"`,
+      `${python} -m sigillo.claude_code connect --endpoint ${endpoint} --key ${key}`,
+    ].join(join);
+  // In a cloud environment's setup script a failing line would stop the
+  // environment from starting at all, so a failed connect only says so.
+  const cloudLine = `${claudeLine("python3", " && ")} || echo "Sigillo is not connected: see the error above"`;
+  const claudeBox = (title: string, line: string): string =>
+    `<p class="label">${escape(title)}</p>\n<pre class="code install">${escape(line)}</pre>\n`;
+  const claude = claudeCode
+    ? {
+        radio: `\n<input type="radio" name="way" id="way-claude" class="sr">`,
+        way: `\n<label class="way" for="way-claude"><span class="tile-icon purple" aria-hidden="true">${ICONS.terminal}</span>${escape(t.ways.claudeCode)}</label>`,
+        body: `<div class="claude-code"><p class="section">${escape(t.claudeCodeRun)}</p>
+${claudeBox(t.claudeSystems.windows, claudeLine("python", "; "))}${claudeBox(t.claudeSystems.mac, claudeLine("python3", " && "))}${claudeBox(t.claudeSystems.linux, claudeLine("python3", " && "))}${claudeBox(t.claudeSystems.cloud, cloudLine)}<p class="section">${escape(t.claudeCloudNote)}</p></div>
+`,
+      }
+    : { radio: "", way: "", body: "" };
+  return `<input type="radio" name="way" id="way-python" class="sr" checked>${claude.radio}
 <div class="ways">
-${pythonWay}
+${pythonWay}${claude.way}
 </div>
-${agent}${install}
+${agent}${claude.body}${install}
 <pre class="code python">${escape(python)}</pre>`;
 }
 
@@ -338,10 +363,10 @@ ${agent}${install}
  * run (the `ready` class), so a browser without scripts sees the code alone.
  * What the script writes is in the data attributes, in the reader's language.
  */
-function agentUpload(systemId: string, endpoint: string, token: string, protection: boolean, gateway: boolean): string {
+function agentUpload(systemId: string, endpoint: string, token: string, plainAgents: boolean, protection: boolean, gateway: boolean): string {
   const t = UI.connect.upload;
   const url = SDK_REQUIREMENT.slice(SDK_REQUIREMENT.indexOf("@") + 1).trim();
-  return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}" data-protection="${protection}"${gateway ? ` data-gateway="${escape(endpoint.replace(/\/+$/, ""))}/llm"` : ""} data-analysis-cloud="${escape(t.analysisCloud)}" data-analysis-other="${escape(t.analysisOther)}" data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}">
+  return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}"${plainAgents ? ' data-stdlib="1"' : ""} data-protection="${protection}"${gateway ? ` data-gateway="${escape(endpoint.replace(/\/+$/, ""))}/llm"` : ""} data-analysis-cloud="${escape(t.analysisCloud)}" data-analysis-other="${escape(t.analysisOther)}" data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}">
 <label class="drop"><span class="tile-icon blue" aria-hidden="true">${ICONS.upload}</span><strong>${escape(t.drop)}</strong><input type="file" id="sigillo-agent-file" accept=".py,text/x-python"></label>
 <p class="notice ok" id="sigillo-agent-done" role="status" hidden>${STATE_ICONS.ok}<span></span></p>
 <p class="notice warn" id="sigillo-agent-problem" role="alert" hidden>${STATE_ICONS.warn}<span></span></p>
@@ -396,6 +421,10 @@ export function connectPage(view: {
   now: Date;
   /** Whether to offer "upload your agent" (agent-setup.ts), where the key is shown. */
   upload?: boolean;
+  /** Whether the uploaded agent is recorded from the standard library's calls when it uses no framework (SIGILLO_PLAIN_AGENTS). */
+  plainAgents?: boolean;
+  /** Whether to offer Claude Code (sigillo-claude-code), opened per account by SIGILLO_CLAUDE_CODE. */
+  claudeCode?: boolean;
   /** Whether uploaded agents get strict mode protection (agent-setup.ts). */
   protection?: boolean;
   /** Whether an uploaded agent is also pointed at the model gateway (agent-setup.ts). */
@@ -415,16 +444,49 @@ export function connectPage(view: {
         : `${mode === "connect" ? '<meta http-equiv="refresh" content="10">' : ""}<div class="card wait-line" role="status"><span class="spinner" aria-hidden="true"></span><span>${escape(t.waiting)}</span><a class="end" href="${path}/collega">${escape(t.check)}</a></div>`;
   return `<div class="narrow">${pageHead(title)}
 ${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
-${connectWays(record.system_id, view.endpoint, token, view.upload ?? false, view.protection ?? false, view.gateway ?? false)}
+${connectWays(record.system_id, view.endpoint, token, view.upload ?? false, view.plainAgents ?? false, view.claudeCode ?? false, view.protection ?? false, view.gateway ?? false)}
 ${wait}
 </div>`;
 }
 
 /** A system's settings: its name, identifier and key, connecting it, archiving it, and deleting it while its chain is empty. */
+/** The "hand over" block of a system's settings: make a link, or, while one is open, replace or cancel it. */
+function transferBody(path: string, open: boolean): string {
+  const t = UI.manage;
+  return `<p>${escape(t.transferIntro)}</p>
+${open ? `<p>${escape(t.transferOpen)}</p>` : ""}
+<div class="inline"><form method="post" action="${path}/transfer"><button type="submit" class="primary">${escape(t.transferSubmit)}</button></form>
+${open ? `<form method="post" action="${path}/transfer/annulla"><button type="submit">${escape(t.transferRevoke)}</button></form>` : ""}</div>`;
+}
+
+/** The page that shows a transfer link, the only time it exists. */
+export function transferLinkPage(record: SystemRecord, url: string, expiresAt: string): string {
+  const t = UI.transfer;
+  return `<section class="card block"><div>
+<h2>${escape(t.linkTitle(systemTitle(record)))}</h2>
+<p>${escape(t.linkIntro)}</p>
+<code class="keybox" aria-label="${escape(t.linkLabel)}">${escape(url)}</code>
+<p>${escape(t.linkExpires(formatDate(expiresAt)))}</p>
+<p class="section"><a href="${systemPath(record.system_id)}/manage">${escape(t.back)}</a></p>
+</div></section>`;
+}
+
+/** What someone who opened a transfer link, signed in, is asked: add this system to your account? */
+export function transferAcceptPage(secret: string, systemName: string, account: string, extra: { error?: string } = {}): string {
+  const t = UI.transfer;
+  return `${notices(extra)}
+<section class="card block"><div>
+<h2>${escape(t.acceptTitle)}</h2>
+<p>${escape(t.acceptIntro(systemName, account))}</p>
+<form method="post" action="/ui/trasferimento/${escape(secret)}"><button type="submit" class="primary">${escape(t.acceptSubmit)}</button></form>
+</div></section>`;
+}
+
 export function managePage(
   record: SystemRecord,
   extra: { notice?: string; error?: string },
   keyIds: string[],
+  transfer: { open: boolean } | null = null,
 ): string {
   const t = UI.manage;
   const path = systemPath(record.system_id);
@@ -476,6 +538,7 @@ ${block(
   `<div class="inline"><code class="keybox" aria-label="${escape(t.keyLabel)}">${escape(current)}</code><a class="button" href="#nuova-chiave">${escape(t.newKey)}</a></div>
 <p class="section"><a href="${path}/collega">${escape(t.connect)}</a></p>`,
 )}
+${transfer === null ? "" : block("grey", ICONS.link, t.transferTitle, transferBody(path, transfer.open))}
 ${block("grey", ICONS.archive, t.archiveTitle, archive)}
 ${block("red", ICONS.trash, t.deleteTitle, removal)}
 </div>
