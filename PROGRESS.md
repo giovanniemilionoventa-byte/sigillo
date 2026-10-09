@@ -3600,6 +3600,28 @@ conferma).
   l'originale — questo vorrebbe un controllo a livello di sistema operativo (permessi, altro 
   utente), che esula dal prodotto.
 
+- **Contro un agente malevolo (stessa sessione, 2026-10-09)**, su richiesta del titolare, senza
+  configurazione per il cliente, solo amministratore (stessa regola 11 della guardia):
+  - ogni battito porta anche `sdk_hash`, lo SHA-256 dei file `.py` del pacchetto sigillo; il server
+    lo guarda insieme all'impronta dello script: un cambiamento dell'uno o dell'altro è un solo
+    `script_changed` (il pacchetto illeggibile conta come cambiamento);
+  - in modalità rigida l'SDK avvia un processo guardiano (`sigillo/_watchdog.py`, solo libreria
+    standard, interprete a parte): ogni 5 secondi rilegge script e pacchetto; se cambiano, manda
+    subito un battito con le impronte nuove (il server scrive `script_changed` all'istante) e
+    uccide l'agente. Si ferma da solo quando l'agente sparisce (chiusura dello standard input,
+    uguale su ogni sistema). Un `on_halt` scelto dal chiamante lo disattiva: non c'è niente da
+    uccidere. Un battito che trova il guardiano morto ferma l'agente rigido;
+  - `lost` e la cronologia c'erano già: se i battiti smettono, il server scrive `lost` con l'ora
+    dell'ultimo battito. Il semaforo per una perdita resta giallo (il design non è stato toccato);
+  - limiti: un agente con gli stessi permessi può togliere le righe di Sigillo, uccidere SDK e
+    guardiano o inviare battiti falsi con la chiave che sta nel file. Resta visibile (`lost`,
+    ricevute già scritte intoccabili), non impedito. Chiuderlo davvero richiede che la chiave del
+    modello stia sul server (gateway), cioè una configurazione: non costruito, decisione al titolare.
+  - La modifica prima del primo avvio non è confrontata con il file esportato (nessuna impronta
+    approvata all'esportazione): il confronto parte dalla prima sessione.
+  - Test: 3 nuovi SDK (processo vero, script modificato, guardiano morto) più 1 sul pacchetto; 2
+    nuovi server.
+
 - **Cosa comprò in righe**: sotto le 100 nel verificatore (non toccato).
 
 ## Checklist di verifica finale M9 (con Docker, da eseguire su una macchina vera)

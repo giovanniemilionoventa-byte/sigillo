@@ -280,8 +280,8 @@ describe("agent protection: strict mode when uploaded", () => {
 
   it("adds strict=True to sigillo.init when protection is enabled", () => {
     const source = "from langchain_openai import ChatOpenAI\nllm = ChatOpenAI()\n";
-    const setupWithoutProtection = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: any) => Result;
-    const setupWithProtection = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: any) => Result;
+    const setupWithoutProtection = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: typeof SETTINGS & { protection?: boolean }) => Result;
+    const setupWithProtection = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: typeof SETTINGS & { protection?: boolean }) => Result;
     
     const withoutProtection = setupWithoutProtection(source, { ...SETTINGS, protection: false });
     const withProtection = setupWithProtection(source, { ...SETTINGS, protection: true });
@@ -302,7 +302,7 @@ describe("agent protection: strict mode when uploaded", () => {
 
   it("adds strict=True after instrument when both are present", () => {
     const source = "from langchain_openai import ChatOpenAI\nllm = ChatOpenAI()\n";
-    const setup = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: any) => Result;
+    const setup = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: typeof SETTINGS & { protection?: boolean }) => Result;
     const result = setup(source, { ...SETTINGS, protection: true });
     
     if (result.status !== "added") {
@@ -321,7 +321,7 @@ describe("agent protection: strict mode when uploaded", () => {
   if (python) {
     it("produces valid Python when protection is enabled", () => {
       const source = "from langchain_openai import ChatOpenAI\nllm = ChatOpenAI()\n";
-      const setup = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: any) => Result;
+      const setup = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: typeof SETTINGS & { protection?: boolean }) => Result;
       const result = setup(source, { ...SETTINGS, protection: true });
       
       if (result.status !== "added") {

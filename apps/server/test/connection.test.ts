@@ -300,6 +300,38 @@ describe("the script guard", () => {
     expect(verifyReceiptSignature(receipt, signer.publicKey)).toBe(true);
   });
 
+  it("watches the sigillo package's hash with the script: a change of either is one `script_changed`", async () => {
+    const send = (event: "start" | "beat", script_hash: string | null, sdk_hash: string | null) =>
+      app.inject({
+        method: "POST",
+        url: "/api/v1/heartbeat",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { session: SESSION, event, script_hash, sdk_hash },
+      });
+    expect((await send("start", SCRIPT_A, SCRIPT_A)).json()).toMatchObject({ script_changed: false });
+    clock += MINUTE;
+    expect((await send("beat", SCRIPT_A, SCRIPT_A)).json()).toEqual({ recorded: null, script_changed: false });
+    clock += MINUTE;
+    expect((await send("beat", SCRIPT_A, SCRIPT_B)).json()).toEqual({
+      recorded: { seq: 2, name: CONNECTION.scriptChanged },
+      script_changed: true,
+    });
+    expect(names()).toEqual([SYSTEM, CONNECTION.start, CONNECTION.scriptChanged]);
+  });
+
+  it("treats a package that can no longer be read (null) as a change, and refuses a malformed package hash", async () => {
+    const send = (sdk_hash: string | null) =>
+      app.inject({
+        method: "POST",
+        url: "/api/v1/heartbeat",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { session: SESSION, event: "beat", script_hash: SCRIPT_A, sdk_hash },
+      });
+    await send(SCRIPT_A);
+    expect((await send(null)).json()).toMatchObject({ script_changed: true });
+    expect((await send("nope")).statusCode).toBe(400);
+  });
+
   it("treats a script that can no longer be read (null) as a change", async () => {
     await beat("start", SESSION, token, SCRIPT_A);
     expect((await beat("beat", SESSION, token, null)).json()).toMatchObject({ script_changed: true });

@@ -744,7 +744,7 @@ class HeartbeatTest(unittest.TestCase):
         self.assertEqual(len(sessions), 1)
         self.assertRegex(sessions.pop(), r"^[0-9a-f]{32}$")
         for body, headers in _Capture.heartbeats:
-            self.assertLessEqual(set(body), {"session", "event", "script_hash"})
+            self.assertLessEqual(set(body), {"session", "event", "script_hash", "sdk_hash"})
             self.assertEqual(headers["authorization"], "Bearer sigillo_secret")
 
     def test_a_second_shutdown_sends_nothing_more(self) -> None:
@@ -896,6 +896,64 @@ class ScriptGuardTest(unittest.TestCase):
             self._wait_for(lambda: len(self._hashes()) >= 6)
             tracing.shutdown()
         self.assertEqual(halted, [])
+
+    def test_every_beat_carries_the_hash_of_the_sigillo_package_and_not_the_stop(self) -> None:
+        with self._main(self.script):
+            tracing = sigillo.init(
+                endpoint=self.base, api_key="k", system_id="s", instrument=[], heartbeat_seconds=0.05
+            )
+            self._wait_for(lambda: len(_Capture.heartbeats) >= 3)
+            tracing.shutdown()
+        for body, _ in _Capture.heartbeats:
+            if body["event"] == "stop":
+                self.assertNotIn("sdk_hash", body)
+            else:
+                self.assertRegex(body["sdk_hash"], r"^[0-9a-f]{64}$")
+        self.assertEqual(len({b["sdk_hash"] for b, _ in _Capture.heartbeats if b["event"] != "stop"}), 1)
+
+    def _run_agent(self, lines: str) -> subprocess.Popen:
+        """The agent as a real process: strict, the guard checking every 0.2 seconds."""
+        self.script.write_text(
+            "import time, sigillo\n"
+            f"beat = sigillo._Heartbeat('{self.base}/api/v1/heartbeat', 'k', 60, strict=True, guard_seconds=0.2)\n"
+            "beat.start()\n"
+            "print('up', flush=True)\n"
+            f"{lines}\n"
+        )
+        env = {**__import__("os").environ, "PYTHONPATH": str(Path(sigillo.__file__).parent.parent)}
+        process = subprocess.Popen([sys.executable, str(self.script)], stdout=subprocess.PIPE, text=True, env=env)
+        self.addCleanup(process.kill)
+        assert process.stdout is not None
+        self.assertEqual(process.stdout.readline().strip(), "up")
+        return process
+
+    def test_the_guard_process_ends_an_agent_whose_script_is_edited_and_tells_the_server_at_once(self) -> None:
+        process = self._run_agent("time.sleep(60)")
+        self._wait_for(lambda: len(self._hashes()) >= 1)
+        before = self._hashes()[0]
+        self.script.write_text(self.script.read_text() + "# edited by the agent\n")
+        self.assertIsNotNone(process.wait(timeout=15))
+        self.assertNotEqual(process.returncode, 0)
+        sent = [b for b, _ in _Capture.heartbeats if b["event"] == "beat"]
+        self.assertEqual(len(sent), 1)
+        self.assertRegex(sent[0]["script_hash"], r"^[0-9a-f]{64}$")
+        self.assertNotEqual(sent[0]["script_hash"], before)
+
+    def test_the_guard_process_leaves_an_agent_alone_whose_script_does_not_change_and_ends_with_it(self) -> None:
+        process = self._run_agent("time.sleep(1.5)")
+        self.assertEqual(process.wait(timeout=15), 0)
+        self.assertEqual([b["event"] for b, _ in _Capture.heartbeats if b["event"] == "beat"], [])
+
+    def test_a_beat_that_finds_the_guard_gone_halts_a_strict_agent(self) -> None:
+        halted: list[str] = []
+        with self._main(self.script):
+            beat = sigillo._Heartbeat(f"{self.base}/api/v1/heartbeat", "k", 60, strict=True)
+            beat._on_halt = halted.append
+            beat._guard = subprocess.Popen([sys.executable, "-c", "pass"])
+            beat._guard.wait()
+            beat._send("beat")
+        self.assertEqual(len(halted), 1)
+        self.assertIn("guard", halted[0])
 
 
 class ContentFilterTest(unittest.TestCase):

@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerOptions } from "fastify";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
@@ -128,6 +129,10 @@ function requestForLog(request: { method: string; url: string; ip: string }): Re
 
 const hex64 = z.string().regex(/^[0-9a-f]{64}$/, "must be 64 lowercase hex characters");
 
+/** One hash for the script and the package together; null when either cannot be read. */
+const guardHash = (script: string | null | undefined, sdk: string | null): string | null =>
+  script === null || sdk === null ? null : createHash("sha256").update(`${script ?? ""}:${sdk}`).digest("hex");
+
 const heartbeatRequestSchema = z
   .object({
     session: z.string().regex(/^[0-9a-f]{32}$/, "must be 32 lowercase hex characters"),
@@ -135,6 +140,9 @@ const heartbeatRequestSchema = z
     // The script guard (connection/watch.ts): the SHA-256 of the agent's main
     // script, or null when it can no longer be read. Absent: no guard.
     script_hash: hex64.nullable().optional(),
+    // The SHA-256 over the sigillo package's own files (null: unreadable). It
+    // is watched with the script: a change of either is one `script_changed`.
+    sdk_hash: hex64.nullable().optional(),
   })
   .strict();
 
@@ -476,15 +484,16 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (store.connection(systemId, parsed.data.session) === null && overQuota(systemId, reply)) return reply;
     let written;
     try {
+      const { script_hash: scriptHash, sdk_hash: sdkHash } = parsed.data;
       const watched =
-        parsed.data.script_hash !== undefined &&
+        (scriptHash !== undefined || sdkHash !== undefined) &&
         guardMode !== "off" &&
         (guardMode === "all" || (store.systemRecord(systemId)?.organization_id ?? null) === null);
       written = await connections.heartbeat(
         systemId,
         parsed.data.session,
         parsed.data.event,
-        watched ? { hash: parsed.data.script_hash ?? null } : undefined,
+        watched ? { hash: sdkHash === undefined ? (scriptHash ?? null) : guardHash(scriptHash, sdkHash) } : undefined,
       );
       if (watched && parsed.data.event !== "stop") {
         return reply.code(200).send({
