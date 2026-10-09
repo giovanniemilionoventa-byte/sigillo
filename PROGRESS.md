@@ -3890,3 +3890,10 @@ Richiesta del proprietario: per Ollama e simili la stessa idea della chiave clou
 - Test: `sdk-python/tests/test_door.py` (5), tre casi in `agent-setup.test.ts`.
 - Limite onesto: il modello resta raggiungibile sulla sua porta privata (11435) per un agente che la cerca; solo un utente del sistema operativo diverso per Ollama lo impedirebbe davvero. Non coperti: librerie che prendono la chiave da altrove (`OPENAI_API_KEY` con modello locale), modelli su altre porte.
 - Peso sul verificatore: nessuno. Versione SDK 0.5.0.
+## Red-team dell'agente malevolo, percorso cloud (2026-10-09)
+
+Prova con un agente malevolo vero (processo Python con SDK e guardia, server reale, provider finto) e con una suite di attacchi HTTP (`apps/server/test/gateway-redteam.test.ts`, 18 test).
+
+- Trovati e corretti due buchi nel gateway (`gateway/llm.ts`): (F1) le richieste GET inoltrate al provider con la chiave vera non lasciavano ricevuta, ora ne lasciano una e rispettano pausa e quota (unica eccezione: l'elenco dei nomi dei modelli); (F2) se l'agente interrompeva la connessione a metà non restava alcuna ricevuta, ora ne resta una di errore.
+- Reggono: chiave vera mai nel file, nell'ambiente, nei processi, nelle risposte o negli errori; path traversal, header che cambiano destinazione, `?key=`, isolamento tra sistemi e tra provider; spegnere la guardia ferma l'agente (uscita 70) e scrive `script_changed`.
+- Limite noto, per costruzione: un agente con gli stessi permessi del sistema operativo può mandare battiti finti con l'hash vecchio (non rilevato) o usare una chiave vecchia rimasta altrove. Il cliente deve cancellare la vecchia chiave dal provider.
