@@ -15,11 +15,12 @@ import {
   normaliseDisplayName,
   StorageError,
   SystemNotDeletableError,
+  TransferUnavailableError,
   type AdminRequest,
   type ReceiptStore,
   type SystemRecord,
 } from "../storage/store.js";
-import { registerAccounts } from "./accounts.js";
+import { registerAccounts, TRANSFER_COOKIE, TRANSFER_PATH, TRANSFER_TTL_MS } from "./accounts.js";
 import { registerFonts } from "./fonts.js";
 import {
   anchoredSize,
@@ -33,8 +34,10 @@ import {
   type SystemTab,
 } from "./history.js";
 import {
+  accountPage,
   escape,
   homeRows,
+  notices,
   loginPage,
   operatorLoginPage,
   page,
@@ -54,6 +57,8 @@ import {
   organizationsPage,
   settingsPage,
   sistemiPage,
+  transferAcceptPage,
+  transferLinkPage,
   verifyDocumentResult,
   type Quota,
   type SystemsView,
@@ -143,6 +148,12 @@ export interface UiOptions {
    * accepts its actions (server.ts). Not given: nobody.
    */
   claudeCode?: "off" | "operator" | "all";
+  /**
+   * Whose systems show "Transfer" in their settings, to hand them to another
+   * account with a link: `operator` until the owner opens it to `all`. Not
+   * given: nobody. Accepting a link needs no switch (store.acceptTransfer).
+   */
+  transfer?: "off" | "operator" | "all";
   /**
    * Who is given the "stdlib" recording by "upload your agent" for an agent
    * with no framework (SIGILLO_PLAIN_AGENTS): `operator` until the owner opens
@@ -595,6 +606,10 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   const offersUpload = (record: SystemRecord): boolean =>
     options.agentUpload === "all" || (options.agentUpload === "operator" && record.organization_id === null);
 
+  /** Whether a system's settings offer to hand it to another account: the same rule, under its own switch. */
+  const offersTransfer = (record: SystemRecord): boolean =>
+    options.transfer === "all" || (options.transfer === "operator" && record.organization_id === null);
+
   /** Whether the connect page offers Claude Code: the same rule, under its own switch. */
   const offersClaudeCode = (record: SystemRecord): boolean =>
     options.claudeCode === "all" || (options.claudeCode === "operator" && record.organization_id === null);
@@ -907,12 +922,13 @@ ${exportSheet(record)}`,
       record,
       "manage",
       `${systemTitle(record)} — ${UI.settings.title}`,
-      managePage(record, extra, activeKeys(record.system_id)),
+      managePage(record, extra, activeKeys(record.system_id), offersTransfer(record) ? { open: session.store.hasOpenTransfer(record.system_id, options.now().toISOString()) } : null),
     );
   };
 
   // Keys into UI.manage, read when a page is written, in its reader's language.
-  const DONE: Record<string, "renamed" | "archived" | "unarchived"> = {
+  const DONE: Record<string, "renamed" | "archived" | "unarchived" | "transferRevoked"> = {
+    annullato: "transferRevoked",
     nome: "renamed",
     archiviato: "archived",
     riattivato: "unarchived",
@@ -976,6 +992,78 @@ ${exportSheet(record)}`,
         body: connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), claudeCode: offersClaudeCode(record) }),
       }),
     );
+  });
+
+  // Handing a system to another account. The giver makes a link; whoever
+  // opens it signs in (the link is kept in a cookie meanwhile), is asked, and
+  // the system becomes theirs. The secret is shown once and kept only as a hash.
+  app.post("/ui/systems/:systemId/transfer", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { systemId } = request.params as { systemId: string };
+    const record = session.store.systemRecord(systemId);
+    if (record === null || !offersTransfer(record)) return notFound(session, reply);
+    const { secret, expiresAt } = await session.store.createTransfer(systemId, adminRequest(request, session.viewer));
+    request.log.info({ system: systemId, action: "transfer.create" }, "a transfer link was made");
+    const url = `${endpointFor(request)}${TRANSFER_PATH}/${secret}`;
+    return html(reply, systemPage(session, record, "manage", `${systemTitle(record)} — ${UI.settings.title}`, transferLinkPage(record, url, expiresAt)));
+  });
+
+  app.post("/ui/systems/:systemId/transfer/annulla", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const { systemId } = request.params as { systemId: string };
+    const record = session.store.systemRecord(systemId);
+    if (record === null || !offersTransfer(record)) return notFound(session, reply);
+    await session.store.revokeTransfers(systemId, adminRequest(request, session.viewer));
+    return reply.redirect(manageUrl(systemId, "annullato"), 303);
+  });
+
+  const transferCookie = (request: FastifyRequest, value: string, maxAge: number): string =>
+    `${TRANSFER_COOKIE}=${value}; ${cookieAttributes(request).replace("SameSite=Strict", "SameSite=Lax").replace("Path=/", "Path=/ui")}; Max-Age=${maxAge}`;
+
+  const transferNote = (session: Session | null, message: string, status: number, reply: FastifyReply): FastifyReply =>
+    session === null
+      ? html(reply, accountPage(UI.transfer.invalidTitle, {}, "", { message, back: false }), status)
+      : html(reply, render(session, { title: UI.transfer.invalidTitle, body: notices({ error: message }) }), status);
+
+  app.get(`${TRANSFER_PATH}/:secret`, async (request, reply) => {
+    const { secret } = request.params as { secret: string };
+    const target = allSystems.transferTarget(secret, options.now().toISOString());
+    const viewer = viewerOf(request);
+    if (target === null) {
+      return transferNote(viewer === null ? null : { viewer, store: storeFor(allSystems, viewer) }, UI.transfer.invalid, 410, reply);
+    }
+    if (viewer === null) {
+      // Not signed in yet: keep the link, and take them to sign in.
+      const sealed = sessions.seal("transfer", secret, options.now().getTime(), TRANSFER_TTL_MS);
+      return reply.header("set-cookie", transferCookie(request, sealed, TRANSFER_TTL_MS / 1000)).redirect("/ui/login", 302);
+    }
+    const session = { viewer, store: storeFor(allSystems, viewer) };
+    void reply.header("set-cookie", transferCookie(request, "", 0));
+    if (viewer.kind === "operator") return transferNote(session, UI.transfer.operator, 403, reply);
+    const name = target.display_name ?? target.system_id;
+    return html(
+      reply,
+      render(session, { title: UI.transfer.acceptTitle, body: transferAcceptPage(secret, name, accountOf(viewer).name) }),
+    );
+  });
+
+  app.post(`${TRANSFER_PATH}/:secret`, async (request, reply) => {
+    const viewer = viewerOf(request);
+    if (viewer === null) return reply.redirect("/ui/login", 302);
+    const session = { viewer, store: storeFor(allSystems, viewer) };
+    if (viewer.kind === "operator") return transferNote(session, UI.transfer.operator, 403, reply);
+    const { secret } = request.params as { secret: string };
+    try {
+      const moved = await allSystems.acceptTransfer(secret, viewer.organizationId, adminRequest(request, viewer));
+      request.log.info({ system: moved.system_id, action: "transfer.accept" }, "a system was handed to an organization");
+      return reply.redirect(`/ui/systems/${encodeURIComponent(moved.system_id)}`, 303);
+    } catch (error) {
+      if (error instanceof TransferUnavailableError) return transferNote(session, UI.transfer.invalid, 410, reply);
+      if (!(error instanceof StorageError)) throw error;
+      return transferNote(session, error.message, 400, reply);
+    }
   });
 
   app.post("/ui/systems/:systemId/archive", async (request, reply) => {

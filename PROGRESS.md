@@ -3768,6 +3768,18 @@ nessuna azione: senza LangChain, CrewAI o OpenAI non c'è nulla a cui agganciare
   verificatore veri): 7 ricevute (ricerca, 2 chiamate al modello, scrittura file), nessun testo in chiaro.
 - Costo: nessuna riga nel verificatore.
 
+## Passare un sistema a un altro account con un link (2026-10-08)
+
+Per le software house che configurano gli agenti per i loro clienti: la software house crea il sistema e il file .py, poi manda al cliente un link; il cliente accede al proprio account e il sistema passa a lui. Solo per l'amministratore (CLAUDE.md, regola 11).
+
+- Nelle impostazioni di un sistema, blocco «Passa a un altro account»: crea un link che vale una volta sola e sette giorni. Si vede solo alla creazione; nel database resta solo il suo SHA-256 (`transfer_links`). Un nuovo link annulla il precedente; si può anche annullare.
+- Chi apre `/ui/trasferimento/<segreto>` senza essere entrato viene mandato al login, con il link tenuto in un cookie sigillato (30 minuti, SameSite=Lax per il ritorno da Google); dopo l'accesso torna al link, vede «Aggiungi al tuo account» e conferma con un pulsante (la GET non cambia nulla).
+- Accettare sposta `systems.organization_id` (come `sigillo-server system assign`) e registra `system.assign` nel registro amministrativo; la catena non si tocca e la chiave dell'agente continua a funzionare (il nuovo proprietario può cambiarla). Solo un'organizzazione approvata può accettare; l'amministratore no.
+- Interruttore `SIGILLO_TRANSFER=off|operator|all`, predefinito `operator`: decide di chi sono i sistemi che mostrano il blocco e accettano di creare link. Accettare un link non ha interruttore, perché esiste solo se è stato creato.
+- Non cambia il formato delle ricevute. Il verificatore non è toccato.
+- Test: `apps/server/test/transfer.test.ts` (12) e un caso in `accounts.test.ts` per il percorso login → link → sistema passato.
+- Non fatto: gli spazi per cliente finale dentro l'account della software house (`strategia/SOFTWARE-HOUSE-MODELLO-PARTNER.md`, opzione A) e il link di sola lettura (opzione C).
+
 ## Agenti senza framework: anche `requests` e `httpx` (2026-10-08)
 
 Seguito della richiesta del proprietario («qualsiasi agente Python, sempre con lo stesso metodo»):

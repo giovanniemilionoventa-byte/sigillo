@@ -47,6 +47,15 @@ const SIGNUP_COOKIE = "sigillo_signup";
 const SIGNUP_PATH = "/ui/registrazione";
 const SIGNUP_TTL_MS = 30 * 60_000;
 
+/**
+ * The transfer link someone opened before signing in (ui.ts): kept, sealed,
+ * until they have, and then they are taken to it instead of the main page.
+ * Lax, because Google sends the browser back with a top-level navigation.
+ */
+export const TRANSFER_COOKIE = "sigillo_transfer";
+export const TRANSFER_PATH = "/ui/trasferimento";
+export const TRANSFER_TTL_MS = 30 * 60_000;
+
 export const MIN_PASSWORD = 10;
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,255}$/;
 
@@ -130,7 +139,8 @@ export function registerAccounts(app: FastifyInstance, context: AccountsContext)
       return html(reply, waitingPage(organization?.name ?? user.organization_id), 403);
     }
     const viewer: Viewer = { kind: "organization", organizationId: organization.organization_id, userId: user.uid };
-    return goOn(reply, "/ui", context.sessionCookie(request, viewer), fromGoogle);
+    const pending = sessions.unseal("transfer", cookie(request, TRANSFER_COOKIE), nowMs());
+    return goOn(reply, pending === null ? "/ui" : `${TRANSFER_PATH}/${pending}`, context.sessionCookie(request, viewer), fromGoogle);
   };
 
   /** Told to wait: the organization asked for, not yet approved. */

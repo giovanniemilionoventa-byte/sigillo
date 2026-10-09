@@ -158,6 +158,7 @@ describe("every form keeps its action, method and field names", () => {
         [
           "post /ui/logout []",
           `post /ui/systems/${SYSTEM}/rename [display_name]`,
+          `post /ui/systems/${SYSTEM}/transfer []`,
           `post /ui/systems/${SYSTEM}/archive []`,
           `post /ui/systems/${SYSTEM}/key []`,
           `post /ui/systems/${SYSTEM}/export [from to subjects openings]`,
@@ -168,6 +169,7 @@ describe("every form keeps its action, method and field names", () => {
         [
           "post /ui/logout []",
           `post /ui/systems/${EMPTY}/rename [display_name]`,
+          `post /ui/systems/${EMPTY}/transfer []`,
           `post /ui/systems/${EMPTY}/archive []`,
           `post /ui/systems/${EMPTY}/delete [confirm]`,
           `post /ui/systems/${EMPTY}/key []`,

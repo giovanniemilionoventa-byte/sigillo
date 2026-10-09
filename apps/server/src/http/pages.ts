@@ -416,10 +416,43 @@ ${wait}
 }
 
 /** A system's settings: its name, identifier and key, connecting it, archiving it, and deleting it while its chain is empty. */
+/** The "hand over" block of a system's settings: make a link, or, while one is open, replace or cancel it. */
+function transferBody(path: string, open: boolean): string {
+  const t = UI.manage;
+  return `<p>${escape(t.transferIntro)}</p>
+${open ? `<p>${escape(t.transferOpen)}</p>` : ""}
+<div class="inline"><form method="post" action="${path}/transfer"><button type="submit" class="primary">${escape(t.transferSubmit)}</button></form>
+${open ? `<form method="post" action="${path}/transfer/annulla"><button type="submit">${escape(t.transferRevoke)}</button></form>` : ""}</div>`;
+}
+
+/** The page that shows a transfer link, the only time it exists. */
+export function transferLinkPage(record: SystemRecord, url: string, expiresAt: string): string {
+  const t = UI.transfer;
+  return `<section class="card block"><div>
+<h2>${escape(t.linkTitle(systemTitle(record)))}</h2>
+<p>${escape(t.linkIntro)}</p>
+<code class="keybox" aria-label="${escape(t.linkLabel)}">${escape(url)}</code>
+<p>${escape(t.linkExpires(formatDate(expiresAt)))}</p>
+<p class="section"><a href="${systemPath(record.system_id)}/manage">${escape(t.back)}</a></p>
+</div></section>`;
+}
+
+/** What someone who opened a transfer link, signed in, is asked: add this system to your account? */
+export function transferAcceptPage(secret: string, systemName: string, account: string, extra: { error?: string } = {}): string {
+  const t = UI.transfer;
+  return `${notices(extra)}
+<section class="card block"><div>
+<h2>${escape(t.acceptTitle)}</h2>
+<p>${escape(t.acceptIntro(systemName, account))}</p>
+<form method="post" action="/ui/trasferimento/${escape(secret)}"><button type="submit" class="primary">${escape(t.acceptSubmit)}</button></form>
+</div></section>`;
+}
+
 export function managePage(
   record: SystemRecord,
   extra: { notice?: string; error?: string },
   keyIds: string[],
+  transfer: { open: boolean } | null = null,
 ): string {
   const t = UI.manage;
   const path = systemPath(record.system_id);
@@ -471,6 +504,7 @@ ${block(
   `<div class="inline"><code class="keybox" aria-label="${escape(t.keyLabel)}">${escape(current)}</code><a class="button" href="#nuova-chiave">${escape(t.newKey)}</a></div>
 <p class="section"><a href="${path}/collega">${escape(t.connect)}</a></p>`,
 )}
+${transfer === null ? "" : block("grey", ICONS.link, t.transferTitle, transferBody(path, transfer.open))}
 ${block("grey", ICONS.archive, t.archiveTitle, archive)}
 ${block("red", ICONS.trash, t.deleteTitle, removal)}
 </div>

@@ -92,6 +92,12 @@ export function storeFor(store: ReceiptStore, viewer: Viewer): ReceiptStore {
     archiveSystem: bySystem(store.archiveSystem),
     unarchiveSystem: bySystem(store.unarchiveSystem),
     deleteEmptySystem: bySystem(store.deleteEmptySystem),
+    // Handing a system over: making and taking back its link. Accepting one is
+    // not here: it moves a system between organizations, and ui.ts does it with
+    // the whole store, on the strength of the link's secret.
+    createTransfer: bySystem(store.createTransfer),
+    hasOpenTransfer: bySystem(store.hasOpenTransfer),
+    revokeTransfers: bySystem(store.revokeTransfers),
     readTimestamps: (checkpointId: number) => {
       const systemId = store.checkpointSystemId(checkpointId);
       if (systemId === null || !visible(systemId)) throw new NotVisibleError(`checkpoint ${checkpointId}`);
