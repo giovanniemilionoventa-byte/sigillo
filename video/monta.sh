@@ -16,7 +16,7 @@ SUB_NAME="sottotitolato"
 [ "$LANG_CODE" = "en" ] && SUB_NAME="subtitled"
 OUT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/out"
 S="$OUT/scene$SUFFIX"
-for n in 1 2 3 4 5 6; do
+for n in 1 c 2 3 4 5 6; do
   [ -f "$S/scena-$n.mp4" ] || { echo "missing $S/scena-$n.mp4: record it with registra.ts" >&2; exit 1; }
 done
 [ -f "$S/titolo-apertura.png" ] || { echo "missing title cards: pnpm tsx video/registra.ts titoli" >&2; exit 1; }
@@ -32,19 +32,20 @@ fades() { # $1 = scene duration: fade in at the start, fade out at the end
 }
 
 ffmpeg -y -loglevel error \
-  -i "$S/scena-1.mp4" -i "$S/scena-2.mp4" -i "$S/scena-3.mp4" \
+  -i "$S/scena-1.mp4" -i "$S/scena-c.mp4" -i "$S/scena-2.mp4" -i "$S/scena-3.mp4" \
   -i "$S/scena-4.mp4" -i "$S/scena-5.mp4" -i "$S/scena-6.mp4" \
   -loop 1 -i "$S/titolo-apertura.png" -loop 1 -i "$S/titolo-chiusura.png" \
   -filter_complex "
-    [6:v]format=rgba,fade=t=in:st=0.6:d=0.8:alpha=1,fade=t=out:st=6.4:d=0.8:alpha=1[t1];
-    [7:v]format=rgba,fade=t=in:st=${CLOSE_FROM}:d=0.8:alpha=1[t6];
+    [7:v]format=rgba,fade=t=in:st=0.6:d=0.8:alpha=1,fade=t=out:st=6.4:d=0.8:alpha=1[t1];
+    [8:v]format=rgba,fade=t=in:st=${CLOSE_FROM}:d=0.8:alpha=1[t6];
     [0:v][t1]overlay=shortest=1,$(fades "$(duration "$S/scena-1.mp4")")[v1];
-    [1:v]$(fades "$(duration "$S/scena-2.mp4")")[v2];
-    [2:v]$(fades "$(duration "$S/scena-3.mp4")")[v3];
-    [3:v]$(fades "$(duration "$S/scena-4.mp4")")[v4];
-    [4:v]$(fades "$(duration "$S/scena-5.mp4")")[v5];
-    [5:v][t6]overlay=shortest=1,$(fades "$D6")[v6];
-    [v1][v2][v3][v4][v5][v6]concat=n=6:v=1:a=0,fps=30,format=yuv420p[v]" \
+    [1:v]$(fades "$(duration "$S/scena-c.mp4")")[vc];
+    [2:v]$(fades "$(duration "$S/scena-2.mp4")")[v2];
+    [3:v]$(fades "$(duration "$S/scena-3.mp4")")[v3];
+    [4:v]$(fades "$(duration "$S/scena-4.mp4")")[v4];
+    [5:v]$(fades "$(duration "$S/scena-5.mp4")")[v5];
+    [6:v][t6]overlay=shortest=1,$(fades "$D6")[v6];
+    [v1][vc][v2][v3][v4][v5][v6]concat=n=7:v=1:a=0,fps=30,format=yuv420p[v]" \
   -map "[v]" -c:v libx264 -preset slow -crf 17 -r 30 -movflags +faststart \
   "$OUT/sigillo-demo$SUFFIX.mp4"
 

@@ -53,6 +53,11 @@ const TEXT = {
     copyCv: "candidato-07-copia.txt",
     openingTitle: "Il registro a prova di manomissione<br>per i tuoi agenti AI",
     closingTitle: "Pilota gratuito · get-sigillo.eu",
+    connectName: "Assistente clienti",
+    customerAgent: "assistente_clienti.py",
+    customerData: "domande.json",
+    customerTerminal: "Terminale — l'assistente clienti",
+    customerFolder: "assistente",
   },
   en: {
     locale: "en-GB",
@@ -87,6 +92,11 @@ const TEXT = {
     copyCv: "candidate-07-copy.txt",
     openingTitle: "The tamper-proof ledger<br>for your AI agents",
     closingTitle: "Free pilot · get-sigillo.eu",
+    connectName: "Customer assistant",
+    customerAgent: "support_assistant.py",
+    customerData: "questions.json",
+    customerTerminal: "Terminal — the support assistant",
+    customerFolder: "assistant",
   },
 } as const;
 
