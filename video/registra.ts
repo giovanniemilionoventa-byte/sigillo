@@ -184,6 +184,92 @@ async function scena1(): Promise<void> {
 }
 
 /**
+ * The connecting scene, after scene 1: a new system is created from its name,
+ * the customer's own plain agent file is dropped on "upload your agent", the
+ * file comes back with sigillo added, and it runs. The console beside a
+ * terminal, as in scene 2. It records into a system of its own and saves no
+ * state: the scenes after it start from the screening data, as before. The
+ * upload is switched on for this recording (the feature is open to the
+ * operator's account only; the film shows what a customer will see once it
+ * is opened).
+ */
+async function scenaC(): Promise<void> {
+  process.env["SIGILLO_AGENT_UPLOAD"] = "operator";
+  process.env["SIGILLO_PLAIN_AGENTS"] = "operator";
+  await withStack("dopo-preparazione", async (browser) => {
+    const left = { width: 1280, height: 1080 };
+    const right = { width: 640, height: 1080 };
+    const { actor } = await consoleActor(browser, left);
+    actor.x = 900;
+    actor.y = 800;
+    await actor.goto(`${ADDRESS}/ui/sistemi`);
+    const folder = join(OUT, T.agentFolder, T.customerFolder);
+    rmSync(folder, { recursive: true, force: true });
+    mkdirSync(folder, { recursive: true });
+    const original = join(OUT, T.agentFolder, "originale", T.customerAgent);
+    mkdirSync(join(OUT, T.agentFolder, "originale"), { recursive: true });
+    cpSync(join(ROOT, "video", "agente-cliente", T.customerAgent), original);
+    cpSync(join(ROOT, "video", "agente-cliente", T.customerData), join(folder, T.customerData));
+    const termContext = await browser.newContext({ viewport: right, locale: T.locale });
+    const terminal = await Terminal.open(termContext, { fontSize: 14, cwdLabel: T.customerFolder, title: T.customerTerminal });
+    const consoleRec = new Recorder(actor.page, frames("c-console"), left);
+    const termRec = new Recorder(terminal.page, frames("c-terminale"), right);
+    await consoleRec.start();
+    await termRec.start();
+    const from = Date.now();
+    const page = actor.page;
+    page.on("pageerror", (e) => process.stdout.write(`pageerror: ${e.message}\n`));
+    try {
+    await sleep(1400);
+    await actor.click(page.locator('a[href="/ui/sistemi/nuovo"]').first(), { navigates: true, after: 900 });
+    await actor.click(page.locator('input[name="display_name"]'), { after: 500 });
+    await page.locator('input[name="display_name"]').pressSequentially(T.connectName, { delay: 75 });
+    await sleep(900);
+    await actor.click(page.locator('form[action="/ui/sistemi"] button[type="submit"]'), { navigates: true, after: 1800 });
+    await actor.hover(page.locator("pre.code.install").first(), 300);
+    await sleep(1500);
+    // The drop zone is a label around the file field: a click on it opens the file chooser.
+    const [chooser] = await Promise.all([page.waitForEvent("filechooser"), actor.click(page.locator("label.drop"), { after: 500 })]);
+    await chooser.setFiles(original);
+    // The file is read in the browser first, and what it uses is said before anything is downloaded.
+    await page.locator("#sigillo-agent-choice").waitFor({ state: "visible" });
+    await sleep(1500);
+    await actor.hover(page.locator("#sigillo-agent-analysis"), 300);
+    await sleep(2400);
+    const [download] = await Promise.all([page.waitForEvent("download"), actor.click(page.locator("#sigillo-agent-download"), { after: 600 })]);
+    await download.saveAs(join(folder, T.customerAgent));
+    await sleep(2400);
+    await actor.hover(page.locator("#sigillo-agent-done"), 300);
+    await sleep(2600);
+    const python = process.env["SIGILLO_VIDEO_PYTHON"] ?? "python3";
+    await terminal.run(`python3 ${T.customerAgent}`, folder, { PATH: `${join(python, "..")}:${process.env["PATH"] ?? ""}` });
+    await sleep(2500);
+    await actor.click(page.locator(".wait-line a.end"), { navigates: true, after: 1800 });
+    await actor.hover(page.locator(".wait-line.green"), 300);
+    await sleep(1800);
+    await actor.click(page.locator(".wait-line.green a.button"), { navigates: true, after: 1500 });
+    await sleep(2800);
+    } catch (error) {
+      await page.screenshot({ path: "/tmp/scene-error.png" });
+      process.stdout.write(`failed at ${page.url()}\n`);
+      throw error;
+    }
+    const to = Date.now();
+    await consoleRec.stop();
+    await termRec.stop();
+    consoleRec.encode(join(SCENES, "scena-c-console.mp4"), from, to);
+    termRec.encode(join(SCENES, "scena-c-terminale.mp4"), from, to);
+    execFileSync("ffmpeg", [
+      "-y", "-loglevel", "error",
+      "-i", join(SCENES, "scena-c-console.mp4"), "-i", join(SCENES, "scena-c-terminale.mp4"),
+      "-filter_complex", "[0:v][1:v]hstack=inputs=2,format=yuv420p[v]", "-map", "[v]",
+      "-r", "30", "-c:v", "libx264", "-preset", "slow", "-crf", "16", "-movflags", "+faststart",
+      sceneFile("scena-c"),
+    ]);
+  });
+}
+
+/**
  * Scene 2, 0:15-0:40: the Registro beside a terminal, where the real agent
  * screens CVs 15 to 20, one run per CV; after each run the Registro is
  * reloaded and shows what just arrived. Then a seal, and the state is saved
@@ -529,6 +615,7 @@ function cuesOf(line: string): string[] {
 function sottotitoli(): void {
   const parts: Record<string, string[]> = {
     "scena-1": ["scena-1"],
+    "scena-c": ["scena-c"],
     "scena-2": ["scena-2"],
     "scena-3": ["scena-3"],
     "scena-4": ["scena-4"],
@@ -574,7 +661,9 @@ function sottotitoli(): void {
   process.stdout.write(`wrote ${join(OUT, `sigillo-demo${T.suffix}.srt`)} (${out.length / 4} cues, ${at.toFixed(1)} s of film)\n`);
 }
 
-const scenes: Record<string, () => Promise<void>> = { "1": scena1, "2": scena2, "3": scena3, "4": scena4, "5": scena5, "6": scena6 };
+const scenes: Record<string, () => Promise<void>> = { "1": scena1, "2": scena2, "3": scena3, "4": scena4, "5": scena5, "6": scena6, c: scenaC };
+/** The order of the film: the connecting scene comes after scene 1. */
+const order = ["1", "c", "2", "3", "4", "5", "6"];
 
 const command = process.argv[2] ?? "";
 try {
@@ -585,11 +674,11 @@ try {
   else if (command === "scena" && scenes[process.argv[3] ?? ""] !== undefined) await scenes[process.argv[3] ?? ""]?.();
   else if (command === "tutto") {
     await prepara();
-    for (const scene of Object.values(scenes)) await scene();
+    for (const key of order) await scenes[key]?.();
     await titoli();
     sottotitoli();
   } else {
-    process.stderr.write("usage: pnpm tsx video/registra.ts prepara | scena <1-6> | titoli | sottotitoli | tutto | sopralluogo\n");
+    process.stderr.write("usage: pnpm tsx video/registra.ts prepara | scena <1-6|c> | titoli | sottotitoli | tutto | sopralluogo\n");
     process.exitCode = 2;
   }
 } finally {
