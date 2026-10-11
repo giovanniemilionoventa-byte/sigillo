@@ -86,7 +86,8 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   // opened to it, the SDK's "stdlib" instrumentation records those calls
   // themselves: a model server, any other address, a file written.
   var instrument = frameworks.slice();
-  if (frameworks.length === 0 && settings.stdlib === true) instrument.push("stdlib");
+  // A file that talks to a model on this computer needs it too, to send the door the key.
+  if (frameworks.length === 0 && (settings.stdlib === true || local)) instrument.push("stdlib");
 
   // Where Python allows the lines: after the comments the file opens with
   // (a #! line, an encoding line), its docstring, and any

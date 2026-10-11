@@ -59,6 +59,26 @@ _MODEL_PATHS = (
 _originals: dict[str, object] = {}
 _patched: list[tuple[object, str, object]] = []
 _tracer: _trace.Tracer | None = None
+# With the door in front of a local model (door.py): the key the calls to that
+# model carry. The door writes their receipts, so they are not recorded here.
+_door_key: str | None = None
+_LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
+_LOCAL_PORT = 11434
+
+
+def use_door(key: str | None) -> None:
+    global _door_key
+    _door_key = key
+
+
+def _is_door(url: object) -> bool:
+    if _door_key is None or not isinstance(url, str):
+        return False
+    parsed = _parse.urlsplit(url)
+    try:
+        return parsed.hostname in _LOCAL_HOSTS and parsed.port == _LOCAL_PORT
+    except ValueError:
+        return False
 
 
 def _patch(label: str, owner: object, name: str, wrapper: object) -> None:
@@ -98,7 +118,8 @@ def install(provider: object) -> None:
 
 def uninstall() -> None:
     """Puts everything back as it was. For tests."""
-    global _tracer
+    global _tracer, _door_key
+    _door_key = None
     for owner, name, original in _patched:
         setattr(owner, name, original)
     _patched.clear()
@@ -196,6 +217,12 @@ def _url_attributes(url: object, body: object) -> tuple[str, dict[str, str]]:
 
 def _urlopen(url, *args, **kwargs):  # type: ignore[no-untyped-def]
     original: _Callable = _originals["urlopen"]  # type: ignore[assignment]
+    full = getattr(url, "full_url", url)
+    if _is_door(full):
+        request = url if isinstance(url, _request.Request) else _request.Request(full)
+        if not request.has_header("Authorization"):
+            request.add_header("Authorization", f"Bearer {_door_key}")
+        return original(request, *args, **kwargs)
     if _tracer is None or not _from_the_agent(1):
         return original(url, *args, **kwargs)
     name, attributes = _url_attributes(getattr(url, "full_url", url), getattr(url, "data", None))
@@ -205,6 +232,9 @@ def _urlopen(url, *args, **kwargs):  # type: ignore[no-untyped-def]
 
 def _requests_send(self, request, *args, **kwargs):  # type: ignore[no-untyped-def]
     original: _Callable = _originals["requests"]  # type: ignore[assignment]
+    if _is_door(request.url):
+        request.headers.setdefault("Authorization", f"Bearer {_door_key}")
+        return original(self, request, *args, **kwargs)
     if _tracer is None or not _from_the_agent(1):
         return original(self, request, *args, **kwargs)
     name, attributes = _url_attributes(request.url, request.body)
@@ -219,8 +249,16 @@ def _httpx_body(request) -> bytes | None:  # type: ignore[no-untyped-def]
         return None
 
 
+def _httpx_key(request) -> None:  # type: ignore[no-untyped-def]
+    if "authorization" not in request.headers:
+        request.headers["Authorization"] = f"Bearer {_door_key}"
+
+
 def _httpx_send(self, request, *args, **kwargs):  # type: ignore[no-untyped-def]
     original: _Callable = _originals["httpx"]  # type: ignore[assignment]
+    if _is_door(str(request.url)):
+        _httpx_key(request)
+        return original(self, request, *args, **kwargs)
     if _tracer is None or not _from_the_agent(1):
         return original(self, request, *args, **kwargs)
     name, attributes = _url_attributes(str(request.url), _httpx_body(request))
@@ -230,6 +268,9 @@ def _httpx_send(self, request, *args, **kwargs):  # type: ignore[no-untyped-def]
 
 async def _httpx_async_send(self, request, *args, **kwargs):  # type: ignore[no-untyped-def]
     original: _Callable = _originals["httpx async"]  # type: ignore[assignment]
+    if _is_door(str(request.url)):
+        _httpx_key(request)
+        return await original(self, request, *args, **kwargs)
     if _tracer is None or not _from_the_agent(1):
         return await original(self, request, *args, **kwargs)
     name, attributes = _url_attributes(str(request.url), _httpx_body(request))

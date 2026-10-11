@@ -774,6 +774,11 @@ def init(
     # working even where the global provider was already set by something else.
     _trace.set_tracer_provider(provider)
     instrumented = tuple(name for name in instrument if _instrument(name, provider, requested))
+    if local_model and "stdlib" in instrumented:
+        # The calls to the local model carry the key, and are recorded by the door.
+        from . import _stdlib
+
+        _stdlib.use_door(api_key)
 
     heartbeat = _Heartbeat(
         _heartbeat_endpoint(traces_endpoint), api_key, heartbeat_seconds, show=show_sent, strict=strict, on_halt=on_halt,

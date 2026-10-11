@@ -1,6 +1,6 @@
 """The door in front of a local model (Ollama and the like).
 
-    python -m sigillo.door --endpoint https://... --system-id ... --upstream http://127.0.0.1:11435
+    python -m sigillo.door --endpoint https://... --system-id ... --upstream http://127.0.0.1:11435 --serve
 
 listens where the agent expects the model (127.0.0.1:11434 by default), lets
 through only requests that carry the system's sigillo key as their bearer
@@ -22,8 +22,12 @@ import hmac
 import http.server
 import json
 import os
+import shutil
+import subprocess
 import sys
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # Headers that describe one connection, not the message: not passed on.
@@ -98,16 +102,53 @@ def _handler(upstream: str, token: str, tracer: object) -> type[http.server.Base
     return Door
 
 
+def _answers(upstream: str) -> bool:
+    try:
+        urllib.request.urlopen(upstream + "/api/tags", timeout=2).read()
+        return True
+    except urllib.error.HTTPError:
+        return True
+    except Exception:  # noqa: BLE001 - nothing there yet
+        return False
+
+
+def serve_model(upstream: str) -> subprocess.Popen | None:
+    """Starts `ollama serve` listening at `upstream`, unless something already answers there.
+
+    The agent's own file may start Ollama too, on the usual address: with the
+    door there, it finds the model answering and leaves it be."""
+    if _answers(upstream):
+        return None
+    executable = shutil.which("ollama")
+    if executable is None:
+        sys.exit("sigillo door: ollama was not found; install it from https://ollama.com")
+    address = urllib.parse.urlsplit(upstream)
+    environment = {**os.environ, "OLLAMA_HOST": f"{address.hostname}:{address.port}"}
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    process = subprocess.Popen(
+        [executable, "serve"], env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags
+    )
+    for _ in range(30):
+        if _answers(upstream):
+            return process
+        time.sleep(1)
+    process.terminate()
+    sys.exit("sigillo door: ollama did not start; try 'ollama serve' by hand")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="python -m sigillo.door", description=__doc__.split("\n\n")[0])
     parser.add_argument("--endpoint", required=True, help="the sigillo server's address")
     parser.add_argument("--system-id", required=True)
     parser.add_argument("--api-key", default=os.environ.get("SIGILLO_API_KEY"), help="default: SIGILLO_API_KEY")
     parser.add_argument("--upstream", required=True, help="where the model now listens, e.g. http://127.0.0.1:11435")
+    parser.add_argument("--serve", action="store_true", help="also start 'ollama serve' at the upstream address")
     parser.add_argument("--port", type=int, default=11434, help="where the agent expects the model")
     args = parser.parse_args(argv)
     if not args.api_key:
         sys.exit("sigillo door: the key is missing (--api-key or SIGILLO_API_KEY)")
+
+    model = serve_model(args.upstream.rstrip("/")) if args.serve else None
 
     import sigillo
 
@@ -125,6 +166,8 @@ def main(argv: list[str] | None = None) -> None:
         pass
     finally:
         tracing.provider.shutdown()  # type: ignore[attr-defined]
+        if model is not None:
+            model.terminate()
 
 
 if __name__ == "__main__":

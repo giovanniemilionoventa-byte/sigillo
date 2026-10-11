@@ -121,6 +121,56 @@ class DoorTest(unittest.TestCase):
         self.assertEqual(len(spans), 1)
         self.assertEqual(spans[0]["status"], "2")  # STATUS_CODE_ERROR
 
+    def test_an_agent_with_no_framework_sends_the_key_itself_and_is_recorded_once(self) -> None:
+        from sigillo import _stdlib
+
+        tracing = sigillo.init(
+            endpoint=f"http://127.0.0.1:{self.sigillo.server_address[1]}",
+            api_key=KEY,
+            system_id="local-agent",
+            instrument=["stdlib"],
+            heartbeat_seconds=3600,
+            local_model=True,
+        )
+        port = self.door.server_address[1]
+        _stdlib._LOCAL_PORT = port
+        self.addCleanup(lambda: (setattr(_stdlib, "_LOCAL_PORT", 11434), _stdlib.uninstall(), tracing.shutdown()))
+        body = json.dumps({"model": "qwen2.5:1.5b", "messages": []}).encode()
+        # No Authorization header in the agent's own code: sigillo adds it.
+        with urllib.request.urlopen(urllib.request.Request(self.base + "/api/chat", body)) as answer:
+            self.assertIn(b"ci", answer.read())
+        with urllib.request.urlopen(self.base + "/api/generate", body) as answer:  # a plain address, no Request object
+            answer.read()
+        tracing.flush()  # in one process here, the door's tracer is the agent's: two providers, one capture
+        self.assertEqual(len(self._spans(2)), 2)  # the door's, one per call: not the agent's as well
+
+    def test_serve_starts_ollama_at_the_moved_address_and_leaves_a_running_one_alone(self) -> None:
+        import os
+        import pathlib
+        import socket
+        import stat
+        import tempfile
+
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        folder = pathlib.Path(tempfile.mkdtemp(prefix="sigillo-fake-ollama-"))
+        fake = folder / "ollama"
+        fake.write_text(
+            "#!/bin/sh\nexec python3 -c \"import http.server as h,os;"
+            "H=type('H',(h.BaseHTTPRequestHandler,),{'do_GET':lambda s:(s.send_response(200),s.end_headers(),s.wfile.write(b'{}'))});"
+            "a=os.environ['OLLAMA_HOST'].split(':');h.HTTPServer((a[0],int(a[1])),H).serve_forever()\"\n"
+        )
+        fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+        previous = os.environ["PATH"]
+        os.environ["PATH"] = f"{folder}{os.pathsep}{previous}"
+        self.addCleanup(lambda: os.environ.__setitem__("PATH", previous))
+        upstream = f"http://127.0.0.1:{port}"
+        process = door.serve_model(upstream)
+        self.assertIsNotNone(process)
+        self.addCleanup(process.terminate)
+        self.assertIsNone(door.serve_model(upstream))  # it answers now: nothing more is started
+
     def test_the_guard_tells_an_open_model_from_a_closed_one(self) -> None:
         from sigillo import _watchdog
 
