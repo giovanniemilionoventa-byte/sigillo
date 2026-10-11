@@ -51,6 +51,13 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
       if (found !== null) providers[shape[0]] = found[0];
       source = source.replace(shape[1], settings.key);
     });
+    // A key with no telling prefix (Mistral's) is known by the name it is
+    // given: MISTRAL_API_KEY = "...", mistral_key = '...'.
+    var named = /(\\b\\w*mistral\\w*key\\w*\\s*[=:]\\s*)(["'])([A-Za-z0-9_-]{20,})\\2/gi;
+    source = source.replace(named, function (all, before, quote, key) {
+      providers.mistral = key;
+      return before + quote + settings.key + quote;
+    });
     lines = source.slice(bom.length).split(/\\r?\\n/);
     // Used, whatever the way: the provider's library (on its own or through
     // LangChain), its key's variable (read from the environment or a .env
@@ -60,6 +67,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     var via = [
       ["openai", "OPENAI", "/openai/v1", "openai|langchain_openai", /https:\\/\\/api\\.openai\\.com\\/v1/g],
       ["anthropic", "ANTHROPIC", "/anthropic", "anthropic|langchain_anthropic", /https:\\/\\/api\\.anthropic\\.com/g],
+      ["mistral", "MISTRAL", "/mistral/v1", "mistralai|langchain_mistralai", /https:\\/\\/api\\.mistral\\.ai\\/v1/g],
     ];
     via.forEach(function (provider) {
       var uses = Object.prototype.hasOwnProperty.call(providers, provider[0]) ||

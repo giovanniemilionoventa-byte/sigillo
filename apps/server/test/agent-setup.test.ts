@@ -522,3 +522,19 @@ describe("an uploaded agent whose cloud key is in a .env file", () => {
     expect(result.text).not.toContain("api.openai.com");
   });
 });
+
+describe("an uploaded agent that calls Mistral by itself", () => {
+  it("takes the key out of the file, points the address at the gateway, and hands the key back for sigillo to keep", () => {
+    const realKey = "mstrl_" + "INpYbOBBvox4azineaU08E7LXgz";
+    const source =
+      'import os, urllib.request\nMISTRAL_API_KEY_DEFAULT = "' + realKey + '"\nMISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"\n' +
+      'os.environ.setdefault("MISTRAL_API_KEY", MISTRAL_API_KEY_DEFAULT)\n';
+    const result = setup(source, { ...SETTINGS, gateway: GATEWAY } as typeof SETTINGS) as Added & { providers: Record<string, string> };
+    expect(result.providers).toEqual({ mistral: realKey });
+    expect(result.text).not.toContain(realKey);
+    expect(result.text).toContain('MISTRAL_API_KEY_DEFAULT = "sigillo_abc_def"');
+    expect(result.text).toContain('MISTRAL_URL = "https://get-sigillo.eu/llm/mistral/v1/chat/completions"');
+    expect(result.text).toContain('os.environ["MISTRAL_API_KEY"] = "sigillo_abc_def"');
+    if (python) expect(parses(result.text)).toBe(true);
+  });
+});

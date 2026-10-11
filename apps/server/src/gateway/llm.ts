@@ -15,6 +15,7 @@ import { toolRequestsOf } from "./tool-requests.js";
  *   OpenAI-compatible   base_url = <server>/llm/openai/v1
  *   Anthropic (Claude)  base_url = <server>/llm/anthropic
  *   Google Gemini       base_url = <server>/llm/gemini
+ *   Mistral             base_url = <server>/llm/mistral/v1
  *
  * Whatever path follows the prefix is the provider's own, forwarded as it is:
  * `/llm/openai/v1/chat/completions` reaches `https://api.openai.com/v1/chat/completions`.
@@ -57,6 +58,7 @@ const UPSTREAM: Record<Provider, string> = {
   openai: "https://api.openai.com",
   anthropic: "https://api.anthropic.com",
   gemini: "https://generativelanguage.googleapis.com",
+  mistral: "https://api.mistral.ai",
 };
 
 /**
@@ -68,6 +70,7 @@ const PATH: Record<Provider, RegExp> = {
   openai: /^v1\/[A-Za-z0-9._~\/-]+$/,
   anthropic: /^v1\/[A-Za-z0-9._~\/-]+$/,
   gemini: /^v1(beta)?\/[A-Za-z0-9._~\/:-]+$/,
+  mistral: /^v1\/[A-Za-z0-9._~\/-]+$/,
 };
 
 /** The request headers the providers read that are not the key: passed on as they are. */
