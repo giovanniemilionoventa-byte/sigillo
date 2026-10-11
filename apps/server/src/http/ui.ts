@@ -10,7 +10,7 @@ import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { archiveFromStore, positionsIn, tokensIn } from "../export/from-store.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
-import { gatewayAllowed, type GatewayOptions } from "../gateway/llm.js";
+import { gatewayAllowed, type GatewayOptions, providerRefuses } from "../gateway/llm.js";
 import { isProvider, ProviderKeyError } from "../gateway/provider-keys.js";
 import { AGENT_SETUP_SCRIPT } from "./agent-setup.js";
 import {
@@ -991,6 +991,9 @@ ${exportSheet(record)}`,
     const body = request.body as { provider?: unknown; key?: unknown } | undefined;
     try {
       if (!isProvider(body?.provider) || typeof body?.key !== "string") throw new ProviderKeyError("invalid");
+      if (await providerRefuses(body.provider, body.key.trim(), gateway.upstream?.[body.provider])) {
+        return html(reply, renderManage(session, record, { error: UI.manage.modelKeyRefused }), 400);
+      }
       gateway.keys.set(systemId, body.provider, body.key, options.now().toISOString());
     } catch (error) {
       if (!(error instanceof ProviderKeyError)) throw error;
