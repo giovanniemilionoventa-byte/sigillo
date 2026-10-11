@@ -52,14 +52,23 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
       source = source.replace(shape[1], settings.key);
     });
     lines = source.slice(bom.length).split(/\\r?\\n/);
+    // Used, whatever the way: the provider's library (on its own or through
+    // LangChain), its key's variable (read from the environment or a .env
+    // file, which the lines below set first, and python-dotenv does not
+    // override), or its address called directly, which is pointed at the
+    // gateway here.
     var via = [
-      ["openai", "OPENAI", "/openai/v1"],
-      ["anthropic", "ANTHROPIC", "/anthropic"],
+      ["openai", "OPENAI", "/openai/v1", "openai|langchain_openai", /https:\\/\\/api\\.openai\\.com\\/v1/g],
+      ["anthropic", "ANTHROPIC", "/anthropic", "anthropic|langchain_anthropic", /https:\\/\\/api\\.anthropic\\.com/g],
     ];
     via.forEach(function (provider) {
       var uses = Object.prototype.hasOwnProperty.call(providers, provider[0]) ||
-        new RegExp("^\\\\s*(from|import)\\\\s+" + provider[0] + "\\\\b", "m").test(source);
+        new RegExp("^\\\\s*(from|import)\\\\s+(" + provider[3] + ")\\\\b", "m").test(source) ||
+        source.indexOf(provider[1] + "_API_KEY") >= 0 ||
+        provider[4].test(source);
       if (!uses) return;
+      source = source.replace(provider[4], settings.gateway + provider[2]);
+      lines = source.slice(bom.length).split(/\\r?\\n/);
       if (!Object.prototype.hasOwnProperty.call(providers, provider[0])) providers[provider[0]] = "";
       gatewayLines.push(
         "os.environ[" + JSON.stringify(provider[1] + "_BASE_URL") + "] = " + JSON.stringify(settings.gateway + provider[2]),
