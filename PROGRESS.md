@@ -3878,3 +3878,22 @@ altro = chiamata a strumento col solo host; indirizzo e corpo solo come hash). N
 configuratore né al server: il metodo resta caricare il file .py e riscaricarlo; resta valido
 l'interruttore `SIGILLO_PLAIN_AGENTS`. Non coperti: `aiohttp`, gli SDK dei provider che non passano da
 queste librerie, `subprocess`.
+
+## Più sicurezza per i modelli locali: la porta (2026-10-11)
+
+Richiesta del proprietario: per Ollama e simili la stessa idea della chiave cloud, senza passaggi tecnici. Solo account amministratore (stesso interruttore `SIGILLO_AGENT_PROTECTION`, predefinito `operator`); nessuna interfaccia nuova.
+
+- **La porta** (`sdk-python/src/sigillo/door.py`, `python -m sigillo.door`): ascolta dove l'agente cerca il modello (127.0.0.1:11434), lascia passare solo chi porta la chiave di sigillo come bearer, inoltra al modello e scrive una ricevuta per ogni chiamata (stessi attributi delle altre chiamate a modelli, contenuti solo come hash, risposte in streaming intatte). La scrive la porta, non l'agente.
+- **Per il cliente (una volta)**: avviare Ollama con `OLLAMA_HOST=127.0.0.1:11435` e lasciare in esecuzione `SIGILLO_API_KEY=... python -m sigillo.door --endpoint ... --system-id ... --upstream http://127.0.0.1:11435`.
+- **Il file riscritto** (`agent-setup.ts`): con la protezione attiva, un file che usa `11434` o la libreria `ollama` chiama il modello con la chiave di sigillo (`api_key="ollama"` sostituito, `OLLAMA_API_KEY` impostata) e passa `local_model=True` a `init`; chiede l'SDK 0.5. Senza la porta il file funziona lo stesso (Ollama ignora la chiave).
+- **Il controllo** (`_watchdog.py`, `local_model=True` con `strict=True`): a ogni giro la guardia chiede a 127.0.0.1:11434 l'elenco dei modelli senza chiave; se risponde, scrive una sola volta la ricevuta `sigillo.local_model.open` (esito errore).
+- Test: `sdk-python/tests/test_door.py` (5), tre casi in `agent-setup.test.ts`.
+- Limite onesto: il modello resta raggiungibile sulla sua porta privata (11435) per un agente che la cerca; solo un utente del sistema operativo diverso per Ollama lo impedirebbe davvero. Non coperti: librerie che prendono la chiave da altrove (`OPENAI_API_KEY` con modello locale), modelli su altre porte.
+- Peso sul verificatore: nessuno. Versione SDK 0.5.0.
+## Red-team dell'agente malevolo, percorso cloud (2026-10-09)
+
+Prova con un agente malevolo vero (processo Python con SDK e guardia, server reale, provider finto) e con una suite di attacchi HTTP (`apps/server/test/gateway-redteam.test.ts`, 18 test).
+
+- Trovati e corretti due buchi nel gateway (`gateway/llm.ts`): (F1) le richieste GET inoltrate al provider con la chiave vera non lasciavano ricevuta, ora ne lasciano una e rispettano pausa e quota (unica eccezione: l'elenco dei nomi dei modelli); (F2) se l'agente interrompeva la connessione a metà non restava alcuna ricevuta, ora ne resta una di errore.
+- Reggono: chiave vera mai nel file, nell'ambiente, nei processi, nelle risposte o negli errori; path traversal, header che cambiano destinazione, `?key=`, isolamento tra sistemi e tra provider; spegnere la guardia ferma l'agente (uscita 70) e scrive `script_changed`.
+- Limite noto, per costruzione: un agente con gli stessi permessi del sistema operativo può mandare battiti finti con l'hash vecchio (non rilevato) o usare una chiave vecchia rimasta altrove. Il cliente deve cancellare la vecchia chiave dal provider.

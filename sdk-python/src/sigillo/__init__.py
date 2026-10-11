@@ -83,11 +83,12 @@ from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
 from . import _text, _watchdog
 
 __all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"]
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 _LOG = _logging.getLogger("sigillo")
 _TRACES_PATH = "/v1/traces"
 _HEARTBEAT_PATH = "/api/v1/heartbeat"
+_LOCAL_MODEL = "http://127.0.0.1:11434"
 # What `init` tries when `instrument=` is not given. "stdlib" (see _stdlib.py)
 # is not among them: it hooks urllib and file writing in the whole process, so
 # it is turned on only by naming it.
@@ -146,8 +147,10 @@ class _Heartbeat:
         strict: bool = False,
         on_halt: _Callable[[str], None] | None = None,
         guard_seconds: float = 5.0,
+        local_model: bool = False,
     ) -> None:
         self._url = url
+        self._local_model = local_model
         self._show = show
         self._strict = strict
         self._on_halt = on_halt or _halt_process
@@ -187,6 +190,10 @@ class _Heartbeat:
             "sdk_hash": _watchdog.package_hash(directory),
             "parent": _os.getpid(),
             "period": self._guard_period,
+            # Where the local model is expected (the door, see door.py); the
+            # guard says so if it answers without the key.
+            "probe": _LOCAL_MODEL if self._local_model else None,
+            "receipts": self._url[: -len(_HEARTBEAT_PATH)] + "/api/v1/receipts",
         }
         try:
             guard = _subprocess.Popen(
@@ -651,6 +658,7 @@ def init(
     show_sent: bool = False,
     strict: bool = False,
     on_halt: _Callable[[str], None] | None = None,
+    local_model: bool = False,
 ) -> Tracing:
     """Point OpenTelemetry at a sigillo server and turn on the instrumentations.
 
@@ -715,6 +723,11 @@ def init(
             session started with. Only a sigillo account with the script
             guard switched on is told anything, so for any other this does
             nothing about scripts, though the missed-beats rule still applies.
+        local_model: false by default. For an agent that uses a model on the
+            same computer, behind the door (`python -m sigillo.door`): with
+            strict mode, the guard process checks at every round that the model
+            does not answer at 127.0.0.1:11434 without the key, and writes a
+            `sigillo.local_model.open` receipt when it does.
         on_halt: replaces how strict mode stops the agent: called once, from
             the heartbeat's thread, with the reason as a sentence. For a
             program that wants to shut down cleanly in its own way.
@@ -763,7 +776,8 @@ def init(
     instrumented = tuple(name for name in instrument if _instrument(name, provider, requested))
 
     heartbeat = _Heartbeat(
-        _heartbeat_endpoint(traces_endpoint), api_key, heartbeat_seconds, show=show_sent, strict=strict, on_halt=on_halt
+        _heartbeat_endpoint(traces_endpoint), api_key, heartbeat_seconds, show=show_sent, strict=strict, on_halt=on_halt,
+        local_model=local_model,
     )
     heartbeat.start()
 
