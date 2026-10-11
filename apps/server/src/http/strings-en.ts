@@ -247,6 +247,7 @@ const ui: Strings = {
     renamed: "Name saved.",
     modelSaved: "Model key saved. Delete the old key at the provider, so only sigillo can use it.",
     modelKeyInvalid: "This does not look like a model key.",
+    modelKeyRefused: "The provider refused this key, so it was not saved. Copy it again from the provider's site.",
     idTitle: "Identifier",
     keyTitle: "Key",
     keyLabel: "Current key",

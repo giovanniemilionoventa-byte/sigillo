@@ -255,6 +255,7 @@ const ui = {
     renamed: "Nome salvato.",
     modelSaved: "Chiave del modello salvata. Cancella la vecchia chiave dal sito del fornitore, così la può usare solo sigillo.",
     modelKeyInvalid: "Questa non sembra una chiave del modello.",
+    modelKeyRefused: "Il fornitore ha rifiutato questa chiave, quindi non è stata salvata. Copiala di nuovo dal sito del fornitore.",
     idTitle: "Identificativo",
     keyTitle: "Chiave",
     keyLabel: "Chiave attuale",

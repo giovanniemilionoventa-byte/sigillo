@@ -259,6 +259,27 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
   app.get("/llm/:provider/*", handle);
 }
 
+/**
+ * Whether the provider refuses `key`, asked with its cheapest call (its model
+ * list) when the key is saved: a key that lost or gained a character on its
+ * way into the form is caught there, not at the agent's first call. A
+ * provider that cannot be reached is no answer: false.
+ */
+export async function providerRefuses(provider: Provider, key: string, upstream?: string): Promise<boolean> {
+  const path = provider === "gemini" ? "v1beta/models" : "v1/models";
+  const headers: Record<string, string> = providerAuth(provider, path, key);
+  if (provider === "anthropic") headers["anthropic-version"] = "2023-06-01";
+  try {
+    const answer = await fetch(`${(upstream ?? UPSTREAM[provider]).replace(/\/+$/, "")}/${path}`, {
+      headers,
+      signal: AbortSignal.timeout(8000),
+    });
+    return answer.status === 401 || answer.status === 403;
+  } catch {
+    return false;
+  }
+}
+
 /** How each provider takes its key. Gemini's OpenAI-compatible endpoints take it as OpenAI does. */
 function providerAuth(provider: Provider, path: string, key: string): Record<string, string> {
   if (provider === "anthropic") return { "x-api-key": key };

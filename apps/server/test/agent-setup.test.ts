@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import type { FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { UiSessions } from "../src/auth/sessions.js";
 import { OPERATOR, type Viewer } from "../src/auth/tenancy.js";
@@ -193,13 +195,27 @@ let sessions: UiSessions;
 let app: FastifyInstance | undefined;
 let providerKeys: ProviderKeyStore;
 
+// A stand-in for the provider: it takes only the test's OpenAI key, as the
+// real one takes only real keys, when the console checks a key it is given.
+let provider: Server;
+let providerUrl: string;
+beforeAll(async () => {
+  provider = createServer((request, response) => {
+    response.statusCode = request.headers.authorization === `Bearer ${OPENAI_KEY}` ? 200 : 401;
+    response.end("{}");
+  });
+  await new Promise<void>((resolve) => provider.listen(0, "127.0.0.1", resolve));
+  providerUrl = `http://127.0.0.1:${(provider.address() as AddressInfo).port}`;
+});
+afterAll(() => new Promise<void>((resolve) => provider.close(() => resolve())));
+
 async function start(access?: "off" | "operator" | "all"): Promise<void> {
   if (app !== undefined) await app.close();
   sessions = new UiSessions();
   app = buildServer({
     store,
     keys,
-    gateway: { keys: providerKeys, access: "all" },
+    gateway: { keys: providerKeys, access: "all", upstream: { openai: providerUrl } },
     now: () => new Date(NOW),
     ui: {
       password: "an administrator password",
@@ -436,6 +452,19 @@ describe("an uploaded agent through the model gateway", () => {
     expect((await post(OPERATOR, OPERATOR_BOT, "provider=other&key=" + OPENAI_KEY)).statusCode).toBe(400);
     expect((await post(ACME, ACME_BOT, `provider=openai&key=${OPENAI_KEY}`)).statusCode).toBe(404);
     expect(providerKeys.get(ACME_BOT, "openai")).toBeNull();
+  });
+
+  it("does not save a key the provider refuses, such as one that lost a character on the way, and says so", async () => {
+    await start("operator");
+    const refused = await app!.inject({
+      method: "POST",
+      url: `/ui/systems/${OPERATOR_BOT}/llm-key`,
+      headers: { cookie: cookie(OPERATOR), "content-type": "application/x-www-form-urlencoded" },
+      payload: `provider=openai&key=${OPENAI_KEY.slice(0, -1)}`,
+    });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.body).toContain("refused this key");
+    expect(providerKeys.get(OPERATOR_BOT, "openai")).toBeNull();
   });
 });
 
