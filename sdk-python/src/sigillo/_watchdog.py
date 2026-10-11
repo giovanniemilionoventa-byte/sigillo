@@ -22,6 +22,7 @@ import signal
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 
 
@@ -59,6 +60,37 @@ def _tell_server(config: dict, script_hash: str | None, sdk_hash: str | None) ->
         pass
 
 
+def model_state(base: str) -> str:
+    """"open" if the local model answers a request that carries no key, "closed"
+    if it asks for one, "none" if nothing answers there."""
+    try:
+        urllib.request.urlopen(base + "/api/tags", timeout=2).read()
+        return "open"
+    except urllib.error.HTTPError as error:
+        return "closed" if error.code in (401, 403) else "open"
+    except Exception:  # noqa: BLE001 - nothing listening, or not an HTTP model
+        return "none"
+
+
+def _say_open(config: dict) -> None:
+    """The receipt that says the model can be reached without sigillo."""
+    payload = {
+        "actor": {"agent": "sigillo-guard"},
+        "action": {"kind": "decision", "name": "sigillo.local_model.open"},
+        "outcome": "error",
+    }
+    request = urllib.request.Request(
+        config["receipts"],
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Authorization": f"Bearer {config['api_key']}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(request, timeout=10).read()
+    except Exception:  # noqa: BLE001 - tried again at the next change
+        pass
+
+
 def _end(pid: int) -> None:
     try:
         os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
@@ -75,8 +107,14 @@ def main() -> None:
         os._exit(0)
 
     threading.Thread(target=parent_gone, daemon=True).start()
+    was = "none"
     while True:
         time.sleep(config["period"])
+        if config.get("probe"):
+            now = model_state(config["probe"])
+            if now == "open" and was != "open":
+                _say_open(config)
+            was = now
         script = file_hash(config["script"]) if config["script"] is not None else None
         sdk = package_hash(directory)
         if script != config["script_hash"] or sdk != config["sdk_hash"]:

@@ -21,6 +21,17 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
 
   if (/^\\s*(import sigillo\\b|sigillo\\.init\\()/m.test(source)) return { status: "already" };
 
+  // A model on this computer (Ollama and the like) with protection on: the
+  // file calls it with the system's sigillo key, which the door
+  // (python -m sigillo.door) asks for and Ollama ignores, so the file works
+  // with or without the door. The guard is told to watch the model's address.
+  var local = false;
+  if (settings.protection && (/\\b11434\\b/.test(source) || /^\\s*(from|import)\\s+ollama\\b/m.test(source))) {
+    local = true;
+    source = source.replace(/\\bapi_key\\s*=\\s*(["'])ollama\\1/g, "api_key=" + JSON.stringify(settings.key));
+    lines = source.slice(bom.length).split(/\\r?\\n/);
+  }
+
   // The model gateway (settings.gateway, an address): the provider keys in the
   // file are replaced by the system's sigillo key, and the OpenAI and
   // Anthropic clients are pointed at the gateway through the variables they
@@ -55,8 +66,9 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
         "os.environ[" + JSON.stringify(provider[1] + "_API_KEY") + "] = " + JSON.stringify(settings.key),
       );
     });
-    if (gatewayLines.length > 0) gatewayLines.unshift("import os");
   }
+  if (local) gatewayLines.push("os.environ[" + JSON.stringify("OLLAMA_API_KEY") + "] = " + JSON.stringify(settings.key));
+  if (gatewayLines.length > 0) gatewayLines.unshift("import os");
 
   // Which instrumentation: LangChain and LangGraph, CrewAI, or the OpenAI
   // client on its own. The first two already record the model calls they make,
@@ -113,7 +125,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
 
   // The file installs what it needs by itself, the first time it runs, with
   // the same Python that runs it: downloading it is the whole installation. An
-  // SDK installed earlier but older than 0.4 is replaced the same way, and the
+  // SDK installed earlier but older than 0.4 (0.5 for a local model) is replaced the same way, and the
   // file then runs itself again, so that nothing from the old one stays
   // loaded. SIGILLO_SETUP_DONE stops that from repeating if the install did not help.
   var extras = frameworks.length > 0 ? "[" + frameworks.join(",") + "]" : "";
@@ -124,7 +136,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   });
   block.push(
     "    import importlib.metadata",
-    '    if tuple(map(int, importlib.metadata.version("sigillo").split(".")[:2])) < (0, 4):',
+    '    if tuple(map(int, importlib.metadata.version("sigillo").split(".")[:2])) < (0, ' + (local ? "5" : "4") + "):",
     '        raise ImportError("sigillo is too old")',
     "except ImportError:",
     "    import os",
@@ -148,6 +160,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   // instrumentation, which is how a plain agent came to be told about crewai.
   block.push("    instrument=" + JSON.stringify(instrument).replace(/,/g, ", ") + ",");
   if (settings.protection) block.push("    strict=True,");
+  if (local) block.push("    local_model=True,");
   block.push(")");
   var head = lines.slice(0, at);
   var tail = lines.slice(at);

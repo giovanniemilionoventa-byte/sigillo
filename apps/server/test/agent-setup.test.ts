@@ -438,3 +438,39 @@ describe("an uploaded agent through the model gateway", () => {
     expect(providerKeys.get(ACME_BOT, "openai")).toBeNull();
   });
 });
+
+describe("agent protection: a model on the same computer", () => {
+  type Settings = typeof SETTINGS & { protection?: boolean };
+  const run = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: Settings) => Result;
+  const OLLAMA = 'from openai import OpenAI\nclient = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")\n';
+
+  const text = (source: string, settings: Settings): string => {
+    const result = run(source, settings);
+    if (result.status !== "added") throw new Error("expected the lines added");
+    return result.text;
+  };
+
+  it("with protection, calls the model with the sigillo key, asks for the newer SDK and tells the guard", () => {
+    const out = text(OLLAMA, { ...SETTINGS, protection: true });
+    expect(out).toContain('api_key="sigillo_abc_def"');
+    expect(out).not.toContain('"ollama"');
+    expect(out).toContain('os.environ["OLLAMA_API_KEY"] = "sigillo_abc_def"');
+    expect(out).toContain("    local_model=True,");
+    expect(out).toContain("< (0, 5):");
+    if (python) expect(parses(out)).toBe(true);
+  });
+
+  it("recognises the ollama library as well, and leaves a file with no local model alone", () => {
+    expect(text("import ollama\nollama.chat(model='m')\n", { ...SETTINGS, protection: true })).toContain("local_model=True");
+    const cloud = text("from openai import OpenAI\nOpenAI()\n", { ...SETTINGS, protection: true });
+    expect(cloud).not.toContain("local_model");
+    expect(cloud).toContain("< (0, 4):");
+  });
+
+  it("does nothing about it where protection is off (rule 11)", () => {
+    const out = text(OLLAMA, { ...SETTINGS, protection: false });
+    expect(out).toContain('api_key="ollama"');
+    expect(out).not.toContain("local_model");
+    expect(out).not.toContain("OLLAMA_API_KEY");
+  });
+});
