@@ -32,6 +32,7 @@ const ACME: Viewer = { kind: "organization", organizationId: "acme" };
 const OPENAI_KEY = "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
 const ANTHROPIC_KEY = "sk-ant-api03-ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210";
 const GEMINI_KEY = "AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW";
+const MISTRAL_KEY = "Mz9" + "aB8cD7eF6gH5iJ4kL3mN2oP1qR0sT";
 const PROMPT = "Rank these curricula for the warehouse role";
 const ANSWER = "Candidate B fits the role best";
 const NOW = "2026-10-05T17:00:00.000Z";
@@ -70,7 +71,7 @@ async function start(access: GatewayAccess, toolRequests: "off" | GatewayAccess 
     store,
     keys,
     now: () => new Date(NOW),
-    gateway: { keys: providerKeys, access, toolRequests, upstream: { openai: upstreamUrl, anthropic: `${upstreamUrl}/`, gemini: upstreamUrl } },
+    gateway: { keys: providerKeys, access, toolRequests, upstream: { openai: upstreamUrl, anthropic: `${upstreamUrl}/`, gemini: upstreamUrl, mistral: upstreamUrl } },
     ui: {
       password: "an administrator password",
       signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
@@ -126,6 +127,7 @@ beforeEach(async () => {
     providerKeys.set(systemId, "openai", OPENAI_KEY, ADMIN.ts);
     providerKeys.set(systemId, "anthropic", ANTHROPIC_KEY, ADMIN.ts);
     providerKeys.set(systemId, "gemini", GEMINI_KEY, ADMIN.ts);
+    providerKeys.set(systemId, "mistral", MISTRAL_KEY, ADMIN.ts);
   }
   await start("operator");
 });
@@ -245,6 +247,13 @@ describe("the model gateway", () => {
     expect(seen[0]!.url).toBe("/v1beta/openai/chat/completions");
     expect(seen[0]!.headers.authorization).toBe(`Bearer ${GEMINI_KEY}`);
     expect(seen[0]!.headers["x-goog-api-key"]).toBeUndefined();
+  });
+
+  it("speaks Mistral's API with the key as a bearer token", async () => {
+    const response = await chat(operatorToken, { model: "mistral-small-latest", messages: [{ role: "user", content: PROMPT }] }, "/llm/mistral/v1/chat/completions");
+    expect(response.statusCode).toBe(200);
+    expect(seen[0]!.url).toBe("/v1/chat/completions");
+    expect(seen[0]!.headers.authorization).toBe(`Bearer ${MISTRAL_KEY}`);
   });
 
   it("records a refusal of the provider as an error, and passes it on with its retry hint", async () => {
@@ -387,7 +396,7 @@ describe("the model gateway", () => {
 
   it("refuses a wrong key, a provider it does not know and a path that climbs", async () => {
     expect((await chat("sigillo_nope_0000")).statusCode).toBe(401);
-    expect((await chat(operatorToken, undefined, "/llm/mistral/v1/chat/completions")).statusCode).toBe(404);
+    expect((await chat(operatorToken, undefined, "/llm/cohere/v1/chat/completions")).statusCode).toBe(404);
     expect((await chat(operatorToken, undefined, "/llm/openai/v1/../admin")).statusCode).toBe(404);
     expect((await chat(operatorToken, undefined, "/llm/openai/v2/chat")).statusCode).toBe(404);
     expect(seen).toEqual([]);

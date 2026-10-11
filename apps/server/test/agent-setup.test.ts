@@ -486,3 +486,55 @@ describe("agent protection: a plain agent that starts its own Ollama", () => {
     expect(result.text).toContain('OLLAMA_HOST = "http://localhost:11434"'); // the agent's own lines are untouched
   });
 });
+
+describe("an uploaded agent whose cloud key is in a .env file", () => {
+  const through = (source: string) => {
+    const result = setup(source, { ...SETTINGS, gateway: GATEWAY } as typeof SETTINGS);
+    if (result.status !== "added") throw new Error("expected added");
+    return result as Added & { providers: Record<string, string> };
+  };
+
+  it("is seen through LangChain, the key's variable or python-dotenv, and the page asks for the key", () => {
+    const cases: Array<[string, string]> = [
+      ["from langchain_anthropic import ChatAnthropic\nllm = ChatAnthropic(model='claude')\n", "anthropic"],
+      ["from langchain_openai import ChatOpenAI\nllm = ChatOpenAI()\n", "openai"],
+      ['import os\nfrom dotenv import load_dotenv\nload_dotenv()\nkey = os.getenv("ANTHROPIC_API_KEY")\n', "anthropic"],
+      ['import os\nkey = os.environ["OPENAI_API_KEY"]\n', "openai"],
+    ];
+    for (const [source, provider] of cases) {
+      const result = through(source);
+      expect(result.providers).toEqual({ [provider]: "" });
+      // Set before the file's own code runs: load_dotenv() does not override it.
+      expect(result.text.indexOf(`os.environ["${provider.toUpperCase()}_API_KEY"] = "sigillo_abc_def"`)).toBeLessThan(result.text.indexOf("load_dotenv") >>> 0);
+      if (python) expect(parses(result.text)).toBe(true);
+    }
+  });
+
+  it("points an agent that calls the provider's address itself at the gateway", () => {
+    const source =
+      'import os, json, urllib.request\nreq = urllib.request.Request("https://api.anthropic.com/v1/messages", headers={"x-api-key": os.getenv("ANTHROPIC_API_KEY")})\n' +
+      'other = "https://api.openai.com/v1/chat/completions"\n';
+    const result = through(source);
+    expect(result.providers).toEqual({ openai: "", anthropic: "" });
+    expect(result.text).toContain('"https://get-sigillo.eu/llm/anthropic/v1/messages"');
+    expect(result.text).toContain('"https://get-sigillo.eu/llm/openai/v1/chat/completions"');
+    expect(result.text).not.toContain("api.anthropic.com");
+    expect(result.text).not.toContain("api.openai.com");
+  });
+});
+
+describe("an uploaded agent that calls Mistral by itself", () => {
+  it("takes the key out of the file, points the address at the gateway, and hands the key back for sigillo to keep", () => {
+    const realKey = "mstrl_" + "INpYbOBBvox4azineaU08E7LXgz";
+    const source =
+      'import os, urllib.request\nMISTRAL_API_KEY_DEFAULT = "' + realKey + '"\nMISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"\n' +
+      'os.environ.setdefault("MISTRAL_API_KEY", MISTRAL_API_KEY_DEFAULT)\n';
+    const result = setup(source, { ...SETTINGS, gateway: GATEWAY } as typeof SETTINGS) as Added & { providers: Record<string, string> };
+    expect(result.providers).toEqual({ mistral: realKey });
+    expect(result.text).not.toContain(realKey);
+    expect(result.text).toContain('MISTRAL_API_KEY_DEFAULT = "sigillo_abc_def"');
+    expect(result.text).toContain('MISTRAL_URL = "https://get-sigillo.eu/llm/mistral/v1/chat/completions"');
+    expect(result.text).toContain('os.environ["MISTRAL_API_KEY"] = "sigillo_abc_def"');
+    if (python) expect(parses(result.text)).toBe(true);
+  });
+});

@@ -51,15 +51,32 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
       if (found !== null) providers[shape[0]] = found[0];
       source = source.replace(shape[1], settings.key);
     });
+    // A key with no telling prefix (Mistral's) is known by the name it is
+    // given: MISTRAL_API_KEY = "...", mistral_key = '...'.
+    var named = /(\\b\\w*mistral\\w*key\\w*\\s*[=:]\\s*)(["'])([A-Za-z0-9_-]{20,})\\2/gi;
+    source = source.replace(named, function (all, before, quote, key) {
+      providers.mistral = key;
+      return before + quote + settings.key + quote;
+    });
     lines = source.slice(bom.length).split(/\\r?\\n/);
+    // Used, whatever the way: the provider's library (on its own or through
+    // LangChain), its key's variable (read from the environment or a .env
+    // file, which the lines below set first, and python-dotenv does not
+    // override), or its address called directly, which is pointed at the
+    // gateway here.
     var via = [
-      ["openai", "OPENAI", "/openai/v1"],
-      ["anthropic", "ANTHROPIC", "/anthropic"],
+      ["openai", "OPENAI", "/openai/v1", "openai|langchain_openai", /https:\\/\\/api\\.openai\\.com\\/v1/g],
+      ["anthropic", "ANTHROPIC", "/anthropic", "anthropic|langchain_anthropic", /https:\\/\\/api\\.anthropic\\.com/g],
+      ["mistral", "MISTRAL", "/mistral/v1", "mistralai|langchain_mistralai", /https:\\/\\/api\\.mistral\\.ai\\/v1/g],
     ];
     via.forEach(function (provider) {
       var uses = Object.prototype.hasOwnProperty.call(providers, provider[0]) ||
-        new RegExp("^\\\\s*(from|import)\\\\s+" + provider[0] + "\\\\b", "m").test(source);
+        new RegExp("^\\\\s*(from|import)\\\\s+(" + provider[3] + ")\\\\b", "m").test(source) ||
+        source.indexOf(provider[1] + "_API_KEY") >= 0 ||
+        provider[4].test(source);
       if (!uses) return;
+      source = source.replace(provider[4], settings.gateway + provider[2]);
+      lines = source.slice(bom.length).split(/\\r?\\n/);
       if (!Object.prototype.hasOwnProperty.call(providers, provider[0])) providers[provider[0]] = "";
       gatewayLines.push(
         "os.environ[" + JSON.stringify(provider[1] + "_BASE_URL") + "] = " + JSON.stringify(settings.gateway + provider[2]),
