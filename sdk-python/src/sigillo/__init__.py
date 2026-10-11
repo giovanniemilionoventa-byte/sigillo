@@ -724,8 +724,9 @@ def init(
             guard switched on is told anything, so for any other this does
             nothing about scripts, though the missed-beats rule still applies.
         local_model: false by default. For an agent that uses a model on the
-            same computer, behind the door (`python -m sigillo.door`): with
-            strict mode, the guard process checks at every round that the model
+            same computer: with strict mode, the door (`sigillo/door.py`) and
+            Ollama behind it start here, for as long as the agent runs, unless
+            the door is already there; the guard process checks at every round that the model
             does not answer at 127.0.0.1:11434 without the key, and writes a
             `sigillo.local_model.open` receipt when it does.
         on_halt: replaces how strict mode stops the agent: called once, from
@@ -774,6 +775,15 @@ def init(
     # working even where the global provider was already set by something else.
     _trace.set_tracer_provider(provider)
     instrumented = tuple(name for name in instrument if _instrument(name, provider, requested))
+    if local_model and strict:
+        # The door, and Ollama behind it, start with the agent's file: one step.
+        from . import door as _door
+
+        started = _door.ensure(endpoint, api_key, system_id)
+        if started == "ollama open":
+            _LOG.warning("sigillo: Ollama is already open: close it and start the agent again, so that sigillo can open it")
+        elif started == "failed":
+            _LOG.warning("sigillo: the door in front of the local model did not start")
     if local_model and "stdlib" in instrumented:
         # The calls to the local model carry the key, and are recorded by the door.
         from . import _stdlib

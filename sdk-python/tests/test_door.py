@@ -144,6 +144,58 @@ class DoorTest(unittest.TestCase):
         tracing.flush()  # in one process here, the door's tracer is the agent's: two providers, one capture
         self.assertEqual(len(self._spans(2)), 2)  # the door's, one per call: not the agent's as well
 
+    def _fake_ollama(self) -> None:
+        import os
+        import pathlib
+        import stat
+        import tempfile
+
+        folder = pathlib.Path(tempfile.mkdtemp(prefix="sigillo-fake-ollama-"))
+        fake = folder / "ollama"
+        fake.write_text(
+            "#!/bin/sh\nexec python3 -c \"import http.server as h,os;"
+            "H=type('H',(h.BaseHTTPRequestHandler,),{'do_GET':lambda s:(s.send_response(200),s.end_headers(),s.wfile.write(b'{}'))});"
+            "a=os.environ['OLLAMA_HOST'].split(':');h.HTTPServer((a[0],int(a[1])),H).serve_forever()\"\n"
+        )
+        fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+        previous = os.environ["PATH"]
+        os.environ["PATH"] = f"{folder}{os.pathsep}{previous}"
+        self.addCleanup(lambda: os.environ.__setitem__("PATH", previous))
+
+    @staticmethod
+    def _free_port() -> int:
+        import socket
+
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            return probe.getsockname()[1]
+
+    def test_the_agents_file_starts_the_door_and_ollama_which_end_with_it(self) -> None:
+        from sigillo import _watchdog
+
+        self._fake_ollama()
+        local = f"http://127.0.0.1:{self._free_port()}"
+        upstream = f"http://127.0.0.1:{self._free_port()}"
+        endpoint = f"http://127.0.0.1:{self.sigillo.server_address[1]}"
+        self.assertEqual(door.ensure(endpoint, KEY, "local-agent", local, upstream), "door")
+        self.assertEqual(_watchdog.model_state(local), "closed")  # the door, asking for the key
+        self.assertEqual(_watchdog.model_state(upstream), "open")  # Ollama, moved behind it
+        self.assertEqual(door.ensure(endpoint, KEY, "local-agent", local, upstream), "door")  # not a second one
+        process = door._started.pop()
+        process.stdin.close()  # the agent ends
+        process.wait(timeout=10)
+        for _ in range(40):
+            if _watchdog.model_state(upstream) == "none":
+                break
+            time.sleep(0.25)
+        self.assertEqual(_watchdog.model_state(local), "none")
+        self.assertEqual(_watchdog.model_state(upstream), "none")
+
+    def test_an_ollama_already_open_is_left_alone(self) -> None:
+        model = f"http://127.0.0.1:{self.model.server_address[1]}"
+        self.assertEqual(door.ensure("http://127.0.0.1:9", KEY, "local-agent", model, "http://127.0.0.1:9"), "ollama open")
+        self.assertEqual(door._started, [])
+
     def test_serve_starts_ollama_at_the_moved_address_and_leaves_a_running_one_alone(self) -> None:
         import os
         import pathlib
