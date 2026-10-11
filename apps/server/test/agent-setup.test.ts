@@ -474,3 +474,15 @@ describe("agent protection: a model on the same computer", () => {
     expect(out).not.toContain("OLLAMA_API_KEY");
   });
 });
+
+describe("agent protection: a plain agent that starts its own Ollama", () => {
+  it("is recorded by the stdlib instrumentation even where plain agents are not opened, so that it can send the key", () => {
+    const source = 'import json, urllib.request\nOLLAMA_HOST = "http://localhost:11434"\nurllib.request.urlopen(OLLAMA_HOST + "/api/tags")\n';
+    const run = runInNewContext(`${AGENT_SETUP_SOURCE}; sigilloAgentSetup`) as (source: string, settings: typeof SETTINGS & { protection?: boolean }) => Result;
+    const result = run(source, { ...SETTINGS, protection: true });
+    if (result.status !== "added") throw new Error("expected the lines added");
+    expect(result.text).toContain('instrument=["stdlib"]');
+    expect(result.text).toContain("local_model=True");
+    expect(result.text).toContain('OLLAMA_HOST = "http://localhost:11434"'); // the agent's own lines are untouched
+  });
+});

@@ -3897,3 +3897,14 @@ Prova con un agente malevolo vero (processo Python con SDK e guardia, server rea
 - Trovati e corretti due buchi nel gateway (`gateway/llm.ts`): (F1) le richieste GET inoltrate al provider con la chiave vera non lasciavano ricevuta, ora ne lasciano una e rispettano pausa e quota (unica eccezione: l'elenco dei nomi dei modelli); (F2) se l'agente interrompeva la connessione a metà non restava alcuna ricevuta, ora ne resta una di errore.
 - Reggono: chiave vera mai nel file, nell'ambiente, nei processi, nelle risposte o negli errori; path traversal, header che cambiano destinazione, `?key=`, isolamento tra sistemi e tra provider; spegnere la guardia ferma l'agente (uscita 70) e scrive `script_changed`.
 - Limite noto, per costruzione: un agente con gli stessi permessi del sistema operativo può mandare battiti finti con l'hash vecchio (non rilevato) o usare una chiave vecchia rimasta altrove. Il cliente deve cancellare la vecchia chiave dal provider.
+
+## La porta per gli agenti senza framework che avviano Ollama da soli (2026-10-11)
+
+Prova del proprietario con un agente reale (solo `urllib`, avvia da sé `ollama serve`, nessuna chiave). Regola data: si adatta Sigillo, non l'agente.
+
+- `_stdlib.py`: con `local_model=True` le chiamate (`urllib`, `requests`, `httpx`) verso 127.0.0.1:11434 portano da sole la chiave di sigillo e non vengono registrate lato agente (le registra la porta, una sola volta).
+- `agent-setup.ts`: un file che parla con il modello locale ottiene la strumentazione `stdlib` anche dove gli agenti semplici non sono aperti.
+- `door.py --serve`: la porta avvia anche `ollama serve` all'indirizzo spostato (11435); l'agente trova il modello già attivo e non avvia il suo. Un solo comando per il cliente.
+- Test: `test_door.py` (7), un caso in `agent-setup.test.ts`.
+- Limite: `ollama pull` da riga di comando senza `OLLAMA_HOST` passa dalla porta e non porta la chiave: scaricare il modello prima, con `OLLAMA_HOST=127.0.0.1:11435`.
+- Un solo passaggio (richiesta del proprietario): con `local_model=True` e `strict=True`, `init` avvia da sé la porta (`door.ensure`) e Ollama dietro di essa, come processo a parte che finisce con l'agente (standard input chiuso). Nulla viene cambiato sul computer. Se Ollama è già aperto sull'indirizzo solito, resta com'è e l'agente scrive di chiuderlo e ripartire. Una versione che chiudeva Ollama e cambiava `OLLAMA_HOST` in modo permanente è stata scartata dal proprietario (2026-10-11): niente modifiche al computer del cliente.
