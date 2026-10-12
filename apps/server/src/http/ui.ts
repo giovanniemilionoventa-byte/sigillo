@@ -1351,6 +1351,33 @@ ${exportSheet(record)}`,
     return reply.redirect("/ui/clienti", 303);
   });
 
+  app.post("/ui/clienti/:organizationId/elimina", async (request, reply) => {
+    const session = requireOperator(request, reply);
+    if (session === null) return reply;
+    const { organizationId } = request.params as { organizationId: string };
+    if (allSystems.organization(organizationId) === null) return reply.callNotFound();
+    const typed = (request.body as { confirm?: unknown } | undefined)?.confirm;
+    try {
+      if (typeof typed !== "string" || !UI.organizations.isConfirm(typed.trim().toLowerCase())) {
+        throw new Error(UI.organizations.confirmNeeded);
+      }
+      await allSystems.deleteOrganization(organizationId, adminRequest(request, session.viewer));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return html(
+        reply,
+        render(session, {
+          title: UI.organizations.title,
+          current: "clienti",
+          body: organizationsPage(allSystems, { error: message }),
+        }),
+        409,
+      );
+    }
+    request.log.info({ action: "organization.delete", organization: organizationId }, "an organization was deleted");
+    return reply.redirect("/ui/clienti", 303);
+  });
+
   async function sendArchive(
     store: ReceiptStore,
     reply: FastifyReply,

@@ -666,7 +666,7 @@ export function organizationsPage(store: ReceiptStore, extra: { notice?: string;
       const end =
         organization.approved_at === null
           ? `<form method="post" action="/ui/clienti/${escape(encodeURIComponent(organization.organization_id))}/approva"><button type="submit" class="primary">${escape(t.approve)}</button></form> <form method="post" action="/ui/clienti/${escape(encodeURIComponent(organization.organization_id))}/rifiuta"><button type="submit">${escape(t.reject)}</button></form>`
-          : escape(t.since(formatDate(organization.approved_at)));
+          : `${escape(t.since(formatDate(organization.approved_at)))} <form method="post" action="/ui/clienti/${escape(encodeURIComponent(organization.organization_id))}/elimina"><input name="confirm" placeholder="${escape(t.confirmPlaceholder)}" size="8" autocomplete="off" aria-label="${escape(t.confirmPlaceholder)}"><button type="submit">${escape(t.delete)}</button></form>`;
       return `<li class="line" data-organization="${escape(organization.organization_id)}"><span class="cell-main"><strong>${escape(organization.name)}</strong><span>${escape(who)}</span></span><span>${state}</span><span class="num">${count}</span><span class="when">${end}</span></li>`;
     })
     .join("\n");

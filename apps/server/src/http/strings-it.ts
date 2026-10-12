@@ -90,6 +90,10 @@ const ui = {
     since: (when: string): string => `dal ${when}`,
     approve: "Approva",
     reject: "Rifiuta",
+    delete: "Elimina",
+    confirmPlaceholder: "scrivi elimina",
+    isConfirm: (word: string): boolean => word === "elimina" || word === "delete",
+    confirmNeeded: "Scrivi la parola elimina accanto al pulsante per confermare.",
     people: (count: number): string => `${count} ${count === 1 ? "persona" : "persone"}`,
     noMembers: "Creato dall'amministratore",
     approved: (name: string) => `${name} è approvato: le sue persone possono entrare.`,
@@ -482,6 +486,7 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "openings.erase": "nonce cancellati",
   "organization.create": "organizzazione creata",
   "organization.approve": "organizzazione approvata",
+  "organization.delete": "organizzazione eliminata",
   "organization.reject": "registrazione rifiutata",
   "user.register": "nuova registrazione",
   "system.assign": "assegnato a un'organizzazione",
@@ -684,7 +689,7 @@ export const IT = {
   describeAdminAction(entry: AdminAction): string {
     const what = ADMIN_ACTIONS[entry.action] ?? entry.action;
     if (entry.action === "subject.erase") return `${what}: pseudonimo ${String(entry.detail["token"])}`;
-    if (entry.action === "organization.create" || entry.action === "organization.approve" || entry.action === "organization.reject" || entry.action === "user.register") {
+    if (entry.action === "organization.create" || entry.action === "organization.approve" || entry.action === "organization.reject" || entry.action === "organization.delete" || entry.action === "user.register") {
       return `${what}: ${String(entry.detail["organization_id"])}`;
     }
     let extra = "";

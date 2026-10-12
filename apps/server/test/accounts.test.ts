@@ -459,6 +459,41 @@ describe("customers' accounts in the web view", () => {
     expect((await form("/ui/clienti/inesistente/rifiuta", {}, operatorCookie())).statusCode).toBe(404);
   });
 
+  it("lets the operator delete a customer that never recorded anything, and keeps one that did", async () => {
+    await store.createOrganization("vuota", "Vuota S.r.l.", ADMIN, { approved: true });
+    await store.createSystem("vuota.bot", "2026-10-01T09:00:00.000Z", "vuota");
+
+    // Without the word, nothing happens.
+    const unconfirmed = await form("/ui/clienti/vuota/elimina", { confirm: "" }, operatorCookie());
+    expect(unconfirmed.statusCode).toBe(409);
+    expect(store.organization("vuota")).not.toBeNull();
+
+    const deleted = await form("/ui/clienti/vuota/elimina", { confirm: "elimina" }, operatorCookie());
+    expect(deleted.statusCode).toBe(303);
+    expect(store.organization("vuota")).toBeNull();
+    expect(store.systemRecord("vuota.bot")).toBeNull();
+    expect(store.adminLog().map((entry) => entry.action)).toContain("organization.delete");
+
+    // A customer with one recorded action is kept, with everything it holds.
+    await store.append({
+      system_id: "acme.bot",
+      ts_event: "2026-10-01T10:00:00.000Z",
+      ts_received: "2026-10-01T10:00:00.005Z",
+      actor: { agent: "a" },
+      action: { kind: "tool_call", name: "x" },
+      input_hash: null,
+      output_hash: null,
+      outcome: "ok",
+      source: { type: "sdk" },
+    });
+    const refused = await form("/ui/clienti/acme/elimina", { confirm: "elimina" }, operatorCookie());
+    expect(refused.statusCode).toBe(409);
+    expect(store.organization("acme")).not.toBeNull();
+    expect(store.systemRecord("acme.bot")).not.toBeNull();
+    // Only the operator may ask.
+    expect((await form("/ui/clienti/acme/elimina", { confirm: "elimina" })).statusCode).not.toBe(303);
+  });
+
   it("stops a customer at the system limit, and not the operator", async () => {
     account("lia@acme.it", "una password lunga", true);
     const lia = fake.accounts.get("lia@acme.it");
