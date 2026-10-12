@@ -1,3 +1,4 @@
+import { createServer, type Server } from "node:http";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -36,6 +37,7 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
   let browser: Browser;
   let base: string;
   let sessions: UiSessions;
+  let provider: Server;
 
   beforeAll(async () => {
     directory = mkdtempSync(join(tmpdir(), "sigillo-upload-browser-"));
@@ -46,12 +48,17 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     providerKeys = ProviderKeyStore.open(databasePath, loadOrCreateSealingKey(join(directory, "llm-gateway.key")));
     await store.createSystem(SYSTEM, NOW);
     sessions = new UiSessions();
+    // The provider the key is tried against when the form is sent: a local
+    // stand-in that accepts it, so the test never depends on the network.
+    provider = createServer((_request, response) => response.writeHead(200, { "content-type": "application/json" }).end("{}"));
+    await new Promise<void>((resolve) => provider.listen(0, "127.0.0.1", resolve));
+    const providerUrl = `http://127.0.0.1:${(provider.address() as AddressInfo).port}`;
     const now = (): Date => new Date(NOW);
     app = buildServer({
       store,
       keys,
       now,
-      gateway: { keys: providerKeys, access: "all" },
+      gateway: { keys: providerKeys, access: "all", upstream: { openai: providerUrl } },
       ui: {
         password: "an administrator password",
         signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
@@ -74,6 +81,7 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
   afterAll(async () => {
     await browser?.close();
     await app?.close();
+    await new Promise<void>((resolve) => (provider === undefined ? resolve() : provider.close(() => resolve())));
     providerKeys?.close();
     keys?.close();
     store?.close();
