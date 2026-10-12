@@ -3,6 +3,7 @@ import type { AdminLogEntry, DocumentMatch, ReceiptStore, SystemRecord } from ".
 import type { ChainStatus } from "../health/chain-health.js";
 import type { StoredExport } from "../backup/daily-export.js";
 import { connectionStatus } from "../connection/watch.js";
+import { CATALOG, PROVIDERS } from "../gateway/catalog.js";
 import { discloseFields } from "./history.js";
 import {
   archivedButShown,
@@ -398,7 +399,7 @@ function modelKeyForm(systemId: string): string {
   const t = UI.connect.upload;
   return `<form class="card model-key" id="sigillo-agent-model" method="post" action="/ui/systems/${encodeURIComponent(systemId)}/llm-key" hidden>
 <p>${escape(t.modelFound)}</p>
-<label>${escape(t.modelProvider)} <select name="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="mistral">Mistral</option></select></label>
+<label>${escape(t.modelProvider)} <select name="provider">${PROVIDERS.map((name) => `<option value="${name}">${escape(CATALOG[name].label)}</option>`).join("")}</select></label>
 <label>${escape(t.modelKey)} <input type="password" name="key" autocomplete="off" required></label>
 <p>${escape(t.modelRevoke)}</p>
 <button class="button primary" type="submit">${escape(t.modelSave)}</button>
