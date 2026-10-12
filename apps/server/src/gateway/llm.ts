@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Receipt } from "@sigillo/core";
 import type { ReceiptStore } from "../storage/store.js";
-import { isProvider, type Provider, type ProviderKeyStore } from "./provider-keys.js";
+import { CATALOG, isProvider, type Provider } from "./catalog.js";
+import type { ProviderKeyStore } from "./provider-keys.js";
 import { toolRequestsOf } from "./tool-requests.js";
 
 /**
@@ -16,6 +17,8 @@ import { toolRequestsOf } from "./tool-requests.js";
  *   Anthropic (Claude)  base_url = <server>/llm/anthropic
  *   Google Gemini       base_url = <server>/llm/gemini
  *   Mistral             base_url = <server>/llm/mistral/v1
+ *   …and every other provider in catalog.ts, at <server>/llm/<provider>/
+ *   followed by the provider's own path (Groq's `openai/v1`, OpenRouter's `api/v1`).
  *
  * Whatever path follows the prefix is the provider's own, forwarded as it is:
  * `/llm/openai/v1/chat/completions` reaches `https://api.openai.com/v1/chat/completions`.
@@ -54,24 +57,7 @@ export interface GatewayGuards {
   overQuota: (systemId: string, reply: FastifyReply) => boolean;
 }
 
-const UPSTREAM: Record<Provider, string> = {
-  openai: "https://api.openai.com",
-  anthropic: "https://api.anthropic.com",
-  gemini: "https://generativelanguage.googleapis.com",
-  mistral: "https://api.mistral.ai",
-};
-
-/**
- * A provider path: starts at its API version, no `..`, nothing but URL-safe
- * characters. Gemini's versions are v1 and v1beta, and its methods follow a
- * colon: `v1beta/models/gemini-2.5-flash:generateContent`.
- */
-const PATH: Record<Provider, RegExp> = {
-  openai: /^v1\/[A-Za-z0-9._~\/-]+$/,
-  anthropic: /^v1\/[A-Za-z0-9._~\/-]+$/,
-  gemini: /^v1(beta)?\/[A-Za-z0-9._~\/:-]+$/,
-  mistral: /^v1\/[A-Za-z0-9._~\/-]+$/,
-};
+const UPSTREAM = (provider: Provider): string => CATALOG[provider].addresses[0]!;
 
 /** The request headers the providers read that are not the key: passed on as they are. */
 const FORWARDED_REQUEST_HEADERS = [
@@ -89,8 +75,8 @@ const FORWARDED_RESPONSE_HEADER = /^(content-type|retry-after|x-request-id|reque
 
 const MAX_NAME = 256;
 
-/** The paths that list model names (`v1/models`, `v1beta/models/<name>`): nothing of the customer's, so not a receipt each. */
-const MODEL_LIST = /^v1(beta)?\/models(\/[A-Za-z0-9._:-]+)?$/;
+/** The paths that list model names (`v1/models`, `v1beta/models/<name>`, Groq's `openai/v1/models`): nothing of the customer's, so not a receipt each. */
+const MODEL_LIST = /^([A-Za-z0-9-]+\/)*models(\/[A-Za-z0-9._:-]+)?$/;
 
 /** The action name of a tool the model asked for: `model_requested.send_email`. */
 export const TOOL_REQUEST_PREFIX = "model_requested.";
@@ -102,11 +88,11 @@ export function gatewayAllowed(access: GatewayAccess, organizationId: string | n
 
 export function registerGateway(app: FastifyInstance, options: GatewayOptions, guards: GatewayGuards): void {
   const { store, now } = guards;
-  const upstreamOf = (provider: Provider): string => (options.upstream?.[provider] ?? UPSTREAM[provider]).replace(/\/+$/, "");
+  const upstreamOf = (provider: Provider): string => (options.upstream?.[provider] ?? UPSTREAM(provider)).replace(/\/+$/, "");
 
   const handle = async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const { provider, "*": rest } = request.params as { provider: string; "*": string };
-    if (!isProvider(provider) || !PATH[provider].test(rest) || rest.split("/").includes("..")) {
+    if (!isProvider(provider) || !CATALOG[provider].path.test(rest) || rest.split("/").includes("..")) {
       return reply.code(404).send({ error: "no such model endpoint" });
     }
     // OpenAI's SDKs send the key as a bearer token, Anthropic's as x-api-key,
@@ -266,11 +252,11 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
  * provider that cannot be reached is no answer: false.
  */
 export async function providerRefuses(provider: Provider, key: string, upstream?: string): Promise<boolean> {
-  const path = provider === "gemini" ? "v1beta/models" : "v1/models";
+  const path = CATALOG[provider].check;
   const headers: Record<string, string> = providerAuth(provider, path, key);
   if (provider === "anthropic") headers["anthropic-version"] = "2023-06-01";
   try {
-    const answer = await fetch(`${(upstream ?? UPSTREAM[provider]).replace(/\/+$/, "")}/${path}`, {
+    const answer = await fetch(`${(upstream ?? UPSTREAM(provider)).replace(/\/+$/, "")}/${path}`, {
       headers,
       signal: AbortSignal.timeout(8000),
     });
@@ -282,8 +268,9 @@ export async function providerRefuses(provider: Provider, key: string, upstream?
 
 /** How each provider takes its key. Gemini's OpenAI-compatible endpoints take it as OpenAI does. */
 function providerAuth(provider: Provider, path: string, key: string): Record<string, string> {
-  if (provider === "anthropic") return { "x-api-key": key };
-  if (provider === "gemini" && !/^v1(beta)?\/openai\//.test(path)) return { "x-goog-api-key": key };
+  const auth = CATALOG[provider].auth;
+  if (auth === "x-api-key") return { "x-api-key": key };
+  if (auth === "gemini" && !/^v1(beta)?\/openai\//.test(path)) return { "x-goog-api-key": key };
   return { authorization: `Bearer ${key}` };
 }
 

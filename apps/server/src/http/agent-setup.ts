@@ -14,6 +14,8 @@
  * Content-Security-Policy's `script-src 'self'` already allows.
  */
 
+import { fileCatalog } from "../gateway/catalog.js";
+
 export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) {
   var eol = source.indexOf("\\r\\n") >= 0 ? "\\r\\n" : "\\n";
   var bom = source.charAt(0) === "\\uFEFF" ? "\\uFEFF" : "";
@@ -32,59 +34,114 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     lines = source.slice(bom.length).split(/\\r?\\n/);
   }
 
-  // The model gateway (settings.gateway, an address): the provider keys in the
-  // file are replaced by the system's sigillo key, and the OpenAI and
-  // Anthropic clients are pointed at the gateway through the variables they
-  // read themselves, set before anything else runs. The real keys come back
-  // in \`providers\` so that the page can offer to save them in sigillo; the
-  // new file has none of them. A key not in the file (a .env, the shell) is
-  // not seen here: the page asks for it.
+` +
+  String.raw`  // The model gateway (settings.gateway, an address): every cloud provider
+  // the file uses (catalog.ts) is pointed at the gateway, and its keys in the
+  // file are replaced by the system's sigillo key. A provider is used when the
+  // file imports its library (on its own or through LangChain), names the
+  // variable its key is read from (from the environment or a .env file, which
+  // the lines below set first and python-dotenv does not override), calls its
+  // address directly, holds one of its keys, or names one of its models, as
+  // LiteLLM, PydanticAI and CrewAI are told them. Its clients find the gateway
+  // through the variables they read themselves, set before anything else runs.
+  // The real keys come back in "providers" so that the page can offer to save
+  // them in sigillo; the new file has none of them. A key not in the file (a
+  // .env, the shell) is not seen here: the page asks for it.
   var providers = {};
+  var labels = {};
   var gatewayLines = [];
+  var sdkMinor = local ? 5 : 4;
   if (settings.gateway) {
-    var shapes = [
-      ["anthropic", /\\bsk-ant-[A-Za-z0-9_-]{20,}/g],
-      ["openai", /\\bsk-(?!ant-)[A-Za-z0-9_-]{20,}/g],
-    ];
-    shapes.forEach(function (shape) {
-      var found = source.match(shape[1]);
-      if (found !== null) providers[shape[0]] = found[0];
-      source = source.replace(shape[1], settings.key);
+    var catalog = ` +
+  JSON.stringify(fileCatalog()) +
+  String.raw`;
+    var has = function (pattern, flags) {
+      return new RegExp(pattern, flags || "").test(source);
+    };
+    var imports = function (pattern) {
+      return has("^\\s*(from|import)\\s+(" + pattern + ")\\b", "m");
+    };
+    var addressOf = function (entry) {
+      var escaped = entry.addresses.map(function (address) {
+        return address.replace(/[.*+?^$(){}|[\]\\\/]/g, "\\$&");
+      });
+      return new RegExp("(" + escaped.join("|") + ")(?![\\w.-])", "g");
+    };
+    var namedOf = function (entry) {
+      return new RegExp("(\\b\\w*(?:" + entry.named + ")\\w*key\\w*\\s*[=:]\\s*)([\"'])([A-Za-z0-9_.-]{20,})\\2", "gi");
+    };
+    // Model names tell the provider only where no address does, and never
+    // beside a model on this computer, which has a "mistral-small" of its own.
+    var anyAddress = catalog.some(function (entry) { return has(addressOf(entry).source); });
+    var byModel = !anyAddress && !/\b11434\b/.test(source) && !/ollama/i.test(source);
+    var signs = {};
+    catalog.forEach(function (entry) {
+      if (entry.unreachable && imports(entry.unreachable)) return;
+      var own = entry.keyVariables.filter(function (name) {
+        return (entry.sharedVariables || []).indexOf(name) < 0;
+      });
+      signs[entry.name] = {
+        address: has(addressOf(entry).source),
+        variable: own.some(function (name) { return source.indexOf(name) >= 0; }),
+        library: Boolean(entry.libraries) && imports(entry.libraries),
+        model: byModel && Boolean(entry.models) && has("[\"'](?:" + entry.models + ")[\"']"),
+        named: Boolean(entry.named) && has(namedOf(entry).source, "i"),
+        key: Boolean(entry.key) && has(entry.key) && !entry.keyNeedsMore,
+      };
     });
-    // A key with no telling prefix (Mistral's) is known by the name it is
-    // given: MISTRAL_API_KEY = "...", mistral_key = '...'.
-    var named = /(\\b\\w*mistral\\w*key\\w*\\s*[=:]\\s*)(["'])([A-Za-z0-9_-]{20,})\\2/gi;
-    source = source.replace(named, function (all, before, quote, key) {
-      providers.mistral = key;
-      return before + quote + settings.key + quote;
+    // The openai library also calls the providers that speak OpenAI's API:
+    // next to another provider's address, it is that provider's client. So
+    // is an "sk-" key, in a file that names one such provider and not OpenAI.
+    var openai = signs.openai;
+    if (openai !== undefined) {
+      openai.library = openai.library && !catalog.some(function (entry) {
+        return entry.name !== "openai" && signs[entry.name] !== undefined && signs[entry.name].address;
+      });
+    }
+    var used = function (name) {
+      var sign = signs[name];
+      return sign !== undefined && (sign.address || sign.variable || sign.library || sign.model || sign.named || sign.key);
+    };
+    var shaped = catalog.filter(function (entry) { return entry.openaiShaped && used(entry.name); });
+    var openaiOwn = openai !== undefined && (openai.address || openai.variable || openai.library || openai.model);
+    var skOwner = !openaiOwn && shaped.length === 1 ? shaped[0].name : "openai";
+    if (skOwner !== "openai") openai.key = false;
+    var openaiKey = catalog.filter(function (entry) { return entry.name === "openai"; })[0].key;
+
+    catalog.forEach(function (entry) {
+      if (!used(entry.name)) return;
+      var name = entry.name;
+      var found = null;
+      if (entry.named) {
+        source = source.replace(namedOf(entry), function (all, before, quote, key) {
+          if (found === null) found = key;
+          return before + quote + settings.key + quote;
+        });
+      }
+      var shape = entry.key;
+      if (name === skOwner && name !== "openai") shape = openaiKey;
+      if (name === "openai" && skOwner !== "openai") shape = null;
+      if (shape) {
+        var keys = source.match(new RegExp(shape, "g"));
+        if (keys !== null && found === null) found = keys[0];
+        source = source.replace(new RegExp(shape, "g"), settings.key);
+      }
+      source = source.replace(addressOf(entry), settings.gateway + "/" + name);
+      providers[name] = found === null ? "" : found;
+      labels[name] = entry.label;
+      Object.keys(entry.addressVariables).forEach(function (variable) {
+        gatewayLines.push("os.environ[" + JSON.stringify(variable) + "] = " + JSON.stringify(settings.gateway + "/" + name + entry.addressVariables[variable]));
+      });
+      entry.keyVariables.forEach(function (variable) {
+        gatewayLines.push("os.environ[" + JSON.stringify(variable) + "] = " + JSON.stringify(settings.key));
+      });
+      // mistralai's own client reads no address: the sigillo package gives it one (0.6 on).
+      if (name === "mistral" && imports("mistralai")) sdkMinor = 6;
     });
-    lines = source.slice(bom.length).split(/\\r?\\n/);
-    // Used, whatever the way: the provider's library (on its own or through
-    // LangChain), its key's variable (read from the environment or a .env
-    // file, which the lines below set first, and python-dotenv does not
-    // override), or its address called directly, which is pointed at the
-    // gateway here.
-    var via = [
-      ["openai", "OPENAI", "/openai/v1", "openai|langchain_openai", /https:\\/\\/api\\.openai\\.com\\/v1/g],
-      ["anthropic", "ANTHROPIC", "/anthropic", "anthropic|langchain_anthropic", /https:\\/\\/api\\.anthropic\\.com/g],
-      ["mistral", "MISTRAL", "/mistral/v1", "mistralai|langchain_mistralai", /https:\\/\\/api\\.mistral\\.ai\\/v1/g],
-    ];
-    via.forEach(function (provider) {
-      var uses = Object.prototype.hasOwnProperty.call(providers, provider[0]) ||
-        new RegExp("^\\\\s*(from|import)\\\\s+(" + provider[3] + ")\\\\b", "m").test(source) ||
-        source.indexOf(provider[1] + "_API_KEY") >= 0 ||
-        provider[4].test(source);
-      if (!uses) return;
-      source = source.replace(provider[4], settings.gateway + provider[2]);
-      lines = source.slice(bom.length).split(/\\r?\\n/);
-      if (!Object.prototype.hasOwnProperty.call(providers, provider[0])) providers[provider[0]] = "";
-      gatewayLines.push(
-        "os.environ[" + JSON.stringify(provider[1] + "_BASE_URL") + "] = " + JSON.stringify(settings.gateway + provider[2]),
-        "os.environ[" + JSON.stringify(provider[1] + "_API_KEY") + "] = " + JSON.stringify(settings.key),
-      );
-    });
+    lines = source.slice(bom.length).split(/\r?\n/);
   }
-  if (local) gatewayLines.push("os.environ[" + JSON.stringify("OLLAMA_API_KEY") + "] = " + JSON.stringify(settings.key));
+` +
+  `  if (local) gatewayLines.push("os.environ[" + JSON.stringify("OLLAMA_API_KEY") + "] = " + JSON.stringify(settings.key));
   if (gatewayLines.length > 0) gatewayLines.unshift("import os");
 
   // Which instrumentation: LangChain and LangGraph, CrewAI, or the OpenAI
@@ -143,7 +200,8 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
 
   // The file installs what it needs by itself, the first time it runs, with
   // the same Python that runs it: downloading it is the whole installation. An
-  // SDK installed earlier but older than 0.4 (0.5 for a local model) is replaced the same way, and the
+  // SDK installed earlier but older than 0.4 (0.5 for a local model, 0.6 for
+  // mistralai through the gateway) is replaced the same way, and the
   // file then runs itself again, so that nothing from the old one stays
   // loaded. SIGILLO_SETUP_DONE stops that from repeating if the install did not help.
   var extras = frameworks.length > 0 ? "[" + frameworks.join(",") + "]" : "";
@@ -154,7 +212,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   });
   block.push(
     "    import importlib.metadata",
-    '    if tuple(map(int, importlib.metadata.version("sigillo").split(".")[:2])) < (0, ' + (local ? "5" : "4") + "):",
+    '    if tuple(map(int, importlib.metadata.version("sigillo").split(".")[:2])) < (0, ' + sdkMinor + "):",
     '        raise ImportError("sigillo is too old")',
     "except ImportError:",
     "    import os",
@@ -192,6 +250,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     instrument: instrument,
     install: 'pip install "' + requirement + '"',
     providers: providers,
+    labels: labels,
   };
 }`;
 
@@ -261,7 +320,7 @@ ${AGENT_SETUP_SOURCE}
     tick.checked = false;
     label.hidden = names.length === 0;
     document.getElementById("sigillo-agent-analysis").textContent = names.length > 0
-      ? box.dataset.analysisCloud.replace("{providers}", names.join(", "))
+      ? box.dataset.analysisCloud.replace("{providers}", names.map(function (name) { return routed.labels[name]; }).join(", "))
       : box.dataset.analysisOther;
     choice.hidden = false;
     document.getElementById("sigillo-agent-download").onclick = function () {

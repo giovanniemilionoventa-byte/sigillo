@@ -5,7 +5,7 @@ import { applySchema } from "../storage/schema.js";
 
 /**
  * The cloud-model keys the gateway holds for a system (gateway/llm.ts): the
- * customer's own OpenAI, Anthropic, Gemini or Mistral key, given to sigillo so that the agent
+ * customer's own key for one of the providers in catalog.ts, given to sigillo so that the agent
  * never has it. An agent that wants the model has to come through the
  * gateway, and every call it makes there becomes a receipt.
  *
@@ -17,12 +17,8 @@ import { applySchema } from "../storage/schema.js";
  * kept in the clear, for the web view.
  */
 
-export const PROVIDERS = ["openai", "anthropic", "gemini", "mistral"] as const;
-export type Provider = (typeof PROVIDERS)[number];
-
-export function isProvider(value: unknown): value is Provider {
-  return typeof value === "string" && (PROVIDERS as readonly string[]).includes(value);
-}
+export { isProvider, PROVIDERS, type Provider } from "./catalog.js";
+import type { Provider } from "./catalog.js";
 
 /** What a provider's key looks like: "sk-proj-…", "sk-ant-api03-…", "AIza…". Anything else is refused, not cleaned. */
 const KEY_SHAPE = /^[A-Za-z0-9_.-]{20,512}$/;

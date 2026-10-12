@@ -51,7 +51,8 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
       store,
       keys,
       now,
-      gateway: { keys: providerKeys, access: "all" },
+      // No provider to try the key on: an address nothing answers at, which is no refusal.
+      gateway: { keys: providerKeys, access: "all", upstream: { openai: "http://127.0.0.1:9" } },
       ui: {
         password: "an administrator password",
         signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
@@ -109,7 +110,7 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     const { page, problems } = await keyPage();
     await upload(page, "agent.py", `from openai import OpenAI\nclient = OpenAI(api_key="${OPENAI_KEY}")\n`);
     await page.locator("#sigillo-agent-choice").waitFor({ state: "visible" });
-    expect(await page.locator("#sigillo-agent-analysis").textContent()).toContain("openai");
+    expect(await page.locator("#sigillo-agent-analysis").textContent()).toContain("OpenAI");
     expect(await page.locator("#sigillo-agent-secure-label").isVisible()).toBe(true);
     expect(await page.locator("#sigillo-agent-secure").isChecked()).toBe(false);
     expect(await page.locator("#sigillo-agent-done").isVisible()).toBe(false);
