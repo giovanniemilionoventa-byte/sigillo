@@ -19,9 +19,18 @@ const IT: Parte[] = [
     ],
   },
   {
-    clip: "scena-2",
+    clip: "scena-c",
     lines: [
       "Questa è sigillo. Ogni azione della vostra AI viene registrata in un modo che nessuno, nemmeno chi gestisce il sistema, può cambiare senza che si veda.",
+      "Collegare il vostro agente richiede pochi minuti. Date un nome al sistema, e sigillo vi dà la sua chiave.",
+      "Trascinate il file del vostro agente. Sigillo lo legge nel vostro browser e vi dice cosa ha trovato. Niente viene inviato altrove.",
+      "Scaricate il file: torna con sigillo già dentro. Sostituitelo al vostro.",
+      "Avviate l'agente come sempre. Pochi istanti dopo arriva la prima ricevuta, e ogni sua azione è ormai registrata.",
+    ],
+  },
+  {
+    clip: "scena-2",
+    lines: [
       "A destra, un agente che valuta candidature per un posto da sviluppatore.",
       "A ogni curriculum, il registro a sinistra si aggiorna da solo.",
       "E in alto, la risposta alla prima domanda: tutto a posto, nessuna alterazione.",
@@ -89,9 +98,18 @@ const EN: Parte[] = [
     ],
   },
   {
-    clip: "scena-2",
+    clip: "scena-c",
     lines: [
       "This is sigillo. Every action your AI takes is recorded in a way that nobody, not even whoever runs the system, can change without it showing.",
+      "Connecting your agent takes a few minutes. Give your system a name, and sigillo gives you its key.",
+      "Drop in your agent's file. Sigillo reads it in your browser and tells you what it found. Nothing is sent anywhere.",
+      "Download the file: it comes back with sigillo already in it. Replace your own file with it.",
+      "Run your agent as usual. A moment later the first receipt arrives, and every action it takes is on record.",
+    ],
+  },
+  {
+    clip: "scena-2",
+    lines: [
       "On the right, an agent screening applications for a developer job.",
       "With every CV, the ledger on the left updates by itself.",
       "And at the top, the answer to the first question: all good, no tampering.",

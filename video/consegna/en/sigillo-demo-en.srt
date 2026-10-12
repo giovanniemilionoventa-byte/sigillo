@@ -1,147 +1,175 @@
 1
-00:00:00,500 --> 00:00:04,552
+00:00:00,500 --> 00:00:04,956
 Your company uses artificial
 intelligence to read CVs,
 
 2
-00:00:04,702 --> 00:00:08,627
+00:00:05,106 --> 00:00:09,423
 answer customers and make
 small decisions every day.
 
 3
-00:00:08,777 --> 00:00:13,021
+00:00:09,573 --> 00:00:14,239
 But if one day someone asks
 you: “What exactly did it do,
 
 4
-00:00:13,171 --> 00:00:16,650
+00:00:14,389 --> 00:00:18,217
 and how can you prove it?”, could you answer?
 
 5
-00:00:17,700 --> 00:00:24,262
+00:00:19,267 --> 00:00:26,741
 This is sigillo. Every action your AI
 takes is recorded in a way that nobody,
 
 6
-00:00:24,412 --> 00:00:29,994
+00:00:26,891 --> 00:00:33,251
 not even whoever runs the system,
 can change without it showing.
 
 7
-00:00:30,144 --> 00:00:35,877
+00:00:33,401 --> 00:00:42,674
+Connecting your agent takes a few minutes. Give
+your system a name, and sigillo gives you its key.
+
+8
+00:00:42,824 --> 00:00:51,240
+Drop in your agent's file. Sigillo reads it
+in your browser and tells you what it found.
+
+9
+00:00:51,390 --> 00:00:54,410
+Nothing is sent anywhere.
+
+10
+00:00:54,560 --> 00:01:03,233
+Download the file: it comes back with sigillo
+already in it. Replace your own file with it.
+
+11
+00:01:03,383 --> 00:01:09,915
+Run your agent as usual. A moment
+later the first receipt arrives,
+
+12
+00:01:10,065 --> 00:01:14,283
+and every action it takes is on record.
+
+13
+00:01:15,333 --> 00:01:26,484
 On the right, an agent screening
 applications for a developer job.
 
-8
-00:00:36,027 --> 00:00:41,006
+14
+00:01:26,634 --> 00:01:36,335
 With every CV, the ledger on
 the left updates by itself.
 
-9
-00:00:41,156 --> 00:00:47,417
+15
+00:01:36,485 --> 00:01:48,650
 And at the top, the answer to the first
 question: all good, no tampering.
 
-10
-00:00:48,467 --> 00:00:54,509
+16
+00:01:49,700 --> 00:01:56,647
 The history, in plain sentences: what the
 agent did, when, and how it turned out.
 
-11
-00:00:54,659 --> 00:01:00,901
+17
+00:01:56,797 --> 00:02:03,973
 The technical details are there, but they
 stay out of sight until you look for them.
 
-12
-00:01:01,051 --> 00:01:06,094
+18
+00:02:04,123 --> 00:02:09,925
 Every action has its own fingerprint,
 linked to the one before it:
 
-13
-00:01:06,244 --> 00:01:10,422
+19
+00:02:10,075 --> 00:02:14,885
 none can vanish or change
 without breaking the chain.
 
-14
-00:01:10,572 --> 00:01:14,550
+20
+00:02:15,035 --> 00:02:19,617
 And you can look at just the tools the agent used.
 
-15
-00:01:15,600 --> 00:01:25,739
+21
+00:02:20,667 --> 00:02:31,804
 Several times a day the ledger is sealed, and an
 external, independent authority adds its timestamp.
 
-16
-00:01:25,889 --> 00:01:35,017
+22
+00:02:31,954 --> 00:02:41,983
 It proves those actions already existed at
 that time: nobody can rewrite them afterwards.
 
-17
-00:01:36,067 --> 00:01:40,381
+23
+00:02:43,033 --> 00:02:47,834
 When an inspector, an auditor or
 a customer asks for evidence,
 
-18
-00:01:40,531 --> 00:01:44,483
+24
+00:02:47,984 --> 00:02:52,383
 one click is enough: sigillo
 prepares the evidence pack.
 
-19
-00:01:45,533 --> 00:01:53,156
+25
+00:02:53,433 --> 00:03:01,420
 And anyone can check it, with a free, public tool
 that does not belong to whoever sells sigillo.
 
-20
-00:01:53,306 --> 00:01:57,330
+26
+00:03:01,570 --> 00:03:05,789
 The check passes: the evidence pack is intact.
 
-21
-00:01:57,480 --> 00:02:01,504
+27
+00:03:05,939 --> 00:03:10,159
 Now let's change a single character in a copy:
 
-22
-00:02:01,654 --> 00:02:06,541
+28
+00:03:10,309 --> 00:03:15,432
 the time of a candidate's
 evaluation, moved by one second.
 
-23
-00:02:06,691 --> 00:02:10,283
+29
+00:03:15,582 --> 00:03:19,350
 The check fails, and says exactly where.
 
-24
-00:02:11,333 --> 00:02:16,854
+30
+00:03:20,400 --> 00:03:26,997
 The same goes for documents. A
 candidate disputes the selection:
 
-25
-00:02:17,004 --> 00:02:22,003
+31
+00:03:27,147 --> 00:03:33,123
 upload their CV. The document
 never leaves your computer.
 
-26
-00:02:22,153 --> 00:02:28,569
+32
+00:03:33,273 --> 00:03:40,936
 Yes: it is exactly the one the AI read.
 Not a similar one: exactly that one.
 
-27
-00:02:28,719 --> 00:02:34,017
+33
+00:03:41,086 --> 00:03:47,417
 One different character, and
 sigillo no longer recognises it.
 
-28
-00:02:35,067 --> 00:02:47,417
+34
+00:03:48,467 --> 00:04:03,150
 The European AI Act asks companies to be
 able to show what their systems have done.
 
-29
-00:02:48,467 --> 00:02:52,058
+35
+00:04:04,200 --> 00:04:07,791
 Sigillo does not tell you whether
 your AI did the right thing:
 
-30
-00:02:52,208 --> 00:02:55,091
+36
+00:04:07,941 --> 00:04:10,824
 it gives you the evidence to check for yourself.
 
-31
-00:02:55,241 --> 00:02:57,417
+37
+00:04:10,974 --> 00:04:13,150
 The pilot is free: get-sigillo.eu.

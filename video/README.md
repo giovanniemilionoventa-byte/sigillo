@@ -48,6 +48,7 @@ scene 6, to `get-sigillo.eu`.
 | `lingua.ts` | the language of the recording (`SIGILLO_VIDEO_LANG`), and the words on screen that depend on it |
 | `voce.ts` | the voice-over: reads the narration and the delivered film and subtitles, has each line spoken, places it, mixes it, writes the films with voice |
 | `voce.py` | text to speech, one audio file per line of the narration (Kokoro, offline, on the CPU) |
+| `agente-cliente/` | the customer's plain agent (no sigillo in it) that the connecting scene uploads, in English and Italian, with its input |
 | `monta.sh` | ffmpeg: titles over scenes 1 and 6, a short fade at each cut, H.264 30 fps, no audio (`voce.ts` adds it later) |
 | `out/` | everything produced (ignored by git): `scene/*.mp4` one per scene, `sigillo-demo.mp4`, `sigillo-demo.srt` |
 | `consegna/` | the delivered copy of the recording of 2026-10-04: the six scenes, the joined film, the subtitles; `consegna/en/` the same in English |
@@ -119,3 +120,13 @@ and `pnpm tsx video/voce.ts it mixa` does the rest.
   lands). There is no separate marketing site: `design/sito/` does not exist.
 - **The browser is Italian** (`--lang`, `LANG`), so its own controls read
   "gg/mm/aaaa" and "Scegli file", as an Italian viewer's would.
+
+## The connecting scene
+
+`pnpm tsx video/registra.ts scena c` records the connection as a customer does it: a new system
+from its name, the agent's `.py` file dropped on "upload your agent", what the file uses read in the
+browser, the file downloaded with sigillo in it, run in the terminal, and the first receipt arriving.
+It switches `SIGILLO_AGENT_UPLOAD` and `SIGILLO_PLAIN_AGENTS` on for the recording (both are open to
+the operator's account only) and saves no state. Set `SIGILLO_CLAUDE_CODE=off` so the page shows only
+the Python way. In the joined film it comes after scene 1 (`monta.sh`, `parlato.ts`). The English
+film in `consegna/en/` includes it; the Italian one has not been re-recorded yet.
