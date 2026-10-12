@@ -142,6 +142,9 @@ services:
       SIGILLO_PUBLIC_URL: https://${SIGILLO_DOMAIN}
       # Receipts each customer organization may write per calendar month (UTC).
       SIGILLO_ORG_MONTHLY_RECEIPTS: ${SIGILLO_ORG_MONTHLY_RECEIPTS:-10000}
+      # Systems one customer organization may create (archived ones count);
+      # the administrator's own have no limit.
+      SIGILLO_ORG_MAX_SYSTEMS: ${SIGILLO_ORG_MAX_SYSTEMS:-100}
       # The model gateway (/llm/...): "all" (opened to customers by the owner,
       # 2026-10-05), "operator" for the administrator's own systems only, "off"
       # to close it.

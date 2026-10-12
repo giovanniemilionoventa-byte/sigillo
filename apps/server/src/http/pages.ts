@@ -665,7 +665,7 @@ export function organizationsPage(store: ReceiptStore, extra: { notice?: string;
           : `<span class="pill green">${STATE_ICONS.ok}${escape(t.active)}</span>`;
       const end =
         organization.approved_at === null
-          ? `<form method="post" action="/ui/clienti/${escape(encodeURIComponent(organization.organization_id))}/approva"><button type="submit" class="primary">${escape(t.approve)}</button></form>`
+          ? `<form method="post" action="/ui/clienti/${escape(encodeURIComponent(organization.organization_id))}/approva"><button type="submit" class="primary">${escape(t.approve)}</button></form> <form method="post" action="/ui/clienti/${escape(encodeURIComponent(organization.organization_id))}/rifiuta"><button type="submit">${escape(t.reject)}</button></form>`
           : escape(t.since(formatDate(organization.approved_at)));
       return `<li class="line" data-organization="${escape(organization.organization_id)}"><span class="cell-main"><strong>${escape(organization.name)}</strong><span>${escape(who)}</span></span><span>${state}</span><span class="num">${count}</span><span class="when">${end}</span></li>`;
     })

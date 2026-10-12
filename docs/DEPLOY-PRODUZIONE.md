@@ -568,6 +568,72 @@ $ cd /srv/sigillo/deploy && docker compose exec -T server /app/backup.sh
 Deve stampare `wrote … bytes to /var/lib/sigillo-backups/sigillo-….db` e
 `backups in /var/lib/sigillo-backups: 1`.
 
+**Copia automatica fuori dal server, cifrata (consigliata).** Una volta al
+giorno `deploy/offsite-backup.sh` prende l'ultima copia, la cifra con una
+chiave **pubblica** (programma `age`) e la manda a un deposito esterno con
+`rclone` (Backblaze B2, Hetzner Storage Box, un altro server via SFTP, e quasi
+ogni altro). Sul server resta solo la chiave pubblica: chi entrasse nel server
+o nel deposito trova file che non può aprire. La chiave privata sta solo con
+te. Il database e la chiave del firmatario non viaggiano mai insieme: questa
+copia contiene solo il database (la chiave ha la sua copia, `DEPLOY.md`, 1.2).
+
+1. Sul **portatile**: installa `age` (macOS: `brew install age`; Linux:
+   `sudo apt install age`; Windows: `winget install FiloSottile.age`), poi:
+
+   ```sh
+   portatile$ age-keygen -o sigillo-backup-chiave.txt
+   ```
+
+   Stampa `Public key: age1…`: copiala. Il file `sigillo-backup-chiave.txt` è
+   la chiave **privata**: mettila nel gestore di password e in una copia su
+   carta. **Senza di lei le copie non si aprono mai più; non metterla sul
+   server.**
+2. Sul **server**: `sudo apt install -y age rclone`, poi `rclone config`
+   (scegli `n` per nuovo, dai il nome `box`, scegli il tuo deposito e segui le
+   domande; per Backblaze B2 servono Key ID e Application Key di una chiave
+   limitata a un solo bucket).
+3. Sul **server**, il file con le impostazioni (nessun segreto dentro):
+
+   ```sh
+   $ sudo tee /etc/sigillo-offsite.env >/dev/null <<'EOF'
+   SIGILLO_OFFSITE_RECIPIENT=age1INCOLLA_QUI_LA_CHIAVE_PUBBLICA
+   SIGILLO_OFFSITE_REMOTE=box:NOME_BUCKET/sigillo
+   SIGILLO_OFFSITE_KEEP=30
+   EOF
+   $ sudo chmod 600 /etc/sigillo-offsite.env
+   ```
+4. Provalo a mano (dopo almeno un backup, 6.1 qui sopra):
+
+   ```sh
+   $ sudo /srv/sigillo/deploy/offsite-backup.sh
+   ```
+
+   Deve stampare `uploaded sigillo-….db.age` e `copies at box:…: 1`.
+5. Una volta al giorno, `sudo crontab -e`:
+
+   ```
+   30 3 * * * /srv/sigillo/deploy/offsite-backup.sh >> /srv/sigillo-offsite.log 2>&1
+   ```
+
+Si tengono le ultime 30 copie (per numero, non per età: se il lavoro si
+ferma, non cancella l'ultima copia buona). Se l'ultima copia sul server ha più
+di 6 ore, lo script **fallisce** e lo scrive nel log: vuol dire che il backup
+orario si è fermato. **Prova il ripristino una volta** (scarica un file `.age`
+dal deposito, sul portatile):
+
+```sh
+portatile$ age -d -i sigillo-backup-chiave.txt -o sigillo-ripristino.db sigillo-AAAAMMGGThhmmssZ.db.age
+portatile$ node dist/cli.js system list --all --db sigillo-ripristino.db
+```
+
+Deve elencare i tuoi sistemi (6.2). Il login del deposito sta nella
+configurazione di `rclone` del server (`/root/.config/rclone/`): usa una chiave
+che possa solo scrivere e leggere quel bucket, mai il login principale
+dell'account.
+
+**Alternativa senza deposito:** prendere ogni giorno l'ultima copia dal
+portatile, come sotto.
+
 **Quel volume è sullo stesso disco del database.** Un backup vero sta altrove.
 Il modo più semplice è prendere ogni giorno l'ultima copia dal portatile, o da
 un altro server:

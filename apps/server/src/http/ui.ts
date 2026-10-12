@@ -133,6 +133,12 @@ export interface UiOptions {
    */
   organizationMonthlyReceipts?: number;
   /**
+   * How many systems one organization may have (archived ones count). Past it,
+   * creating another is refused; the operator's own systems have no limit.
+   * Unset: no limit.
+   */
+  organizationMaxSystems?: number;
+  /**
    * The directory backup.sh writes to, shared with the daily export
    * (backup/daily-export.ts). Given, Impostazioni lets every account turn the
    * daily export on or off and download its files.
@@ -766,6 +772,10 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const refuse = (error: string): FastifyReply =>
       html(reply, renderNewSystem(session, { error }, { system_id: given, display_name: displayName }), 400);
     if (systemId === "") return refuse(UI.systemsPage.nameRequired);
+    if (session.viewer.kind === "organization" && options.organizationMaxSystems !== undefined) {
+      const held = session.store.listSystemRecords().length;
+      if (held >= options.organizationMaxSystems) return refuse(UI.systemsPage.tooMany(options.organizationMaxSystems));
+    }
     // The operator's systems have no prefix, and never take a customer's: an
     // identifier under an organization's name is refused whether or not that
     // system exists, so the refusal says nothing about a customer's systems.
@@ -1316,6 +1326,29 @@ ${exportSheet(record)}`,
     await allSystems.approveOrganization(organizationId, adminRequest(request, session.viewer));
     request.log.info({ action: "organization.approve", organization: organizationId }, "an organization was approved");
     return reply.redirect(`/ui/clienti?approvato=${encodeURIComponent(organizationId)}`, 303);
+  });
+
+  app.post("/ui/clienti/:organizationId/rifiuta", async (request, reply) => {
+    const session = requireOperator(request, reply);
+    if (session === null) return reply;
+    const { organizationId } = request.params as { organizationId: string };
+    if (allSystems.organization(organizationId) === null) return reply.callNotFound();
+    try {
+      await allSystems.rejectOrganization(organizationId, adminRequest(request, session.viewer));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return html(
+        reply,
+        render(session, {
+          title: UI.organizations.title,
+          current: "clienti",
+          body: organizationsPage(allSystems, { error: message }),
+        }),
+        409,
+      );
+    }
+    request.log.info({ action: "organization.reject", organization: organizationId }, "an organization was turned away");
+    return reply.redirect("/ui/clienti", 303);
   });
 
   async function sendArchive(

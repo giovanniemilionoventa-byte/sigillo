@@ -89,6 +89,7 @@ const ui = {
     active: "Attivo",
     since: (when: string): string => `dal ${when}`,
     approve: "Approva",
+    reject: "Rifiuta",
     people: (count: number): string => `${count} ${count === 1 ? "persona" : "persone"}`,
     noMembers: "Creato dall'amministratore",
     approved: (name: string) => `${name} è approvato: le sue persone possono entrare.`,
@@ -191,6 +192,7 @@ const ui = {
     submit: "Crea sistema",
     nameRequired: "Scrivi un nome o un identificativo.",
     exists: "Esiste già un sistema con questo identificativo.",
+    tooMany: (limit: number): string => `Questo account può avere al massimo ${limit} sistemi, compresi quelli archiviati: contattaci per alzare il limite.`,
     deleted: (systemId: string): string => `${systemId} è stato eliminato.`,
   },
   // A new system's key, or a new key for one, and the three ways to connect an agent.
@@ -480,6 +482,7 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "openings.erase": "nonce cancellati",
   "organization.create": "organizzazione creata",
   "organization.approve": "organizzazione approvata",
+  "organization.reject": "registrazione rifiutata",
   "user.register": "nuova registrazione",
   "system.assign": "assegnato a un'organizzazione",
   "system.transfer.create": "creato un link di trasferimento",
@@ -681,7 +684,7 @@ export const IT = {
   describeAdminAction(entry: AdminAction): string {
     const what = ADMIN_ACTIONS[entry.action] ?? entry.action;
     if (entry.action === "subject.erase") return `${what}: pseudonimo ${String(entry.detail["token"])}`;
-    if (entry.action === "organization.create" || entry.action === "organization.approve" || entry.action === "user.register") {
+    if (entry.action === "organization.create" || entry.action === "organization.approve" || entry.action === "organization.reject" || entry.action === "user.register") {
       return `${what}: ${String(entry.detail["organization_id"])}`;
     }
     let extra = "";
