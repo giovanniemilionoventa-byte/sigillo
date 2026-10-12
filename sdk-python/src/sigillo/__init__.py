@@ -80,10 +80,10 @@ from opentelemetry.sdk.trace import SpanProcessor as _SpanProcessor
 from opentelemetry.sdk.trace import TracerProvider as _TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor as _BatchSpanProcessor
 from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
-from . import _text, _watchdog
+from . import _gateway, _text, _watchdog
 
 __all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"]
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 _LOG = _logging.getLogger("sigillo")
 _TRACES_PATH = "/v1/traces"
@@ -752,6 +752,10 @@ def init(
         raise ValueError(
             f"unknown instrumentation {unknown}, this version knows {list(_SUPPORTED)}"
         )
+
+    # Through the model gateway: the clients that read no address from the
+    # environment are pointed at it here, before the agent makes one.
+    _gateway.point_clients()
 
     traces_endpoint = _traces_endpoint(endpoint)
     resource = {"service.name": system_id}

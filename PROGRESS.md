@@ -3930,3 +3930,14 @@ Richiesta del proprietario: chiudere le lacune prima del primo cliente.
 
 - Pagina Clienti (solo amministratore): "Elimina", con la parola `elimina` scritta accanto, rimuove un cliente i cui sistemi hanno solo la ricevuta iniziale (sistemi vuoti, persone, organizzazione; tutto nel registro amministrativo, `organization.delete`). Con anche una sola azione registrata viene rifiutato. Le ricevute non si cancellano mai. Test in `accounts.test.ts`.
 - Proposta di politica di conservazione (periodo per piano, archivio firmato prima, grazia, "punto di partenza" nella catena): `docs/PROPOSTA-CONSERVAZIONE.md`. Nessuna cancellazione automatica costruita; in attesa dell'OK del proprietario.
+
+## Più sicurezza per tutti i fornitori cloud (2026-10-12)
+
+Richiesta del proprietario: allargare il gateway e l'analisi del file "a tutti i provider possibili". Resta solo per l'account dell'amministratore, come tutto il gateway (`SIGILLO_LLM_GATEWAY=operator`).
+
+- `gateway/catalog.ts`: un elenco unico di 18 fornitori, da cui leggono sia il gateway sia l'analisi del file nel browser: OpenAI, Anthropic, Gemini, Mistral, Groq, OpenRouter, DeepSeek, xAI (Grok), Together, Fireworks, Perplexity, Cohere, Cerebras, Moonshot (Kimi), Qwen (Alibaba, internazionale), Z.ai (GLM), NVIDIA, SambaNova. Ognuno si raggiunge a `/llm/<fornitore>/` seguito dal percorso del fornitore stesso; nel file l'indirizzo del fornitore diventa quello del gateway.
+- Analisi del file (`agent-setup.ts`): un fornitore è usato se il file ne importa la libreria, nomina la variabile della chiave, chiama il suo indirizzo, contiene una sua chiave, o nomina un suo modello (`"gpt-4o"`, `"gemini/gemini-2.5-flash"`, `"anthropic:claude-…"`, come LiteLLM, PydanticAI e CrewAI li ricevono). La libreria `openai` usata verso un altro indirizzo (Groq, DeepSeek…) conta per quel fornitore, e così una chiave `sk-` accanto a lui. Le variabili impostate coprono anche LiteLLM e LangChain (`MISTRAL_API_BASE`, `GEMINI_API_BASE`, `GROQ_API_BASE`…). I nomi dei modelli non contano accanto a un modello locale (Ollama ha un suo `mistral-small`).
+- Il client `mistralai` non legge alcun indirizzo dall'ambiente: con `MISTRAL_BASE_URL` impostato, il pacchetto sigillo (0.6.0, `_gateway.py`) gli dà quello del gateway quando non ne riceve uno. Il file chiede la 0.6 solo se importa `mistralai`.
+- Provati con le librerie vere contro un gateway finto: `mistralai` 2.x, `google-genai`, `groq`.
+- Non coperti, per costruzione: Azure OpenAI (un indirizzo per cliente), AWS Bedrock e Google Vertex (firmati con le credenziali del cloud), Hugging Face (lo stesso token scarica i modelli), la vecchia `google-generativeai` e `xai_sdk` (gRPC): un file che le importa resta com'è.
+- Test: `agent-setup.test.ts` (6 casi), `gateway.test.ts` (Groq e OpenRouter), `test_gateway.py` (2).

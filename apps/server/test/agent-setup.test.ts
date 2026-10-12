@@ -567,3 +567,100 @@ describe("an uploaded agent that calls Mistral by itself", () => {
     if (python) expect(parses(result.text)).toBe(true);
   });
 });
+
+describe("an uploaded agent for any of the cloud providers in the catalog", () => {
+  const through = (source: string) => {
+    const result = setup(source, { ...SETTINGS, gateway: GATEWAY } as typeof SETTINGS);
+    if (result.status !== "added") throw new Error("expected added");
+    return result as Added & { providers: Record<string, string> };
+  };
+  const GEMINI_KEY = "AIza" + "SyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW";
+  const GROQ_KEY = "gsk_" + "Qw9eR8tY7uI6oP5aS4dF3gH2jK1l";
+  const DEEPSEEK_KEY = "sk-" + "0123456789abcdef0123456789abcdef";
+
+  it("routes Gemini's own client through the variables it reads, its key included", () => {
+    const result = through(`from google import genai\nclient = genai.Client(api_key="${GEMINI_KEY}")\n`);
+    expect(result.providers).toEqual({ gemini: GEMINI_KEY });
+    expect(result.text).not.toContain(GEMINI_KEY);
+    expect(result.text).toContain('os.environ["GOOGLE_GEMINI_BASE_URL"] = "https://get-sigillo.eu/llm/gemini"');
+    expect(result.text).toContain('os.environ["GEMINI_API_BASE"] = "https://get-sigillo.eu/llm/gemini/v1beta"');
+    // google-genai reads GOOGLE_API_KEY before GEMINI_API_KEY: both are the sigillo key.
+    expect(result.text).toContain('os.environ["GOOGLE_API_KEY"] = "sigillo_abc_def"');
+    expect(result.text).toContain('os.environ["GEMINI_API_KEY"] = "sigillo_abc_def"');
+    if (python) expect(parses(result.text)).toBe(true);
+  });
+
+  it("does not take a Google key for Gemini's by itself, nor touch the older client it cannot point anywhere", () => {
+    const maps = through(`MAPS = "${GEMINI_KEY}"\n`);
+    expect(maps.providers).toEqual({});
+    expect(maps.text).toContain(GEMINI_KEY);
+    const old = through(`import google.generativeai as genai\ngenai.configure(api_key="${GEMINI_KEY}")\n`);
+    expect(old.providers).toEqual({});
+    expect(old.text).toContain(GEMINI_KEY);
+  });
+
+  it("takes the openai library's calls to another provider for that provider's, and an sk- key with them", () => {
+    const groq = through(`from openai import OpenAI\nc = OpenAI(base_url="https://api.groq.com/openai/v1", api_key="${GROQ_KEY}")\n`);
+    expect(groq.providers).toEqual({ groq: GROQ_KEY });
+    expect(groq.text).toContain('base_url="https://get-sigillo.eu/llm/groq/openai/v1"');
+    expect(groq.text).not.toContain("OPENAI_BASE_URL");
+    const deepseek = through(`from openai import OpenAI\nc = OpenAI(base_url="https://api.deepseek.com", api_key="${DEEPSEEK_KEY}")\n`);
+    expect(deepseek.providers).toEqual({ deepseek: DEEPSEEK_KEY });
+    expect(deepseek.text).toContain('base_url="https://get-sigillo.eu/llm/deepseek"');
+    expect(deepseek.text).not.toContain(DEEPSEEK_KEY);
+    // The same key next to OpenAI's own address stays OpenAI's.
+    const both = through(`x = "https://api.openai.com/v1"\ny = "https://api.deepseek.com"\nk = "${DEEPSEEK_KEY}"\n`);
+    expect(both.providers).toEqual({ openai: DEEPSEEK_KEY, deepseek: "" });
+  });
+
+  it("knows a provider from the model a framework is told, as LiteLLM and PydanticAI take it", () => {
+    const cases: Array<[string, string[]]> = [
+      ['import litellm\nlitellm.completion(model="gemini/gemini-2.5-flash", messages=[])\n', ["gemini"]],
+      ['from pydantic_ai import Agent\nagent = Agent("anthropic:claude-sonnet-4-5")\n', ["anthropic"]],
+      ['from crewai import LLM\nllm = LLM(model="xai/grok-4")\n', ["xai"]],
+      ['import litellm\nlitellm.completion(model="mistral/mistral-large-latest", messages=[])\n', ["mistral"]],
+      ['import litellm\nlitellm.completion(model="deepseek/deepseek-chat", messages=[])\n', ["deepseek"]],
+      ['from smolagents import LiteLLMModel\nm = LiteLLMModel(model_id="gpt-4o")\n', ["openai"]],
+    ];
+    for (const [source, names] of cases) {
+      expect(Object.keys(through(source).providers)).toEqual(names);
+    }
+    expect(through('import ollama\nollama.chat(model="mistral-small", messages=[])\n').providers).toEqual({});
+    expect(through('import ollama\nollama.chat(model="gpt-oss", messages=[])\n').providers).toEqual({});
+  });
+
+  it("gives LiteLLM and LangChain the variables they read, and asks for a newer sigillo for mistralai's own client", () => {
+    const litellm = through('import os\nkey = os.environ["MISTRAL_API_KEY"]\n');
+    expect(litellm.text).toContain('os.environ["MISTRAL_API_BASE"] = "https://get-sigillo.eu/llm/mistral/v1"');
+    expect(litellm.text).toContain("< (0, 4):");
+    const client = through("from mistralai import Mistral\nclient = Mistral()\n");
+    expect(client.providers).toEqual({ mistral: "" });
+    expect(client.text).toContain("< (0, 6):");
+  });
+
+  it("knows each of the others by the variable its key is read from", () => {
+    const variables: Record<string, string> = {
+      groq: "GROQ_API_KEY",
+      openrouter: "OPENROUTER_API_KEY",
+      deepseek: "DEEPSEEK_API_KEY",
+      xai: "XAI_API_KEY",
+      together: "TOGETHER_API_KEY",
+      fireworks: "FIREWORKS_API_KEY",
+      perplexity: "PERPLEXITY_API_KEY",
+      cohere: "CO_API_KEY",
+      cerebras: "CEREBRAS_API_KEY",
+      moonshot: "MOONSHOT_API_KEY",
+      qwen: "DASHSCOPE_API_KEY",
+      zai: "ZAI_API_KEY",
+      nvidia: "NVIDIA_API_KEY",
+      sambanova: "SAMBANOVA_API_KEY",
+    };
+    for (const [name, variable] of Object.entries(variables)) {
+      const result = through(`import os\nkey = os.getenv("${variable}")\n`);
+      expect(result.providers, variable).toEqual({ [name]: "" });
+      expect(result.text).toContain(`os.environ["${variable}"] = "sigillo_abc_def"`);
+      expect(result.text).toContain(`"https://get-sigillo.eu/llm/${name}`);
+      if (python) expect(parses(result.text)).toBe(true);
+    }
+  });
+});

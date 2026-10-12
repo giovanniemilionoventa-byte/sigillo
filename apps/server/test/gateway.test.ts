@@ -33,6 +33,8 @@ const OPENAI_KEY = "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
 const ANTHROPIC_KEY = "sk-ant-api03-ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210";
 const GEMINI_KEY = "AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW";
 const MISTRAL_KEY = "Mz9" + "aB8cD7eF6gH5iJ4kL3mN2oP1qR0sT";
+const GROQ_KEY = "gsk_" + "Qw9eR8tY7uI6oP5aS4dF3gH2jK1l";
+const OPENROUTER_KEY = "sk-or-v1-" + "0a1b2c3d4e5f6a7b8c9d0e1f2a3b";
 const PROMPT = "Rank these curricula for the warehouse role";
 const ANSWER = "Candidate B fits the role best";
 const NOW = "2026-10-05T17:00:00.000Z";
@@ -71,7 +73,7 @@ async function start(access: GatewayAccess, toolRequests: "off" | GatewayAccess 
     store,
     keys,
     now: () => new Date(NOW),
-    gateway: { keys: providerKeys, access, toolRequests, upstream: { openai: upstreamUrl, anthropic: `${upstreamUrl}/`, gemini: upstreamUrl, mistral: upstreamUrl } },
+    gateway: { keys: providerKeys, access, toolRequests, upstream: { openai: upstreamUrl, anthropic: `${upstreamUrl}/`, gemini: upstreamUrl, mistral: upstreamUrl, groq: upstreamUrl, openrouter: upstreamUrl } },
     ui: {
       password: "an administrator password",
       signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
@@ -128,6 +130,8 @@ beforeEach(async () => {
     providerKeys.set(systemId, "anthropic", ANTHROPIC_KEY, ADMIN.ts);
     providerKeys.set(systemId, "gemini", GEMINI_KEY, ADMIN.ts);
     providerKeys.set(systemId, "mistral", MISTRAL_KEY, ADMIN.ts);
+    providerKeys.set(systemId, "groq", GROQ_KEY, ADMIN.ts);
+    providerKeys.set(systemId, "openrouter", OPENROUTER_KEY, ADMIN.ts);
   }
   await start("operator");
 });
@@ -254,6 +258,19 @@ describe("the model gateway", () => {
     expect(response.statusCode).toBe(200);
     expect(seen[0]!.url).toBe("/v1/chat/completions");
     expect(seen[0]!.headers.authorization).toBe(`Bearer ${MISTRAL_KEY}`);
+  });
+
+  it("carries the providers that speak OpenAI's API under paths of their own, Groq's and OpenRouter's", async () => {
+    const asked = { model: "llama-3.3-70b-versatile", messages: [{ role: "user", content: PROMPT }] };
+    expect((await chat(operatorToken, asked, "/llm/groq/openai/v1/chat/completions")).statusCode).toBe(200);
+    expect((await chat(operatorToken, asked, "/llm/openrouter/api/v1/chat/completions")).statusCode).toBe(200);
+    expect(seen.map((request) => [request.url, request.headers.authorization])).toEqual([
+      ["/openai/v1/chat/completions", `Bearer ${GROQ_KEY}`],
+      ["/api/v1/chat/completions", `Bearer ${OPENROUTER_KEY}`],
+    ]);
+    expect(calls(OPERATOR_BOT).map((receipt) => (receipt as { model?: { provider?: unknown } }).model?.provider)).toEqual(["groq", "openrouter"]);
+    // Outside the provider's own paths: not passed on.
+    expect((await chat(operatorToken, asked, "/llm/groq/v1/chat/completions")).statusCode).toBe(404);
   });
 
   it("records a refusal of the provider as an error, and passes it on with its retry hint", async () => {
@@ -396,7 +413,7 @@ describe("the model gateway", () => {
 
   it("refuses a wrong key, a provider it does not know and a path that climbs", async () => {
     expect((await chat("sigillo_nope_0000")).statusCode).toBe(401);
-    expect((await chat(operatorToken, undefined, "/llm/cohere/v1/chat/completions")).statusCode).toBe(404);
+    expect((await chat(operatorToken, undefined, "/llm/ai21/v1/chat/completions")).statusCode).toBe(404);
     expect((await chat(operatorToken, undefined, "/llm/openai/v1/../admin")).statusCode).toBe(404);
     expect((await chat(operatorToken, undefined, "/llm/openai/v2/chat")).statusCode).toBe(404);
     expect(seen).toEqual([]);
