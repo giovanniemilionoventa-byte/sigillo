@@ -51,7 +51,7 @@ scene 6, to `get-sigillo.eu`.
 | `agente-cliente/` | the customer's plain agent (no sigillo in it) that the connecting scene uploads, in English and Italian, with its input |
 | `monta.sh` | ffmpeg: titles over scenes 1 and 6, a short fade at each cut, H.264 30 fps, no audio (`voce.ts` adds it later) |
 | `out/` | everything produced (ignored by git): `scene/*.mp4` one per scene, `sigillo-demo.mp4`, `sigillo-demo.srt` |
-| `consegna/` | the delivered copy of the recording of 2026-10-04: the six scenes, the joined film, the subtitles; `consegna/en/` the same in English |
+| `consegna/` | the two delivered films with voice and their subtitles (the site and the Docker image serve them); `consegna/en/` the same in English. The silent scenes and joined films were removed: re-record with `registra.ts` to rebuild them |
 
 The demo's state (signing key, database, ingest token) lives outside the
 repository, in the system temporary directory (`SIGILLO_VIDEO_STATE` to
