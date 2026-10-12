@@ -59,6 +59,7 @@ COPY --from=build /out/server ./
 COPY --from=build /out/verifier /verifier
 COPY apps/server/proto ./proto
 COPY apps/server/assets ./assets
+COPY apps/server/content ./content
 # The public site's demo video and its subtitles, in each language (site.ts):
 # the films with the voice-over, and the .srt laid over the speech that was spoken.
 COPY video/consegna/en/sigillo-demo-en-voice.mp4 ./assets/video/demo-en.mp4

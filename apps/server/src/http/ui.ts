@@ -70,7 +70,7 @@ import { currentLanguage, isLanguage, LANGUAGE_COOKIE, languageFor, withLanguage
 import { systemTitle, UI } from "./strings.js";
 import { dailyExportPath, isDailyExportOn, listDailyExports, setDailyExport, type StoredExport } from "../backup/daily-export.js";
 import { ICONS, STATE_ICONS } from "./style.js";
-import { registerFavicon, registerSite, SITE_CONTACT_EMAIL, SITE_PATHS } from "./site.js";
+import { registerFavicon, registerSite, SITE_CONTACT_EMAIL, isSiteBack } from "./site.js";
 
 /**
  * The web view: server-rendered HTML, no framework and no build step, except
@@ -1279,7 +1279,7 @@ ${exportSheet(record)}`,
     const body = request.body as { lang?: unknown; back?: unknown } | undefined;
     const back =
       typeof body?.back === "string" &&
-      ((/^\/ui(?:[/?][^\\\s]*)?$/.test(body.back) && !body.back.includes("..")) || (SITE_PATHS as readonly string[]).includes(body.back))
+      ((/^\/ui(?:[/?][^\\\s]*)?$/.test(body.back) && !body.back.includes("..")) || isSiteBack(body.back))
         ? body.back
         : "/ui";
     if (!isLanguage(body?.lang)) return reply.redirect(back, 303);
