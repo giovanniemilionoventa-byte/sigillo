@@ -302,6 +302,7 @@ describe("customers' accounts in the web view", () => {
       keys,
       now: () => new Date(NOW),
       organizationMonthlyReceipts: 3,
+      organizationMaxSystems: 2,
       ui: {
         password: PASSWORD,
         signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
@@ -432,6 +433,87 @@ describe("customers' accounts in the web view", () => {
     expect(register.body).not.toContain("operator-bot");
     // Only the operator sees the customers.
     expect((await app.inject({ method: "GET", url: "/ui/clienti", headers: { cookie: session } })).statusCode).toBe(404);
+  });
+
+  it("lets the operator turn away a waiting sign-up, and never an approved one", async () => {
+    const person = account("spam@example.com", "una password lunga", true);
+    await store.registerOrganization({ uid: person.uid, email: "spam@example.com" }, "Spam S.r.l.", ADMIN);
+    const organizationId = store.userByUid(person.uid)?.organization_id ?? "";
+
+    // Not the operator: refused, and nothing is removed.
+    expect((await form(`/ui/clienti/${organizationId}/rifiuta`, {})).statusCode).not.toBe(303);
+    expect(store.organization(organizationId)).not.toBeNull();
+
+    const rejected = await form(`/ui/clienti/${organizationId}/rifiuta`, {}, operatorCookie());
+    expect(rejected.statusCode).toBe(303);
+    expect(store.organization(organizationId)).toBeNull();
+    expect(store.userByUid(person.uid)).toBeNull();
+    const entry = store.adminLog()[0];
+    expect(entry?.action).toBe("organization.reject");
+    expect(entry?.detail["emails"]).toEqual(["spam@example.com"]);
+
+    // An approved organization is not deleted this way.
+    const refused = await form("/ui/clienti/acme/rifiuta", {}, operatorCookie());
+    expect(refused.statusCode).toBe(409);
+    expect(store.organization("acme")).not.toBeNull();
+    expect((await form("/ui/clienti/inesistente/rifiuta", {}, operatorCookie())).statusCode).toBe(404);
+  });
+
+  it("lets the operator delete a customer that never recorded anything, and keeps one that did", async () => {
+    await store.createOrganization("vuota", "Vuota S.r.l.", ADMIN, { approved: true });
+    await store.createSystem("vuota.bot", "2026-10-01T09:00:00.000Z", "vuota");
+
+    // Without the word, nothing happens.
+    const unconfirmed = await form("/ui/clienti/vuota/elimina", { confirm: "" }, operatorCookie());
+    expect(unconfirmed.statusCode).toBe(409);
+    expect(store.organization("vuota")).not.toBeNull();
+
+    const deleted = await form("/ui/clienti/vuota/elimina", { confirm: "elimina" }, operatorCookie());
+    expect(deleted.statusCode).toBe(303);
+    expect(store.organization("vuota")).toBeNull();
+    expect(store.systemRecord("vuota.bot")).toBeNull();
+    expect(store.adminLog().map((entry) => entry.action)).toContain("organization.delete");
+
+    // A customer with one recorded action is kept, with everything it holds.
+    await store.append({
+      system_id: "acme.bot",
+      ts_event: "2026-10-01T10:00:00.000Z",
+      ts_received: "2026-10-01T10:00:00.005Z",
+      actor: { agent: "a" },
+      action: { kind: "tool_call", name: "x" },
+      input_hash: null,
+      output_hash: null,
+      outcome: "ok",
+      source: { type: "sdk" },
+    });
+    const refused = await form("/ui/clienti/acme/elimina", { confirm: "elimina" }, operatorCookie());
+    expect(refused.statusCode).toBe(409);
+    expect(store.organization("acme")).not.toBeNull();
+    expect(store.systemRecord("acme.bot")).not.toBeNull();
+    // Only the operator may ask.
+    expect((await form("/ui/clienti/acme/elimina", { confirm: "elimina" })).statusCode).not.toBe(303);
+  });
+
+  it("stops a customer at the system limit, and not the operator", async () => {
+    account("lia@acme.it", "una password lunga", true);
+    const lia = fake.accounts.get("lia@acme.it");
+    await store.registerOrganization({ uid: lia?.uid ?? "", email: "lia@acme.it" }, "Lia S.r.l.", ADMIN);
+    const organizationId = store.userByUid(lia?.uid ?? "")?.organization_id ?? "";
+    await store.approveOrganization(organizationId, ADMIN);
+    const signedIn = await form("/ui/login/email", { email: "lia@acme.it", password: "una password lunga" });
+    const session = cookieSet(signedIn, "sigillo_session");
+
+    expect((await form("/ui/sistemi", { display_name: "Primo" }, session)).statusCode).toBe(200);
+    expect((await form("/ui/sistemi", { display_name: "Secondo" }, session)).statusCode).toBe(200);
+    const third = await form("/ui/sistemi", { display_name: "Terzo" }, session);
+    expect(third.statusCode).toBe(400);
+    expect(third.body).toContain("2");
+    expect(store.systemRecord(`${organizationId}.terzo`)).toBeNull();
+
+    // The operator has no limit (acme.bot and operator-bot already exist).
+    expect((await form("/ui/sistemi", { display_name: "Uno" }, operatorCookie())).statusCode).toBe(200);
+    expect((await form("/ui/sistemi", { display_name: "Due" }, operatorCookie())).statusCode).toBe(200);
+    expect((await form("/ui/sistemi", { display_name: "Tre" }, operatorCookie())).statusCode).toBe(200);
   });
 
   it("takes someone who opened a transfer link, once signed in, to the link, and the system becomes theirs", async () => {

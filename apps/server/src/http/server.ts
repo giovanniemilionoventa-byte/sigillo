@@ -67,6 +67,8 @@ export interface ServerOptions {
    * month turns; the operator's own systems have no limit. Unset: no limit.
    */
   organizationMonthlyReceipts?: number;
+  /** How many systems one organization may have (ui.ts, organizationMaxSystems). Unset: no limit. */
+  organizationMaxSystems?: number;
   /**
    * The SDK heartbeat (connection/watch.ts). One is made here when not given,
    * whose sweep nobody runs: the caller that wants silence noticed starts it.
@@ -390,6 +392,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.organizationMonthlyReceipts === undefined
         ? {}
         : { organizationMonthlyReceipts: options.organizationMonthlyReceipts }),
+      ...(options.organizationMaxSystems === undefined ? {} : { organizationMaxSystems: options.organizationMaxSystems }),
     });
   }
 

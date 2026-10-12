@@ -85,6 +85,11 @@ const ui: Strings = {
     active: "Active",
     since: (when: string): string => `since ${when}`,
     approve: "Approve",
+    reject: "Reject",
+    delete: "Delete",
+    confirmPlaceholder: "type delete",
+    isConfirm: (word: string): boolean => word === "delete",
+    confirmNeeded: "Type the word delete next to the button to confirm.",
     people: (count: number): string => `${count} ${count === 1 ? "person" : "people"}`,
     noMembers: "Created by the administrator",
     approved: (name: string) => `${name} is approved: its people can sign in.`,
@@ -158,6 +163,7 @@ const ui: Strings = {
   systemsPage: {
     title: "Systems",
     heading: "Systems",
+    tooMany: (limit: number): string => `This account can have up to ${limit} systems. Archived ones count; contact us to raise the limit.`,
     views: { attivi: "Active", archiviati: "Archived", tutti: "All" },
     noneInView: {
       attivi: "No active systems.",
@@ -433,6 +439,8 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "openings.erase": "nonces erased",
   "organization.create": "organization created",
   "organization.approve": "organization approved",
+  "organization.delete": "organization deleted",
+  "organization.reject": "sign-up rejected",
   "user.register": "new sign-up",
   "system.assign": "assigned to an organization",
   "system.transfer.create": "transfer link created",
@@ -617,7 +625,7 @@ export const EN: Texts = {
   describeAdminAction(entry: AdminAction): string {
     const what = ADMIN_ACTIONS[entry.action] ?? entry.action;
     if (entry.action === "subject.erase") return `${what}: pseudonym ${String(entry.detail["token"])}`;
-    if (entry.action === "organization.create" || entry.action === "organization.approve" || entry.action === "user.register") {
+    if (entry.action === "organization.create" || entry.action === "organization.approve" || entry.action === "organization.reject" || entry.action === "organization.delete" || entry.action === "user.register") {
       return `${what}: ${String(entry.detail["organization_id"])}`;
     }
     let extra = "";

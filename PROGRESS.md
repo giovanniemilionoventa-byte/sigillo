@@ -3918,6 +3918,19 @@ Segnalazione del proprietario: un agente generato con la chiave in `.env` veniva
 
 Prova del proprietario: la chiave Mistral salvata dalla console veniva rifiutata da Mistral (`Invalid API Key`), mentre la stessa chiave chiamata direttamente funzionava. Ora `POST /ui/systems/:id/llm-key` chiede al fornitore il suo elenco dei modelli con la chiave ricevuta (`providerRefuses` in `gateway/llm.ts`). Se il fornitore la rifiuta (401 o 403), la chiave non viene salvata e la pagina lo dice. Se il fornitore non risponde, la chiave si salva lo stesso. Test: un caso in `agent-setup.test.ts`, con un fornitore finto.
 
+## Backup fuori dal server e rischi residui (2026-10-12)
+
+Richiesta del proprietario: chiudere le lacune prima del primo cliente.
+
+- `deploy/offsite-backup.sh` (sul server, non nel container): ogni giorno prende l'ultima copia di `backup.sh`, la cifra con `age` verso una chiave **pubblica** (la privata resta al proprietario, mai sul server) e la invia con `rclone` a un deposito qualsiasi. Tiene le ultime 30 per numero; fallisce rumorosamente se l'ultima copia ha più di 6 ore (backup orario fermo). Nessun segreto nel repository; le credenziali del deposito stanno nella configurazione `rclone` dell'host. Procedura copia-incolla: `docs/DEPLOY-PRODUZIONE.md`, 6.1. Test con `age` vero: `offsite-backup.test.ts` (solo il trasporto è sostituito da un `rclone` locale).
+- Rischi del 2026-10-07 riesaminati (tabella in `docs/SECURITY.md`): chiusi "iscrizioni spam non rifiutabili" (pulsante Rifiuta in Clienti, `organization.reject` nel registro) e "sistemi illimitati per organizzazione" (`SIGILLO_ORG_MAX_SYSTEMS`, default 100, nessun limite per l'amministratore). Aperti: password admin senza secondo fattore, sessioni perse a ogni riavvio (voluto), FreeTSA non qualificata (decisione commerciale).
+- Verificatore: nessuna modifica.
+
+## Eliminare un cliente e proposta di conservazione (2026-10-12)
+
+- Pagina Clienti (solo amministratore): "Elimina", con la parola `elimina` scritta accanto, rimuove un cliente i cui sistemi hanno solo la ricevuta iniziale (sistemi vuoti, persone, organizzazione; tutto nel registro amministrativo, `organization.delete`). Con anche una sola azione registrata viene rifiutato. Le ricevute non si cancellano mai. Test in `accounts.test.ts`.
+- Proposta di politica di conservazione (periodo per piano, archivio firmato prima, grazia, "punto di partenza" nella catena): `docs/PROPOSTA-CONSERVAZIONE.md`. Nessuna cancellazione automatica costruita; in attesa dell'OK del proprietario.
+
 ## Più sicurezza per tutti i fornitori cloud (2026-10-12)
 
 Richiesta del proprietario: allargare il gateway e l'analisi del file "a tutti i provider possibili". Resta solo per l'account dell'amministratore, come tutto il gateway (`SIGILLO_LLM_GATEWAY=operator`).

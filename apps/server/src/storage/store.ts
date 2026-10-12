@@ -305,6 +305,10 @@ export type AdminAction =
   | "openings.erase"
   | "organization.create"
   | "organization.approve"
+  /** A waiting sign-up was turned away and removed. */
+  | "organization.reject"
+  /** An organization with no recorded action was deleted, with its empty systems and its people. */
+  | "organization.delete"
   /** Someone signed up and was given a new organization, waiting for approval. */
   | "user.register"
   /** A system was given to an organization, moved to another, or taken back by the operator. */
@@ -795,6 +799,65 @@ export class ReceiptStore {
           .run(request.ts, organizationId);
         this.logAdmin("organization.approve", "", request, { organization_id: organizationId, name: organization.name });
         return { ...organization, approved_at: request.ts };
+      }),
+    );
+  }
+
+  /**
+   * Turns away an organization that signed itself up and is still waiting:
+   * its row and its people go, so a sign-up made only to fill the list does
+   * not stay there. Only a waiting organization with no system can go; an
+   * approved one, or one holding receipts, is never deleted this way. The
+   * person's login (Firebase) is untouched, so they could sign up again.
+   */
+  async rejectOrganization(organizationId: string, request: AdminRequest): Promise<void> {
+    return this.enqueue(() =>
+      this.inTransaction(async () => {
+        const organization = this.organization(organizationId, this.write);
+        if (organization === null) throw new StorageError(`unknown organization ${organizationId}`);
+        if (organization.approved_at !== null) throw new StorageError(`${organizationId} is approved, not waiting`);
+        const held = this.write
+          .prepare("SELECT COUNT(*) AS n FROM systems WHERE organization_id = ?")
+          .get(organizationId) as { n: number };
+        if (held.n > 0) throw new StorageError(`${organizationId} already holds systems`);
+        const people = this.usersOf(organizationId);
+        this.write.prepare("DELETE FROM users WHERE organization_id = ?").run(organizationId);
+        this.write.prepare("DELETE FROM organizations WHERE organization_id = ?").run(organizationId);
+        this.logAdmin("organization.reject", "", request, {
+          organization_id: organizationId,
+          name: organization.name,
+          emails: people.map((person) => person.email),
+        });
+      }),
+    );
+  }
+
+  /**
+   * Deletes a customer that never recorded an action: its systems (each
+   * holding only its genesis, deleted by deleteEmptySystem, which logs them),
+   * its people, and the organization. One real receipt anywhere refuses it:
+   * a recorded action is never deleted (schema.ts), so such a customer is
+   * kept, and its systems archived instead.
+   */
+  async deleteOrganization(organizationId: string, request: AdminRequest): Promise<void> {
+    const organization = this.organization(organizationId);
+    if (organization === null) throw new StorageError(`unknown organization ${organizationId}`);
+    if (this.receiptsSince(organizationId, "") > 0) {
+      throw new StorageError(`${organizationId} has recorded actions: they are never deleted; archive its systems instead`);
+    }
+    for (const record of this.listSystemRecords().filter((s) => s.organization_id === organizationId)) {
+      await this.deleteEmptySystem(record.system_id, request);
+    }
+    await this.enqueue(() =>
+      this.inTransaction(async () => {
+        const people = this.usersOf(organizationId);
+        this.write.prepare("DELETE FROM users WHERE organization_id = ?").run(organizationId);
+        this.write.prepare("DELETE FROM organizations WHERE organization_id = ?").run(organizationId);
+        this.logAdmin("organization.delete", "", request, {
+          organization_id: organizationId,
+          name: organization.name,
+          emails: people.map((person) => person.email),
+        });
       }),
     );
   }

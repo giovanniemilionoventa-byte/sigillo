@@ -891,6 +891,17 @@ file, so the token can be checked offline. Nothing else changes.
 **No HSM or KMS.** The key is a file. Moving it into hardware would change the
 signer and nothing else, which is part of why the signer is a separate process.
 
+## Residual risks after the review of 2026-10-07, re-checked 2026-10-12
+
+| risk | state |
+|---|---|
+| No off-site backup | **Closed in code** by `deploy/offsite-backup.sh` (age public-key encryption, rclone transport, pruned by count, fails when the hourly backup stops). Stays open until the owner runs the five steps of DEPLOY-PRODUZIONE.md 6.1 on the server. The sealing key of the model gateway (`llm-gateway.key`) is deliberately not in it. |
+| Spam sign-ups could not be rejected | **Closed.** The operator's Customers page has a Reject button for a waiting organization with no systems (`organization.reject` in the administrative log). The person's Firebase login remains, so they can sign up again. |
+| Unlimited systems per organization | **Closed.** `SIGILLO_ORG_MAX_SYSTEMS` (default 100, archived ones count; the operator has none). |
+| The administrator has one password, no second factor | Open. Mitigated by the lockout (6 wrong attempts) and HTTPS. A second factor is a feature of its own. |
+| Everyone is signed out on each restart | Open, kept on purpose: the cookie secret lives only in memory, so a leaked cookie dies with the process, and so does a sign-out. Persisting the secret would make a sign-out forgotten by a restart. |
+| FreeTSA is not eIDAS-qualified | Open: a business decision (a qualified provider costs money), see "Evidence" below. |
+
 ## Before going to production
 
 *(prima di andare in produzione)* Derived from the hardening of phase 5. The
@@ -931,6 +942,8 @@ they are still there if the file has been edited)
 **Data**
 - [ ] `backup.sh` in the host's cron, **and** the backups copied off the host:
       the `backups` volume is on the same disk as the database.
+      `deploy/offsite-backup.sh` does it daily, encrypted to a public key whose
+      private half never touches the server (DEPLOY-PRODUZIONE.md, 6.1).
 - [ ] A restore tried once, from a backup to a scratch directory, with an
       export and a verification of the restored copy.
 

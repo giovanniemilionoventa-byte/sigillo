@@ -191,6 +191,11 @@ program
       process.env["SIGILLO_ORG_MONTHLY_RECEIPTS"],
       10_000,
     );
+    const organizationMaxSystems = positiveInteger(
+      "SIGILLO_ORG_MAX_SYSTEMS",
+      process.env["SIGILLO_ORG_MAX_SYSTEMS"],
+      100,
+    );
     const tsa = tsaFromOptions(options.tsaUrl);
 
     // The operator's view is mounted only when a password is set. An audit log
@@ -270,6 +275,7 @@ program
       chainsIntact: () => store.divergentSystems().length === 0 && (healthMonitor?.failedSystems().length ?? 0) === 0,
       ...(pause === null ? {} : { ingestPause: pause }),
       organizationMonthlyReceipts,
+      organizationMaxSystems,
       ...(!uiMounted || healthMonitor === undefined
         ? {}
         : {
