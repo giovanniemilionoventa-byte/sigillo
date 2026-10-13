@@ -16,7 +16,7 @@ export const BLOG_STYLE = `
 .post-card { display: flex; flex-direction: column; gap: 10px; }
 .post-card h2, .post-card h3 { text-align: left; font-size: 21px; line-height: 1.3; letter-spacing: -0.01em; margin: 0; }
 .post-card h2 a, .post-card h3 a { color: var(--ink); }
-.post-card p { flex: 1; }
+.post-card p:last-child { flex: 1; }
 .meta { font-size: 14px; color: var(--box-c); }
 .page-head .lead { font-size: 19px; margin-top: 12px; }
 .empty { text-align: center; padding-bottom: 72px; }

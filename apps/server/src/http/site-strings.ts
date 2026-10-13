@@ -327,7 +327,7 @@ const EN: SiteTexts = {
   blog: {
     nav: "Blog",
     title: "Blog",
-    lead: "Plain-language notes on keeping records of what AI agents do.",
+    lead: "Notes for developers on building and running AI systems you can trust: security, governance, logging and privacy.",
     empty: "Nothing here yet.",
     minutes: "{n} min read",
     related: "Keep reading",
@@ -541,7 +541,7 @@ const IT: SiteTexts = {
   blog: {
     nav: "Blog",
     title: "Blog",
-    lead: "Note in parole semplici su come tenere traccia di ciò che fanno gli agenti AI.",
+    lead: "Note per sviluppatori su come costruire e far funzionare sistemi AI di cui ci si può fidare: sicurezza, governance, log e privacy.",
     empty: "Per ora non c'è nulla.",
     minutes: "{n} min di lettura",
     related: "Continua a leggere",

@@ -3950,6 +3950,7 @@ Richiesta del proprietario (su proposta della partner Polina, per SEO e link int
 - `blog/markdown.ts`: sottoinsieme minimo di Markdown (titoli, elenchi, citazioni, codice, grassetto, link) con tutto il resto escapato; link solo a `/…`, `#…` o `https://…`. Nessuna dipendenza nuova.
 - Pagine (`http/site-blog.ts`, rotte in `site.ts`): `/blog` (elenco), `/blog/<indirizzo>` (articolo con "Continua a leggere" dai `related`), lingua dal cookie `sigillo_lang` (articolo non tradotto: mostrato in inglese con avviso), interruttore lingua che torna alla stessa pagina (`isSiteBack`).
 - SEO: titolo, descrizione, canonical, Open Graph, JSON-LD `BlogPosting`; `/sitemap.xml` e `/robots.txt` (nuovi; `/ui` escluso).
+- Dieci articoli generali in inglese (sicurezza, governance, log, privacy; senza Sigillo al centro, su richiesta della partner) sono nella PR, con data 2026-10-13: il merge li pubblica. Nessuna traduzione italiana: a un lettore italiano compaiono in inglese con un avviso.
 - Con zero articoli: nessuna voce nel menu né nel piede, nessuna riga blog nella sitemap, `/blog` risponde con "Nothing here yet." e `noindex`.
 - Test: `apps/server/test/blog.test.ts` (11). Il test ha trovato un link `//dominio` che passava il filtro; corretto.
 - Peso sul verificatore: nessuno.

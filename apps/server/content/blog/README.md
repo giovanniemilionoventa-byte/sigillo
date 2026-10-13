@@ -6,6 +6,5 @@ text is required, `how-receipts-work.it.md` is an optional Italian version.
 The format of the files is described in `src/blog/posts.ts`, the Markdown they
 may use in `src/blog/markdown.ts`.
 
-The section is empty on purpose until the project owner approves drafts: with
-no article here the blog has no menu entry and no sitemap line. A file with
-`draft: true` in its header is never served.
+A file with `draft: true` in its header is never served. With no article here at
+all, the blog has no menu entry and no sitemap line.
