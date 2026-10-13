@@ -108,6 +108,18 @@ export interface SiteTexts {
     sections: readonly { heading: string; paragraphs: readonly string[] }[];
     updated: string;
   };
+  blog: {
+    nav: string;
+    title: string;
+    lead: string;
+    empty: string;
+    /** "{n}" is the minutes. */
+    minutes: string;
+    related: string;
+    all: string;
+    /** Shown on an English article read in Italian. */
+    notTranslated: string;
+  };
   notFound: { title: string; back: string };
 }
 
@@ -312,6 +324,16 @@ const EN: SiteTexts = {
     ],
     updated: "Last updated 6 October 2026.",
   },
+  blog: {
+    nav: "Blog",
+    title: "Blog",
+    lead: "Notes for developers on building and running AI systems you can trust: security, governance, logging and privacy.",
+    empty: "Nothing here yet.",
+    minutes: "{n} min read",
+    related: "Keep reading",
+    all: "All articles",
+    notTranslated: "This article is only available in English.",
+  },
   notFound: { title: "Page not found", back: "Back to the home page" },
 };
 
@@ -515,6 +537,16 @@ const IT: SiteTexts = {
       },
     ],
     updated: "Ultimo aggiornamento 6 ottobre 2026.",
+  },
+  blog: {
+    nav: "Blog",
+    title: "Blog",
+    lead: "Note per sviluppatori su come costruire e far funzionare sistemi AI di cui ci si può fidare: sicurezza, governance, log e privacy.",
+    empty: "Per ora non c'è nulla.",
+    minutes: "{n} min di lettura",
+    related: "Continua a leggere",
+    all: "Tutti gli articoli",
+    notTranslated: "Questo articolo è disponibile solo in inglese.",
   },
   notFound: { title: "Pagina non trovata", back: "Torna alla pagina iniziale" },
 };

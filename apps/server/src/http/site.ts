@@ -6,6 +6,8 @@ import { escape } from "./layout.js";
 import { EVIDENCE_CHECK_SOURCE } from "./evidence-check.js";
 import { SEAL_SVG, STATE_ICONS, THEME } from "./style.js";
 import { SDK_REQUIREMENT } from "./pages.js";
+import { loadPosts, textIn, type Post } from "../blog/posts.js";
+import { BLOG_STYLE, blogIndexBody, postBody, postJsonLd } from "./site-blog.js";
 
 /**
  * The public site at the root of the domain, for people who have not signed
@@ -31,6 +33,14 @@ import { SDK_REQUIREMENT } from "./pages.js";
 export const SITE_PATHS = ["/", "/verify", "/privacy"] as const;
 type SitePath = (typeof SITE_PATHS)[number];
 
+/** The blog's pages, which the language switch may return to as well. */
+const BLOG_BACK = /^\/blog(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?$/;
+
+/** Whether the language switch may send the reader back to `path`. */
+export function isSiteBack(path: string): boolean {
+  return (SITE_PATHS as readonly string[]).includes(path) || BLOG_BACK.test(path);
+}
+
 /** Pages that became sections of the home page, and where they are now. */
 const MOVED: Record<string, string> = { "/pricing": "/#pricing", "/connect": "/#connect" };
 
@@ -51,7 +61,12 @@ export interface SiteOptions {
   contactEmail?: string;
   /** Where agents send their actions, as the snippets write it. */
   endpoint: string;
+  /** Where the blog's articles are (blog/posts.ts); by default content/blog next to the server's code. */
+  blogDirectory?: URL;
 }
+
+/** content/blog is copied into the image beside dist/ (deploy/Dockerfile), as in a checkout. */
+const BLOG_DIRECTORY = new URL("../../content/blog/", import.meta.url);
 
 // ---------------------------------------------------------------------------
 // Media: the demo video in each language, its subtitles, its still.
@@ -173,7 +188,7 @@ const SITE_TOKENS_DARK = `
     --cta: #1d2a3f; --on-cta: #f5f5f7;
 `;
 
-const SITE_STYLE = `${THEME}
+const SITE_STYLE = `${THEME}${BLOG_STYLE}
 :root {
   --page: #ffffff; --band: #f8f9fa; --line: #dadce0; --ink: #202124; --primary: #1a73e8; --on-primary: #ffffff;
   --blue: #1a73e8; --blue-fill: #e8f0fe; --green: #188038; --green-fill: #e6f4ea;
@@ -449,6 +464,21 @@ interface PageContext {
   contactEmail?: string;
   endpoint: string;
   media: Set<string>;
+  /** Whether the blog has articles; with none it has no place in the menu. */
+  hasBlog: boolean;
+  /** Where the language switch returns to, when that is not `path`. */
+  back?: string;
+}
+
+/** What a page tells search engines and link previews about itself. */
+interface PageMeta {
+  description?: string;
+  canonical?: string;
+  /** "article" for a blog post; the default is "website". */
+  kind?: "website" | "article";
+  /** JSON for a script of type application/ld+json. */
+  jsonLd?: string;
+  noindex?: boolean;
 }
 
 /**
@@ -461,19 +491,32 @@ function mailLink(email: string, subject: string): string {
   return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subject)}`;
 }
 
-function sitePage(context: PageContext, title: string, body: string): string {
+function sitePage(context: PageContext, title: string, body: string, meta: PageMeta = {}): string {
   const { t, path, language } = context;
   const contactHref = context.contactEmail === undefined ? undefined : mailLink(context.contactEmail, "Sigillo");
   const section = (id: string, label: string): string => `<a href="/#${id}">${escape(label)}</a>`;
   const verify = `<a href="/verify"${path === "/verify" ? ' aria-current="page"' : ""}>${escape(t.nav.verify)}</a>`;
   const external = (href: string, label: string): string => `<a href="${escape(href)}" target="_blank" rel="noopener">${escape(label)}</a>`;
+  const blog = context.hasBlog ? `<a href="/blog"${context.back?.startsWith("/blog") === true ? ' aria-current="page"' : ""}>${escape(t.blog.nav)}</a>` : "";
+  const description = meta.description ?? t.home.lead;
+  const head = [
+    meta.canonical === undefined ? "" : `<link rel="canonical" href="${escape(meta.canonical)}">`,
+    meta.noindex === true ? '<meta name="robots" content="noindex">' : "",
+    `<meta property="og:site_name" content="Sigillo"><meta property="og:type" content="${meta.kind ?? "website"}"><meta property="og:title" content="${escape(title)}"><meta property="og:description" content="${escape(description)}">`,
+    meta.canonical === undefined ? "" : `<meta property="og:url" content="${escape(meta.canonical)}">`,
+    '<meta name="twitter:card" content="summary">',
+    meta.jsonLd === undefined ? "" : `<script type="application/ld+json">${meta.jsonLd}</script>`,
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
   return `<!doctype html>
 <html lang="${language}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escape(title)}</title>
-<meta name="description" content="${escape(t.home.lead)}">
+<meta name="description" content="${escape(description)}">
+${head}
 <link rel="icon" href="/favicon.ico" type="image/svg+xml">
 <style>${SITE_STYLE}</style>
 <script src="/site.js" defer></script>${path === "/verify" ? '\n<script src="/verify.js" defer></script>' : ""}
@@ -481,9 +524,9 @@ function sitePage(context: PageContext, title: string, body: string): string {
 <body>
 <header><div class="wrap bar">
 <a class="brand" href="/">${SEAL_SVG}<span>sigillo</span></a>
-<nav id="menu"><a class="menu-close" href="#" aria-label="×">${ICON.close}</a>${section("why", t.nav.why)}${section("how", t.nav.how)}${section("ai-act", t.nav.aiAct)}${section("pricing", t.nav.pricing)}${section("connect", t.nav.connect)}${verify}<a class="menu-only" href="${SIGN_IN}">${escape(t.signIn)}</a></nav>
+<nav id="menu"><a class="menu-close" href="#" aria-label="×">${ICON.close}</a>${section("why", t.nav.why)}${section("how", t.nav.how)}${section("ai-act", t.nav.aiAct)}${section("pricing", t.nav.pricing)}${section("connect", t.nav.connect)}${verify}${blog}<a class="menu-only" href="${SIGN_IN}">${escape(t.signIn)}</a></nav>
 <div class="tools">
-<form class="lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="${language === "en" ? "it" : "en"}"><input type="hidden" name="back" value="${path ?? "/"}"><button type="submit" aria-label="${escape(t.switchLabel)}" lang="${language === "en" ? "it" : "en"}">${ICON.globe}${escape(t.switchTo)}</button></form>
+<form class="lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="${language === "en" ? "it" : "en"}"><input type="hidden" name="back" value="${escape(context.back ?? path ?? "/")}"><button type="submit" aria-label="${escape(t.switchLabel)}" lang="${language === "en" ? "it" : "en"}">${ICON.globe}${escape(t.switchTo)}</button></form>
 <a class="signin" href="${SIGN_IN}">${escape(t.signIn)}</a>
 <a class="btn primary small" href="${SIGN_UP}">${escape(t.start)}</a>
 <a class="menu-open" href="#menu" aria-label="Menu">${ICON.menu}</a>
@@ -496,7 +539,7 @@ ${body}
 <div class="cols">
 <div><a class="brand" href="/">${SEAL_SVG}<span>sigillo</span></a><p>${escape(t.footer.europe)}</p></div>
 <div><h4>${escape(t.footer.product)}</h4><ul><li>${section("why", t.nav.why)}</li><li>${section("how", t.nav.how)}</li><li>${section("ai-act", t.nav.aiAct)}</li><li>${section("pricing", t.nav.pricing)}</li></ul></div>
-<div><h4>${escape(t.footer.developers)}</h4><ul><li>${section("connect", t.nav.connect)}</li><li><a href="/verify">${escape(t.nav.verify)}</a></li><li>${external(`${REPOSITORY}/tree/main/packages/verifier`, t.footer.verifier)}</li></ul></div>
+<div><h4>${escape(t.footer.developers)}</h4><ul><li>${section("connect", t.nav.connect)}</li><li><a href="/verify">${escape(t.nav.verify)}</a></li>${context.hasBlog ? `<li><a href="/blog">${escape(t.blog.nav)}</a></li>` : ""}<li>${external(`${REPOSITORY}/tree/main/packages/verifier`, t.footer.verifier)}</li></ul></div>
 <div><h4>${escape(t.footer.company)}</h4><ul>${contactHref === undefined ? "" : `<li>${external(contactHref, t.footer.contact)}</li>`}<li><a href="/privacy">${escape(t.footer.privacy)}</a></li><li><a href="${SIGN_IN}">${escape(t.signIn)}</a></li></ul></div>
 </div>
 <p class="legal">© 2026 Sigillo</p>
@@ -795,18 +838,27 @@ export function registerSite(app: FastifyInstance, options: SiteOptions): void {
     reply.type("text/javascript; charset=utf-8").header("cache-control", "public, max-age=3600").send(SITE_SCRIPT),
   );
 
-  const respond = (request: FastifyRequest, reply: FastifyReply, path: SitePath): FastifyReply => {
+  const posts = loadPosts(options.blogDirectory ?? BLOG_DIRECTORY);
+  const origin = options.endpoint.replace(/\/+$/, "");
+
+  const respond = (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    page: { path: SitePath | null; back?: string; title: (t: SiteTexts) => string; body: (context: PageContext) => string; meta?: (context: PageContext) => PageMeta },
+  ): FastifyReply => {
     const language = options.languageOf(request);
     const t = SITE_TEXTS[language];
     const context: PageContext = {
       language,
       t,
-      path,
+      path: page.path,
       endpoint: options.endpoint,
       media,
+      hasBlog: posts.length > 0,
+      ...(page.back === undefined ? {} : { back: page.back }),
       ...(options.contactEmail === undefined ? {} : { contactEmail: options.contactEmail }),
     };
-    let body = sitePage(context, BODIES[path].title(t), BODIES[path].body(context));
+    let body = sitePage(context, page.title(t), page.body(context), page.meta?.(context));
     const theme = options.themeOf(request);
     if (theme !== "system") body = body.replace(/^(<!doctype html>\n<html lang="[a-z]+")>/, `$1 data-theme="${theme}">`);
     // The page depends on the language and theme cookies, so no shared cache
@@ -819,9 +871,53 @@ export function registerSite(app: FastifyInstance, options: SiteOptions): void {
   };
 
   for (const path of SITE_PATHS) {
-    app.get(path, async (request, reply) => respond(request, reply, path));
+    app.get(path, async (request, reply) => respond(request, reply, { path, title: BODIES[path].title, body: BODIES[path].body }));
   }
   for (const [from, to] of Object.entries(MOVED)) {
     app.get(from, async (_request, reply) => reply.redirect(to, 301));
   }
+
+  // The blog. With no article it has no menu entry and no sitemap line; its
+  // address still answers, saying so, and asks search engines to pass by.
+  app.get("/blog", async (request, reply) =>
+    respond(request, reply, {
+      path: null,
+      back: "/blog",
+      title: (t) => `${t.blog.title} · Sigillo`,
+      body: ({ language, t }) => blogIndexBody(posts, language, t),
+      meta: ({ t }) => ({ description: t.blog.lead, canonical: `${origin}/blog`, noindex: posts.length === 0 }),
+    }),
+  );
+
+  app.get("/blog/:slug", async (request, reply) => {
+    const { slug } = request.params as { slug: string };
+    const post = posts.find((candidate) => candidate.slug === slug);
+    if (post === undefined) return reply.code(404).type("text/plain; charset=utf-8").send("not found\n");
+    return respond(request, reply, {
+      path: null,
+      back: `/blog/${post.slug}`,
+      title: () => `${textIn(post, options.languageOf(request)).text.title} · Sigillo`,
+      body: ({ language, t }) => postBody(post, posts, language, t),
+      meta: ({ language }) => ({
+        description: textIn(post, language).text.description,
+        canonical: `${origin}/blog/${post.slug}`,
+        kind: "article",
+        jsonLd: postJsonLd(post, language, `${origin}/blog/${post.slug}`),
+      }),
+    });
+  });
+
+  app.get("/sitemap.xml", async (_request, reply) => {
+    const urls: { loc: string; lastmod?: string | undefined }[] = [{ loc: `${origin}/` }, { loc: `${origin}/verify` }, { loc: `${origin}/privacy` }];
+    if (posts.length > 0) urls.push({ loc: `${origin}/blog`, lastmod: posts[0]?.date }, ...posts.map((post: Post) => ({ loc: `${origin}/blog/${post.slug}`, lastmod: post.date })));
+    const entries = urls.map((url) => `<url><loc>${escape(url.loc)}</loc>${url.lastmod === undefined ? "" : `<lastmod>${url.lastmod}</lastmod>`}</url>`);
+    return reply
+      .type("application/xml; charset=utf-8")
+      .header("cache-control", "public, max-age=3600")
+      .send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries.join("\n")}\n</urlset>\n`);
+  });
+
+  app.get("/robots.txt", async (_request, reply) =>
+    reply.type("text/plain; charset=utf-8").header("cache-control", "public, max-age=3600").send(`User-agent: *\nDisallow: /ui\nSitemap: ${origin}/sitemap.xml\n`),
+  );
 }

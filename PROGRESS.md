@@ -3941,3 +3941,16 @@ Richiesta del proprietario: allargare il gateway e l'analisi del file "a tutti i
 - Provati con le librerie vere contro un gateway finto: `mistralai` 2.x, `google-genai`, `groq`.
 - Non coperti, per costruzione: Azure OpenAI (un indirizzo per cliente), AWS Bedrock e Google Vertex (firmati con le credenziali del cloud), Hugging Face (lo stesso token scarica i modelli), la vecchia `google-generativeai` e `xai_sdk` (gRPC): un file che le importa resta com'è.
 - Test: `agent-setup.test.ts` (6 casi), `gateway.test.ts` (Groq e OpenRouter), `test_gateway.py` (2).
+
+## Sezione Blog del sito pubblico (2026-10-12)
+
+Richiesta del proprietario (su proposta della partner Polina, per SEO e link interni): una sezione Blog nella pagina pubblica prima della console, visibile a tutti, senza articoli finché le bozze non sono approvate. È un sito pubblico, non una funzione della console: la regola del solo amministratore non si applica, ma la sezione parte vuota.
+
+- Articoli = file Markdown in `apps/server/content/blog/` (`indirizzo.md` inglese, `indirizzo.it.md` traduzione facoltativa; `draft: true` non viene mai servito). Letti all'avvio (`blog/posts.ts`); un file malformato ferma l'avvio e lo prendono i test. `deploy/Dockerfile` copia la cartella accanto a `dist/`.
+- `blog/markdown.ts`: sottoinsieme minimo di Markdown (titoli, elenchi, citazioni, codice, grassetto, link) con tutto il resto escapato; link solo a `/…`, `#…` o `https://…`. Nessuna dipendenza nuova.
+- Pagine (`http/site-blog.ts`, rotte in `site.ts`): `/blog` (elenco), `/blog/<indirizzo>` (articolo con "Continua a leggere" dai `related`), lingua dal cookie `sigillo_lang` (articolo non tradotto: mostrato in inglese con avviso), interruttore lingua che torna alla stessa pagina (`isSiteBack`).
+- SEO: titolo, descrizione, canonical, Open Graph, JSON-LD `BlogPosting`; `/sitemap.xml` e `/robots.txt` (nuovi; `/ui` escluso).
+- Dieci articoli generali in inglese (sicurezza, governance, log, privacy; senza Sigillo al centro, su richiesta della partner) sono nella PR, con data 2026-10-13: il merge li pubblica. Nessuna traduzione italiana: a un lettore italiano compaiono in inglese con un avviso.
+- Con zero articoli: nessuna voce nel menu né nel piede, nessuna riga blog nella sitemap, `/blog` risponde con "Nothing here yet." e `noindex`.
+- Test: `apps/server/test/blog.test.ts` (11). Il test ha trovato un link `//dominio` che passava il filtro; corretto.
+- Peso sul verificatore: nessuno.
