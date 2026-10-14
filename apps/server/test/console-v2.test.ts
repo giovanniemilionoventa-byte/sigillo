@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { readZip } from "@sigillo/core";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { UiSessions } from "../src/auth/sessions.js";
 import type { Viewer } from "../src/auth/tenancy.js";
@@ -190,5 +191,202 @@ describe("design/tokens-v2.json", () => {
     for (const [name, value] of Object.entries(tokens.color.light)) expect(THEME_V2).toContain(`--${name}: ${value}`);
     for (const [name, value] of Object.entries(tokens.color.dark)) expect(THEME_V2).toContain(`--${name}: ${value}`);
     expect(Object.keys(tokens.color.light).sort()).toEqual(Object.keys(tokens.color.dark).sort());
+  });
+});
+
+/** The rest of the redesign, each feature behind its own switch. */
+const ALL = { runs: "operator", extraKeys: "operator", exportRegister: "operator", reportLanguage: "operator", packReader: "operator", siteV2: "operator" } as const;
+const TRACE = "a".repeat(32);
+
+async function startFull(features: Record<string, string> = ALL): Promise<void> {
+  directory = mkdtempSync(join(tmpdir(), "sigillo-v2f-"));
+  const databasePath = join(directory, "sigillo.db");
+  const signer = createTestSigner();
+  store = ReceiptStore.open(databasePath, signer);
+  await store.createOrganization("acme", "Acme S.p.A.", ADMIN, { approved: true });
+  await store.createSystem("bot", "2026-10-13T10:00:00.000Z");
+  await store.createSystem("acme.bot", "2026-10-13T10:00:00.000Z", "acme");
+  // One run of three actions, with another run's action in the middle of its window.
+  for (const [index, trace] of [[1, TRACE], [2, "b".repeat(32)], [3, TRACE], [4, TRACE]] as const) {
+    await store.append(
+      event(index, {
+        source: { type: "otlp", trace_id: trace, span_id: `${index}`.repeat(16) },
+        ...(index === 1 ? { artifacts: [{ role: "input" as const, label: "curriculum", media_type: "text/plain", sha256: "c".repeat(64) }] } : {}),
+      }),
+    );
+  }
+  await store.append(event(5, { system_id: "acme.bot", source: { type: "otlp", trace_id: TRACE, span_id: "9".repeat(16) } }));
+  keys = ApiKeyStore.open(databasePath);
+  const healthMonitor = new ChainHealthMonitor(store, signer.publicKey, 24 * 3600_000);
+  healthMonitor.check();
+  sessions = new UiSessions();
+  app = buildServer({
+    store,
+    keys,
+    now: () => new Date(NOW),
+    ui: {
+      password: "an administrator password",
+      signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
+      healthMonitor,
+      checkpointer: new Checkpointer({ store, now: () => new Date(NOW) }),
+      sessions,
+      consoleV2: "operator",
+      features: features as never,
+    },
+  });
+  await app.ready();
+}
+
+const postForm = (viewer: Viewer, url: string, form: Record<string, string>, language = "it") =>
+  app.inject({
+    method: "POST",
+    url,
+    headers: {
+      cookie: `sigillo_session=${sessions.issue(viewer, new Date(NOW).getTime()).value}; sigillo_lang=${language}`,
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    payload: new URLSearchParams(form).toString(),
+  });
+
+describe("runs (SIGILLO_RUNS)", () => {
+  it("groups the actions of a run under one header, and opens the run as a list of its own", async () => {
+    await startFull();
+    const list = (await get(OPERATOR, "/ui/actions?period=all&system=bot")).body;
+    expect(list).toContain("Esecuzione delle");
+    expect(list).toContain(`run=${TRACE}`);
+    const run = await get(OPERATOR, `/ui/actions?system=bot&run=${TRACE}`);
+    expect(run.statusCode).toBe(200);
+    expect(run.body).toContain("call-1");
+    expect(run.body).toContain("call-3");
+    expect(run.body).not.toContain("call-2");
+    expect(run.body).toContain("Prepara il fascicolo di questa esecuzione");
+  });
+
+  it("says in the preview which actions of other runs fall inside the window, and is off for an organization", async () => {
+    await startFull();
+    const preview = (await get(OPERATOR, `/ui/evidence?system=bot&run=${TRACE}`)).body;
+    expect(preview).toContain("altre esecuzioni avvenute in mezzo");
+    expect(preview).toContain('name="run"');
+    await app.close();
+    keys.close();
+    store.close();
+    await startFull({ ...ALL, runs: "off" });
+    expect((await get(OPERATOR, `/ui/actions?period=all&system=bot&run=${TRACE}`)).body).not.toContain("Esecuzione delle");
+  });
+
+  it("builds the pack of one run from its first to its last action, with an Italian cover, and registers it", async () => {
+    await startFull();
+    const response = await postForm(OPERATOR, "/ui/export", { system_id: "bot", run: TRACE, reveal: "nothing" });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("application/zip");
+    const zip = Buffer.from(response.rawPayload);
+    // The window runs from the run's first to its last action: three of its own, one of another run between them.
+    const files = new Map(readZip(new Uint8Array(zip)).map((entry) => [entry.name, entry.data]));
+    const lines = new TextDecoder().decode(files.get("receipts.jsonl")).trim().split("\n");
+    expect(lines).toHaveLength(4);
+    expect(new TextDecoder().decode(files.get("VERIFY.md"))).toContain("Come controllare questo fascicolo (in italiano)");
+    expect(files.has("report.pdf")).toBe(true);
+    expect(files.has("openings.jsonl")).toBe(false);
+    const register = (await get(OPERATOR, "/ui/evidence?system=bot")).body;
+    expect(register).toContain("Consegnati");
+    expect(register).toContain("esecuzione");
+    expect(store.listExports("bot")).toHaveLength(1);
+    expect(store.listExports("bot")[0]?.zipSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(store.listExports("bot")[0]?.trace).toBe(TRACE);
+  });
+
+  it("does not register a pack, or add the Italian cover, when those switches are off", async () => {
+    await startFull({ ...ALL, exportRegister: "off", reportLanguage: "off" });
+    await postForm(OPERATOR, "/ui/export", { system_id: "bot" });
+    expect(store.listExports("bot")).toHaveLength(0);
+  });
+});
+
+describe("keys (SIGILLO_EXTRA_KEYS)", () => {
+  it("adds a key without retiring the others, retires one, and never the last", async () => {
+    await startFull();
+    const first = keys.issue("bot", NOW);
+    const added = await postForm(OPERATOR, "/ui/systems/bot/key", { mode: "add" });
+    expect(added.statusCode).toBe(200);
+    expect(added.body).toContain("Chiave visibile solo ora");
+    const active = keys.list("bot").filter((key) => key.revokedAt === null);
+    expect(active).toHaveLength(2);
+    expect(active.map((key) => key.keyId)).toContain(first.keyId);
+    const retired = await postForm(OPERATOR, "/ui/systems/bot/key/retire", { key_id: first.keyId });
+    expect(retired.statusCode).toBe(303);
+    expect(keys.list("bot").filter((key) => key.revokedAt === null)).toHaveLength(1);
+    const lastOne = keys.list("bot").find((key) => key.revokedAt === null);
+    const refused = await postForm(OPERATOR, "/ui/systems/bot/key/retire", { key_id: lastOne?.keyId ?? "" });
+    expect(refused.headers["location"]).toContain("fatto=ultima");
+    expect(keys.list("bot").filter((key) => key.revokedAt === null)).toHaveLength(1);
+  });
+
+  it("keeps the old rotation, which replaces every key, when the switch is off", async () => {
+    await startFull({ ...ALL, extraKeys: "off" });
+    keys.issue("bot", NOW);
+    await postForm(OPERATOR, "/ui/systems/bot/key", { mode: "add" });
+    expect(keys.list("bot").filter((key) => key.revokedAt === null)).toHaveLength(1);
+    expect((await postForm(OPERATOR, "/ui/systems/bot/key/retire", { key_id: "x" })).statusCode).toBe(404);
+  });
+});
+
+describe("Amministrazione, Account and the pack reader", () => {
+  it("shows the service to the operator alone", async () => {
+    await startFull();
+    const service = await get(OPERATOR, "/ui/admin/service");
+    expect(service.statusCode).toBe(200);
+    expect(service.body).toContain("Firmatario");
+    expect(service.body).toContain("SIGILLO_RUNS");
+    expect((await get(ORGANIZATION, "/ui/admin/service")).statusCode).toBe(404);
+  });
+
+  it("opens the account from the avatar, with the theme and language", async () => {
+    await startFull();
+    const account = await get(OPERATOR, "/ui/account");
+    expect(account.statusCode).toBe(200);
+    expect(account.body).toContain('action="/ui/impostazioni/tema"');
+    expect((await get(OPERATOR, "/ui")).body).toContain('href="/ui/account"');
+  });
+
+  it("serves the pack reader only where its switch allows, with a script from this origin", async () => {
+    await startFull();
+    const page = await get(OPERATOR, "/ui/verify");
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain('<script src="/ui/pack-reader.js" defer></script>');
+    expect(page.body).not.toMatch(/<script>/);
+    const script = await get(OPERATOR, "/ui/pack-reader.js");
+    expect(script.body).toContain("sigilloCheckPack");
+    await app.close();
+    keys.close();
+    store.close();
+    await startFull({ ...ALL, packReader: "off" });
+    expect((await get(OPERATOR, "/ui/verify")).statusCode).toBe(404);
+  });
+
+  it("shows the seals a day a line, and the changes", async () => {
+    await startFull();
+    expect((await get(OPERATOR, "/ui/evidence/seals")).statusCode).toBe(200);
+    expect((await get(OPERATOR, "/ui/evidence/changes")).statusCode).toBe(200);
+  });
+});
+
+describe("the redesigned public home (SIGILLO_SITE_V2)", () => {
+  it("is previewed for the operator alone, in both languages, with the same marks as the console", async () => {
+    await startFull();
+    const page = await get(OPERATOR, "/ui/admin/site");
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain("Cosa ha fatto la tua AI?");
+    expect(page.body).toContain("--action: #2846a8");
+    expect(page.body).not.toContain("#1a73e8");
+    expect(page.body).not.toContain("Pronto per l'AI Act");
+    expect(page.body).toMatch(/<script src="\/site\.js" defer><\/script>/);
+    expect(page.body).not.toMatch(/<script>/);
+    expect((await get(OPERATOR, "/ui/admin/site", "en")).body).toContain("What did your AI do?");
+    expect((await get(ORGANIZATION, "/ui/admin/site")).statusCode).toBe(404);
+  });
+
+  it("is not served when its switch is off", async () => {
+    await startFull({ ...ALL, siteV2: "off" });
+    expect((await get(OPERATOR, "/ui/admin/site")).statusCode).toBe(404);
   });
 });

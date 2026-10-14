@@ -263,7 +263,7 @@ ${item("/ui/sistemi/nuovo", "sistemi", ICONS.plus, UI.v2.stato.newSystem)}
 ${shell.operator ? `<div class="side-rule" role="presentation"></div>${item("/ui/clienti", "clienti", ICONS.building, t.admin, shell.waiting)}` : ""}
 <div class="side-spacer"></div>
 </nav>
-<div class="account"><a class="account-link" href="/ui/impostazioni"${here("impostazioni")} title="${escape(UI.nav.impostazioni)}"><span class="avatar" aria-hidden="true">${escape(initials(shell.account.name))}</span><span class="who"><strong>${escape(shell.account.name)}</strong><span>${escape(shell.account.detail)}</span></span></a>
+<div class="account"><a class="account-link" href="/ui/account"${here("impostazioni")} title="${escape(UI.v2more.account.title)}"><span class="avatar" aria-hidden="true">${escape(initials(shell.account.name))}</span><span class="who"><strong>${escape(shell.account.name)}</strong><span>${escape(shell.account.detail)}</span></span></a>
 <form method="post" action="/ui/logout"><button type="submit" class="icon-button" aria-label="${escape(UI.nav.esci)}" title="${escape(UI.nav.esci)}">${ICONS.logout}</button></form></div>
 </div></div>`;
 }

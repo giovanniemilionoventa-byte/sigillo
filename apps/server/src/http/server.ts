@@ -119,6 +119,10 @@ export interface ServerOptions {
     agentUpload?: UiOptions["agentUpload"];
     /** Who gets the redesigned console (ui.ts, UiOptions.consoleV2). */
     consoleV2?: UiOptions["consoleV2"];
+    /** The redesigned console's other switches (config.ts, ConsoleFeatures). */
+    features?: UiOptions["features"];
+    /** What Amministrazione › Servizio reports about the installation. */
+    service?: UiOptions["service"];
     /** Whether uploaded agents get protection with strict mode (ui.ts, UiOptions.agentProtection). */
     agentProtection?: UiOptions["agentProtection"];
   };
@@ -387,6 +391,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.ui.backupDirectory === undefined ? {} : { backupDirectory: options.ui.backupDirectory }),
       ...(options.ui.agentUpload === undefined ? {} : { agentUpload: options.ui.agentUpload }),
       ...(options.ui.consoleV2 === undefined ? {} : { consoleV2: options.ui.consoleV2 }),
+      ...(options.ui.features === undefined ? {} : { features: options.ui.features }),
+      ...(options.ui.service === undefined ? {} : { service: options.ui.service }),
+      ...(options.signerHealthy === undefined ? {} : { signerHealthy: options.signerHealthy }),
       ...(options.gateway === undefined ? {} : { gateway: options.gateway }),
       ...(options.ui.agentProtection === undefined ? {} : { agentProtection: options.ui.agentProtection }),
       claudeCode: options.claudeCode ?? "operator",

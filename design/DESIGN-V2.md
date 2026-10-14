@@ -35,9 +35,32 @@ The new routes answer 404 to anyone the switch leaves out.
   top right.
 - Fascicolo dates (Dal/Al) are Italian calendar days, as the history's.
 
-## Not yet built (proposal, owner to decide)
+## Switches (all `off|operator|all`, default `operator`, rule 11)
 
-Esecuzione (`SIGILLO_RUNS`), extra keys, «Consegnati», Italian report.pdf,
-the pack reader on /verify, the new site, Amministrazione › Servizio, the
-dedicated Collega/Gestisci layouts, the phone layouts beyond the shared
-responsive rules.
+| switch | what it turns on |
+|---|---|
+| `SIGILLO_CONSOLE_V2` | the redesigned console: Stato, Azioni, Prove, new shell and look |
+| `SIGILLO_RUNS` | an agent's run (its trace) as a group in Azioni, as a list of its own, and its own pack |
+| `SIGILLO_EXTRA_KEYS` | add a key without retiring the others; retire one, never the last |
+| `SIGILLO_EXPORT_REGISTER` | «Consegnati»: the packs handed out, with the zip's SHA-256 (never the file) |
+| `SIGILLO_REPORT_LANGUAGE` | an Italian cover in report.pdf and an Italian preamble in VERIFY.md |
+| `SIGILLO_PACK_READER` | `/ui/verify`: check a pack in the browser, key code, actions in words, a document |
+| `SIGILLO_SITE_V2` | the new public home: `/ui/admin/site` for the operator, `/` with `all` |
+
+Amministrazione › Servizio (`/ui/admin/service`) and Account (`/ui/account`)
+have no switch: the first is the operator's by nature, the second belongs to
+the console itself.
+
+## Known limits
+
+- The pack reader shows the sealing time the server declared, not the time the
+  timestamp authority attests (reading the RFC 3161 token in the browser is not
+  built); it says so and points to the full verification.
+- The document check in the reader compares the document's bytes with the
+  fingerprints the pack records; the «same text» grades need the command line.
+- One run's pack is the contiguous window from its first to its last action; the
+  preview says how many actions of other runs fall inside it.
+- Collega and Gestisci are the pages of before, inside the new tabs, with the new
+  keys card; the phone layout is the shared responsive rules.
+- The new site's legal facts (company, VAT, address, server country) are
+  bracketed placeholders until the owner gives them.

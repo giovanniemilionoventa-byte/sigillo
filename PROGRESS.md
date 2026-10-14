@@ -3977,5 +3977,18 @@ vedono la console di prima e le rotte nuove rispondono 404.
 - Store: `ReceiptFilter` accetta `outcomes`, `before`, `actionsOnly`.
 - Test: `console-v2.test.ts` (interruttore, isolamento fra clienti, filtri, token).
   Resta com'era: formato delle ricevute, verificatore, CSP, rotte POST.
-- Non ancora fatto (proposta): Esecuzione, chiavi aggiuntive, Consegnati, report in
-  italiano, lettore di fascicoli su /verify, sito nuovo, Amministrazione › Servizio.
+- Poi, su richiesta «implementa tutto», le altre funzioni della proposta, ognuna con
+  il suo interruttore (`off|operator|all`, di base `operator`; schema del database 7):
+  `SIGILLO_RUNS` (esecuzione come gruppo e come elenco, fascicolo dell'esecuzione:
+  finestra contigua dalla prima all'ultima azione, anteprima con le azioni di altre
+  esecuzioni in mezzo, controllo documento limitato all'esecuzione), `SIGILLO_EXTRA_KEYS`
+  (aggiungi/ritira una chiave, mai l'ultima), `SIGILLO_EXPORT_REGISTER` («Consegnati»:
+  tabella `export_register`, solo metadati e SHA-256 dello zip), `SIGILLO_REPORT_LANGUAGE`
+  (copertina italiana in report.pdf e premessa in VERIFY.md; la parte tecnica resta in
+  inglese), `SIGILLO_PACK_READER` (`/ui/verify`: controllo nel browser, codice della chiave,
+  azioni in parole, documento; script servito da `/ui/pack-reader.js`), `SIGILLO_SITE_V2`
+  (`/ui/admin/site`, `/` con `all`). Senza interruttore: Amministrazione › Servizio
+  (`/ui/admin/service`), Account (`/ui/account`), Prove › Sigilli e Modifiche.
+- Limiti noti in `design/DESIGN-V2.md`. Peso sul verificatore: nessuno (`packages/verifier`
+  non cambia); `evidence-check.ts` (seconda implementazione per il browser) cresce di una
+  riga di dettaglio nel risultato, senza cambiare i verdetti.

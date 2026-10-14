@@ -237,6 +237,31 @@ export interface ReceiptFilter {
   actionsOnly?: boolean;
 }
 
+/** The receipts of one run of an agent, as Azioni groups them (SIGILLO_RUNS). */
+export interface RunSummary {
+  trace: string;
+  actions: number;
+  firstSeq: number;
+  lastSeq: number;
+  firstAt: string;
+  lastAt: string;
+  agent: string;
+}
+
+/** One pack handed out (SIGILLO_EXPORT_REGISTER): metadata and the zip's SHA-256, never the file or the recipient. */
+export interface ExportRegisterEntry {
+  id: number;
+  ts: string;
+  systemId: string;
+  actor: string;
+  from: string | null;
+  to: string | null;
+  trace: string | null;
+  disclosure: string;
+  zipSha256: string;
+  bytes: number;
+}
+
 /** A system as the operator's view and the CLI list it. */
 export interface SystemRecord {
   system_id: string;
@@ -1454,6 +1479,110 @@ export class ReceiptStore {
       )
       .all(systemId, window) as { agent: string; count: number }[];
     return rows.map(({ agent, count }) => ({ agent, count }));
+  }
+
+  /**
+   * The runs of a system, newest first: the receipts of one agent start share a
+   * trace (source_trace_id), so a run is its trace. `since` limits to receipts
+   * received at or after that time. Receipts with no trace belong to no run.
+   */
+  runsOf(systemId: string, query: { since?: string; limit?: number } = {}): RunSummary[] {
+    const rows = this.read
+      .prepare(
+        `SELECT source_trace_id AS trace, COUNT(*) AS actions, MIN(seq) AS first_seq, MAX(seq) AS last_seq,
+                MIN(ts_received) AS first_at, MAX(ts_received) AS last_at,
+                json_extract(MIN(canonical), '$.actor.agent') AS agent
+         FROM receipts
+         WHERE system_id = @system_id AND source_trace_id IS NOT NULL AND action_kind <> 'genesis'
+           AND (@since IS NULL OR ts_received >= @since)
+         GROUP BY source_trace_id ORDER BY MAX(ts_received) DESC LIMIT @limit`,
+      )
+      .all({ system_id: systemId, since: query.since ?? null, limit: Math.min(Math.max(query.limit ?? 50, 1), 500) }) as {
+      trace: string;
+      actions: number;
+      first_seq: number;
+      last_seq: number;
+      first_at: string;
+      last_at: string;
+      agent: string | null;
+    }[];
+    return rows.map((row) => ({
+      trace: row.trace,
+      actions: row.actions,
+      firstSeq: row.first_seq,
+      lastSeq: row.last_seq,
+      firstAt: row.first_at,
+      lastAt: row.last_at,
+      agent: row.agent ?? "",
+    }));
+  }
+
+  /** One run: the receipts that share a trace, in order. */
+  runReceipts(systemId: string, trace: string): Receipt[] {
+    const rows = this.read
+      .prepare(`SELECT canonical, sig FROM receipts WHERE system_id = ? AND source_trace_id = ? ORDER BY seq`)
+      .all(systemId, trace) as StoredRow[];
+    return rows.map(rowToReceipt);
+  }
+
+  /** The run a receipt belongs to, or null when its source gave no trace. */
+  traceOf(systemId: string, seq: number): string | null {
+    const row = this.read
+      .prepare(`SELECT source_trace_id AS trace FROM receipts WHERE system_id = ? AND seq = ?`)
+      .get(systemId, seq) as { trace: string | null } | undefined;
+    return row?.trace ?? null;
+  }
+
+  /** Records that a pack was handed out: when, what, how it discloses, and the zip's fingerprint. Never the file. */
+  async registerExport(entry: Omit<ExportRegisterEntry, "id">): Promise<void> {
+    await this.enqueue(async () => {
+      this.write
+        .prepare(
+          `INSERT INTO export_register (ts, system_id, actor, period_from, period_to, run_trace, disclosure, zip_sha256, bytes)
+           VALUES (@ts, @system_id, @actor, @from, @to, @trace, @disclosure, @zip_sha256, @bytes)`,
+        )
+        .run({
+          ts: entry.ts,
+          system_id: entry.systemId,
+          actor: entry.actor,
+          from: entry.from,
+          to: entry.to,
+          trace: entry.trace,
+          disclosure: entry.disclosure,
+          zip_sha256: entry.zipSha256,
+          bytes: entry.bytes,
+        });
+    });
+  }
+
+  /** The packs handed out for a system, newest first. */
+  listExports(systemId: string, limit = 50): ExportRegisterEntry[] {
+    const rows = this.read
+      .prepare(`SELECT * FROM export_register WHERE system_id = ? ORDER BY id DESC LIMIT ?`)
+      .all(systemId, limit) as {
+      id: number;
+      ts: string;
+      system_id: string;
+      actor: string;
+      period_from: string | null;
+      period_to: string | null;
+      run_trace: string | null;
+      disclosure: string;
+      zip_sha256: string;
+      bytes: number;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      ts: row.ts,
+      systemId: row.system_id,
+      actor: row.actor,
+      from: row.period_from,
+      to: row.period_to,
+      trace: row.run_trace,
+      disclosure: row.disclosure,
+      zipSha256: row.zip_sha256,
+      bytes: row.bytes,
+    }));
   }
 
   /** Receipts matching a filter, newest first, for the operator's view. */

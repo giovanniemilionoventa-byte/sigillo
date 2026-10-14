@@ -30,6 +30,8 @@ import { BLOG_STYLE, blogIndexBody, postBody, postJsonLd } from "./site-blog.js"
  * The pages of the site, which the language switch may return to. Pricing and
  * connecting are sections of the home page; their old addresses lead there.
  */
+import { siteV2Page } from "./site-v2.js";
+
 export const SITE_PATHS = ["/", "/verify", "/privacy"] as const;
 type SitePath = (typeof SITE_PATHS)[number];
 
@@ -61,6 +63,8 @@ export interface SiteOptions {
   contactEmail?: string;
   /** Where agents send their actions, as the snippets write it. */
   endpoint: string;
+  /** The redesigned home answers `/` (SIGILLO_SITE_V2=all); otherwise it is previewed in the console. */
+  siteV2?: boolean;
   /** Where the blog's articles are (blog/posts.ts); by default content/blog next to the server's code. */
   blogDirectory?: URL;
 }
@@ -870,7 +874,25 @@ export function registerSite(app: FastifyInstance, options: SiteOptions): void {
       .send(body);
   };
 
-  for (const path of SITE_PATHS) {
+  if (options.siteV2 === true) {
+    app.get("/", async (request, reply) =>
+      reply
+        .type("text/html; charset=utf-8")
+        .header("cache-control", "private, no-cache")
+        .header("vary", "Cookie, Accept-Language")
+        .send(
+          siteV2Page({
+            language: options.languageOf(request),
+            theme: options.themeOf(request),
+            back: "/",
+            hasBlog: posts.length > 0,
+            endpoint: options.endpoint,
+            ...(options.contactEmail === undefined ? {} : { contactEmail: options.contactEmail }),
+          }),
+        ),
+    );
+  }
+  for (const path of SITE_PATHS.filter((candidate) => !(options.siteV2 === true && candidate === "/"))) {
     app.get(path, async (request, reply) => respond(request, reply, { path, title: BODIES[path].title, body: BODIES[path].body }));
   }
   for (const [from, to] of Object.entries(MOVED)) {

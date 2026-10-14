@@ -1,6 +1,7 @@
 import { isPseudonym, type OpeningEntry, type SubjectEntry } from "@sigillo/core";
 import type { ReceiptStore } from "../storage/store.js";
 import { buildArchive, type BuiltArchive } from "./archive.js";
+import type { ItalianSummary } from "./italian.js";
 
 /** What the operator asked an export for: a window, and what to disclose beyond the receipts. */
 export interface ExportRequest {
@@ -10,6 +11,8 @@ export interface ExportRequest {
   /** Positions whose salted digests' nonces the export should carry (openings.jsonl). */
   openings?: readonly number[];
   exportedAt: string;
+  /** An Italian cover and preamble (SIGILLO_REPORT_LANGUAGE): the sentences are made by the caller, which knows the language. */
+  italian?: ItalianSummary;
 }
 
 /**
@@ -47,6 +50,7 @@ export async function archiveFromStore(store: ReceiptStore, systemId: string, re
     keys: store.signingKeys(),
     exportedAt: request.exportedAt,
     disclose: { subjects, openings },
+    ...(request.italian === undefined ? {} : { italian: request.italian }),
   });
 }
 

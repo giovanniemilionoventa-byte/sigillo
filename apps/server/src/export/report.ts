@@ -7,6 +7,7 @@ import {
   type Manifest,
 } from "@sigillo/core";
 import type { Verification } from "@sigillo/verifier";
+import { italianCover, type ItalianSummary } from "./italian.js";
 
 /**
  * The one part of an export meant for a person rather than a program.
@@ -39,6 +40,8 @@ export interface ReportInput {
   displayName?: string;
   /** When each checkpoint and receipt is proven to have existed; absent when verification failed. */
   provenTimes?: AnchorTimes;
+  /** An Italian cover page before the technical report (SIGILLO_REPORT_LANGUAGE). */
+  italian?: ItalianSummary;
 }
 
 /**
@@ -145,6 +148,19 @@ export function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
       .stroke();
     document.moveDown(0.6);
   };
+
+  if (input.italian !== undefined) {
+    const cover = italianCover(input.italian);
+    document.fontSize(20).font("Helvetica-Bold").text(cover.title);
+    document.moveDown(0.6).fontSize(10).font("Helvetica");
+    for (const paragraph of cover.paragraphs) document.text(paragraph).moveDown(0.5);
+    heading("Cosa contiene, in parole");
+    for (const sentence of cover.sentences.slice(0, 60)) document.text(`- ${sentence}`).moveDown(0.15);
+    if (cover.sentences.length > 60) document.text(`... e altre ${cover.sentences.length - 60} azioni, nel file receipts.jsonl.`);
+    heading("Cosa questo fascicolo non prova");
+    for (const line of cover.notProven) document.text(`- ${line}`).moveDown(0.15);
+    document.addPage();
+  }
 
   document.fontSize(20).font("Helvetica-Bold").text("sigillo evidence file");
   document.moveDown(0.2).fontSize(10).font("Helvetica").fillColor("#444444");
