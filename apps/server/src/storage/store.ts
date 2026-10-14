@@ -229,6 +229,12 @@ export interface ReceiptFilter {
   name?: string;
   /** Exactly this actor, e.g. one Claude Code session (its agent name). */
   agent?: string;
+  /** Only these outcomes, e.g. the redesigned console's "Problemi" (error, blocked, unknown). */
+  outcomes?: readonly string[];
+  /** Received strictly before this ISO time: the next page of a list. */
+  before?: string;
+  /** Leave out the opening of the register, which is not an action. */
+  actionsOnly?: boolean;
 }
 
 /** A system as the operator's view and the CLI list it. */
@@ -1416,6 +1422,18 @@ export class ReceiptStore {
       clauses.push("json_extract(canonical, '$.actor.agent') = @agent");
       parameters["agent"] = query.agent;
     }
+    if (query.outcomes !== undefined && query.outcomes.length > 0) {
+      const names = query.outcomes.map((outcome, index) => {
+        parameters[`outcome${index}`] = outcome;
+        return `@outcome${index}`;
+      });
+      clauses.push(`outcome IN (${names.join(", ")})`);
+    }
+    if (query.before !== undefined && query.before.length > 0) {
+      clauses.push("ts_received < @before");
+      parameters["before"] = query.before;
+    }
+    if (query.actionsOnly === true) clauses.push("action_kind <> 'genesis'");
     return { where: clauses.join(" AND "), parameters };
   }
 

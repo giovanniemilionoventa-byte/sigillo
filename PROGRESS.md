@@ -3954,3 +3954,28 @@ Richiesta del proprietario (su proposta della partner Polina, per SEO e link int
 - Con zero articoli: nessuna voce nel menu né nel piede, nessuna riga blog nella sitemap, `/blog` risponde con "Nothing here yet." e `noindex`.
 - Test: `apps/server/test/blog.test.ts` (11). Il test ha trovato un link `//dominio` che passava il filtro; corretto.
 - Peso sul verificatore: nessuno.
+
+## Console V2: «Il filo e il sigillo» (2026-10-14)
+
+Su richiesta del titolare, la proposta di redesign (struttura e aspetto) è stata
+realizzata nella console, **solo per l'amministratore** (regola 11):
+`SIGILLO_CONSOLE_V2=off|operator|all`, di base `operator`. Le organizzazioni
+vedono la console di prima e le rotte nuove rispondono 404.
+
+- **Tre luoghi**: Stato (`/ui`, «È tutto a posto?», risposta in una riga, quattro
+  figure cliccabili, sistemi con due segnali: registro e agente, «Da guardare»),
+  Azioni (`/ui/actions`, tutti i sistemi, filtri in vista per sistema, periodo,
+  tipo ed esito, pagine successive al posto del limite fisso di 200), Prove
+  (`/ui/evidence`, un modulo per il fascicolo, «Non provato», «Chi lo riceve»
+  col codice della chiave a gruppi di quattro).
+- **Sistema**: schede Azioni · Collega · Gestisci (Collega dentro il sistema), titolo
+  del dettaglio come frase intera, stato «Nuovo» per un registro senza azioni.
+- **Aspetto**: nuovi token (`design/tokens-v2.json`, `design/DESIGN-V2.md`), un
+  solo blu inchiostro, colore pieno solo per lo stato, esiti in inchiostro con
+  segno e parola, sidebar con la forma dello stato.
+- **Fascicolo in giorni italiani** (Dal/Al) nella console nuova.
+- Store: `ReceiptFilter` accetta `outcomes`, `before`, `actionsOnly`.
+- Test: `console-v2.test.ts` (interruttore, isolamento fra clienti, filtri, token).
+  Resta com'era: formato delle ricevute, verificatore, CSP, rotte POST.
+- Non ancora fatto (proposta): Esecuzione, chiavi aggiuntive, Consegnati, report in
+  italiano, lettore di fascicoli su /verify, sito nuovo, Amministrazione › Servizio.

@@ -4,6 +4,8 @@ import type { ReceiptStore, SystemRecord } from "../storage/store.js";
 import { currentBack, currentLanguage } from "./locale.js";
 import { outcomeWord, systemTitle, UI } from "./strings.js";
 import { GOOGLE_LOGO, ICONS, KIND_ICONS, SEAL_SVG, STATE_ICONS, STYLE } from "./style.js";
+import { consoleV2 } from "./console-mode.js";
+import { ICONS_V2, STYLE_V2 } from "./style-v2.js";
 
 /**
  * What every page of the web view shares: the document around it, the
@@ -35,6 +37,8 @@ export function capital(word: string): string {
 /** Which entry of the sidebar a page belongs to. */
 export type NavCurrent =
   | "registro"
+  | "azioni"
+  | "prove"
   | "sistemi"
   | "clienti"
   | "verifica"
@@ -173,7 +177,7 @@ function documentStart(title: string): string {
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>${escape(title)}</title>
-<style>${STYLE}</style>
+<style>${consoleV2() ? STYLE_V2 : STYLE}</style>
 </head>`;
 }
 
@@ -220,13 +224,57 @@ ${shell.operator ? item("/ui/clienti", "clienti", ICONS.building, UI.nav.clienti
 </div></div>`;
 }
 
+/**
+ * A system's state as the redesigned console's sidebar shows it: the shape of
+ * its chain's state, or a dash for a register with no action yet, with its
+ * word for a screen reader.
+ */
+export function systemSign(record: SystemRecord, status: ChainStatus): string {
+  if (record.receipts <= 1 && status !== "red") {
+    return `<span class="sign neutral">${STATE_ICONS.archived}<span class="sr">${escape(UI.v2.signals.newRecord)}: </span></span>`;
+  }
+  return `<span class="sign ${status}">${STATE_ICON[status]}<span class="sr">${escape(UI.chain[status])}: </span></span>`;
+}
+
+/** The redesigned console's sidebar: three places, the systems below a line, the operator's administration, the account. */
+function sidebarV2(shell: Shell, current: NavCurrent | undefined): string {
+  const t = UI.v2.nav;
+  const here = (name: NavCurrent): string => (current === name ? ' aria-current="page"' : "");
+  const item = (href: string, name: NavCurrent, glyph: string, label: string, count?: number): string =>
+    `<a class="side-item" href="${href}"${here(name)}>${glyph}<span class="side-label">${escape(label)}</span>${
+      count === undefined || count === 0 ? "" : `<span class="side-count">${count}</span>`
+    }</a>`;
+  const systems = shell.systems
+    .map(
+      ({ record, health }) =>
+        `<li><a class="side-item" href="${systemPath(record.system_id)}"${here(`system:${record.system_id}`)}>${systemSign(record, health.status)}<span class="side-label">${escape(systemTitle(record))}</span></a></li>`,
+    )
+    .join("");
+  return `<div class="sidebar" id="menu"><div class="sidebar-inner">
+<div class="side-top"><a class="brand" href="/ui">${SEAL_SVG}<span>sigillo</span></a><a class="menu-close" href="#main" aria-label="${escape(UI.nav.close)}">${ICONS.close}</a></div>
+<nav class="side-nav" aria-label="${escape(t.label)}">
+${item("/ui", "registro", ICONS_V2.pulse, t.stato)}
+${item("/ui/actions", "azioni", ICONS.list, t.azioni)}
+${item("/ui/evidence", "prove", ICONS_V2.evidence, t.prove)}
+<div class="side-rule" role="presentation"></div>
+<p class="side-group">${escape(t.systems)}</p>
+${systems === "" ? "" : `<ul class="side-list">${systems}</ul>`}
+${item("/ui/sistemi/nuovo", "sistemi", ICONS.plus, UI.v2.stato.newSystem)}
+${shell.operator ? `<div class="side-rule" role="presentation"></div>${item("/ui/clienti", "clienti", ICONS.building, t.admin, shell.waiting)}` : ""}
+<div class="side-spacer"></div>
+</nav>
+<div class="account"><a class="account-link" href="/ui/impostazioni"${here("impostazioni")} title="${escape(UI.nav.impostazioni)}"><span class="avatar" aria-hidden="true">${escape(initials(shell.account.name))}</span><span class="who"><strong>${escape(shell.account.name)}</strong><span>${escape(shell.account.detail)}</span></span></a>
+<form method="post" action="/ui/logout"><button type="submit" class="icon-button" aria-label="${escape(UI.nav.esci)}" title="${escape(UI.nav.esci)}">${ICONS.logout}</button></form></div>
+</div></div>`;
+}
+
 /** A page of the view, inside the shell: top bar (phone), sidebar, content. */
 export function page(options: PageOptions, shell: Shell): string {
   return `${documentStart(`${options.title} — sigillo`)}<body>
 <a class="skip" href="#main">${escape(UI.brand.skip)}</a>
 <div class="app">
 <header class="topbar"><a class="brand" href="/ui">${SEAL_SVG}<span>sigillo</span></a><a class="menu-open" href="#menu" aria-label="${escape(UI.nav.menu)}">${ICONS.menu}</a></header>
-${sidebar(shell, options.current)}
+${consoleV2() ? sidebarV2(shell, options.current) : sidebar(shell, options.current)}
 <main id="main" class="${options.mainClass ?? "content"}">
 ${options.body}
 </main>

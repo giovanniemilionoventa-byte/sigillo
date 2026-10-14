@@ -23,11 +23,14 @@ import {
   type SystemRecord,
 } from "../storage/store.js";
 import { registerAccounts, TRANSFER_COOKIE, TRANSFER_PATH, TRANSFER_TTL_MS } from "./accounts.js";
+import { consoleV2, switchAllows, withConsoleV2 } from "./console-mode.js";
+import { actionsPage, actionsQuery, evidencePage, statoPage } from "./pages-v2.js";
 import { registerFonts } from "./fonts.js";
 import {
   anchoredSize,
   exportSheet,
   HISTORY_LIMIT,
+  discloseFields,
   historyPage,
   historyQuery,
   selectedSeq,
@@ -67,7 +70,7 @@ import {
   type Theme,
 } from "./pages.js";
 import { currentLanguage, isLanguage, LANGUAGE_COOKIE, languageFor, withLanguage, type Language } from "./locale.js";
-import { systemTitle, UI } from "./strings.js";
+import { localDayRange, systemTitle, UI } from "./strings.js";
 import { dailyExportPath, isDailyExportOn, listDailyExports, setDailyExport, type StoredExport } from "../backup/daily-export.js";
 import { ICONS, STATE_ICONS } from "./style.js";
 import { registerFavicon, registerSite, SITE_CONTACT_EMAIL, isSiteBack } from "./site.js";
@@ -155,6 +158,11 @@ export interface UiOptions {
    * it to `all`. Not given: nobody.
    */
   agentUpload?: "off" | "operator" | "all";
+  /**
+   * Who gets the redesigned console (console-v2.ts): off, the operator's own
+   * account (the default, CLAUDE.md rule 11) or every account.
+   */
+  consoleV2?: "off" | "operator" | "all";
   /**
    * Uploaded agents' protection level (agent-setup.ts): whether to wrap them
    * with strict mode and script change detection. `operator`, the administrator's
@@ -385,7 +393,9 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const handler = route.handler;
     route.handler = function (this: FastifyInstance, request, reply) {
       const back = request.method === "GET" && isUi(request) ? request.url : "/ui/login";
-      return withLanguage(languageOf(request), back, () => handler.call(this, request, reply));
+      // The redesigned console, for whoever its switch lets in (console-mode.ts).
+      const v2 = options.consoleV2 !== undefined && options.consoleV2 !== "off" && switchAllows(options.consoleV2, viewerOf(request)?.kind === "operator");
+      return withLanguage(languageOf(request), back, () => withConsoleV2(v2, () => handler.call(this, request, reply)));
     };
   });
 
@@ -680,12 +690,54 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const query = request.query as { checkpoint?: string };
     const now = options.now();
     const { records, shown } = homeRows(store, options.healthMonitor, now);
+    if (consoleV2()) {
+      return html(
+        reply,
+        render(session, { title: UI.v2.stato.title, current: "registro", body: statoPage({ store, records, shown, quota: quotaOf(session.viewer), now }) }),
+      );
+    }
     return html(
       reply,
       render(session, {
         title: UI.home.heading,
         current: "registro",
         body: homePage({ store, records, shown, justCheckpointed: query.checkpoint === "1", quota: quotaOf(session.viewer), now }),
+      }),
+    );
+  });
+
+  // The redesigned console's two new places (pages-v2.ts); to anyone its switch leaves out they do not exist.
+  app.get("/ui/actions", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    if (!consoleV2()) return notFound(session, reply);
+    const records = session.store.listSystemRecords().filter((record) => record.archived_at === null);
+    const query = actionsQuery(request.query as Record<string, unknown>);
+    if (query.system !== undefined && !records.some((record) => record.system_id === query.system)) return notFound(session, reply);
+    return html(
+      reply,
+      render(session, { title: UI.v2.actions.title, current: "azioni", body: actionsPage({ store: session.store, records, query, now: options.now() }) }),
+    );
+  });
+
+  app.get("/ui/evidence", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    if (!consoleV2()) return notFound(session, reply);
+    const records = session.store.listSystemRecords();
+    const asked = (request.query as { system?: unknown }).system;
+    return html(
+      reply,
+      render(session, {
+        title: UI.v2.evidence.title,
+        current: "prove",
+        body: evidencePage({
+          records,
+          ...(typeof asked === "string" ? { selected: asked } : {}),
+          keyId,
+          verifyAddress: `${endpointFor(request).replace(/^https?:\/\//, "")}/verify`,
+          disclose: discloseFields(),
+        }),
       }),
     );
   });
@@ -930,12 +982,15 @@ ${exportSheet(record)}`,
     const record = store.systemRecord(systemId);
     if (record === null) return notFound(session, reply);
     const firstReceipt = record.receipts > 1 ? store.receiptAt(systemId, 1) : null;
+    const body = connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now(), claudeCode: offersClaudeCode(record), protection: offersProtection(record) });
+    // In the redesigned console connecting is one of the system's tabs.
+    if (consoleV2()) return html(reply, systemPage(session, record, "connect", UI.connect.title(systemTitle(record)), body));
     return html(
       reply,
       render(session, {
         title: UI.connect.title(systemTitle(record)),
         current: `system:${systemId}`,
-        body: connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now(), claudeCode: offersClaudeCode(record), protection: offersProtection(record) }),
+        body,
       }),
     );
   });
@@ -1427,6 +1482,17 @@ ${exportSheet(record)}`,
  * it used to reach the export as an impossible time and fail it with a 500.
  */
 function dayBounds(from: unknown, to: unknown): { from?: string; to?: string } {
+  // The redesigned console says Dal and Al in Italian days, as its history does.
+  if (consoleV2()) {
+    const day = (value: unknown): string | undefined =>
+      typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00.000Z`)) ? value : undefined;
+    const start = day(from);
+    const end = day(to);
+    return {
+      ...(start === undefined ? {} : { from: localDayRange(start).from }),
+      ...(end === undefined ? {} : { to: localDayRange(end).to }),
+    };
+  }
   const bound = (value: unknown, time: string): string | undefined => {
     if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
     const instant = `${value}T${time}Z`;

@@ -144,6 +144,20 @@ export function llmGateway(env: Environment): "off" | "operator" | "all" {
 }
 
 /**
+ * SIGILLO_CONSOLE_V2: who gets the redesigned console (design/DESIGN.md,
+ * direction "Il filo e il sigillo"): three places, Stato, Azioni and Prove,
+ * with the systems below a line. `off`, `operator` (the default: new, so the
+ * administrator's own account only, CLAUDE.md rule 11) or `all`. Everyone
+ * else keeps the console as it was.
+ */
+export function consoleV2(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_CONSOLE_V2"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_CONSOLE_V2 must be off, operator or all, received ${JSON.stringify(value)}`);
+}
+
+/**
  * SIGILLO_AGENT_UPLOAD: who sees "upload your agent" on the connect page
  * (http/agent-setup.ts), where the browser adds the sigillo lines to an
  * agent's .py file. `off`, `operator` (the default: new, so the
