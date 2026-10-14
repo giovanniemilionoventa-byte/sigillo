@@ -326,7 +326,7 @@ describe("checking an evidence pack in the browser", () => {
 
   it("summarises an intact pack the way its reader needs it", async () => {
     const result = await checkPack(zipOf(whole));
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       summary: {
         system_id: SYSTEM,

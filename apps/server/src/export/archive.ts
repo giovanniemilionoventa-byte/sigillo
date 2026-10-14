@@ -19,6 +19,7 @@ import {
 } from "@sigillo/core";
 import { anchorTimesOf, verifyBundle, type Verification } from "@sigillo/verifier";
 import type { StoredCheckpoint, StoredTimestamp } from "../storage/store.js";
+import { italianVerifyPreamble, type ItalianSummary } from "./italian.js";
 import { buildReportPdf } from "./report.js";
 import { verifyInstructions } from "./verify-instructions.js";
 
@@ -70,6 +71,8 @@ export interface ArchiveInput {
    * the exported window are left out.
    */
   disclose?: { openings?: readonly OpeningEntry[]; subjects?: readonly SubjectEntry[] };
+  /** An Italian cover for report.pdf and an Italian preamble for VERIFY.md (SIGILLO_REPORT_LANGUAGE). */
+  italian?: ItalianSummary;
 }
 
 export interface BuiltArchive {
@@ -266,6 +269,7 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     genTimes,
     ...(provenTimes === undefined ? {} : { provenTimes }),
     ...(displayName === undefined ? {} : { displayName }),
+    ...(input.italian === undefined ? {} : { italian: input.italian }),
   });
 
   const archiveEntries: ZipEntry[] = [
@@ -280,6 +284,7 @@ export async function buildArchive(input: ArchiveInput): Promise<BuiltArchive> {
     {
       name: "VERIFY.md",
       data: encode(
+        (input.italian === undefined ? "" : italianVerifyPreamble(input.italian)) +
         verifyInstructions(manifest, entries, genTimes, displayName, provenTimes, {
           openings: openingsJsonl !== "",
           subjects: subjectsJsonl !== "",

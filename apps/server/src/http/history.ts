@@ -5,6 +5,7 @@ import { archivedPill, capital, chainPill, escape, kindIcon, outcomePill, system
 import {
   actionKindLabel,
   artifactRoleWords,
+  describeReceipt,
   formatClock,
   formatDayHeading,
   formatTs,
@@ -16,7 +17,8 @@ import {
   systemTitle,
   UI,
 } from "./strings.js";
-import { ICONS } from "./style.js";
+import { ICONS, STATE_ICONS } from "./style.js";
+import { consoleV2 } from "./console-mode.js";
 
 /**
  * One system's pages: the header and tabs they share, the evidence sheet,
@@ -108,13 +110,30 @@ export function timestampStatus(store: ReceiptStore, systemId: string, seq: numb
   return token.genTime === undefined ? t.unreadable : t.at(formatTs(token.genTime));
 }
 
-export type SystemTab = "history" | "checkpoints" | "manage";
+export type SystemTab = "history" | "checkpoints" | "manage" | "connect";
 
 /** The header of every page about one system, its tabs, and the button that opens its evidence sheet. */
 export function systemHeader(record: SystemRecord, health: SystemHealth, tab: SystemTab): string {
   const path = systemPath(record.system_id);
   const tabLink = (name: SystemTab, href: string, label: string): string =>
     `<a href="${href}"${name === tab ? ' aria-current="page"' : ""}>${escape(label)}</a>`;
+  if (consoleV2()) {
+    const t = UI.v2.system;
+    const never = record.receipts <= 1;
+    const action = never
+      ? `<a class="button primary" href="${path}/collega">${escape(t.connectAgent)}</a>`
+      : `<a class="button primary" href="/ui/evidence?system=${escape(encodeURIComponent(record.system_id))}">${ICONS.download}<span class="label-long">${escape(t.prepare)}</span></a>`;
+    return `<header class="sys-head">
+<div class="titleline"><h1>${escape(systemTitle(record))}</h1><code class="sys-id">${escape(record.system_id)}</code>${never && health.status !== "red" ? `<span class="pill" data-chain="new">${STATE_ICONS.archived}${escape(UI.v2.signals.newRecord)}</span>` : chainPill(health.status)}${record.archived_at === null ? "" : archivedPill()}
+<span class="end">${action}</span></div>
+${health.status === "green" || never ? "" : `<p class="sys-health ${health.status}">${escape(health.message)}</p>`}
+<nav class="tabs" aria-label="${escape(UI.system.tabsLabel)}">
+${tabLink("history", path, t.tabs.actions)}
+${tabLink("connect", `${path}/collega`, t.tabs.connect)}
+${tabLink("manage", `${path}/manage`, t.tabs.manage)}
+</nav>
+</header>`;
+  }
   return `<header class="sys-head">
 <div class="titleline"><h1>${escape(systemTitle(record))}</h1>${chainPill(health.status)}${record.archived_at === null ? "" : archivedPill()}
 <span class="end"><a class="button primary" href="#fascicolo">${ICONS.download}<span class="label-long">${escape(UI.system.evidence)}</span></a></span></div>
@@ -282,7 +301,7 @@ function inspector(
 
   return `<a class="back" href="${escape(historyUrl(systemId, query, { ricevuta: undefined }, `#r-${receipt.seq}`))}">${ICONS.chevronLeft}${escape(UI.history.back)}</a>
 <div class="insp-top">${kindIcon(receipt.action.kind, "large")}${outcomePill(receipt.outcome)}</div>
-<h2 class="insp-title" id="dettaglio-titolo">${escape(receiptHeading(receipt))}</h2>
+<h2 class="insp-title" id="dettaglio-titolo">${escape(consoleV2() ? describeReceipt(receipt) : receiptHeading(receipt))}</h2>
 ${genesis && receipt.prev_hash === GENESIS_PREV_HASH ? `<p class="insp-note">${escape(t.genesisNote)}</p>` : ""}
 <dl class="facts">${who.join("")}</dl>
 ${files}

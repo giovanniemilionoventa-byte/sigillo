@@ -77,6 +77,14 @@ export function storeFor(store: ReceiptStore, viewer: Viewer): ReceiptStore {
 
     // One system's chain, checkpoints and labels.
     tip: bySystem(store.tip),
+    runsOf: bySystem(store.runsOf),
+    runReceipts: bySystem(store.runReceipts),
+    traceOf: bySystem(store.traceOf),
+    listExports: bySystem(store.listExports),
+    registerExport: (entry: Parameters<ReceiptStore["registerExport"]>[0]) => {
+      require(entry.systemId);
+      return store.registerExport(entry);
+    },
     readChain: bySystem(store.readChain),
     readChainFrom: bySystem(store.readChainFrom),
     readChainInRange: bySystem(store.readChainInRange),

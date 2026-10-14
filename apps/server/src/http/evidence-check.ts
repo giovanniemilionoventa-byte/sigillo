@@ -455,6 +455,21 @@ export const EVIDENCE_CHECK_SOURCE = String.raw`async function sigilloCheckPack(
         unanchored_receipts: anchoredThrough === null ? 0 : receipts.filter((receipt) => receipt.seq >= anchoredThrough).length,
         last_checkpoint_ts: lastCheckpointTs,
       },
+      // What a reader that shows the actions in words needs: nothing the checks above did not already read.
+      detail: {
+        key_ids: Array.from(keys.keys()),
+        receipts: receipts.map((receipt) => ({
+          seq: receipt.seq,
+          ts_received: receipt.ts_received,
+          kind: receipt.action.kind,
+          name: receipt.action.name,
+          agent: receipt.actor.agent,
+          outcome: receipt.outcome,
+          key_id: receipt.key_id,
+          trace: receipt.source && receipt.source.trace_id ? receipt.source.trace_id : null,
+          artifacts: (receipt.artifacts || []).map((artifact) => ({ label: artifact.label, role: artifact.role, sha256: artifact.sha256 })),
+        })),
+      },
     };
   };
 

@@ -144,6 +144,57 @@ export function llmGateway(env: Environment): "off" | "operator" | "all" {
 }
 
 /**
+ * SIGILLO_CONSOLE_V2: who gets the redesigned console (design/DESIGN.md,
+ * direction "Il filo e il sigillo"): three places, Stato, Azioni and Prove,
+ * with the systems below a line. `off`, `operator` (the default: new, so the
+ * administrator's own account only, CLAUDE.md rule 11) or `all`. Everyone
+ * else keeps the console as it was.
+ */
+export function consoleV2(env: Environment): "off" | "operator" | "all" {
+  const value = env["SIGILLO_CONSOLE_V2"];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`SIGILLO_CONSOLE_V2 must be off, operator or all, received ${JSON.stringify(value)}`);
+}
+
+/** Who a feature of the redesigned console is for (CLAUDE.md rule 11). */
+export type Access = "off" | "operator" | "all";
+
+/** The redesigned console's other switches, each `off`, `operator` (the default) or `all`. */
+export interface ConsoleFeatures {
+  /** SIGILLO_RUNS: the actions of one run of an agent as one list, and its own evidence pack. */
+  runs: Access;
+  /** SIGILLO_EXTRA_KEYS: add a key to a system without retiring the others, and retire one. */
+  extraKeys: Access;
+  /** SIGILLO_EXPORT_REGISTER: the list of evidence packs handed out. */
+  exportRegister: Access;
+  /** SIGILLO_REPORT_LANGUAGE: report.pdf and VERIFY.md in the language of whoever prepares the pack. */
+  reportLanguage: Access;
+  /** SIGILLO_PACK_READER: the evidence-pack reader on the verify page, in the console first. */
+  packReader: Access;
+  /** SIGILLO_SITE_V2: the redesigned public site, previewed in the console first. */
+  siteV2: Access;
+}
+
+function accessOf(env: Environment, name: string): Access {
+  const value = env[name];
+  if (value === undefined || value.length === 0) return "operator";
+  if (value === "off" || value === "operator" || value === "all") return value;
+  throw new ConfigError(`${name} must be off, operator or all, received ${JSON.stringify(value)}`);
+}
+
+export function consoleFeatures(env: Environment): ConsoleFeatures {
+  return {
+    runs: accessOf(env, "SIGILLO_RUNS"),
+    extraKeys: accessOf(env, "SIGILLO_EXTRA_KEYS"),
+    exportRegister: accessOf(env, "SIGILLO_EXPORT_REGISTER"),
+    reportLanguage: accessOf(env, "SIGILLO_REPORT_LANGUAGE"),
+    packReader: accessOf(env, "SIGILLO_PACK_READER"),
+    siteV2: accessOf(env, "SIGILLO_SITE_V2"),
+  };
+}
+
+/**
  * SIGILLO_AGENT_UPLOAD: who sees "upload your agent" on the connect page
  * (http/agent-setup.ts), where the browser adds the sigillo lines to an
  * agent's .py file. `off`, `operator` (the default: new, so the

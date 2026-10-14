@@ -155,6 +155,23 @@ CREATE TABLE IF NOT EXISTS signing_keys (
 
 -- The Python SDK's heartbeat (connection/watch.ts), one row per running
 -- copy of an agent: its session, whether it is beating, and when it last did.
+-- The evidence packs handed out through the redesigned console (SIGILLO_EXPORT_REGISTER).
+-- Metadata and the zip's fingerprint only: never the file, never the recipient.
+CREATE TABLE IF NOT EXISTS export_register (
+  id          INTEGER PRIMARY KEY,
+  ts          TEXT NOT NULL,
+  system_id   TEXT NOT NULL,
+  actor       TEXT NOT NULL,
+  period_from TEXT,
+  period_to   TEXT,
+  run_trace   TEXT,
+  disclosure  TEXT NOT NULL,
+  zip_sha256  TEXT NOT NULL,
+  bytes       INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS export_register_by_system ON export_register (system_id, ts);
+
 -- Not evidence: state only, so the server can notice silence. What is evidence
 -- is the receipt written on each change of state (sigillo.connection.*).
 CREATE TABLE IF NOT EXISTS connections (
@@ -335,7 +352,8 @@ function ensureColumn(db: Database.Database, table: string, column: string, type
 // 4: the SDK heartbeat's sessions (connections).
 // 5: the cloud-model keys the gateway holds for a system (provider_keys).
 // 6: the script guard's columns on connections (script_hash, script_changed).
-export const SCHEMA_VERSION = 6;
+// 7: the register of evidence packs handed out (export_register), and the index of a run's receipts.
+export const SCHEMA_VERSION = 7;
 
 export class NewerSchemaError extends Error {
   constructor(readonly found: number) {
@@ -424,6 +442,11 @@ export function applySchema(db: Database.Database): void {
   db.exec(`
     CREATE INDEX IF NOT EXISTS receipts_by_on_behalf_of
       ON receipts (json_extract(canonical, '$.actor.on_behalf_of'));
+  `);
+  // "Every action of one run": the trace an agent's receipts share.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS receipts_by_trace
+      ON receipts (system_id, source_trace_id) WHERE source_trace_id IS NOT NULL;
   `);
   if (found < SCHEMA_VERSION) db.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
