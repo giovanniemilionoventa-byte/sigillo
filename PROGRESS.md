@@ -3992,3 +3992,33 @@ vedono la console di prima e le rotte nuove rispondono 404.
 - Limiti noti in `design/DESIGN-V2.md`. Peso sul verificatore: nessuno (`packages/verifier`
   non cambia); `evidence-check.ts` (seconda implementazione per il browser) cresce di una
   riga di dettaglio nel risultato, senza cambiare i verdetti.
+
+## Amministratore e utenti parificati (2026-10-15)
+
+Su richiesta del titolare («amministratore e utente vedono le stesse cose, niente più
+sperimentazioni»). Confronto di partenza: `strategia/amministratore-vs-utente.md`.
+
+- **Connettore Claude Code tolto del tutto**, anche per l'amministratore: via
+  `sigillo.claude_code`, `SIGILLO_CLAUDE_CODE`, il riquadro nella pagina «Collega», il
+  rifiuto dei suoi span lato server, i test e la sezione del README dell'SDK. Da
+  riattivare solo se qualcuno lo chiede (la storia git lo conserva).
+  Chi lo aveva collegato deve eseguire `python -m sigillo.claude_code disconnect`
+  **prima** di aggiornare l'SDK, altrimenti i suoi hook restano in `~/.claude/settings.json`.
+- **L'amministratore elimina i propri sistemi anche con ricevute** (sono sistemi di
+  prova): `ReceiptStore.eraseOperatorSystem`. Registra nel registro amministrativo
+  quante ricevute vanno via e l'hash della prima e dell'ultima. Un sistema di un cliente è
+  rifiutato dal codice **e** dal database: la vista `operator_erasable_chains` contiene
+  solo sistemi senza organizzazione, e i controlli di cancellazione di ricevute,
+  checkpoint, marche temporali e `artifacts` la consultano. Un database già esistente
+  riceve i controlli nuovi all'apertura (`replaceOlderDeleteGuards`, in una transazione).
+  Agli utenti il blocco resta, con la sua nota.
+- **Interruttori aperti a tutti** nel `docker-compose.yml` (valore di base `all`): ricevute
+  per gli strumenti chiesti dal modello, guardia dello script, agenti senza framework
+  e «porta» per modelli locali, protezione dell'agente caricato («Più sicurezza»),
+  trasferimento di un sistema, Console V2 con RUNS, EXTRA_KEYS, EXPORT_REGISTER,
+  REPORT_LANGUAGE, PACK_READER. Il valore di base nel codice resta `operator`, per le
+  funzioni future (regola 11). **Non** aperto: `SIGILLO_SITE_V2` (anteprima del sito pubblico).
+  Se il `.env` del server fissa uno di questi a `operator`, vince il `.env`.
+- Test: `system-admin.test.ts` (4 nuovi: cancellazione, cliente rifiutato, log falsificato
+  per un cliente, aggiornamento di un database con i controlli vecchi), `ui.test.ts`,
+  `pages-ui.test.ts`, `tenancy.test.ts`. Peso sul verificatore: nessuno.

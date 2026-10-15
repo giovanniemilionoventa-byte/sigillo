@@ -407,16 +407,8 @@ const ui = {
     newKey: (name: string): string => `Nuova chiave per ${name}`,
     heading: "Collega il tuo agente",
     title: (name: string): string => `Collega ${name}`,
-    ways: { python: "SDK Python", claudeCode: "Claude Code" },
+    ways: { python: "SDK Python" },
     pasteAtTop: "Incolla questo all'inizio del file Python del tuo agente:",
-    claudeCodeRun: "Incolla la riga per il tuo sistema, poi riavvia Claude Code. Scrive Connected quando è andata bene.",
-    claudeSystems: {
-      windows: "Windows (PowerShell)",
-      mac: "macOS (Terminale)",
-      linux: "Linux (terminale)",
-      cloud: "Claude Code nel cloud (lo script di setup dell'ambiente)",
-    },
-    claudeCloudNote: "Per il cloud, apri le impostazioni dell'ambiente in Claude Code, incolla la riga in Script di setup e aggiungi l'indirizzo di questo server ai domini permessi di Accesso alla rete.",
     keyPlaceholder: "<la-chiave-del-sistema>",
     waiting: "In attesa della prima ricevuta…",
     check: "Controlla",
@@ -483,6 +475,8 @@ const ui = {
     deleteSubmit: "Elimina definitivamente",
     deleteRefused: (receipts: number): string =>
       `Contiene ${receipts - 1} ${receipts - 1 === 1 ? "azione registrata" : "azioni registrate"}: si può solo archiviare.`,
+    deleteErases: (actions: number): string =>
+      `Elimina anche ${actions === 1 ? "la sua azione registrata" : `le sue ${actions} azioni registrate`}, per sempre. Si può fare solo con i tuoi sistemi.`,
     transferTitle: "Passa a un altro account",
     transferIntro: "Crea un link: chi lo apre accede al proprio account e il sistema passa a lui. Il link vale una volta sola e per sette giorni.",
     transferSubmit: "Crea link di trasferimento",

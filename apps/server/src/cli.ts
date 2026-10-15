@@ -11,7 +11,7 @@ import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throt
 import { DailyExporter } from "./backup/daily-export.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
 import { ConnectionWatch } from "./connection/watch.js";
-import { agentProtection, agentUpload, claudeCode, consoleFeatures, consoleV2, cookieSecure, firebaseAccounts, ingestPause, llmGateway, llmToolRequests, plainAgents, port, positiveInteger, readSecret, scriptGuard, transfer, trustProxy } from "./config.js";
+import { agentProtection, agentUpload, consoleFeatures, consoleV2, cookieSecure, firebaseAccounts, ingestPause, llmGateway, llmToolRequests, plainAgents, port, positiveInteger, readSecret, scriptGuard, transfer, trustProxy } from "./config.js";
 import { FirebaseAuth } from "./auth/firebase.js";
 import { archiveFromStore, positionsIn, tokensIn } from "./export/from-store.js";
 import { loadOrCreateSealingKey, ProviderKeyStore } from "./gateway/provider-keys.js";
@@ -266,7 +266,6 @@ program
       keys,
       connections,
       scriptGuard: scriptGuard(process.env),
-      claudeCode: claudeCode(process.env),
       transfer: transfer(process.env),
       plainAgents: plainAgents(process.env),
       ...(providerKeys === undefined || gatewayAccess === "off" ? {} : { gateway: { keys: providerKeys, access: gatewayAccess, toolRequests } }),

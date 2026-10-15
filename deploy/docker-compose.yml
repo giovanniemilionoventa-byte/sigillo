@@ -151,19 +151,32 @@ services:
       # Its sealing key is made next to the database, outside every backup.
       SIGILLO_LLM_GATEWAY: ${SIGILLO_LLM_GATEWAY:-all}
       # Whether it also writes a receipt for each tool the model asks for
-      # (model_requested.<tool>). Same values; new, so the administrator's only.
-      SIGILLO_LLM_TOOL_REQUESTS: ${SIGILLO_LLM_TOOL_REQUESTS:-operator}
+      # (model_requested.<tool>). Same values: "all" (opened by the owner, 2026-10-15).
+      SIGILLO_LLM_TOOL_REQUESTS: ${SIGILLO_LLM_TOOL_REQUESTS:-all}
       # "Upload your agent" on the connect page: the browser adds the sigillo
       # lines to the agent's .py file. Same values: "all" (opened to
       # customers by the owner, 2026-10-06), "operator" for the
       # administrator's own systems only, "off" to hide it.
       SIGILLO_AGENT_UPLOAD: ${SIGILLO_AGENT_UPLOAD:-all}
-      # Script guard (connection/watch.ts): the administrator's systems only, until the owner opens it.
-      SIGILLO_SCRIPT_GUARD: ${SIGILLO_SCRIPT_GUARD:-operator}
-      # Claude Code connector (sigillo-claude-code): the administrator's systems only, until the owner opens it.
-      SIGILLO_CLAUDE_CODE: ${SIGILLO_CLAUDE_CODE:-operator}
-      # Agents with no framework recorded from urllib and file writes (sdk "stdlib"): the administrator's systems only, until the owner opens it.
-      SIGILLO_PLAIN_AGENTS: ${SIGILLO_PLAIN_AGENTS:-operator}
+      # The features below were the administrator's alone while they were tried
+      # (CLAUDE.md rule 11). The owner opened them to every account on
+      # 2026-10-15: administrator and customers now see the same. Each can
+      # still be set back to "operator" or "off".
+      # Script guard (connection/watch.ts).
+      SIGILLO_SCRIPT_GUARD: ${SIGILLO_SCRIPT_GUARD:-all}
+      # Agents with no framework recorded from urllib and file writes (sdk "stdlib"), and the door in front of a local model.
+      SIGILLO_PLAIN_AGENTS: ${SIGILLO_PLAIN_AGENTS:-all}
+      # Uploaded agents wrapped with strict mode and script change detection ("Più sicurezza").
+      SIGILLO_AGENT_PROTECTION: ${SIGILLO_AGENT_PROTECTION:-all}
+      # Handing a system over to another account with a link.
+      SIGILLO_TRANSFER: ${SIGILLO_TRANSFER:-all}
+      # The redesigned console (Stato, Azioni, Prove) and its parts.
+      SIGILLO_CONSOLE_V2: ${SIGILLO_CONSOLE_V2:-all}
+      SIGILLO_RUNS: ${SIGILLO_RUNS:-all}
+      SIGILLO_EXTRA_KEYS: ${SIGILLO_EXTRA_KEYS:-all}
+      SIGILLO_EXPORT_REGISTER: ${SIGILLO_EXPORT_REGISTER:-all}
+      SIGILLO_REPORT_LANGUAGE: ${SIGILLO_REPORT_LANGUAGE:-all}
+      SIGILLO_PACK_READER: ${SIGILLO_PACK_READER:-all}
     healthcheck:
       # /healthz also asks the signer: 503 while the server cannot sign.
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

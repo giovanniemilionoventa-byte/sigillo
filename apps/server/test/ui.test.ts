@@ -1055,14 +1055,15 @@ describe("managing a system: deleting (M3)", () => {
     await store.createSystem(EMPTY, "2026-03-29T15:00:00.000Z");
   });
 
-  it("offers no delete form for a system with recorded actions, and says why", async () => {
+  it("offers the administrator the delete form for his own system with recorded actions, and says what goes with it", async () => {
     const cookie = await signIn();
     const body = (await app.inject({ method: "GET", url: `/ui/systems/${SYSTEM}/manage`, headers: { cookie } })).body;
-    expect(body).not.toContain(`action="/ui/systems/${SYSTEM}/delete"`);
-    expect(body).toContain(UI.manage.deleteRefused(6));
+    expect(body).toContain(`action="/ui/systems/${SYSTEM}/delete"`);
+    expect(body).toContain(UI.manage.deleteErases(5));
+    expect(body).not.toContain(UI.manage.deleteRefused(6));
   });
 
-  it("refuses on the server a system with recorded actions, even when asked directly with the right confirmation", async () => {
+  it("erases the administrator's own system with its recorded actions, and logs how many", async () => {
     const cookie = await signIn();
     const response = await app.inject({
       method: "POST",
@@ -1070,10 +1071,12 @@ describe("managing a system: deleting (M3)", () => {
       headers: { cookie, ...form },
       payload: `confirm=${SYSTEM}`,
     });
-    expect(response.statusCode).toBe(409);
-    expect(response.body).toContain(UI.manage.deleteRefused(6));
-    expect(store.readChain(SYSTEM)).toHaveLength(6);
-    expect(store.adminLog()).toEqual([]);
+    expect(response.statusCode).toBe(303);
+    expect(store.hasSystem(SYSTEM)).toBe(false);
+    expect(store.readChain(SYSTEM)).toEqual([]);
+    const [entry] = store.adminLog();
+    expect(entry).toMatchObject({ action: "system.delete", system_id: SYSTEM });
+    expect(entry?.detail).toMatchObject({ receipts_erased: 5 });
   });
 
   it("asks for the exact system_id, typed out, and does nothing on anything else", async () => {
@@ -1127,11 +1130,13 @@ describe("managing a system: deleting (M3)", () => {
     }
   });
 
-  it("decides on what the database holds when the button is pressed, not on the page it was pressed on", async () => {
+  it("erases what the database holds when the button is pressed, not what the page showed", async () => {
     const cookie = await signIn();
     const manage = (await app.inject({ method: "GET", url: `/ui/systems/${EMPTY}/manage`, headers: { cookie } })).body;
     expect(manage).toContain(`action="/ui/systems/${EMPTY}/delete"`);
-    // An agent writes between the page being drawn and the button being pressed.
+    // An agent writes between the page being drawn and the button being pressed:
+    // the administrator's own system goes with what it just recorded, and the
+    // log says how many receipts that was.
     await store.append(event(1, { system_id: EMPTY }));
     const response = await app.inject({
       method: "POST",
@@ -1139,9 +1144,9 @@ describe("managing a system: deleting (M3)", () => {
       headers: { cookie, ...form },
       payload: `confirm=${EMPTY}`,
     });
-    expect(response.statusCode).toBe(409);
-    expect(store.readChain(EMPTY)).toHaveLength(2);
-    expect(response.body).not.toContain(`action="/ui/systems/${EMPTY}/delete"`);
+    expect(response.statusCode).toBe(303);
+    expect(store.hasSystem(EMPTY)).toBe(false);
+    expect(store.adminLog()[0]?.detail).toMatchObject({ receipts_erased: 1 });
   });
 
   it("refuses a delete posted from another site", async () => {

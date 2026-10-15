@@ -14,9 +14,6 @@ dependencies = [
   "opentelemetry-exporter-otlp-proto-http>=1.30",
 ]
 
-[project.scripts]
-sigillo-claude-code = "sigillo.claude_code:main"
-
 [project.optional-dependencies]
 langchain = ["openinference-instrumentation-langchain"]
 crewai = ["openinference-instrumentation-crewai"]

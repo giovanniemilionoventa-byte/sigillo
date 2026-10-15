@@ -100,6 +100,7 @@ export function storeFor(store: ReceiptStore, viewer: Viewer): ReceiptStore {
     archiveSystem: bySystem(store.archiveSystem),
     unarchiveSystem: bySystem(store.unarchiveSystem),
     deleteEmptySystem: bySystem(store.deleteEmptySystem),
+    eraseOperatorSystem: bySystem(store.eraseOperatorSystem),
     // Handing a system over: making and taking back its link. Accepting one is
     // not here: it moves a system between organizations, and ui.ts does it with
     // the whole store, on the strength of the link's secret.

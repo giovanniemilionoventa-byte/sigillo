@@ -127,6 +127,5 @@ and `pnpm tsx video/voce.ts it mixa` does the rest.
 from its name, the agent's `.py` file dropped on "upload your agent", what the file uses read in the
 browser, the file downloaded with sigillo in it, run in the terminal, and the first receipt arriving.
 It switches `SIGILLO_AGENT_UPLOAD` and `SIGILLO_PLAIN_AGENTS` on for the recording (both are open to
-the operator's account only) and saves no state. Set `SIGILLO_CLAUDE_CODE=off` so the page shows only
-the Python way. In the joined film it comes after scene 1 (`monta.sh`, `parlato.ts`). The English
+the operator's account only) and saves no state. In the joined film it comes after scene 1 (`monta.sh`, `parlato.ts`). The English
 film in `consegna/en/` includes it; the Italian one has not been re-recorded yet.
