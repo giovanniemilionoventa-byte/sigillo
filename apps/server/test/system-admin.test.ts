@@ -409,3 +409,73 @@ describe("M3: the database itself enforces the rule, against any connection", ()
     }
   });
 });
+
+describe("the administrator erasing his own system with its receipts", () => {
+  it("deletes the whole chain, checkpoints, tokens and keys, logs what went, and touches no other system", async () => {
+    const checkpoint = await store.createCheckpoint(SYSTEM);
+    await store.recordTimestamp(checkpoint?.id ?? 0, "https://freetsa.org/tsr", "MAM=", "2026-09-26T09:30:01.000Z");
+    const keys = ApiKeyStore.open(databasePath);
+    const issued = keys.issue(SYSTEM, "2026-09-26T09:00:00.000Z");
+    const hashes = store.readReceiptHashes(SYSTEM);
+    const otherBefore = receiptRows().filter((row) => (row as { system_id: string }).system_id === EMPTY);
+
+    const deleted = await store.eraseOperatorSystem(SYSTEM, ADMIN);
+
+    expect(deleted).toMatchObject({ receipts_erased: 3, genesis_hash: hashes[0], last_hash: hashes[3], timestamps: 1 });
+    expect(store.hasSystem(SYSTEM)).toBe(false);
+    expect(store.readChain(SYSTEM)).toEqual([]);
+    expect(store.readCheckpoints(SYSTEM)).toEqual([]);
+    expect(await keys.verify(issued.token)).toBeNull();
+    keys.close();
+    expect(receiptRows()).toEqual(otherBefore);
+    const [entry] = store.adminLog();
+    expect(entry).toMatchObject({ action: "system.delete", system_id: SYSTEM, actor: ADMIN.actor });
+    expect(entry?.detail).toMatchObject({ receipts_erased: 3, last_hash: hashes[3] });
+    // Its identifier is not given out again.
+    await expect(store.createSystem(SYSTEM, "2026-09-26T11:00:00.000Z")).rejects.toBeInstanceOf(StorageError);
+  });
+
+  it("refuses a customer's system, and changes nothing", async () => {
+    await store.createOrganization("acme", "Acme", ADMIN, { approved: true });
+    await store.createSystem("acme.bot", "2026-09-26T08:45:00.000Z", "acme");
+    await store.append(event(1, "acme.bot"));
+    const before = receiptRows();
+    await expect(store.eraseOperatorSystem("acme.bot", ADMIN)).rejects.toBeInstanceOf(StorageError);
+    expect(receiptRows()).toEqual(before);
+    expect(store.hasSystem("acme.bot")).toBe(true);
+  });
+
+  it("is not opened by a forged log entry for a customer's system, whatever the entry says", async () => {
+    await store.createOrganization("acme", "Acme", ADMIN, { approved: true });
+    await store.createSystem("acme.bot", "2026-09-26T08:45:00.000Z", "acme");
+    await store.append(event(1, "acme.bot"));
+    const connection = new Database(databasePath);
+    try {
+      connection
+        .prepare(
+          `INSERT INTO admin_log (ts, action, system_id, actor, detail, genesis_hash)
+           VALUES ('2026-09-26T10:00:00.000Z', 'system.delete', 'acme.bot', 'forged', '{"receipts_erased": 1}', NULL)`,
+        )
+        .run();
+      expect(() => connection.prepare("DELETE FROM receipts WHERE system_id = 'acme.bot'").run()).toThrow(/append-only/);
+    } finally {
+      connection.close();
+    }
+    expect(store.readChain("acme.bot")).toHaveLength(2);
+  });
+
+  it("upgrades a database whose delete guards only knew the empty-system case", async () => {
+    store.close();
+    const connection = new Database(databasePath);
+    connection.exec(`
+      DROP TRIGGER receipts_delete_guard;
+      CREATE TRIGGER receipts_delete_guard BEFORE DELETE ON receipts
+      WHEN NOT (OLD.seq = 0 AND OLD.system_id IN (SELECT system_id FROM deletable_chains))
+      BEGIN SELECT RAISE(ABORT, 'append-only: a receipt cannot be deleted'); END;
+    `);
+    connection.close();
+    store = ReceiptStore.open(databasePath, signer);
+    await store.eraseOperatorSystem(SYSTEM, ADMIN);
+    expect(store.hasSystem(SYSTEM)).toBe(false);
+  });
+});

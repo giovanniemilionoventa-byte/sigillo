@@ -398,16 +398,8 @@ const ui: Strings = {
     newKey: (name: string): string => `New key for ${name}`,
     heading: "Connect your agent",
     title: (name: string): string => `Connect ${name}`,
-    ways: { python: "Python SDK", claudeCode: "Claude Code" },
+    ways: { python: "Python SDK" },
     pasteAtTop: "Paste this at the top of your agent's Python file:",
-    claudeCodeRun: "Paste the line for your system, then restart Claude Code. It prints Connected when it worked.",
-    claudeSystems: {
-      windows: "Windows (PowerShell)",
-      mac: "macOS (Terminal)",
-      linux: "Linux (terminal)",
-      cloud: "Claude Code in the cloud (the environment's setup script)",
-    },
-    claudeCloudNote: "For the cloud, open the environment's settings in Claude Code, paste the line in Setup script, and add this server's address to the allowed domains of Network access.",
     keyPlaceholder: "<the-system-key>",
     waiting: "Waiting for the first receipt…",
     check: "Check",
@@ -474,6 +466,8 @@ const ui: Strings = {
     deleteSubmit: "Delete permanently",
     deleteRefused: (receipts: number): string =>
       `It holds ${receipts - 1} recorded ${receipts - 1 === 1 ? "action" : "actions"}: it can only be archived.`,
+    deleteErases: (actions: number): string =>
+      `This also deletes its ${actions} recorded ${actions === 1 ? "action" : "actions"}, for good. Only your own systems can be deleted like this.`,
     transferTitle: "Hand over to another account",
     transferIntro: "Create a link: whoever opens it signs in to their own account and the system moves to it. The link works once and for seven days.",
     transferSubmit: "Create transfer link",

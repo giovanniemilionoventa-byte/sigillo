@@ -181,12 +181,6 @@ export interface UiOptions {
    */
   agentProtection?: "off" | "operator" | "all";
   /**
-   * Who sees "Claude Code" on the connect page (sigillo-claude-code, in the
-   * Python SDK): `operator` until the owner opens it to `all`, as the server
-   * accepts its actions (server.ts). Not given: nobody.
-   */
-  claudeCode?: "off" | "operator" | "all";
-  /**
    * Whose systems show "Transfer" in their settings, to hand them to another
    * account with a link: `operator` until the owner opens it to `all`. Not
    * given: nobody. Accepting a link needs no switch (store.acceptTransfer).
@@ -676,9 +670,6 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   const offersTransfer = (record: SystemRecord): boolean =>
     options.transfer === "all" || (options.transfer === "operator" && record.organization_id === null);
 
-  /** Whether the connect page offers Claude Code: the same rule, under its own switch. */
-  const offersClaudeCode = (record: SystemRecord): boolean =>
-    options.claudeCode === "all" || (options.claudeCode === "operator" && record.organization_id === null);
 
   /** Whether the file "upload your agent" gives back records a framework-less agent: the same rule, under its own switch. */
   const offersPlainAgents = (record: SystemRecord): boolean =>
@@ -1002,7 +993,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
         render(session, {
           title: UI.connect.ready(systemTitle(record)),
           current: `system:${systemId}`,
-          body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), claudeCode: offersClaudeCode(record), protection: offersProtection(record), gateway: offersGateway(record) })}`,
+          body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), protection: offersProtection(record), gateway: offersGateway(record) })}`,
         }),
       );
     } catch (error) {
@@ -1157,7 +1148,7 @@ ${exportSheet(record)}`,
     const record = store.systemRecord(systemId);
     if (record === null) return notFound(session, reply);
     const firstReceipt = record.receipts > 1 ? store.receiptAt(systemId, 1) : null;
-    const body = connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now(), claudeCode: offersClaudeCode(record), protection: offersProtection(record) });
+    const body = connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now(), protection: offersProtection(record) });
     // In the redesigned console connecting is one of the system's tabs, with its keys.
     if (consoleV2()) {
       const done = (request.query as { fatto?: string }).fatto;
@@ -1195,7 +1186,7 @@ ${exportSheet(record)}`,
       record,
       "manage",
       `${systemTitle(record)} — ${UI.settings.title}`,
-      managePage(record, extra, activeKeys(record.system_id), offersTransfer(record) ? { open: session.store.hasOpenTransfer(record.system_id, options.now().toISOString()) } : null),
+      managePage(record, extra, activeKeys(record.system_id), offersTransfer(record) ? { open: session.store.hasOpenTransfer(record.system_id, options.now().toISOString()) } : null, session.viewer.kind === "operator"),
     );
   };
 
@@ -1307,7 +1298,7 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.newKey(systemTitle(record)),
         current: `system:${systemId}`,
-        body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), claudeCode: offersClaudeCode(record), protection: offersProtection(record), gateway: offersGateway(record) })}`,
+        body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), protection: offersProtection(record), gateway: offersGateway(record) })}`,
       }),
     );
   });
@@ -1422,14 +1413,17 @@ ${exportSheet(record)}`,
       // Whether the chain is empty is decided here, inside the store's own
       // transaction, from what the database holds now — not from the page
       // the button was on, which may be minutes old.
-      await store.deleteEmptySystem(systemId, adminRequest(request, session.viewer));
+      // The administrator's own systems go whole, receipts and all; a
+      // customer's only while the chain holds nothing but its genesis.
+      if (session.viewer.kind === "operator") await store.eraseOperatorSystem(systemId, adminRequest(request, session.viewer));
+      else await store.deleteEmptySystem(systemId, adminRequest(request, session.viewer));
     } catch (error) {
       if (!(error instanceof SystemNotDeletableError)) throw error;
       const now = store.systemRecord(systemId) ?? record;
       return html(reply, renderManage(session, now, { error: UI.manage.deleteRefused(error.receipts) }), 409);
     }
     options.healthMonitor.forget(systemId);
-    request.log.info({ system: systemId, action: "system.delete" }, "an empty system was deleted");
+    request.log.info({ system: systemId, action: "system.delete" }, "a system was deleted");
     return reply.redirect(`/ui/sistemi?eliminato=${encodeURIComponent(systemId)}`, 303);
   });
 

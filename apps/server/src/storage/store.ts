@@ -1128,6 +1128,74 @@ export class ReceiptStore {
     });
   }
 
+  /**
+   * The administrator erasing one of his own systems, whatever it recorded:
+   * these are his test systems, and the record is his to drop. A customer's
+   * system is refused here and by the database's own guards (schema.ts,
+   * operator_erasable_chains), which only a system with no organization can
+   * be in. The deletion is logged first, with how many receipts, checkpoints
+   * and tokens go and the hash of the genesis and of the last receipt, so the
+   * log says what existed. Everything else of the system goes with it: its
+   * keys, links, connections, saved model keys and the register of packs.
+   */
+  async eraseOperatorSystem(systemId: string, request: AdminRequest): Promise<DeletedSystem & { receipts_erased: number }> {
+    return this.administer(systemId, (record) => {
+      if (record.organization_id !== null) {
+        throw new StorageError(`${systemId} belongs to a customer: only the administrator's own systems can be erased with their receipts`);
+      }
+      const rows = this.write
+        .prepare("SELECT seq, hash FROM receipts WHERE system_id = ? ORDER BY seq")
+        .all(systemId) as ChainTip[];
+      const genesis = rows[0];
+      const last = rows[rows.length - 1];
+      if (genesis === undefined || last === undefined) throw new StorageError(`${systemId} has no chain`);
+
+      const checkpointIds = (
+        this.write.prepare("SELECT id FROM checkpoints WHERE system_id = ?").all(systemId) as { id: number }[]
+      ).map((row) => row.id);
+      const timestamps = checkpointIds.reduce(
+        (total, id) =>
+          total +
+          (this.write.prepare("SELECT COUNT(*) AS n FROM timestamps WHERE checkpoint_id = ?").get(id) as { n: number }).n,
+        0,
+      );
+      const apiKeys = (
+        this.write.prepare("SELECT key_id FROM api_keys WHERE system_id = ? ORDER BY created_at").all(systemId) as {
+          key_id: string;
+        }[]
+      ).map((row) => row.key_id);
+
+      const deleted = {
+        system_id: systemId,
+        display_name: record.display_name,
+        created_at: record.created_at,
+        genesis_hash: genesis.hash,
+        checkpoints: checkpointIds.length,
+        timestamps,
+        api_keys: apiKeys,
+        organization_id: record.organization_id,
+        receipts_erased: rows.length - 1,
+        last_hash: last.hash,
+      };
+
+      this.logAdmin("system.delete", systemId, request, { ...deleted }, genesis.hash);
+      for (const id of checkpointIds) {
+        this.write.prepare("DELETE FROM timestamps WHERE checkpoint_id = ?").run(id);
+      }
+      this.write.prepare("DELETE FROM checkpoints WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM artifacts WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM openings WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM receipts WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM export_register WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM api_keys WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM transfer_links WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM connections WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM provider_keys WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM systems WHERE system_id = ?").run(systemId);
+      return deleted;
+    });
+  }
+
   /** When a system by this identifier was deleted, from the administrative log, or null if it never was. */
   deletionOf(systemId: string, connection: Database.Database = this.read): string | null {
     const row = connection

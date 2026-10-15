@@ -258,6 +258,19 @@ WHERE genesis.seq = 0
     SELECT 1 FROM receipts later WHERE later.system_id = genesis.system_id AND later.seq > 0
   );
 
+-- The administrator's own systems, whose whole record the administrator has
+-- chosen to erase (ReceiptStore.eraseOperatorSystem): a system with no
+-- organization, and a logged deletion that says how many receipts went with
+-- it. A customer's system is never in this view, whatever the log says.
+CREATE VIEW IF NOT EXISTS operator_erasable_chains AS
+SELECT system.system_id
+FROM systems system
+JOIN admin_log entry
+  ON entry.action = 'system.delete'
+ AND entry.system_id = system.system_id
+ AND json_extract(entry.detail, '$.receipts_erased') IS NOT NULL
+WHERE system.organization_id IS NULL;
+
 CREATE TRIGGER IF NOT EXISTS receipts_no_update BEFORE UPDATE ON receipts
 BEGIN SELECT RAISE(ABORT, 'append-only: a receipt cannot be modified'); END;
 
@@ -268,7 +281,10 @@ BEGIN SELECT RAISE(ABORT, 'append-only: a receipt cannot be modified'); END;
 -- with even one real action can never lose a receipt, whoever asks and
 -- through whichever connection (docs/SECURITY.md, "Deleting a system").
 CREATE TRIGGER IF NOT EXISTS receipts_delete_guard BEFORE DELETE ON receipts
-WHEN NOT (OLD.seq = 0 AND OLD.system_id IN (SELECT system_id FROM deletable_chains))
+WHEN NOT (
+  (OLD.seq = 0 AND OLD.system_id IN (SELECT system_id FROM deletable_chains))
+  OR OLD.system_id IN (SELECT system_id FROM operator_erasable_chains)
+)
 BEGIN SELECT RAISE(ABORT, 'append-only: a receipt cannot be deleted'); END;
 
 CREATE TRIGGER IF NOT EXISTS checkpoints_no_update BEFORE UPDATE ON checkpoints
@@ -276,7 +292,10 @@ BEGIN SELECT RAISE(ABORT, 'append-only: a checkpoint cannot be modified'); END;
 
 -- Same rule: only the one-receipt checkpoint of a logged, genesis-only chain.
 CREATE TRIGGER IF NOT EXISTS checkpoints_delete_guard BEFORE DELETE ON checkpoints
-WHEN NOT (OLD.tree_size = 1 AND OLD.system_id IN (SELECT system_id FROM deletable_chains))
+WHEN NOT (
+  (OLD.tree_size = 1 AND OLD.system_id IN (SELECT system_id FROM deletable_chains))
+  OR OLD.system_id IN (SELECT system_id FROM operator_erasable_chains)
+)
 BEGIN SELECT RAISE(ABORT, 'append-only: a checkpoint cannot be deleted'); END;
 
 CREATE TRIGGER IF NOT EXISTS timestamps_no_update BEFORE UPDATE ON timestamps
@@ -286,8 +305,9 @@ BEGIN SELECT RAISE(ABORT, 'append-only: a timestamp token cannot be modified'); 
 CREATE TRIGGER IF NOT EXISTS timestamps_delete_guard BEFORE DELETE ON timestamps
 WHEN NOT EXISTS (
   SELECT 1 FROM checkpoints c
-  WHERE c.id = OLD.checkpoint_id AND c.tree_size = 1
-    AND c.system_id IN (SELECT system_id FROM deletable_chains)
+  WHERE c.id = OLD.checkpoint_id
+    AND ((c.tree_size = 1 AND c.system_id IN (SELECT system_id FROM deletable_chains))
+      OR c.system_id IN (SELECT system_id FROM operator_erasable_chains))
 )
 BEGIN SELECT RAISE(ABORT, 'append-only: a timestamp token cannot be deleted'); END;
 
@@ -295,6 +315,7 @@ CREATE TRIGGER IF NOT EXISTS artifacts_no_update BEFORE UPDATE ON artifacts
 BEGIN SELECT RAISE(ABORT, 'append-only: an artifact entry cannot be modified'); END;
 
 CREATE TRIGGER IF NOT EXISTS artifacts_no_delete BEFORE DELETE ON artifacts
+WHEN OLD.system_id NOT IN (SELECT system_id FROM operator_erasable_chains)
 BEGIN SELECT RAISE(ABORT, 'append-only: an artifact entry cannot be deleted'); END;
 
 CREATE TRIGGER IF NOT EXISTS admin_log_no_update BEFORE UPDATE ON admin_log
@@ -389,6 +410,28 @@ export function requireCurrentSchema(db: Database.Database): void {
 }
 
 /**
+ * Databases written before the administrator could erase his own systems carry
+ * delete guards that know only the empty-system case. `CREATE TRIGGER IF NOT
+ * EXISTS` leaves them as they are, so they are dropped and made again from
+ * SCHEMA_SQL, in one transaction: there is no moment with no guard.
+ */
+function replaceOlderDeleteGuards(db: Database.Database): void {
+  const guard = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'receipts_delete_guard'").get() as
+    | { sql: string }
+    | undefined;
+  if (guard === undefined || guard.sql.includes("operator_erasable_chains")) return;
+  db.transaction(() => {
+    db.exec(`
+      DROP TRIGGER IF EXISTS receipts_delete_guard;
+      DROP TRIGGER IF EXISTS checkpoints_delete_guard;
+      DROP TRIGGER IF EXISTS timestamps_delete_guard;
+      DROP TRIGGER IF EXISTS artifacts_no_delete;
+    `);
+    db.exec(SCHEMA_SQL);
+  })();
+}
+
+/**
  * Applies the schema and every migration, in the order a database needs them:
  * the tables first (a no-op on one that already has them), then any column a
  * later version added, then the indexes that depend on those columns. Every
@@ -401,6 +444,7 @@ export function applySchema(db: Database.Database): void {
     throw new NewerSchemaError(found);
   }
   db.exec(SCHEMA_SQL);
+  replaceOlderDeleteGuards(db);
   ensureColumn(db, "receipts", "source_trace_id", "TEXT");
   ensureColumn(db, "receipts", "source_span_id", "TEXT");
   ensureColumn(db, "systems", "display_name", "TEXT");

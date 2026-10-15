@@ -410,11 +410,9 @@ details.tech .facts { margin-top: 10px; }
 .code { display: none; margin: 0; padding: 20px 22px; border-radius: 14px; background: var(--code); color: var(--on-code);
   font: 13px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .code.install { margin-bottom: 12px; user-select: all; -webkit-user-select: all; }
-#way-python:checked ~ .ways [for="way-python"], #way-claude:checked ~ .ways [for="way-claude"] { box-shadow: 0 0 0 2px var(--action); }
-#way-python:focus-visible ~ .ways [for="way-python"], #way-claude:focus-visible ~ .ways [for="way-claude"] { outline: 2px solid var(--focus); outline-offset: 2px; }
-#way-python:checked ~ .code.python, #way-claude:checked ~ .claude-code { display: block; }
-.claude-code { display: none; }
-.claude-code .code { display: block; }
+#way-python:checked ~ .ways [for="way-python"] { box-shadow: 0 0 0 2px var(--action); }
+#way-python:focus-visible ~ .ways [for="way-python"] { outline: 2px solid var(--focus); outline-offset: 2px; }
+#way-python:checked ~ .code.python { display: block; }
 .agent-upload { display: none; }
 #way-python:checked ~ .agent-upload.ready { display: block; }
 .agent-upload .notice { margin: 12px 0 0; }

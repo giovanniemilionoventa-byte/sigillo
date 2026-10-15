@@ -160,6 +160,7 @@ describe("every form keeps its action, method and field names", () => {
           `post /ui/systems/${SYSTEM}/rename [display_name]`,
           `post /ui/systems/${SYSTEM}/transfer []`,
           `post /ui/systems/${SYSTEM}/archive []`,
+          `post /ui/systems/${SYSTEM}/delete [confirm]`,
           `post /ui/systems/${SYSTEM}/key []`,
           `post /ui/systems/${SYSTEM}/export [from to subjects openings]`,
         ],
@@ -294,11 +295,10 @@ describe("a system's checkpoints and management", () => {
     expect(main).toContain('<form method="post" action="/ui/checkpoint" class="section">');
   });
 
-  it("refuses deletion with recorded actions in a note, and offers it for an empty chain", async () => {
+  it("tells the administrator what deleting his system with recorded actions takes with it, and offers it for an empty chain", async () => {
     const full = mainOf(await get(`/ui/systems/${SYSTEM}/manage`));
-    expect(full).toContain('<p class="lockline"><svg');
-    expect(full).toContain("Contiene 3 azioni registrate");
-    expect(full).not.toContain("/delete");
+    expect(full).toContain("Elimina anche le sue 3 azioni registrate");
+    expect(full).toContain(`<form method="post" action="/ui/systems/${SYSTEM}/delete"`);
     const empty = mainOf(await get(`/ui/systems/${EMPTY}/manage`));
     expect(empty).toContain(`<form method="post" action="/ui/systems/${EMPTY}/delete"`);
   });

@@ -306,7 +306,7 @@ export const SDK_REQUIREMENT =
  * endpoints still answer, the SDK itself sends to the first, but neither is
  * offered here.
  */
-function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, plainAgents: boolean, claudeCode: boolean, protection: boolean = false, gateway: boolean = false): string {
+function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, plainAgents: boolean, protection: boolean = false, gateway: boolean = false): string {
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
   const agent = upload && token !== null ? agentUpload(systemId, endpoint, token, plainAgents, protection, gateway) : "";
@@ -325,36 +325,11 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
   // The install command is a box of its own, one click selects all of it:
   // inside the code it would be a comment, and a copy of that line would not run.
   const install = `<pre class="code python install">${escape(`pip install "${SDK_REQUIREMENT}"`)}</pre>`;
-  // Claude Code (sigillo.claude_code, in the SDK): one line per system, each
-  // in a box of its own. `python -m`, not the sigillo-claude-code script:
-  // pip's scripts folder is not on a Windows PATH. Windows PowerShell 5 has
-  // no `&&`, so its line joins with `;`; `--upgrade` because the SDK may
-  // already be there from before Claude Code was added. No comment line,
-  // which zsh would try to run.
-  const claudeLine = (python: string, join: string): string =>
-    [
-      `${python} -m pip install --upgrade "${SDK_REQUIREMENT.replace("[langchain]", "")}"`,
-      `${python} -m sigillo.claude_code connect --endpoint ${endpoint} --key ${key}`,
-    ].join(join);
-  // In a cloud environment's setup script a failing line would stop the
-  // environment from starting at all, so a failed connect only says so.
-  const cloudLine = `${claudeLine("python3", " && ")} || echo "Sigillo is not connected: see the error above"`;
-  const claudeBox = (title: string, line: string): string =>
-    `<p class="label">${escape(title)}</p>\n<pre class="code install">${escape(line)}</pre>\n`;
-  const claude = claudeCode
-    ? {
-        radio: `\n<input type="radio" name="way" id="way-claude" class="sr">`,
-        way: `\n<label class="way" for="way-claude"><span class="tile-icon purple" aria-hidden="true">${ICONS.terminal}</span>${escape(t.ways.claudeCode)}</label>`,
-        body: `<div class="claude-code"><p class="section">${escape(t.claudeCodeRun)}</p>
-${claudeBox(t.claudeSystems.windows, claudeLine("python", "; "))}${claudeBox(t.claudeSystems.mac, claudeLine("python3", " && "))}${claudeBox(t.claudeSystems.linux, claudeLine("python3", " && "))}${claudeBox(t.claudeSystems.cloud, cloudLine)}<p class="section">${escape(t.claudeCloudNote)}</p></div>
-`,
-      }
-    : { radio: "", way: "", body: "" };
-  return `<input type="radio" name="way" id="way-python" class="sr" checked>${claude.radio}
+  return `<input type="radio" name="way" id="way-python" class="sr" checked>
 <div class="ways">
-${pythonWay}${claude.way}
+${pythonWay}
 </div>
-${agent}${claude.body}${install}
+${agent}${install}
 <pre class="code python">${escape(python)}</pre>`;
 }
 
@@ -424,8 +399,6 @@ export function connectPage(view: {
   upload?: boolean;
   /** Whether the uploaded agent is recorded from the standard library's calls when it uses no framework (SIGILLO_PLAIN_AGENTS). */
   plainAgents?: boolean;
-  /** Whether to offer Claude Code (sigillo-claude-code), opened per account by SIGILLO_CLAUDE_CODE. */
-  claudeCode?: boolean;
   /** Whether uploaded agents get strict mode protection (agent-setup.ts). */
   protection?: boolean;
   /** Whether an uploaded agent is also pointed at the model gateway (agent-setup.ts). */
@@ -445,7 +418,7 @@ export function connectPage(view: {
         : `${mode === "connect" ? '<meta http-equiv="refresh" content="10">' : ""}<div class="card wait-line" role="status"><span class="spinner" aria-hidden="true"></span><span>${escape(t.waiting)}</span><a class="end" href="${path}/collega">${escape(t.check)}</a></div>`;
   return `<div class="narrow">${pageHead(title)}
 ${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
-${connectWays(record.system_id, view.endpoint, token, view.upload ?? false, view.plainAgents ?? false, view.claudeCode ?? false, view.protection ?? false, view.gateway ?? false)}
+${connectWays(record.system_id, view.endpoint, token, view.upload ?? false, view.plainAgents ?? false, view.protection ?? false, view.gateway ?? false)}
 ${wait}
 </div>`;
 }
@@ -488,10 +461,12 @@ export function managePage(
   extra: { notice?: string; error?: string },
   keyIds: string[],
   transfer: { open: boolean } | null = null,
+  /** The administrator's own system: it can be deleted whatever it recorded. */
+  erasable: boolean = false,
 ): string {
   const t = UI.manage;
   const path = systemPath(record.system_id);
-  const deletable = record.receipts <= 1;
+  const deletable = record.receipts <= 1 || erasable;
   const block = (tile: string, glyph: string, title: string, body: string): string =>
     `<section class="card block"><span class="tile-icon ${tile}" aria-hidden="true">${glyph}</span><div><h2>${escape(title)}</h2>${body}</div></section>`;
 
@@ -502,7 +477,7 @@ export function managePage(
 <form method="post" action="${path}/unarchive"><button type="submit" class="primary">${escape(t.unarchiveSubmit)}</button></form>`;
 
   const removal = deletable
-    ? `<form method="post" action="${path}/delete" class="inline">
+    ? `${record.receipts > 1 ? `<p>${escape(t.deleteErases(record.receipts - 1))}</p>\n` : ""}<form method="post" action="${path}/delete" class="inline">
   <label><span class="sr">${escape(t.deleteConfirmLabel(record.system_id))}</span>
     <input type="text" name="confirm" placeholder="${escape(t.deleteConfirmLabel(record.system_id))}" autocomplete="off" autocapitalize="off" spellcheck="false" required>
   </label>

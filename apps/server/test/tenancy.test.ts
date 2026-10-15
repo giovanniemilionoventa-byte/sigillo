@@ -365,6 +365,18 @@ describe("the web view, signed in as an organization", () => {
     expect(record?.archived_at).toBeNull();
   });
 
+  it("cannot delete its own system once it recorded an action, while the administrator can erase his own", async () => {
+    const refused = await post(ACME, `/ui/systems/${ACME_BOT}/delete`, { confirm: ACME_BOT });
+    expect(refused.statusCode).toBe(409);
+    expect(store.readChain(ACME_BOT).length).toBeGreaterThan(1);
+    const page = await get(ACME, `/ui/systems/${ACME_BOT}/manage`);
+    expect(page.body).not.toContain(`action="/ui/systems/${ACME_BOT}/delete"`);
+    const erased = await post(OPERATOR, `/ui/systems/${OPERATOR_BOT}/delete`, { confirm: OPERATOR_BOT });
+    expect(erased.statusCode).toBe(303);
+    expect(store.hasSystem(OPERATOR_BOT)).toBe(false);
+    expect(store.hasSystem(ACME_BOT)).toBe(true);
+  });
+
   it("exports its own system, and names only people its own chain acted for", async () => {
     await store.append(event(GLOBEX_BOT, 5, { actor: { agent: "screener", on_behalf_of: "only.globex@example.com" } }));
     const shared = store.subjectToken(SHARED_PERSON);
