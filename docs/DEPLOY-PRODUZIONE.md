@@ -568,6 +568,22 @@ $ cd /srv/sigillo/deploy && docker compose exec -T server /app/backup.sh
 Deve stampare `wrote … bytes to /var/lib/sigillo-backups/sigillo-….db` e
 `backups in /var/lib/sigillo-backups: 1`.
 
+**Il modo facile (consigliato).** Una volta sola, sul server, come root:
+
+```sh
+$ cd /srv/sigillo/deploy && sudo ./attiva-backup-fuori-sede.sh
+```
+
+Ti chiede solo dove mettere le copie (un server SFTP, per esempio una Storage
+Box, oppure un bucket S3) e le credenziali che ti ha dato il fornitore. Poi
+genera la chiave, ti mostra la parte privata una volta sola (la metti nel
+gestore di password e riscrivi gli ultimi 6 caratteri per conferma), installa
+`age` e `rclone`, programma i due cron e **prova tutto il giro**: copia, invio,
+scarico, decifratura, apertura del database. Solo se passa stampa
+`backup fuori sede attivo e provato`. La chiave privata viene cancellata dal
+server alla fine. Se qualcosa non va dice cosa. I passi a mano qui sotto restano
+per chi vuole capire cosa fa o controllare una copia più avanti.
+
 **Copia automatica fuori dal server, cifrata (consigliata).** Una volta al
 giorno `deploy/offsite-backup.sh` prende l'ultima copia, la cifra con una
 chiave **pubblica** (programma `age`) e la manda a un deposito esterno con
