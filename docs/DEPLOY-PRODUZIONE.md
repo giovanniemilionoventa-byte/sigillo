@@ -574,8 +574,8 @@ Deve stampare `wrote … bytes to /var/lib/sigillo-backups/sigillo-….db` e
 $ cd /srv/sigillo/deploy && sudo ./attiva-backup-fuori-sede.sh
 ```
 
-Ti chiede solo dove mettere le copie (un server SFTP, per esempio una Storage
-Box, oppure un bucket S3) e le credenziali che ti ha dato il fornitore. Poi
+Ti chiede solo dove mettere le copie (il tuo Google Drive, gratuito; oppure un
+bucket S3; oppure un server SFTP) e le credenziali che ti ha dato il fornitore. Poi
 genera la chiave, ti mostra la parte privata una volta sola (la metti nel
 gestore di password e riscrivi gli ultimi 6 caratteri per conferma), installa
 `age` e `rclone`, programma i due cron e **prova tutto il giro**: copia, invio,

@@ -26,10 +26,10 @@
 #
 # Every answer can also be given up front through an environment variable
 # (SIGILLO_SETUP_*, below), which is how the tests drive it.
-#   SIGILLO_SETUP_KIND          sftp | s3
+#   SIGILLO_SETUP_KIND          sftp | s3 | drive
 #   SIGILLO_SETUP_HOST          sftp: host name; s3: endpoint URL
 #   SIGILLO_SETUP_USER          sftp: user;      s3: access key id
-#   SIGILLO_SETUP_PASSWORD      sftp: password;  s3: secret access key
+#   SIGILLO_SETUP_PASSWORD      sftp: password;  s3: secret access key;  drive: the token from `rclone authorize`
 #   SIGILLO_SETUP_PATH          folder (sftp) or bucket (s3) to keep the copies in
 #   SIGILLO_SETUP_CONFIRM_KEY   the last six characters of the private key
 #   SIGILLO_SETUP_SKIP_CRON     set to 1 to leave cron alone
@@ -76,8 +76,8 @@ done
 
 # ---- 1. the storage -------------------------------------------------------
 say ""
-say "Dove metto le copie? 1 = server SFTP (per esempio una Storage Box)  2 = deposito S3 (bucket)"
-ask SIGILLO_SETUP_KIND "Scegli sftp o s3:"
+say "Dove metto le copie? drive = il tuo Google Drive (gratis)  s3 = deposito S3 (bucket)  sftp = server SFTP"
+ask SIGILLO_SETUP_KIND "Scegli drive, s3 o sftp:"
 case "$SIGILLO_SETUP_KIND" in
 	sftp)
 		ask SIGILLO_SETUP_HOST "Nome del server (per esempio u123456.your-storagebox.de):"
@@ -95,7 +95,16 @@ case "$SIGILLO_SETUP_KIND" in
 		rclone config create box s3 provider Other endpoint "$SIGILLO_SETUP_HOST" access_key_id "$SIGILLO_SETUP_USER" secret_access_key "$SIGILLO_SETUP_PASSWORD" >/dev/null
 		REMOTE="box:$SIGILLO_SETUP_PATH/sigillo"
 		;;
-	*) fail "rispondi sftp oppure s3" ;;
+	drive)
+		say "Sul tuo portatile (dove hai installato rclone) lancia:  rclone authorize \"drive\" \"scope=drive.file\""
+		say "Si apre il browser, accedi a Google e consenti. Poi copia il testo tra le parentesi graffe { ... } che compare nel terminale."
+		ask SIGILLO_SETUP_PASSWORD "Incolla qui quel testo (non si vede mentre lo incolli):" secret
+		SIGILLO_SETUP_PATH="${SIGILLO_SETUP_PATH:-sigillo-backup}"
+		# drive.file: rclone sees only the files it created, never the rest of the Drive.
+		rclone config create box drive scope drive.file token "$SIGILLO_SETUP_PASSWORD" config_is_local false >/dev/null
+		REMOTE="box:$SIGILLO_SETUP_PATH"
+		;;
+	*) fail "rispondi sftp, s3 oppure drive" ;;
 esac
 # The credentials were handed to rclone, which keeps them in its own config.
 unset SIGILLO_SETUP_PASSWORD

@@ -98,6 +98,22 @@ describe.skipIf(!haveTools)("deploy/attiva-backup-fuori-sede.sh", () => {
     expect(config).toContain("host storage.example");
   });
 
+  it("connects Google Drive with the narrow scope and the pasted token", () => {
+    const db = join(work, "sigillo-20261016T200000Z.db");
+    makeDb(db, true);
+    const r = run({
+      SIGILLO_OFFSITE_SOURCE: db,
+      SIGILLO_SETUP_IDENTITY: identity,
+      SIGILLO_SETUP_CONFIRM_KEY: tail,
+      SIGILLO_SETUP_KIND: "drive",
+      SIGILLO_SETUP_PASSWORD: '{"access_token":"x"}',
+    });
+    expect(r.status, r.stderr).toBe(0);
+    const config = readFileSync(join(work, "remote", "config.log"), "utf8");
+    expect(config).toContain("drive scope drive.file");
+    expect(readFileSync(join(work, "offsite.env"), "utf8")).toContain("SIGILLO_OFFSITE_REMOTE=box:sigillo-backup");
+  });
+
   it("does not call it proven when the restored database is damaged", () => {
     const db = join(work, "sigillo-20261016T190000Z.db");
     makeDb(db, false);
