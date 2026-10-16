@@ -106,6 +106,7 @@ describe.skipIf(!haveTools)("deploy/attiva-backup-fuori-sede.sh", () => {
       SIGILLO_SETUP_IDENTITY: identity,
       SIGILLO_SETUP_CONFIRM_KEY: tail,
       SIGILLO_SETUP_KIND: "drive",
+      SIGILLO_SETUP_PATH: "",
       SIGILLO_SETUP_PASSWORD: '{"access_token":"x"}',
     });
     expect(r.status, r.stderr).toBe(0);
