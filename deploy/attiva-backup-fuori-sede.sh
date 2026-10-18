@@ -98,8 +98,21 @@ case "$SIGILLO_SETUP_KIND" in
 	drive)
 		say "Sul tuo portatile (dove hai installato rclone) lancia:  rclone authorize \"drive\" \"scope=drive.file\""
 		say "Si apre il browser, accedi a Google e consenti. Poi copia il testo tra le parentesi graffe { ... } che compare nel terminale."
-		ask SIGILLO_SETUP_PASSWORD "Incolla qui quel testo (non si vede mentre lo incolli):" secret
+		ask SIGILLO_SETUP_PASSWORD "Incolla qui quel testo, anche se è lunghissimo (non si vede mentre lo incolli):" secret
 		SIGILLO_SETUP_PATH="${SIGILLO_SETUP_PATH:-sigillo-backup}"
+		# Newer rclone prints the token wrapped in a base64 blob, older ones print it bare:
+		# accept both, and hand rclone only the bare {"access_token": ...} JSON.
+		SIGILLO_SETUP_PASSWORD=$(printf '%s' "$SIGILLO_SETUP_PASSWORD" | python3 -I -c '
+import base64, json, sys
+raw = "".join(sys.stdin.read().split())
+if not raw.startswith("{"):
+    raw = raw.rstrip("=")
+    data = json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+    raw = data["token"] if isinstance(data, dict) and "token" in data else json.dumps(data)
+if "access_token" not in json.loads(raw):
+    raise ValueError("no access_token")
+print(raw)
+') || fail "il testo incollato non è un'autorizzazione di Google Drive valida: rifai rclone authorize e copia tutta la riga"
 		# drive.file: rclone sees only the files it created, never the rest of the Drive.
 		rclone config create box drive scope drive.file token "$SIGILLO_SETUP_PASSWORD" config_is_local false >/dev/null
 		REMOTE="box:$SIGILLO_SETUP_PATH"
