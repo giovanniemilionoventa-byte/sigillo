@@ -4022,3 +4022,21 @@ sperimentazioni»). Confronto di partenza: `strategia/amministratore-vs-utente.m
 - Test: `system-admin.test.ts` (4 nuovi: cancellazione, cliente rifiutato, log falsificato
   per un cliente, aggiornamento di un database con i controlli vecchi), `ui.test.ts`,
   `pages-ui.test.ts`, `tenancy.test.ts`. Peso sul verificatore: nessuno.
+
+## Backup fuori sede in un solo comando (2026-10-16)
+
+Su richiesta del titolare: obiettivo «backup fuori sede attivato e provato», la via più
+semplice per un non tecnico. Prima servivano otto passi tra portatile e server.
+
+- **`deploy/attiva-backup-fuori-sede.sh`**: chiede solo dove mettere le copie (SFTP o S3) e le
+  credenziali, genera la chiave `age`, mostra la parte privata una volta e chiede gli ultimi
+  6 caratteri per conferma, scrive `/etc/sigillo-offsite.env`, installa i due cron (una sola
+  copia, anche rilanciandolo) e **prova il ripristino completo** (copia, invio, scarico,
+  decifratura, `PRAGMA integrity_check`). Stampa «backup fuori sede attivo e provato» solo se
+  tutto passa. La chiave privata vive solo in una cartella temporanea cancellata all'uscita.
+- Compromesso dichiarato: la chiave privata esiste sul server per i minuti dell'attivazione.
+- `docs/DEPLOY-PRODUZIONE.md` 6.1 lo indica come via consigliata.
+- Aggiunta l'opzione `drive` (Google Drive gratuito, scope ristretto `drive.file`: rclone vede solo i file che crea). Richiede un passo in più: `rclone authorize` sul portatile.
+- Test: `offsite-setup.test.ts` (3), con `age` e SQLite veri; solo il trasporto è finto.
+- Nessuna dipendenza nuova (`age`, `rclone` erano già nella procedura). Verificatore: invariato.
+- **Da fare dal titolare**: aprire l'account di archiviazione e lanciare il comando sul server.
