@@ -115,6 +115,39 @@ describe.skipIf(!haveTools)("deploy/attiva-backup-fuori-sede.sh", () => {
     expect(readFileSync(join(work, "offsite.env"), "utf8")).toContain("SIGILLO_OFFSITE_REMOTE=box:sigillo-backup");
   });
 
+  it("accepts the base64 blob that newer rclone prints, and passes the bare token on", () => {
+    const db = join(work, "sigillo-20261016T210000Z.db");
+    makeDb(db, true);
+    const token = JSON.stringify({ access_token: "ya29.x", token_type: "Bearer", refresh_token: "1//r" });
+    const blob = Buffer.from(JSON.stringify({ client_id: "", client_secret: "", token })).toString("base64url");
+    const r = run({
+      SIGILLO_OFFSITE_SOURCE: db,
+      SIGILLO_SETUP_IDENTITY: identity,
+      SIGILLO_SETUP_CONFIRM_KEY: tail,
+      SIGILLO_SETUP_KIND: "drive",
+      SIGILLO_SETUP_PATH: "",
+      SIGILLO_SETUP_PASSWORD: blob,
+    });
+    expect(r.status, r.stderr).toBe(0);
+    const config = readFileSync(join(work, "remote", "config.log"), "utf8");
+    expect(config).toContain(`token ${token}`);
+    expect(config).not.toContain(blob);
+  });
+
+  it("rejects pasted text that is not a Google authorisation", () => {
+    const db = join(work, "sigillo-20261016T220000Z.db");
+    makeDb(db, true);
+    const r = run({
+      SIGILLO_OFFSITE_SOURCE: db,
+      SIGILLO_SETUP_IDENTITY: identity,
+      SIGILLO_SETUP_CONFIRM_KEY: tail,
+      SIGILLO_SETUP_KIND: "drive",
+      SIGILLO_SETUP_PASSWORD: "not a token",
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("autorizzazione");
+  });
+
   it("does not call it proven when the restored database is damaged", () => {
     const db = join(work, "sigillo-20261016T190000Z.db");
     makeDb(db, false);

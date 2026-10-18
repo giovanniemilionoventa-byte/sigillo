@@ -4040,3 +4040,4 @@ semplice per un non tecnico. Prima servivano otto passi tra portatile e server.
 - Test: `offsite-setup.test.ts` (3), con `age` e SQLite veri; solo il trasporto è finto.
 - Nessuna dipendenza nuova (`age`, `rclone` erano già nella procedura). Verificatore: invariato.
 - **Da fare dal titolare**: aprire l'account di archiviazione e lanciare il comando sul server.
+- (2026-10-18) `attiva-backup-fuori-sede.sh` accetta anche il blocco base64 che le versioni recenti di `rclone authorize` stampano al posto del JSON semplice; passa a rclone solo il token. Un testo non valido è rifiutato con un messaggio chiaro. Test: `offsite-setup.test.ts` (5).
