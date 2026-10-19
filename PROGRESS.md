@@ -4041,3 +4041,12 @@ semplice per un non tecnico. Prima servivano otto passi tra portatile e server.
 - Nessuna dipendenza nuova (`age`, `rclone` erano già nella procedura). Verificatore: invariato.
 - **Da fare dal titolare**: aprire l'account di archiviazione e lanciare il comando sul server.
 - (2026-10-18) `attiva-backup-fuori-sede.sh` accetta anche il blocco base64 che le versioni recenti di `rclone authorize` stampano al posto del JSON semplice; passa a rclone solo il token. Un testo non valido è rifiutato con un messaggio chiaro. Test: `offsite-setup.test.ts` (5).
+
+## Pacchetto di fiducia: copertura, approvazioni, cosa c'è e cosa no (2026-10-19)
+
+Solo documentazione, nessun codice e nessun formato toccato (verificatore invariato).
+
+- **`docs/CAPTURE.md`**: cosa registra Sigillo e cosa no, con tabella per tipo di evento (strumenti, modello, richieste del modello, azioni bloccate, permessi, approvazioni, versione, documenti sorgente) e i 10 limiti. Ricavato da `SECURITY.md`.
+- **`docs/TRUST.md`**: porta d'ingresso per una revisione di sicurezza: cosa prova e non prova, firma, catena, chiavi, verifica offline, backup fuori sede, solo cloud (self-hosting non offerto), marca temporale non qualificata (eIDAS qualificato: solo piano Custom, non ancora disponibile), tabella live / planned / non offerto.
+- **`docs/API.md`, «Human approvals»**: convenzione `approval.requested/granted/denied` su `decision` con lo stesso `trace_id`; dice cosa mostra e cosa no (il blocco lo impone l'applicazione).
+- Da fare in una PR di codice a parte: `sigillo.approval(...)` nell'SDK (test-first), poi la vista in console dietro l'interruttore operatore (regola 11).

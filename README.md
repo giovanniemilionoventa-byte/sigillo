@@ -136,7 +136,7 @@ database, Caddy with TLS. See [`deploy/`](deploy/). The complete procedure for a
 real server, from `git clone` to a verified evidence file, with a checklist, is
 [`docs/DEPLOY-PRODUZIONE.md`](docs/DEPLOY-PRODUZIONE.md) (in Italian).
 
-For qualified timestamps under eIDAS, point `TSA_URL` at a qualified provider.
+Qualified eIDAS timestamps are planned for the Custom plan and are not available yet ([docs/TRUST.md](docs/TRUST.md)). For a deployment of your own, point `TSA_URL` at a qualified provider.
 The default, FreeTSA, is fine for a trial and is **not** qualified.
 
 ## Documentation
@@ -146,6 +146,8 @@ The default, FreeTSA, is fine for a trial and is **not** qualified.
   Python script in `scripts/` re-derives the test vectors from that document
   alone, and it runs in CI.
 - [docs/API.md](docs/API.md) — the endpoints and the commands.
+- [docs/TRUST.md](docs/TRUST.md) — the front door for a security review: what is proved, key management, offline verification, backup, what is live and what is planned.
+- [docs/CAPTURE.md](docs/CAPTURE.md) — what sigillo records and what it cannot see.
 - [docs/SECURITY.md](docs/SECURITY.md) — where the key is, what an attacker can
   and cannot do, and what sigillo does not prove.
 - [docs/DATA-INVENTORY.md](docs/DATA-INVENTORY.md) — every member a receipt

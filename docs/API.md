@@ -278,6 +278,32 @@ the chain its receipt lands, nor when the server says it arrived. Response
 Response `400` names the offending field. Response `403` if the body claims a
 different system than the key writes to.
 
+## Human approvals
+
+sigillo has no dedicated "approval" event type. An approval is recorded with
+the existing `decision` kind, by a convention that needs no change to the
+receipt format. Two receipts, linked by the same `source.trace_id`:
+
+| | `approval.requested` | `approval.granted` or `approval.denied` |
+|---|---|---|
+| `action.kind` | `decision` | `decision` |
+| `actor.agent` | the agent asking | the application that collects the answer |
+| `actor.on_behalf_of` | the person asked | the person who decided |
+| `input` | what the approver is shown (the proposed action and its context) | what the approver actually saw when deciding |
+| `output` | not used | the reason given, salted, so it can be erased like any personal data |
+| `outcome` | `unknown` | `ok` when granted, `blocked` when denied |
+| time | `ts_received`, by the server | `ts_received`, by the server |
+
+What the receipts show: *that* a named person was shown content with a given
+fingerprint, *when* (server clock), and *what they answered and why* (by
+fingerprint, revealed only by choice). What they do **not** show: that the
+application really refused to act until the answer arrived. The gate is
+enforced by your code; sigillo records the answer it was told about. A request
+with no answer stays visible as a request with no answer.
+
+The SDK helper and the console view for these pairs are planned, not yet
+available.
+
 ## `POST /api/v1/heartbeat` — the SDK's heartbeat
 
 The Python SDK sends one when `init` runs, one a minute while the process runs
