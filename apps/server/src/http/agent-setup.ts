@@ -28,9 +28,20 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   // (python -m sigillo.door) asks for and Ollama ignores, so the file works
   // with or without the door. The guard is told to watch the model's address.
   var local = false;
+  var localPort = 11434;
   if (settings.protection && (/\\b11434\\b/.test(source) || /^\\s*(from|import)\\s+ollama\\b/m.test(source))) {
     local = true;
-    source = source.replace(/\\bapi_key\\s*=\\s*(["'])ollama\\1/g, "api_key=" + JSON.stringify(settings.key));
+  } else if (settings.protection) {
+    // The other usual local servers, found by the address they are called at
+    // (LM Studio 1234, llama.cpp 8080, vLLM 8000, Jan 1337).
+    var other = /(?:localhost|127\\.0\\.0\\.1):(1234|8080|8000|1337)\\b/.exec(source);
+    if (other) {
+      local = true;
+      localPort = Number(other[1]);
+    }
+  }
+  if (local) {
+    source = source.replace(/\\bapi_key\\s*=\\s*(["'])(ollama|lm-studio|not-needed|sk-no-key-required|EMPTY|none)\\1/gi, "api_key=" + JSON.stringify(settings.key));
     lines = source.slice(bom.length).split(/\\r?\\n/);
   }
 
@@ -50,7 +61,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   var providers = {};
   var labels = {};
   var gatewayLines = [];
-  var sdkMinor = local ? 5 : 4;
+  var sdkMinor = local ? (localPort === 11434 ? 5 : 7) : 4;
   if (settings.gateway) {
     var catalog = ` +
   JSON.stringify(fileCatalog()) +
@@ -141,7 +152,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     lines = source.slice(bom.length).split(/\r?\n/);
   }
 ` +
-  `  if (local) gatewayLines.push("os.environ[" + JSON.stringify("OLLAMA_API_KEY") + "] = " + JSON.stringify(settings.key));
+  `  if (local && localPort === 11434) gatewayLines.push("os.environ[" + JSON.stringify("OLLAMA_API_KEY") + "] = " + JSON.stringify(settings.key));
   if (gatewayLines.length > 0) gatewayLines.unshift("import os");
 
   // Which instrumentation: LangChain and LangGraph, CrewAI, or the OpenAI
@@ -200,7 +211,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
 
   // The file installs what it needs by itself, the first time it runs, with
   // the same Python that runs it: downloading it is the whole installation. An
-  // SDK installed earlier but older than 0.4 (0.5 for a local model, 0.6 for
+  // SDK installed earlier but older than 0.4 (0.5 for a local model, 0.7 for one that is not Ollama, 0.6 for
   // mistralai through the gateway) is replaced the same way, and the
   // file then runs itself again, so that nothing from the old one stays
   // loaded. SIGILLO_SETUP_DONE stops that from repeating if the install did not help.
@@ -236,7 +247,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   // instrumentation, which is how a plain agent came to be told about crewai.
   block.push("    instrument=" + JSON.stringify(instrument).replace(/,/g, ", ") + ",");
   if (settings.protection) block.push("    strict=True,");
-  if (local) block.push("    local_model=True,");
+  if (local) block.push("    local_model=" + (localPort === 11434 ? "True" : localPort) + ",");
   block.push(")");
   var head = lines.slice(0, at);
   var tail = lines.slice(at);

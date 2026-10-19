@@ -64,11 +64,14 @@ _tracer: _trace.Tracer | None = None
 _door_key: str | None = None
 _LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 _LOCAL_PORT = 11434
+# The usual port of each local model server, and the name its receipts carry.
+LOCAL_SERVERS = {11434: "ollama", 1234: "lm-studio", 8080: "llama.cpp", 8000: "vllm", 1337: "jan"}
 
 
-def use_door(key: str | None) -> None:
-    global _door_key
+def use_door(key: str | None, port: int = 11434) -> None:
+    global _door_key, _LOCAL_PORT
     _door_key = key
+    _LOCAL_PORT = port
 
 
 def _is_door(url: object) -> bool:
@@ -173,8 +176,10 @@ def _span(name: str, attributes: dict[str, str]) -> _Iterator[None]:
 
 def _provider_of(host: str, port: int | None) -> str:
     host = host.lower()
-    if port == 11434 or "ollama" in host:
+    if "ollama" in host:
         return "ollama"
+    if port in LOCAL_SERVERS and host in _LOCAL_HOSTS:
+        return LOCAL_SERVERS[port]
     for fragment, name in (("openai", "openai"), ("anthropic", "anthropic"), ("googleapis", "google")):
         if fragment in host:
             return name

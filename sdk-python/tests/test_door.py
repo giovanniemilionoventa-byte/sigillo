@@ -105,6 +105,28 @@ class DoorTest(unittest.TestCase):
         self.assertEqual(spans[0]["llm.system"], "ollama")
         self.assertNotIn(b"SEGRETO", b"".join(_Capture.bodies))
 
+    def test_another_local_server_is_named_in_its_receipts_and_is_not_started_by_the_door(self) -> None:
+        from sigillo import _stdlib
+
+        upstream = f"http://127.0.0.1:{self.model.server_address[1]}"
+        tracer = self.tracing.provider.get_tracer("sigillo.door")
+        lm_studio = http.server.ThreadingHTTPServer(("127.0.0.1", 0), door._handler(upstream, KEY, tracer, "lm-studio"))
+        threading.Thread(target=lm_studio.serve_forever, daemon=True).start()
+        self.addCleanup(lambda: (lm_studio.shutdown(), lm_studio.server_close()))
+        base = f"http://127.0.0.1:{lm_studio.server_address[1]}"
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {KEY}"}
+        body = json.dumps({"model": "qwen", "messages": [{"role": "user", "content": "SEGRETO"}]}).encode()
+        urllib.request.urlopen(urllib.request.Request(base + "/v1/chat/completions", body, headers)).read()
+        spans = self._spans(1)
+        self.assertEqual(spans[0]["llm.system"], "lm-studio")
+        self.assertEqual(door._server_name(1234), "lm-studio")
+        self.assertEqual(door._server_name(8080), "llama.cpp")
+        self.assertEqual(door._server_name(8000), "vllm")
+        self.assertEqual(_stdlib._provider_of("localhost", 1234), "lm-studio")
+        with self.assertRaises(SystemExit):
+            door.main(["--endpoint", "http://127.0.0.1:9", "--system-id", "x", "--api-key", KEY,
+                       "--upstream", "http://127.0.0.1:1235", "--port", "1234", "--serve"])
+
     def test_without_the_key_or_with_another_nothing_reaches_the_model(self) -> None:
         for token in (None, "not-the-key", ""):
             with self.assertRaises(urllib.error.HTTPError) as caught:
