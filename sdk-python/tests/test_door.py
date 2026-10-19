@@ -264,6 +264,29 @@ class DoorTest(unittest.TestCase):
         self.assertEqual(sent["action"], {"kind": "decision", "name": "sigillo.local_model.open"})
         self.assertEqual(sent["outcome"], "error")
 
+    def test_the_guard_ends_the_agent_when_the_local_model_answers_without_the_key(self) -> None:
+        import subprocess
+        import sys
+
+        from sigillo import _watchdog
+
+        _Capture.bodies = []
+        agent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(agent.kill)
+        config = {
+            "period": 0.1, "probe": f"http://127.0.0.1:{self.model.server_address[1]}",  # open: no key asked
+            "script": None, "script_hash": None, "sdk_hash": _watchdog.package_hash(
+                __import__("os").path.dirname(_watchdog.__file__)),
+            "parent": agent.pid, "receipts": f"http://127.0.0.1:{self.sigillo.server_address[1]}/api/v1/receipts",
+            "api_key": KEY,
+        }
+        guard = subprocess.Popen([sys.executable, "-I", _watchdog.__file__], stdin=subprocess.PIPE)
+        self.addCleanup(guard.kill)
+        guard.stdin.write((json.dumps(config) + "\n").encode())
+        guard.stdin.flush()
+        agent.wait(timeout=15)  # ended by the guard
+        self.assertEqual(json.loads(_Capture.bodies[0])["action"]["name"], "sigillo.local_model.open")
+
 
 if __name__ == "__main__":
     unittest.main()

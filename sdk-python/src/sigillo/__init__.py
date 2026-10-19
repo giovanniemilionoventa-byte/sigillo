@@ -797,7 +797,9 @@ def init(
             serve=port == 11434,
         )
         if started == "ollama open":
-            _LOG.warning("sigillo: the local model is already open on port %d: close it and start the agent again, so that sigillo can open it", port)
+            _LOG.warning("sigillo: the local model is already open on port %d: the agent will be ended; close the model and start the agent again, so that sigillo can open it", port)
+        elif started == "door" and port != 11434:
+            _LOG.warning("sigillo: the door waits on port %d; start your model on port %d (the door cannot start it)", port, port + 1)
         elif started == "failed":
             _LOG.warning("sigillo: the door in front of the local model did not start")
     if local_model and "stdlib" in instrumented:
