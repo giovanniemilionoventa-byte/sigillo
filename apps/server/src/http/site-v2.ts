@@ -20,9 +20,9 @@ interface Copy {
   nav: { how: string; deliver: string; aiAct: string; pricing: string; blog: string; verify: string; signIn: string; start: string };
   title: string;
   description: string;
-  hero: { eyebrow: string; h1: string; lead: string; primary: string; secondary: string; doors: [string, string, string]; facts: [string, string][] };
+  hero: { eyebrow: string; h1: string; lead: string; primary: string; secondary: string; facts: [string, string][] };
   card: { verdict: string; line: string; key: string; matches: string; title: string; rows: [string, string][]; sealed: string };
-  problem: { eyebrow: string; h2: string; body: string; more: string };
+  problem: { eyebrow: string; h2: string; body: string; more: string; video: string; subtitles: string };
   disputes: { eyebrow: string; h2: string; body: string; more: string };
   fit: { eyebrow: string; h2: string; lead: string; forTitle: string; forLead: string; forItems: [string, string][]; notTitle: string; notLead: string; notItems: [string, string][] };
   steps: { eyebrow: string; h2: string; items: [string, string][] };
@@ -46,7 +46,6 @@ const IT: Copy = {
     lead: "sigillo crea registri firmati e con marca temporale delle azioni dei tuoi agenti AI, che chiunque può verificare in modo indipendente, senza esporre i dati riservati della tua azienda.",
     primary: "Richiedi un pilota gratuito",
     secondary: "Verifica un fascicolo d'esempio",
-    doors: ["Rispondi dell'AI in azienda", "Colleghi l'agente", "Hai ricevuto un fascicolo?"],
     facts: [["Solo impronte", "Prompt e risposte restano da te."], ["Verifichi da solo", "Strumento a riga di comando, anche senza rete."], ["Pilota gratuito", "Nessun dato di pagamento."]],
   },
   card: {
@@ -63,6 +62,8 @@ const IT: Copy = {
     h2: "Se domani dovessi giustificare le azioni della tua AI, avresti le prove?",
     body: "Gli agenti AI prendono decisioni e compiono azioni con conseguenze reali. Quando vengono contestate, serve più del ricordo di come sono andate le cose. sigillo conserva registri verificabili che mostrano cosa è successo e rendono rilevabili le alterazioni successive.",
     more: "Cosa prova, cosa no",
+    video: "Demo di sigillo, 3 minuti",
+    subtitles: "Italiano",
   },
   disputes: {
     eyebrow: "Le decisioni della tua AI possono essere contestate. Le tue prove devono essere verificabili.",
@@ -157,7 +158,6 @@ const EN: Copy = {
     lead: "sigillo creates signed, timestamped records of your AI agents' actions that can be independently verified, without exposing your company's sensitive data.",
     primary: "Request a free pilot",
     secondary: "Verify a sample pack",
-    doors: ["Answer for the AI at work", "Connect the agent", "Received an evidence pack?"],
     facts: [["Only fingerprints", "Prompts and answers stay with you."], ["Verify it yourself", "Command-line tool, works offline."], ["Free pilot", "No payment details."]],
   },
   card: {
@@ -174,6 +174,8 @@ const EN: Copy = {
     h2: "If you had to justify your AI's actions tomorrow, would you have the evidence?",
     body: "AI agents make decisions and take actions that have real consequences. When those actions are challenged, you need more than a recollection of events. sigillo preserves verifiable records that show what happened and make later alterations detectable.",
     more: "What it proves, what it does not",
+    video: "sigillo demo, 3 minutes",
+    subtitles: "English",
   },
   disputes: {
     eyebrow: "Your AI decisions can be challenged. Your evidence should be verifiable.",
@@ -262,30 +264,37 @@ const COPY: Record<Language, Copy> = { it: IT, en: EN };
 const REPOSITORY = "https://github.com/giovanniemilionoventa-byte/sigillo";
 
 const SITE_RULES = `
+:root[data-theme="dark"] { --bg: #0b0b0d; --canvas: #0b0b0d; --surface: #121316; --fill: #1b1c20; --hover: #23252a; --separator: #26282e; --selection: #162044; }
 body { background: var(--canvas); }
 .s-wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 .s-top { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--separator); }
-.s-top .s-wrap { display: flex; align-items: center; gap: 20px; min-height: 64px; flex-wrap: wrap; }
-.s-top nav { display: flex; gap: 18px; flex: 1; flex-wrap: wrap; }
+.s-top .s-wrap { display: flex; align-items: center; gap: 28px; min-height: 64px; }
+.s-top nav { display: flex; gap: 22px; flex: 1; min-width: 0; overflow: hidden; }
 .s-top nav a { color: var(--text); font-weight: 500; white-space: nowrap; }
-.s-top .s-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.s-top .s-right { display: flex; align-items: center; gap: 14px; flex: none; }
+.s-signin { font-weight: 500; white-space: nowrap; }
 .s-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; color: var(--text); }
 .s-brand svg { width: 24px; height: 24px; }
-.s-sec { padding: 88px 0; }
+.s-sec { padding: 80px 0; }
 .s-sec.alt { background: var(--surface); border-block: 1px solid var(--separator); }
 .s-sec h2 { font-size: 34px; line-height: 40px; font-weight: 700; letter-spacing: -0.01em; max-width: 28ch; margin: 0 0 20px; }
-.s-hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 48px; align-items: center; padding: 72px 24px 56px; }
+.s-hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 56px; align-items: start; padding: 64px 24px 40px; }
+.s-hero .s-console { margin-top: 28px; }
 .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 20px; border-radius: 8px; border: 1px solid var(--separator); background: var(--surface); color: var(--text); font-weight: 600; text-decoration: none; }
 .btn:hover { background: var(--fill); text-decoration: none; }
 .btn.pri { background: var(--action); border-color: var(--action); color: var(--on-action); }
 .btn.pri:hover { background: var(--action); filter: brightness(0.92); }
 .btn.sm { min-height: 34px; padding: 0 12px; font-size: 13px; }
 .s-eyebrow { font-size: 12px; line-height: 18px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--secondary); font-weight: 600; margin: 0 0 16px; max-width: 62ch; }
-.s-facts { display: flex; gap: 12px 32px; flex-wrap: wrap; list-style: none; margin: 32px 0 0; padding: 24px 0 0; border-top: 1px solid var(--separator); }
-.s-facts li { display: grid; gap: 2px; max-width: 22ch; }
+.s-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 28px; list-style: none; margin: 36px 0 0; padding: 24px 0 0; border-top: 1px solid var(--separator); }
+.s-facts li { display: grid; gap: 2px; align-content: start; }
 .s-facts b { font-size: 14px; }
 .s-facts span { font-size: 13px; color: var(--secondary); }
 .s-narrow > * { max-width: 760px; }
+.s-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 56px; align-items: center; }
+.s-split h2 { max-width: 22ch; }
+.s-video { border-radius: 12px; overflow: hidden; background: #000; border: 1px solid var(--separator); aspect-ratio: 16 / 9; }
+.s-video video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .s-dispute { padding: 48px; max-width: 820px; }
 .s-dispute h2 { max-width: 24ch; }
 .s-fit { margin-top: 32px; align-items: stretch; }
@@ -309,10 +318,9 @@ body { background: var(--canvas); }
 .s-sealrow small { display: block; color: var(--secondary); font-size: 12px; }
 .s-stamp { flex: none; width: 36px; height: 36px; }
 .s-stamp svg { width: 36px; height: 36px; }
-.s-hero h1 { font-size: 56px; line-height: 60px; font-weight: 700; letter-spacing: -0.025em; margin: 0 0 20px; max-width: 14ch; }
+.s-hero h1 { font-size: 56px; line-height: 60px; font-weight: 700; letter-spacing: -0.025em; margin: 0 0 20px; max-width: 15ch; }
 .s-lead { font-size: 20px; line-height: 32px; max-width: 58ch; margin: 0 0 24px; }
 .s-btns { display: flex; gap: 12px; flex-wrap: wrap; }
-.s-doors { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 20px; font-weight: 600; }
 .s-facts { margin-top: 20px; font-size: 13px; color: var(--secondary); font-weight: 500; }
 .s-card { background: var(--surface); border: 1px solid var(--separator); border-radius: 10px; padding: 28px; }
 .s-verdict { display: flex; gap: 16px; align-items: center; color: var(--ok); }
@@ -336,7 +344,10 @@ body { background: var(--canvas); }
 .s-foot ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .s-yes li::before { content: "✓  "; color: var(--ok); font-weight: 700; }
 .s-no li::before { content: "–  "; color: var(--secondary); }
+@media (max-width: 1000px) { .s-top nav { display: none; } .s-top .s-right { margin-left: auto; } }
 @media (max-width: 900px) {
+  .s-split { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .s-facts { grid-template-columns: minmax(0, 1fr); }
   .s-hero, .s-two { grid-template-columns: minmax(0, 1fr); }
   .s-three, .s-price { grid-template-columns: minmax(0, 1fr); }
   .s-hero h1 { font-size: 36px; line-height: 42px; }
@@ -346,7 +357,7 @@ body { background: var(--canvas); }
 `;
 
 /** The redesigned home, as a whole document. */
-export function siteV2Page(view: { language: Language; contactEmail?: string; back: string; theme: "light" | "dark" | "system"; hasBlog: boolean; endpoint: string }): string {
+export function siteV2Page(view: { language: Language; contactEmail?: string; back: string; theme: "light" | "dark" | "system"; hasBlog: boolean; endpoint: string; media?: ReadonlySet<string> }): string {
   const c = COPY[view.language];
   const mail =
     view.contactEmail === undefined
@@ -360,24 +371,29 @@ export function siteV2Page(view: { language: Language; contactEmail?: string; ba
         ? `<span class="sign ink">${PROOF_ICONS.full}<span>${escape(answer)}</span></span>`
         : `<span>${escape(answer)}</span>`;
   const code = (text: string): string => `<pre class="mono" style="margin:0;padding:16px;background:var(--code);color:var(--on-code);border-radius:10px;overflow-x:auto">${escape(text)}</pre><button type="button" class="copy button" hidden data-copied="${escape(c.connect.copied)}">${escape(c.connect.copy)}</button>`;
+  const demo =
+    view.media?.has(`demo-${view.language}.mp4`) === true
+      ? `<div class="s-video"><video controls preload="none" poster="/media/poster-${view.language}.jpg" aria-label="${escape(c.problem.video)}"><source src="/media/demo-${view.language}.mp4" type="video/mp4">${
+          view.media.has(`demo-${view.language}.vtt`) ? `<track kind="subtitles" src="/media/demo-${view.language}.vtt" srclang="${view.language}" label="${escape(c.problem.subtitles)}">` : ""
+        }</video></div>`
+      : "";
   const body = `<header class="s-top"><div class="s-wrap">
 <a class="s-brand" href="/">${SEAL_SVG}<span>sigillo</span></a>
 <nav aria-label="${escape(c.nav.how)}"><a href="#come-funziona">${escape(c.nav.how)}</a><a href="#cosa-consegni">${escape(c.nav.deliver)}</a><a href="#ai-act">${escape(c.nav.aiAct)}</a><a href="#prezzi">${escape(c.nav.pricing)}</a>${view.hasBlog ? `<a href="/blog">${escape(c.nav.blog)}</a>` : ""}</nav>
-<div class="s-right">${languageSwitch("seg", view.back)}<a class="btn sm" href="/verify">${escape(c.nav.verify)}</a><a href="/ui/login">${escape(c.nav.signIn)}</a>${start}</div>
+<div class="s-right">${languageSwitch("seg", view.back)}<a class="s-signin" href="/ui/login">${escape(c.nav.signIn)}</a>${start}</div>
 </div></header>
 <main>
 <section class="s-wrap s-hero" id="inizio"><div>
 <p class="s-eyebrow">${escape(c.hero.eyebrow)}</p>
 <h1>${escape(c.hero.h1)}</h1><p class="s-lead">${escape(c.hero.lead)}</p>
 <div class="s-btns">${start}<a class="btn" href="/verify">${escape(c.hero.secondary)}</a></div>
-<ul class="s-facts">${c.hero.facts.map(([title, line]) => `<li><b>${escape(title)}</b><span>${escape(line)}</span></li>`).join("")}</ul>
-<div class="s-doors"><a href="#cosa-consegni">${escape(c.hero.doors[0])} ›</a><a href="#collega">${escape(c.hero.doors[1])} ›</a><a href="/verify">${escape(c.hero.doors[2])} ›</a></div></div>
+<ul class="s-facts">${c.hero.facts.map(([title, line]) => `<li><b>${escape(title)}</b><span>${escape(line)}</span></li>`).join("")}</ul></div>
 <div class="s-card s-console" aria-hidden="true"><div class="s-chead"><b>${escape(c.card.title)}</b><span class="sign green">${STATE_ICONS.ok}<span>${escape(c.card.verdict)}</span></span></div>
 <ul class="s-chain">${c.card.rows.map(([time, what], i) => `<li${i === 0 ? ' class="on"' : ""}><time class="mono">${escape(time)}</time><span>${escape(what)}</span></li>`).join("")}</ul>
 <div class="s-sealrow"><span class="s-stamp">${SEAL_SVG}</span><div><b>${escape(c.card.matches)}</b><small class="mono">9685 533e aa64 29c4</small><small>${escape(c.card.sealed)}</small></div></div></div>
 </section>
 
-<section class="s-sec" id="problema"><div class="s-wrap s-narrow"><p class="s-eyebrow">${escape(c.problem.eyebrow)}</p><h2>${escape(c.problem.h2)}</h2><p class="s-lead">${escape(c.problem.body)}</p><a class="btn" href="#cosa-prova">${escape(c.problem.more)}</a></div></section>
+<section class="s-sec" id="problema"><div class="s-wrap${demo === "" ? " s-narrow" : " s-split"}"><div><p class="s-eyebrow">${escape(c.problem.eyebrow)}</p><h2>${escape(c.problem.h2)}</h2><p class="s-lead">${escape(c.problem.body)}</p><a class="btn" href="#cosa-prova">${escape(c.problem.more)}</a></div>${demo}</div></section>
 
 <section class="s-sec alt" id="contestazioni"><div class="s-wrap"><div class="s-card s-dispute"><p class="s-eyebrow">${escape(c.disputes.eyebrow)}</p><h2>${escape(c.disputes.h2)}</h2><p class="s-lead">${escape(c.disputes.body)}</p><a class="btn" href="#cosa-consegni">${escape(c.disputes.more)}</a></div></div></section>
 
@@ -424,7 +440,8 @@ ${code(`import sigillo\nsigillo.init(\n    endpoint="${view.endpoint}",\n    api
 <section><h4>${escape(c.footer.company)}</h4><ul><li><a href="/privacy">${escape(c.footer.privacy)}</a></li>${view.hasBlog ? `<li><a href="/blog">${escape(c.nav.blog)}</a></li>` : ""}<li><a href="/ui/login">${escape(c.nav.signIn)}</a></li></ul></section></div>
 <p>${escape(c.footer.legal)}</p></div></footer>`;
 
-  const theme = view.theme === "system" ? "" : ` data-theme="${view.theme}"`;
+  // Dark unless the reader chose light: the proposed design is drawn dark first.
+  const theme = ` data-theme="${view.theme === "light" ? "light" : "dark"}"`;
   return `<!doctype html>
 <html lang="${view.language}"${theme}><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">

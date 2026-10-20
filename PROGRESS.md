@@ -4090,3 +4090,13 @@ nel codice resta `operator` (regola 11, per le funzioni future). Per tornare ind
 `SIGILLO_SITE_V2=operator` nel `.env` del server, che vince sul compose. Serve riavviare lo
 stack perché abbia effetto.
 
+### Home nuova: barra, video e scuro di default (2026-10-20)
+
+Su segnalazione del titolare (la barra andava a capo, il video sparito, lo scuro non di
+default): barra su una sola riga (tolto «Verifica un fascicolo» dalla barra, che resta nel
+piè di pagina e sotto il titolo; sotto i 1000 px restano lingua, accesso e pulsante), il video
+della demo torna nella sezione «Il problema» (stessi file `/media/demo-<lingua>.mp4`,
+sottotitoli e locandina del sito di prima, solo dove sono serviti), tema scuro quando il
+lettore non ha scelto «chiaro», fondo quasi nero come nella proposta, riga dei tre fatti su tre
+colonne, tolti i tre link sotto di essa. Test in `console-v2.test.ts`. Verificatore: invariato.
+
