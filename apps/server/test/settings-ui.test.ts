@@ -111,8 +111,8 @@ describe("the settings page", () => {
 
 describe("the theme, chosen without a script", () => {
   it("is kept in a cookie and written on the page by the server, and follows the system when asked", async () => {
-    // By default the page is light, whatever the system prefers.
-    expect((await get("/ui")).body).toContain('<html lang="it" data-theme="light">');
+    // By default the page is dark, whatever the system prefers.
+    expect((await get("/ui")).body).toContain('<html lang="it" data-theme="dark">');
 
     const dark = await post("/ui/impostazioni/tema", "theme=dark");
     expect(dark.statusCode).toBe(303);
@@ -139,10 +139,10 @@ describe("the theme, chosen without a script", () => {
   it("writes only the values it knows, whatever the cookie says", async () => {
     for (const value of ["blue", "%22%3E%3Cscript%3E", "DARK"]) {
       const body = (await get("/ui", `${cookie}; sigillo_theme=${value}`)).body;
-      expect(body, value).toContain('<html lang="it" data-theme="light">');
+      expect(body, value).toContain('<html lang="it" data-theme="dark">');
       expect(body, value).not.toContain("<script");
     }
-    expect((await get("/ui", `${cookie}; sigillo_theme=dark`)).body).toContain('<html lang="it" data-theme="dark">');
+    expect((await get("/ui", `${cookie}; sigillo_theme=light`)).body).toContain('<html lang="it" data-theme="light">');
   });
 });
 

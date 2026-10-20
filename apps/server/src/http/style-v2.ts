@@ -16,17 +16,17 @@ import { STYLE, THEME } from "./style.js";
 
 const DARK_TOKENS_V2 = `
     /* design/tokens-v2.json, dark theme */
-    --bg: #111317; --canvas: #111317; --sidebar: #15181c; --surface: #1a1d22; --fill: #262a31; --current: #1d2640;
-    --segment: #262a31; --segment-on: #1a1d22; --hover: #2e333b; --scrim: rgba(0,0,0,0.60);
-    --text: #eceef2; --secondary: #a3aab7; --label: #c8cdd6;
-    --separator: #2d323a; --separator-soft: #262a31; --sidebar-rule: #2d323a; --control: #7c8491;
-    --action: #4a66d2; --on-action: #ffffff; --link: #9db2ff; --selection: #1d2640; --focus: #9db2ff; --brand: #eceef2;
-    --ok: #6ccb88; --ok-fill: #173020; --warn: #eeb44e; --warn-fill: #352912; --bad: #ff8a80; --bad-fill: #3d1f1c;
-    --danger: #c2372b; --neutral: #a3aab7; --thread: #5a616d; --selected: #1d2640;
-    --kind-tool: #c8cdd6; --kind-tool-fill: #262a31; --kind-model: #c8cdd6; --kind-model-fill: #262a31;
-    --kind-step: #c8cdd6; --kind-step-fill: #262a31; --kind-decision: #c8cdd6; --kind-decision-fill: #262a31;
-    --kind-genesis: #c8cdd6; --kind-genesis-fill: #262a31;
-    --code: #0b0d10; --on-code: #e4e7ec;
+    --bg: #070809; --canvas: #070809; --sidebar: #0a0b0d; --surface: #0e1012; --fill: #17191d; --current: #0a1e3d;
+    --segment: #17191d; --segment-on: #0e1012; --hover: #14171a; --scrim: rgba(0,0,0,0.70);
+    --text: #f5f6f7; --secondary: #8e939a; --label: #c6c9ce;
+    --separator: #1d2025; --separator-soft: #15181b; --sidebar-rule: #1d2025; --control: #646a73;
+    --action: #006df9; --on-action: #ffffff; --link: #4b9bff; --selection: #0a1e3d; --focus: #4b9bff; --brand: #f5f6f7;
+    --ok: #3fbf6e; --ok-fill: #0f2818; --warn: #f0b44c; --warn-fill: #2e230f; --bad: #ff7b72; --bad-fill: #34140f;
+    --danger: #da3633; --neutral: #8e939a; --thread: #3a3f46; --selected: #0a1e3d;
+    --kind-tool: #c6c9ce; --kind-tool-fill: #17191d; --kind-model: #c6c9ce; --kind-model-fill: #17191d;
+    --kind-step: #c6c9ce; --kind-step-fill: #17191d; --kind-decision: #c6c9ce; --kind-decision-fill: #17191d;
+    --kind-genesis: #c6c9ce; --kind-genesis-fill: #17191d;
+    --code: #000000; --on-code: #e6e8eb;
     --shadow-card: 0 0 0 1px var(--separator);
     --shadow-sheet: 0 24px 60px rgba(0,0,0,0.6), 0 0 0 1px var(--separator);
     --shadow-segment: 0 0 0 1px var(--separator);
@@ -37,17 +37,17 @@ export const THEME_V2 = `
 :root {
   color-scheme: light dark;
   /* design/tokens-v2.json, light theme */
-  --bg: #f6f7f9; --canvas: #f6f7f9; --sidebar: #eef0f3; --surface: #ffffff; --fill: #eceef2; --current: #e9edfa;
-  --segment: #eceef2; --segment-on: #ffffff; --hover: #e3e6eb; --scrim: rgba(16,19,24,0.40);
-  --text: #16191f; --secondary: #555d6b; --label: #353b46;
-  --separator: #dce0e6; --separator-soft: #eceef2; --sidebar-rule: #dce0e6; --control: #7d8491;
-  --action: #2846a8; --on-action: #ffffff; --link: #2846a8; --selection: #e9edfa; --focus: #2846a8; --brand: #8e2a24;
-  --ok: #1c6a34; --ok-fill: #e3f1e7; --warn: #8a5200; --warn-fill: #faeed6; --bad: #b3261e; --bad-fill: #fae5e2;
-  --danger: #b3261e; --neutral: #555d6b; --thread: #9aa2ae; --selected: #e9edfa;
-  --kind-tool: #353b46; --kind-tool-fill: #eceef2; --kind-model: #353b46; --kind-model-fill: #eceef2;
-  --kind-step: #353b46; --kind-step-fill: #eceef2; --kind-decision: #353b46; --kind-decision-fill: #eceef2;
-  --kind-genesis: #353b46; --kind-genesis-fill: #eceef2;
-  --code: #16191f; --on-code: #e4e7ec;
+  --bg: #ffffff; --canvas: #ffffff; --sidebar: #f7f8f9; --surface: #ffffff; --fill: #f1f2f4; --current: #e8f1ff;
+  --segment: #f1f2f4; --segment-on: #ffffff; --hover: #eef0f2; --scrim: rgba(7,8,9,0.40);
+  --text: #0b0c0e; --secondary: #5c6169; --label: #2f3338;
+  --separator: #e4e6e9; --separator-soft: #f1f2f4; --sidebar-rule: #e4e6e9; --control: #7a7f87;
+  --action: #0062e0; --on-action: #ffffff; --link: #0062e0; --selection: #e8f1ff; --focus: #0062e0; --brand: #0b0c0e;
+  --ok: #1a7f37; --ok-fill: #e6f4ea; --warn: #8a5200; --warn-fill: #fbf0d9; --bad: #c4221a; --bad-fill: #fde8e6;
+  --danger: #c4221a; --neutral: #5c6169; --thread: #b4b8be; --selected: #e8f1ff;
+  --kind-tool: #2f3338; --kind-tool-fill: #f1f2f4; --kind-model: #2f3338; --kind-model-fill: #f1f2f4;
+  --kind-step: #2f3338; --kind-step-fill: #f1f2f4; --kind-decision: #2f3338; --kind-decision-fill: #f1f2f4;
+  --kind-genesis: #2f3338; --kind-genesis-fill: #f1f2f4;
+  --code: #0b0c0e; --on-code: #e6e8eb;
   --shadow-card: 0 0 0 1px var(--separator);
   --shadow-sheet: 0 12px 32px rgba(16,19,24,0.18), 0 0 0 1px var(--separator);
   --shadow-segment: 0 0 0 1px var(--separator);
@@ -181,6 +181,18 @@ body { font-size: 15px; line-height: 1.47; }
 .sys-id { font-family: var(--mono); font-size: 13px; color: var(--secondary); }
 .card-title { font-size: 17px; line-height: 24px; font-weight: 600; margin-bottom: 8px; }
 .empty-state .button { margin-top: 12px; }
+/* The look of the proposed landing page (2026-10-20): near-black canvas, hairline
+   cards, one bright blue for the main action, white outlined buttons, an
+   uppercase wordmark and uppercase group labels. */
+.brand span { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; font-size: 16px; }
+h1, .q-head h1 { font-weight: 600; letter-spacing: -0.02em; }
+.side-group { text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; font-weight: 600; }
+.card, .fig, .np, .vlines, .reveal, .run-band { border-radius: 8px; }
+.button, button { border-radius: 6px; border: 1px solid var(--control); background: transparent; color: var(--text); box-shadow: none; font-weight: 600; }
+.button:hover, button:hover { background: var(--hover); }
+button.primary, .button.primary { border-color: var(--action); }
+.side-item[aria-current="page"] { background: var(--selected); box-shadow: none; }
+.card-head h2, .card-title { font-weight: 600; letter-spacing: -0.01em; }
 @media (max-width: 900px) {
   .model-b { grid-template-columns: minmax(0, 1fr); }
   .figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -418,7 +418,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   /** The theme the reader chose, from its cookie; until they choose, light, whatever their system prefers. */
   const themeOf = (request: FastifyRequest): Theme => {
     const value = cookieNamed(request, THEME_COOKIE);
-    return value === "dark" || value === "system" ? value : "light";
+    return value === "light" || value === "system" ? value : "dark";
   };
 
   /**

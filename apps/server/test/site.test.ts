@@ -116,7 +116,7 @@ describe("the public site", () => {
     expect((await get("/", { "accept-language": "it-IT,it;q=0.9,en;q=0.8" })).body).toContain(escapeHtml(SITE_TEXTS.it.home.heading));
     const chosen = await get("/", { "accept-language": "it-IT", cookie: "sigillo_lang=en" });
     expect(chosen.body).toContain(SITE_TEXTS.en.home.heading);
-    expect(chosen.body).toMatch(/^<!doctype html>\n<html lang="en" data-theme="light">/);
+    expect(chosen.body).toMatch(/^<!doctype html>\n<html lang="en" data-theme="dark">/);
     expect(chosen.headers["vary"]).toBe("Cookie, Accept-Language");
   });
 
@@ -145,8 +145,8 @@ describe("the public site", () => {
   });
 
   it("carries the theme the reader chose in the console", async () => {
-    expect((await get("/", { cookie: "sigillo_theme=dark" })).body).toMatch(/^<!doctype html>\n<html lang="en" data-theme="dark">/);
-    expect((await get("/")).body).toMatch(/^<!doctype html>\n<html lang="en" data-theme="light">/);
+    expect((await get("/", { cookie: "sigillo_theme=light" })).body).toMatch(/^<!doctype html>\n<html lang="en" data-theme="light">/);
+    expect((await get("/")).body).toMatch(/^<!doctype html>\n<html lang="en" data-theme="dark">/);
   });
 
   it("shows the demo video in the reader's language, with its subtitles and its still", async () => {

@@ -1,6 +1,6 @@
 import { escape, languageSwitch } from "./layout.js";
 import { STYLE_V2 } from "./style-v2.js";
-import { SEAL_SVG, STATE_ICONS } from "./style.js";
+import { ICONS, SEAL_SVG, STATE_ICONS } from "./style.js";
 import { PROOF_ICONS } from "./style-v2.js";
 import type { Language } from "./locale.js";
 
@@ -271,26 +271,28 @@ const COPY: Record<Language, Copy> = { it: IT, en: EN };
 const REPOSITORY = "https://github.com/giovanniemilionoventa-byte/sigillo";
 
 const SITE_RULES = `
-:root[data-theme="dark"] { --bg: #0b0b0d; --canvas: #0b0b0d; --surface: #121316; --fill: #1b1c20; --hover: #23252a; --separator: #26282e; --selection: #162044; }
 body { background: var(--canvas); }
 .s-wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
-.s-top { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--separator); }
+.s-top { position: sticky; top: 0; z-index: 5; background: var(--canvas); border-bottom: 1px solid var(--separator); }
 .s-top .s-wrap { display: flex; align-items: center; gap: 28px; min-height: 64px; }
 .s-top nav { display: flex; gap: 22px; flex: 1; min-width: 0; overflow: hidden; }
 .s-top nav a { color: var(--text); font-weight: 500; white-space: nowrap; }
 .s-top .s-right { display: flex; align-items: center; gap: 14px; flex: none; }
 .s-signin { font-weight: 500; white-space: nowrap; }
-.s-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; color: var(--text); }
+.s-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); }
 .s-brand svg { width: 24px; height: 24px; }
 .s-sec { padding: 80px 0; }
-.s-sec.alt { background: var(--surface); border-block: 1px solid var(--separator); }
-.s-sec h2 { font-size: 34px; line-height: 40px; font-weight: 700; letter-spacing: -0.01em; max-width: 28ch; margin: 0 0 20px; }
+.s-sec.alt { background: transparent; border-top: 1px solid var(--separator); }
+.s-sec + .s-sec { border-top: 1px solid var(--separator); }
+.s-sec h2 { font-size: 34px; line-height: 40px; font-weight: 600; letter-spacing: -0.02em; max-width: 28ch; margin: 0 0 20px; }
 .s-hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 56px; align-items: start; padding: 64px 24px 40px; }
 .s-hero .s-console { margin-top: 28px; }
-.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 20px; border-radius: 8px; border: 1px solid var(--separator); background: var(--surface); color: var(--text); font-weight: 600; text-decoration: none; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 20px; border-radius: 6px; border: 1px solid var(--control); background: transparent; color: var(--text); font-weight: 600; text-decoration: none; }
 .btn:hover { background: var(--fill); text-decoration: none; }
 .btn.pri { background: var(--action); border-color: var(--action); color: var(--on-action); }
 .btn.pri:hover { background: var(--action); filter: brightness(0.92); }
+.btn.light { background: var(--text); border-color: var(--text); color: var(--canvas); }
+.btn.light:hover { background: var(--text); filter: brightness(0.9); }
 .btn.sm { min-height: 34px; padding: 0 12px; font-size: 13px; }
 .s-eyebrow { font-size: 12px; line-height: 18px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--secondary); font-weight: 600; margin: 0 0 16px; max-width: 62ch; }
 .s-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 28px; list-style: none; margin: 36px 0 0; padding: 24px 0 0; border-top: 1px solid var(--separator); }
@@ -311,6 +313,14 @@ body { background: var(--canvas); }
 .s-fith { font-size: 18px; margin: 0 0 6px; }
 .s-yes-h::before { content: "✓  "; color: var(--ok); }
 .s-no-h::before { content: "–  "; color: var(--secondary); }
+.s-flow3 { list-style: none; padding: 0; margin: 32px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.s-flow3 li { position: relative; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 16px; align-items: start; }
+.s-flow3 li + li::before { content: "→"; position: absolute; left: -22px; top: 12px; color: var(--secondary); }
+.s-flow3 .s-ico { width: 48px; height: 48px; border: 1px solid var(--control); border-radius: 10px; display: grid; place-items: center; }
+.s-flow3 .s-ico svg { width: 22px; height: 22px; }
+.s-flow3 b { display: block; font-size: 15px; margin-bottom: 4px; }
+.s-flow3 span span { color: var(--secondary); font-size: 14px; }
+@media (max-width: 760px) { .s-flow3 { grid-template-columns: minmax(0, 1fr); } .s-flow3 li + li::before { display: none; } }
 .s-steps { list-style: none; padding: 0; margin: 32px 0 0; }
 .s-steps li { display: grid; gap: 8px; align-content: start; }
 .s-steps span:not(.num) { color: var(--secondary); }
@@ -354,9 +364,11 @@ body { background: var(--canvas); }
 .s-faq details { border-top: 1px solid var(--separator); padding: 14px 0; }
 .s-faq details:last-child { border-bottom: 1px solid var(--separator); }
 .s-faq summary { cursor: pointer; font-weight: 600; }
-.s-band { background: var(--action); color: var(--on-action); padding: 56px 0; text-align: center; }
-.s-band h2 { margin: 0 auto 20px; color: inherit; }
-.s-band .btn { background: var(--surface); color: var(--text); border-color: var(--surface); }
+.s-band { padding: 24px 0 80px; }
+.s-band .s-wrap > div { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; padding: 36px 32px; border: 1px solid var(--separator); border-radius: 8px; background: var(--surface); }
+.s-band p { margin: 6px 0 0; color: var(--secondary); }
+.s-band h2 { margin: 0; font-size: 26px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em; }
+
 .s-foot { padding: 40px 0; font-size: 13px; color: var(--secondary); }
 .s-foot .s-wrap > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-bottom: 24px; }
 .s-foot h4 { margin: 0 0 8px; color: var(--text); font-size: 13px; }
@@ -412,16 +424,16 @@ export function siteV2Page(view: { language: Language; contactEmail?: string; ba
 <div class="s-sealrow"><span class="s-stamp">${SEAL_SVG}</span><div><b>${escape(c.card.matches)}</b><small class="mono">9685 533e aa64 29c4</small><small>${escape(c.card.sealed)}</small></div></div></div>
 </section>
 
-<section class="s-sec" id="problema"><div class="s-wrap${demo === "" ? " s-narrow" : " s-split"}"><div><p class="s-eyebrow">${escape(c.problem.eyebrow)}</p><h2>${escape(c.problem.h2)}</h2><p class="s-lead">${escape(c.problem.body)}</p><a class="btn" href="#cosa-prova">${escape(c.problem.more)}</a></div>${demo}</div></section>
+<section class="s-sec" id="problema"><div class="s-wrap${demo === "" ? " s-narrow" : " s-split"}"><div><p class="s-eyebrow">${escape(c.problem.eyebrow)}</p><h2>${escape(c.problem.h2)}</h2><p class="s-lead">${escape(c.problem.body)}</p><a class="btn light" href="#cosa-prova">${escape(c.problem.more)}</a></div>${demo}</div></section>
 
-<section class="s-sec alt" id="contestazioni"><div class="s-wrap"><div class="s-card s-dispute"><p class="s-eyebrow">${escape(c.disputes.eyebrow)}</p><h2>${escape(c.disputes.h2)}</h2><p class="s-lead">${escape(c.disputes.body)}</p><a class="btn" href="#cosa-consegni">${escape(c.disputes.more)}</a></div></div></section>
+<section class="s-sec alt" id="contestazioni"><div class="s-wrap"><div class="s-card s-dispute"><p class="s-eyebrow">${escape(c.disputes.eyebrow)}</p><h2>${escape(c.disputes.h2)}</h2><p class="s-lead">${escape(c.disputes.body)}</p><a class="btn light" href="#cosa-consegni">${escape(c.disputes.more)}</a></div></div></section>
 
 <section class="s-sec" id="per-chi"><div class="s-wrap"><p class="s-eyebrow">${escape(c.fit.eyebrow)}</p><h2>${escape(c.fit.h2)}</h2><p class="s-lead">${escape(c.fit.lead)}</p>
 <div class="s-two s-fit"><div class="s-card"><h3 class="s-fith s-yes-h">${escape(c.fit.forTitle)}</h3><p class="t-sec">${escape(c.fit.forLead)}</p><ul>${c.fit.forItems.map(([t, d]) => `<li><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ul></div>
 <div class="s-card"><h3 class="s-fith s-no-h">${escape(c.fit.notTitle)}</h3><p class="t-sec">${escape(c.fit.notLead)}</p><ul>${c.fit.notItems.map(([t, d]) => `<li><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ul></div></div></div></section>
 
 <section class="s-sec alt" id="come-funziona"><div class="s-wrap"><p class="s-eyebrow">${escape(c.steps.eyebrow)}</p><h2>${escape(c.steps.h2)}</h2>
-<ol class="s-three s-steps">${c.steps.items.map(([t, d], i) => `<li class="s-card"><span class="num">${i + 1}</span><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ol>
+<ol class="s-flow3">${c.steps.items.map(([t, d], i) => `<li><span class="s-ico" aria-hidden="true">${[ICONS.terminal, ICONS.doc, ICONS.docCheck][i] ?? ""}</span><span><b>${i + 1}. ${escape(t)}</b><span>${escape(d)}</span></span></li>`).join("")}</ol>
 <h3 class="t-sec" style="margin:40px 0 16px">${escape(c.how.h2)}</h3>
 <div class="s-three">${c.how.questions.map((q) => `<div class="s-card"><p class="s-q">${escape(q.q)}</p>${cardFor(q.kind, q.a)}</div>`).join("")}</div></div></section>
 
@@ -455,7 +467,7 @@ ${code(`import sigillo\nsigillo.init(\n    endpoint="${view.endpoint}",\n    api
 <section class="s-sec alt" id="faq"><div class="s-wrap s-split s-top"><div><p class="s-eyebrow">${escape(c.faq.eyebrow)}</p><h2>${escape(c.faq.h2)}</h2><p class="s-lead">${escape(c.faq.lead)}</p><a class="btn" href="${escape(mail)}" rel="noopener">${escape(c.contact.button)}</a></div>
 <div class="s-faq">${c.pricing.faq.map((f, i) => `<details${i === 0 ? " open" : ""}><summary>${escape(f.q)}</summary><p>${escape(f.a)}</p></details>`).join("")}</div></div></section>
 </main>
-<section class="s-band" id="contatti"><div class="s-wrap"><h2>${escape(c.contact.h2)}</h2><a class="btn" href="${escape(mail)}" rel="noopener">${escape(c.contact.button)}</a>${view.contactEmail === undefined ? "" : `<p>${escape(c.contact.address)} ${escape(view.contactEmail)}</p>`}</div></section>
+<section class="s-band" id="contatti"><div class="s-wrap"><div><div><h2>${escape(c.hero.h1)}</h2><p>${escape(c.contact.h2)}${view.contactEmail === undefined ? "" : ` ${escape(c.contact.address)} ${escape(view.contactEmail)}`}</p></div>${start}</div></div></section>
 <footer class="s-foot"><div class="s-wrap"><div>
 <section><h4>${escape(c.footer.product)}</h4><ul><li><a href="#come-funziona">${escape(c.nav.how)}</a></li><li><a href="#cosa-consegni">${escape(c.nav.deliver)}</a></li><li><a href="#prezzi">${escape(c.nav.pricing)}</a></li></ul></section>
 <section><h4>${escape(c.footer.receivers)}</h4><ul><li><a href="/verify">${escape(c.nav.verify)}</a></li><li><a href="${REPOSITORY}/tree/main/packages/verifier" target="_blank" rel="noopener">Open source</a></li><li><a href="${REPOSITORY}/blob/main/docs/FORMAT.md" target="_blank" rel="noopener">${escape(c.footer.format)}</a></li></ul></section>

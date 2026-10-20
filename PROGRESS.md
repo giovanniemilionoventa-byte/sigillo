@@ -4125,3 +4125,14 @@ Su segnalazione del titolare, con l'agente di prova su Llama 3.2 3B in Ollama:
   file, non più "Nessun file selezionato"; la casella "More security" è accanto al suo testo.
 
 Verificatore: invariato.
+
+### Nuovo design per tutti (2026-10-20)
+
+Su indicazione di Giovanni la console, la home e il resto del sito (blog, /verify, /privacy)
+prendono l'aspetto della pagina proposta: fondo quasi nero, bordi sottili, un solo blu per
+l'azione principale, logo SIGILLO in maiuscolo, schede con angoli di 8px, i passi della home con
+icone e frecce. Scuro predefinito per chi non ha scelto un tema. Per tutti, amministratore e
+clienti, senza interruttori. `style-v2.ts`, `design/tokens-v2.json`, `site-v2.ts`, `site.ts`,
+`ui.ts`; test aggiornati per la nuova tavolozza e il tema scuro predefinito.
+
+Verificatore: invariato.
