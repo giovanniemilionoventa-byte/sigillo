@@ -375,13 +375,18 @@ describe("the redesigned public home (SIGILLO_SITE_V2)", () => {
     await startFull();
     const page = await get(OPERATOR, "/ui/admin/site");
     expect(page.statusCode).toBe(200);
-    expect(page.body).toContain("Cosa ha fatto la tua AI?");
+    expect(page.body).toContain("Dimostra cosa ha fatto la tua AI. Quando conta di più.");
+    expect(page.body).toContain("Pensato per chi deve dimostrare");
     expect(page.body).toContain("--action: #2846a8");
     expect(page.body).not.toContain("#1a73e8");
     expect(page.body).not.toContain("Pronto per l'AI Act");
     expect(page.body).toMatch(/<script src="\/site\.js" defer><\/script>/);
     expect(page.body).not.toMatch(/<script>/);
-    expect((await get(OPERATOR, "/ui/admin/site", "en")).body).toContain("What did your AI do?");
+    const english = (await get(OPERATOR, "/ui/admin/site", "en")).body;
+    expect(english).toContain("Prove what your AI did. When it matters most.");
+    expect(english).toContain("Who it&#39;s not for");
+    // No customers, logos or quotes the project does not have.
+    for (const invented of ["Trusted by", "Spotify", "Stripe", "Databricks", "CTO"]) expect(english).not.toContain(invented);
     expect((await get(ORGANIZATION, "/ui/admin/site")).statusCode).toBe(404);
   });
 

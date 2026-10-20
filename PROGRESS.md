@@ -4054,3 +4054,31 @@ Richiesta del proprietario: la stessa protezione di Ollama per tutti i modelli l
 - Rete di sicurezza per tutti i server (stesso giorno, su richiesta del proprietario): la guardia (`_watchdog.py`), se il modello locale risponde senza la chiave, scrive la ricevuta `sigillo.local_model.open` **e ferma l'agente** (prima scriveva soltanto). Vale per Ollama e per gli altri server. Test: `test_door.py`, con una guardia vera e un agente vero.
 - Un server diverso da Ollama non lo avvia la porta: `init` scrive nel log il comando mancante ("avvia il modello sulla porta N+1"). Decisione del proprietario: bastano il comando nel terminale e la rete di sicurezza; nessun avvio automatico di LM Studio o altri.
 
+## Home pubblica nel nuovo disegno (2026-10-20)
+
+Su richiesta del titolare: applicare a sigillo la proposta di design ricevuta (landing scura e
+chiara). Resta dietro `SIGILLO_SITE_V2` (regola 11): solo anteprima per l'amministratore su
+`/ui/admin/site`, `/` solo con `all`. Nessuna dipendenza nuova.
+
+- **Cosa cambia** (`apps/server/src/http/site-v2.ts`): titolo «Prove what your AI did. When it
+  matters most.» / «Dimostra cosa ha fatto la tua AI. Quando conta di più.», riga di tre fatti
+  sotto i pulsanti, scheda del prodotto con la cronologia e il sigillo, sezioni «Il problema»,
+  «Quando nasce una contestazione», «Per chi è / per chi non è» e «Come funziona» in tre
+  passi. Restano le sezioni già esistenti (fascicolo, cosa prova, AI Act, collega, prezzi,
+  contatti), con i prezzi e i testi che c'erano.
+- **Cosa non c'è, di proposito**: «Trusted by» con i loghi e la citazione di un CTO (la
+  proposta li aveva; sigillo non ha questi clienti) e la voce «Pricing» come pagina a parte.
+  Il test `console-v2.test.ts` verifica che non compaiano.
+- **Correzione di un difetto già presente**: la classe `.btn` non aveva nessuno stile, quindi
+  i pulsanti della home nuova apparivano come semplici link. Ora ha le regole nel foglio di
+  stile della home. Il margine sinistro della sezione iniziale ora coincide con le altre.
+- **Il video della proposta non c'è**: nel repository c'è l'mp4 della demo ma la home non lo
+  serve; da decidere dove ospitarlo.
+- **Da decidere dal titolare**: «verificatore open source» compare ancora in alcuni punti
+  (fatti, FAQ, piè di pagina) ma il repository non ha un file `LICENSE`
+  (`mercato-europeo/COSA-MANCA-PER-VENDERE.md`, punto 9). La riga sotto i pulsanti ora dice
+  «Verifichi da solo / strumento a riga di comando».
+- Console e flusso «Collega»: non toccati in questa PR. La console V2 usa già gli stessi
+  colori; la pagina «Collega» offre già solo Python (file o righe da incollare).
+- Peso sul verificatore: nessuno.
+
