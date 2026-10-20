@@ -4041,3 +4041,16 @@ semplice per un non tecnico. Prima servivano otto passi tra portatile e server.
 - Nessuna dipendenza nuova (`age`, `rclone` erano già nella procedura). Verificatore: invariato.
 - **Da fare dal titolare**: aprire l'account di archiviazione e lanciare il comando sul server.
 - (2026-10-18) `attiva-backup-fuori-sede.sh` accetta anche il blocco base64 che le versioni recenti di `rclone authorize` stampano al posto del JSON semplice; passa a rclone solo il token. Un testo non valido è rifiutato con un messaggio chiaro. Test: `offsite-setup.test.ts` (5).
+
+## La porta per tutti i server di modelli locali (2026-10-19)
+
+Richiesta del proprietario: la stessa protezione di Ollama per tutti i modelli locali. Solo account amministratore (interruttore `SIGILLO_AGENT_PROTECTION`, predefinito `operator`); nessuna interfaccia nuova.
+
+- La porta (`door.py`) ora funziona su qualunque porta (`--port`) e scrive nelle ricevute il nome del server: `ollama` (11434), `lm-studio` (1234), `llama.cpp` (8080), `vllm` (8000), `jan` (1337). Tabella unica `_stdlib.LOCAL_SERVERS`.
+- `sigillo.init(local_model=1234)`: un numero al posto di `True` indica la porta di un altro server; l'SDK avvia la porta e il controllo della guardia su quell'indirizzo. SDK 0.7.0.
+- Il file riscritto (`agent-setup.ts`): un file che chiama `localhost:1234/8080/8000/1337` ottiene `local_model=<porta>` e la chiave di Sigillo al posto dei segnaposto (`lm-studio`, `not-needed`, `EMPTY`…); chiede l'SDK 0.7.
+- Limite onesto: la porta può avviare da sola solo Ollama. Gli altri server vanno avviati dal cliente già sulla porta successiva (LM Studio 1235, llama.cpp 8081, vLLM 8001); `--serve` per loro è rifiutato. Non provato con LM Studio, llama.cpp o vLLM veri, né su Windows: solo test con server finti.
+- Test: un caso in `test_door.py`, uno in `agent-setup.test.ts`. Peso sul verificatore: nessuno.
+- Rete di sicurezza per tutti i server (stesso giorno, su richiesta del proprietario): la guardia (`_watchdog.py`), se il modello locale risponde senza la chiave, scrive la ricevuta `sigillo.local_model.open` **e ferma l'agente** (prima scriveva soltanto). Vale per Ollama e per gli altri server. Test: `test_door.py`, con una guardia vera e un agente vero.
+- Un server diverso da Ollama non lo avvia la porta: `init` scrive nel log il comando mancante ("avvia il modello sulla porta N+1"). Decisione del proprietario: bastano il comando nel terminale e la rete di sicurezza; nessun avvio automatico di LM Studio o altri.
+

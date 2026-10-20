@@ -114,6 +114,9 @@ def main() -> None:
             now = model_state(config["probe"])
             if now == "open" and was != "open":
                 _say_open(config)
+                sys.stderr.write("sigillo: the local model answers without the sigillo key: ending the agent\n")
+                _end(config["parent"])
+                os._exit(0)
             was = now
         script = file_hash(config["script"]) if config["script"] is not None else None
         sdk = package_hash(directory)

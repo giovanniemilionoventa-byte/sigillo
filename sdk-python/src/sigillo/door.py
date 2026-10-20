@@ -1,8 +1,9 @@
-"""The door in front of a local model (Ollama and the like).
+"""The door in front of a local model (Ollama, LM Studio, llama.cpp, vLLM and the like).
 
     python -m sigillo.door --endpoint https://... --system-id ... --upstream http://127.0.0.1:11435 --serve
 
-listens where the agent expects the model (127.0.0.1:11434 by default), lets
+listens where the agent expects the model (127.0.0.1:11434 by default; `--port`
+names another, such as 1234 for LM Studio, 8080 for llama.cpp, 8000 for vLLM), lets
 through only requests that carry the system's sigillo key as their bearer
 token, and forwards them to the model, which is moved to the `--upstream`
 address. Every request it forwards becomes a receipt, written by this process
@@ -35,7 +36,7 @@ import urllib.request
 _NOT_FORWARDED = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "content-length", "host"}
 
 
-def _handler(upstream: str, token: str, tracer: object) -> type[http.server.BaseHTTPRequestHandler]:
+def _handler(upstream: str, token: str, tracer: object, server: str = "ollama") -> type[http.server.BaseHTTPRequestHandler]:
     from . import _stdlib
 
     _stdlib._tracer = tracer  # type: ignore[assignment]
@@ -71,7 +72,7 @@ def _handler(upstream: str, token: str, tracer: object) -> type[http.server.Base
             request = urllib.request.Request(url, data=body, method=self.command, headers=headers)
             name, attributes = _stdlib._url_attributes(url, body)
             if "llm.system" in attributes:
-                attributes["llm.system"] = "ollama"  # whatever address the model was moved to
+                attributes["llm.system"] = server  # whatever address the model was moved to
             failed: Exception | None = None
             try:
                 with _stdlib._span(name, attributes):
@@ -139,10 +140,18 @@ def serve_model(upstream: str) -> subprocess.Popen | None:
 
 _LOCAL = "http://127.0.0.1:11434"
 _MOVED = "http://127.0.0.1:11435"
+
+
+def _server_name(port: int) -> str:
+    from . import _stdlib
+
+    return _stdlib.LOCAL_SERVERS.get(port, "local-model")
 _started: list[subprocess.Popen] = []
 
 
-def ensure(endpoint: str, api_key: str, system_id: str, local: str = _LOCAL, upstream: str = _MOVED) -> str:
+def ensure(endpoint: str, api_key: str, system_id: str, local: str = _LOCAL, upstream: str = _MOVED, serve: bool = True) -> str:
+    # `serve` is false for a server other than Ollama: the door cannot start it,
+    # so whoever runs the agent starts it already at `upstream`.
     """Starts the door, and Ollama behind it, for as long as this process runs.
 
     Called by `sigillo.init(local_model=True)`, so that the agent's file is the
@@ -159,7 +168,9 @@ def ensure(endpoint: str, api_key: str, system_id: str, local: str = _LOCAL, ups
         return "ollama open"
     port = urllib.parse.urlsplit(local).port or 11434
     command = [sys.executable, "-m", "sigillo.door", "--endpoint", endpoint, "--system-id", system_id]
-    command += ["--upstream", upstream, "--port", str(port), "--serve", "--with-parent"]
+    command += ["--upstream", upstream, "--port", str(port), "--with-parent"]
+    if serve:
+        command.append("--serve")
     try:
         process = subprocess.Popen(
             command,
@@ -188,11 +199,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--upstream", required=True, help="where the model now listens, e.g. http://127.0.0.1:11435")
     parser.add_argument("--serve", action="store_true", help="also start 'ollama serve' at the upstream address")
     parser.add_argument("--with-parent", action="store_true", help="end when standard input closes")
-    parser.add_argument("--port", type=int, default=11434, help="where the agent expects the model")
+    parser.add_argument("--port", type=int, default=11434, help="where the agent expects the model (default: the one of Ollama)")
     args = parser.parse_args(argv)
     if not args.api_key:
         sys.exit("sigillo door: the key is missing (--api-key or SIGILLO_API_KEY)")
 
+    server = _server_name(args.port)
+    if args.serve and server not in ("ollama", "local-model"):
+        sys.exit("sigillo door: --serve starts only ollama; start the model yourself at the --upstream address")
     model = serve_model(args.upstream.rstrip("/")) if args.serve else None
 
     import sigillo
@@ -202,7 +216,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     tracer = tracing.provider.get_tracer("sigillo.door")  # type: ignore[attr-defined]
     server = http.server.ThreadingHTTPServer(
-        ("127.0.0.1", args.port), _handler(args.upstream.rstrip("/"), args.api_key, tracer)
+        ("127.0.0.1", args.port), _handler(args.upstream.rstrip("/"), args.api_key, tracer, server)
     )
     print(f"sigillo door: 127.0.0.1:{args.port} -> {args.upstream}", flush=True)
     if args.with_parent:

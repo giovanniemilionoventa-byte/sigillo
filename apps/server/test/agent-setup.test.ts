@@ -496,6 +496,18 @@ describe("agent protection: a model on the same computer", () => {
     expect(cloud).toContain("< (0, 4):");
   });
 
+  it("recognises the other local servers by their usual address, and names the port to the SDK", () => {
+    const lmStudio = 'from openai import OpenAI\nclient = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")\n';
+    const out = text(lmStudio, { ...SETTINGS, protection: true });
+    expect(out).toContain('api_key="sigillo_abc_def"');
+    expect(out).toContain("    local_model=1234,");
+    expect(out).toContain("< (0, 7):");
+    expect(out).not.toContain("OLLAMA_API_KEY");
+    expect(text(lmStudio.replace("1234", "8080"), { ...SETTINGS, protection: true })).toContain("local_model=8080,");
+    expect(text(lmStudio, { ...SETTINGS, protection: false })).not.toContain("local_model");
+    if (python) expect(parses(out)).toBe(true);
+  });
+
   it("does nothing about it where protection is off (rule 11)", () => {
     const out = text(OLLAMA, { ...SETTINGS, protection: false });
     expect(out).toContain('api_key="ollama"');

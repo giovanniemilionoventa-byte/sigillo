@@ -105,6 +105,28 @@ class DoorTest(unittest.TestCase):
         self.assertEqual(spans[0]["llm.system"], "ollama")
         self.assertNotIn(b"SEGRETO", b"".join(_Capture.bodies))
 
+    def test_another_local_server_is_named_in_its_receipts_and_is_not_started_by_the_door(self) -> None:
+        from sigillo import _stdlib
+
+        upstream = f"http://127.0.0.1:{self.model.server_address[1]}"
+        tracer = self.tracing.provider.get_tracer("sigillo.door")
+        lm_studio = http.server.ThreadingHTTPServer(("127.0.0.1", 0), door._handler(upstream, KEY, tracer, "lm-studio"))
+        threading.Thread(target=lm_studio.serve_forever, daemon=True).start()
+        self.addCleanup(lambda: (lm_studio.shutdown(), lm_studio.server_close()))
+        base = f"http://127.0.0.1:{lm_studio.server_address[1]}"
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {KEY}"}
+        body = json.dumps({"model": "qwen", "messages": [{"role": "user", "content": "SEGRETO"}]}).encode()
+        urllib.request.urlopen(urllib.request.Request(base + "/v1/chat/completions", body, headers)).read()
+        spans = self._spans(1)
+        self.assertEqual(spans[0]["llm.system"], "lm-studio")
+        self.assertEqual(door._server_name(1234), "lm-studio")
+        self.assertEqual(door._server_name(8080), "llama.cpp")
+        self.assertEqual(door._server_name(8000), "vllm")
+        self.assertEqual(_stdlib._provider_of("localhost", 1234), "lm-studio")
+        with self.assertRaises(SystemExit):
+            door.main(["--endpoint", "http://127.0.0.1:9", "--system-id", "x", "--api-key", KEY,
+                       "--upstream", "http://127.0.0.1:1235", "--port", "1234", "--serve"])
+
     def test_without_the_key_or_with_another_nothing_reaches_the_model(self) -> None:
         for token in (None, "not-the-key", ""):
             with self.assertRaises(urllib.error.HTTPError) as caught:
@@ -241,6 +263,29 @@ class DoorTest(unittest.TestCase):
         sent = json.loads(_Capture.bodies[0])
         self.assertEqual(sent["action"], {"kind": "decision", "name": "sigillo.local_model.open"})
         self.assertEqual(sent["outcome"], "error")
+
+    def test_the_guard_ends_the_agent_when_the_local_model_answers_without_the_key(self) -> None:
+        import subprocess
+        import sys
+
+        from sigillo import _watchdog
+
+        _Capture.bodies = []
+        agent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(agent.kill)
+        config = {
+            "period": 0.1, "probe": f"http://127.0.0.1:{self.model.server_address[1]}",  # open: no key asked
+            "script": None, "script_hash": None, "sdk_hash": _watchdog.package_hash(
+                __import__("os").path.dirname(_watchdog.__file__)),
+            "parent": agent.pid, "receipts": f"http://127.0.0.1:{self.sigillo.server_address[1]}/api/v1/receipts",
+            "api_key": KEY,
+        }
+        guard = subprocess.Popen([sys.executable, "-I", _watchdog.__file__], stdin=subprocess.PIPE)
+        self.addCleanup(guard.kill)
+        guard.stdin.write((json.dumps(config) + "\n").encode())
+        guard.stdin.flush()
+        agent.wait(timeout=15)  # ended by the guard
+        self.assertEqual(json.loads(_Capture.bodies[0])["action"]["name"], "sigillo.local_model.open")
 
 
 if __name__ == "__main__":

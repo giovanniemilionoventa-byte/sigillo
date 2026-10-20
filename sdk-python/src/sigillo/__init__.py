@@ -83,12 +83,17 @@ from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
 from . import _gateway, _text, _watchdog
 
 __all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"]
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 _LOG = _logging.getLogger("sigillo")
 _TRACES_PATH = "/v1/traces"
 _HEARTBEAT_PATH = "/api/v1/heartbeat"
 _LOCAL_MODEL = "http://127.0.0.1:11434"
+
+
+def _local_port(local_model: object) -> int:
+    """`local_model=True` means Ollama's port; a number names the port of another local server."""
+    return local_model if isinstance(local_model, int) and local_model is not True else 11434
 # What `init` tries when `instrument=` is not given. "stdlib" (see _stdlib.py)
 # is not among them: it hooks urllib and file writing in the whole process, so
 # it is turned on only by naming it.
@@ -147,7 +152,7 @@ class _Heartbeat:
         strict: bool = False,
         on_halt: _Callable[[str], None] | None = None,
         guard_seconds: float = 5.0,
-        local_model: bool = False,
+        local_model: bool | int = False,
     ) -> None:
         self._url = url
         self._local_model = local_model
@@ -192,7 +197,7 @@ class _Heartbeat:
             "period": self._guard_period,
             # Where the local model is expected (the door, see door.py); the
             # guard says so if it answers without the key.
-            "probe": _LOCAL_MODEL if self._local_model else None,
+            "probe": _LOCAL_MODEL.replace("11434", str(_local_port(self._local_model))) if self._local_model else None,
             "receipts": self._url[: -len(_HEARTBEAT_PATH)] + "/api/v1/receipts",
         }
         try:
@@ -658,7 +663,7 @@ def init(
     show_sent: bool = False,
     strict: bool = False,
     on_halt: _Callable[[str], None] | None = None,
-    local_model: bool = False,
+    local_model: bool | int = False,
 ) -> Tracing:
     """Point OpenTelemetry at a sigillo server and turn on the instrumentations.
 
@@ -728,7 +733,10 @@ def init(
             Ollama behind it start here, for as long as the agent runs, unless
             the door is already there; the guard process checks at every round that the model
             does not answer at 127.0.0.1:11434 without the key, and writes a
-            `sigillo.local_model.open` receipt when it does.
+            `sigillo.local_model.open` receipt when it does. A port number
+            instead of True (1234 LM Studio, 8080 llama.cpp, 8000 vLLM) does the
+            same for that server, which must be started on the next port up
+            (the door cannot start it); only Ollama is started by the door.
         on_halt: replaces how strict mode stops the agent: called once, from
             the heartbeat's thread, with the reason as a sentence. For a
             program that wants to shut down cleanly in its own way.
@@ -783,16 +791,22 @@ def init(
         # The door, and Ollama behind it, start with the agent's file: one step.
         from . import door as _door
 
-        started = _door.ensure(endpoint, api_key, system_id)
+        port = _local_port(local_model)
+        started = _door.ensure(
+            endpoint, api_key, system_id, local=f"http://127.0.0.1:{port}", upstream=f"http://127.0.0.1:{port + 1}",
+            serve=port == 11434,
+        )
         if started == "ollama open":
-            _LOG.warning("sigillo: Ollama is already open: close it and start the agent again, so that sigillo can open it")
+            _LOG.warning("sigillo: the local model is already open on port %d: the agent will be ended; close the model and start the agent again, so that sigillo can open it", port)
+        elif started == "door" and port != 11434:
+            _LOG.warning("sigillo: the door waits on port %d; start your model on port %d (the door cannot start it)", port, port + 1)
         elif started == "failed":
             _LOG.warning("sigillo: the door in front of the local model did not start")
     if local_model and "stdlib" in instrumented:
         # The calls to the local model carry the key, and are recorded by the door.
         from . import _stdlib
 
-        _stdlib.use_door(api_key)
+        _stdlib.use_door(api_key, _local_port(local_model))
 
     heartbeat = _Heartbeat(
         _heartbeat_endpoint(traces_endpoint), api_key, heartbeat_seconds, show=show_sent, strict=strict, on_halt=on_halt,
