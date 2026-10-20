@@ -5,6 +5,7 @@ import type { StoredExport } from "../backup/daily-export.js";
 import { connectionStatus } from "../connection/watch.js";
 import { CATALOG, PROVIDERS } from "../gateway/catalog.js";
 import { discloseFields } from "./history.js";
+import { italianOffered } from "./locale.js";
 import {
   archivedButShown,
   archivedPill,
@@ -703,8 +704,8 @@ ${notices(view.extra)}
 ${quota}
 <section class="section" aria-labelledby="aspetto"><h2 id="aspetto">${escape(t.appearance)}</h2>
 <form method="post" action="/ui/impostazioni/tema" class="segmented" aria-label="${escape(t.themeLabel)}">${themes}</form></section>
-<section class="section" aria-labelledby="lingua"><h2 id="lingua">${escape(UI.languageLabel)}</h2>
-${languageSwitch("segmented", "/ui/impostazioni")}</section>
+${italianOffered() ? `<section class="section" aria-labelledby="lingua"><h2 id="lingua">${escape(UI.languageLabel)}</h2>
+${languageSwitch("segmented", "/ui/impostazioni")}</section>` : ""}
 ${view.dailyExport === null ? "" : dailyExportSection(view.dailyExport)}
 <section class="section" aria-labelledby="registro-amministrativo"><h2 id="registro-amministrativo">${escape(t.adminLog)}${
     view.log.length === 0 ? "" : `<a class="end" href="/ui/impostazioni/registro">${escape(t.adminLogAll)}</a>`

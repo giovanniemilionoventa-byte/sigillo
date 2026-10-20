@@ -14,6 +14,17 @@ export type Language = "en" | "it";
 
 export const DEFAULT_LANGUAGE: Language = "en";
 
+/**
+ * Whether Italian can be chosen at all. The product is English only for now
+ * (project owner, 2026-10-20): unless SIGILLO_ITALIAN=1, no switch is shown
+ * and neither the cookie nor the browser's Accept-Language picks a language.
+ * The Italian text stays in the tree, and the test run turns it on
+ * (vitest.config.ts) so it stays tested until it is wanted back.
+ */
+export function italianOffered(): boolean {
+  return process.env["SIGILLO_ITALIAN"] === "1";
+}
+
 /** The cookie that remembers the reader's choice: "en" or "it". Not a secret, not a session. */
 export const LANGUAGE_COOKIE = "sigillo_lang";
 
@@ -50,6 +61,7 @@ export function isLanguage(value: unknown): value is Language {
  * test written against the Italian text makes from inside withLanguage.
  */
 export function languageFor(chosen: string | undefined, acceptLanguage: string | undefined, fallback = DEFAULT_LANGUAGE): Language {
+  if (!italianOffered()) return fallback;
   if (isLanguage(chosen)) return chosen;
   if (acceptLanguage === undefined) return fallback;
   const ranked = acceptLanguage
