@@ -176,8 +176,8 @@ describe("Stato, Azioni and Prove", () => {
   it("uses the new palette, and no state is told by colour alone", async () => {
     await start("operator");
     const body = (await get(OPERATOR, "/ui")).body;
-    expect(body).toContain("--action: #2846a8");
-    expect(THEME_V2).toContain("--ok: #6ccb88");
+    expect(body).toContain("--action: #006df9");
+    expect(THEME_V2).toContain("--ok: #3fbf6e");
     // Every sign in the sidebar carries a word for a screen reader.
     expect(body).toMatch(/<span class="sign (green|yellow|red|neutral)">[\s\S]*?<span class="sr">/);
   });
@@ -388,7 +388,7 @@ describe("the redesigned public home (SIGILLO_SITE_V2)", () => {
     expect(page.statusCode).toBe(200);
     expect(page.body).toContain("Dimostra cosa ha fatto la tua AI. Quando conta di più.");
     expect(page.body).toContain("Pensato per chi deve dimostrare");
-    expect(page.body).toContain("--action: #2846a8");
+    expect(page.body).toContain("--action: #006df9");
     expect(page.body).not.toContain("#1a73e8");
     expect(page.body).not.toContain("Pronto per l'AI Act");
     expect(page.body).toMatch(/<script src="\/site\.js" defer><\/script>/);

@@ -4134,3 +4134,14 @@ caricato, senza spunta. Ma il testo diceva «there is nothing more to secure her
 fosse protetto. Ora, con la protezione attiva, dice che sigillo lo protegge già e come; senza
 protezione resta il testo di prima. Il test controlla anche che il file scaricato abbia
 `strict=True`, `local_model=True` e la chiave di sigillo al posto di quella finta.
+
+### Nuovo design per tutti (2026-10-20)
+
+Su indicazione di Giovanni la console, la home e il resto del sito (blog, /verify, /privacy)
+prendono l'aspetto della pagina proposta: fondo quasi nero, bordi sottili, un solo blu per
+l'azione principale, logo SIGILLO in maiuscolo, schede con angoli di 8px, i passi della home con
+icone e frecce. Scuro predefinito per chi non ha scelto un tema. Per tutti, amministratore e
+clienti, senza interruttori. `style-v2.ts`, `design/tokens-v2.json`, `site-v2.ts`, `site.ts`,
+`ui.ts`; test aggiornati per la nuova tavolozza e il tema scuro predefinito.
+
+Verificatore: invariato.
