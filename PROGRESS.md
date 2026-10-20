@@ -4126,6 +4126,15 @@ Su segnalazione del titolare, con l'agente di prova su Llama 3.2 3B in Ollama:
 
 Verificatore: invariato.
 
+### Modello locale: la pagina dice che è già protetto (2026-10-20)
+
+La protezione di un modello locale (la porta davanti a Ollama, la modalità rigorosa, la
+guardia che segnala il modello rimasto aperto) esisteva già e si applica da sola al file
+caricato, senza spunta. Ma il testo diceva «there is nothing more to secure here», come se non
+fosse protetto. Ora, con la protezione attiva, dice che sigillo lo protegge già e come; senza
+protezione resta il testo di prima. Il test controlla anche che il file scaricato abbia
+`strict=True`, `local_model=True` e la chiave di sigillo al posto di quella finta.
+
 ### Nuovo design per tutti (2026-10-20)
 
 Su indicazione di Giovanni la console, la home e il resto del sito (blog, /verify, /privacy)
