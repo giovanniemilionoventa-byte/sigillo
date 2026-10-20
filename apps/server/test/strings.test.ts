@@ -213,6 +213,9 @@ describe("modelWhere", () => {
   it("says a local model runs locally, names any other provider, and says nothing when unknown", () => {
     expect(modelWhere("ollama")).toBe("in locale, con ollama");
     expect(modelWhere("vLLM")).toBe("in locale, con vLLM");
+    // What the SDK names a local server the openai library called (0.8 on).
+    expect(modelWhere("lm-studio")).toBe("in locale, con lm-studio");
+    expect(modelWhere("local")).toBe("in locale, con local");
     expect(modelWhere("openai")).toBe("openai");
     expect(modelWhere(null)).toBeNull();
   });

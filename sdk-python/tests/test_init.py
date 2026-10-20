@@ -754,6 +754,94 @@ class SigilloInitTest(unittest.TestCase):
         )
 
 
+class _FakeChatServer(http.server.BaseHTTPRequestHandler):
+    """A model server on this computer that speaks OpenAI's API, as Ollama does."""
+
+    def do_POST(self):  # noqa: N802 - the name is fixed by the base class
+        self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        body = json.dumps(
+            {
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "llama3.2:3b",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "accesso"}, "finish_reason": "stop"}],
+            }
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args):
+        pass
+
+
+_OPENAI_READY = (
+    importlib.util.find_spec("openai") is not None
+    and importlib.util.find_spec("openinference.instrumentation.openai") is not None
+)
+
+
+class LocalModelProviderTest(unittest.TestCase):
+    """The openai library pointed at a model on this computer: the receipt must
+    not call it OpenAI. The OpenAI instrumentation names no provider for an
+    address it does not know, and says llm.system "openai"; sigillo adds the
+    local server's name as llm.provider, which the server reads first."""
+
+    def test_names_the_servers_on_this_computer_and_nothing_else(self) -> None:
+        self.assertEqual(sigillo._local_server("localhost", 11434), "ollama")
+        self.assertEqual(sigillo._local_server("127.0.0.1", 1234), "lm-studio")
+        self.assertEqual(sigillo._local_server("127.0.0.1", 8080), "llama.cpp")
+        self.assertEqual(sigillo._local_server("::1", 5000), "local")
+        self.assertEqual(sigillo._local_server("ollama", 11434), "ollama")
+        self.assertIsNone(sigillo._local_server("api.openai.com", None))
+        self.assertIsNone(sigillo._local_server("api.mistral.ai", 443))
+
+    @unittest.skipUnless(_OPENAI_READY, "openai and its OpenInference instrumentation are not installed")
+    def test_a_call_to_a_local_model_through_the_openai_library_is_not_labelled_openai(self) -> None:
+        import asyncio
+
+        import openai
+        from openinference.instrumentation.openai import OpenAIInstrumentor
+
+        _Capture.bodies = []
+        collector = http.server.HTTPServer(("127.0.0.1", 0), _Capture)
+        model = http.server.HTTPServer(("127.0.0.1", 0), _FakeChatServer)
+        for server in (collector, model):
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            self.addCleanup(server.server_close)
+            self.addCleanup(server.shutdown)
+        # Another test may have instrumented the library for a provider of its own.
+        OpenAIInstrumentor().uninstrument()
+        self.addCleanup(OpenAIInstrumentor().uninstrument)
+        tracing = sigillo.init(
+            endpoint=f"http://127.0.0.1:{collector.server_address[1]}", api_key="k", system_id="s", instrument=["openai"]
+        )
+        self.addCleanup(tracing.shutdown)
+
+        address = f"http://127.0.0.1:{model.server_address[1]}/v1"
+        messages = [{"role": "user", "content": "Non riesco ad accedere al portale."}]
+        reply = openai.OpenAI(base_url=address, api_key="ollama").chat.completions.create(model="llama3.2:3b", messages=messages)
+        self.assertEqual(reply.choices[0].message.content, "accesso")
+
+        async def ask() -> None:
+            await openai.AsyncOpenAI(base_url=address, api_key="ollama").chat.completions.create(model="llama3.2:3b", messages=messages)
+
+        asyncio.run(ask())
+        tracing.flush()
+
+        spans = [span for body in _Capture.bodies for span in _all_spans(body)]
+        self.assertEqual(len(spans), 2)
+        for span in spans:
+            attributes = _string_attributes(span.attributes)
+            self.assertEqual(attributes["llm.model_name"], "llama3.2:3b")
+            # Not on this test's port of choice, so "local" rather than "ollama".
+            self.assertEqual(attributes["llm.provider"], "local")
+
+
 class HeartbeatTest(unittest.TestCase):
     """The heartbeat: start once, a beat every interval, stop on shutdown,
     all for one session, with the system's key, beside the traces URL.

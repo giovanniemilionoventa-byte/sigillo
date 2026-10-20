@@ -27,19 +27,22 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   // file calls it with the system's sigillo key, which the door
   // (python -m sigillo.door) asks for and Ollama ignores, so the file works
   // with or without the door. The guard is told to watch the model's address.
-  var local = false;
+  // A model on this computer is found with or without protection: through
+  // the gateway, the openai library that calls it is not a cloud model.
+  var onComputer = false;
   var localPort = 11434;
-  if (settings.protection && (/\\b11434\\b/.test(source) || /^\\s*(from|import)\\s+ollama\\b/m.test(source))) {
-    local = true;
-  } else if (settings.protection) {
+  if (/\\b11434\\b/.test(source) || /^\\s*(from|import)\\s+ollama\\b/m.test(source)) {
+    onComputer = true;
+  } else {
     // The other usual local servers, found by the address they are called at
     // (LM Studio 1234, llama.cpp 8080, vLLM 8000, Jan 1337).
     var other = /(?:localhost|127\\.0\\.0\\.1):(1234|8080|8000|1337)\\b/.exec(source);
     if (other) {
-      local = true;
+      onComputer = true;
       localPort = Number(other[1]);
     }
   }
+  var local = Boolean(settings.protection) && onComputer;
   if (local) {
     source = source.replace(/\\bapi_key\\s*=\\s*(["'])(ollama|lm-studio|not-needed|sk-no-key-required|EMPTY|none)\\1/gi, "api_key=" + JSON.stringify(settings.key));
     lines = source.slice(bom.length).split(/\\r?\\n/);
@@ -101,11 +104,12 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
       };
     });
     // The openai library also calls the providers that speak OpenAI's API:
-    // next to another provider's address, it is that provider's client. So
-    // is an "sk-" key, in a file that names one such provider and not OpenAI.
+    // next to another provider's address, it is that provider's client, and
+    // next to a model on this computer, that model's. So is an "sk-" key, in
+    // a file that names one such provider and not OpenAI.
     var openai = signs.openai;
     if (openai !== undefined) {
-      openai.library = openai.library && !catalog.some(function (entry) {
+      openai.library = openai.library && !onComputer && !catalog.some(function (entry) {
         return entry.name !== "openai" && signs[entry.name] !== undefined && signs[entry.name].address;
       });
     }
@@ -165,6 +169,9 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   if (imported("langchain\\\\w*|langgraph\\\\w*")) frameworks.push("langchain");
   if (imported("crewai\\\\w*")) frameworks.push("crewai");
   if (frameworks.length === 0 && imported("openai")) frameworks.push("openai");
+  // The OpenAI instrumentation names no provider for a model on this
+  // computer; the SDK names it from 0.8 on, so the receipt does not say OpenAI.
+  if (onComputer && frameworks.indexOf("openai") >= 0) sdkMinor = 8;
 
   // An agent with no framework at all (urllib to reach its model, pathlib to
   // write its files) has no library to record it from. Where the account is
@@ -212,7 +219,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   // The file installs what it needs by itself, the first time it runs, with
   // the same Python that runs it: downloading it is the whole installation. An
   // SDK installed earlier but older than 0.4 (0.5 for a local model, 0.7 for one that is not Ollama, 0.6 for
-  // mistralai through the gateway) is replaced the same way, and the
+  // mistralai through the gateway, 0.8 for the openai library on a local model) is replaced the same way, and the
   // file then runs itself again, so that nothing from the old one stays
   // loaded. SIGILLO_SETUP_DONE stops that from repeating if the install did not help.
   var extras = frameworks.length > 0 ? "[" + frameworks.join(",") + "]" : "";
@@ -262,6 +269,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     install: 'pip install "' + requirement + '"',
     providers: providers,
     labels: labels,
+    localPort: onComputer ? localPort : 0,
   };
 }`;
 
@@ -274,7 +282,16 @@ ${AGENT_SETUP_SOURCE}
   var done = document.getElementById("sigillo-agent-done");
   var problem = document.getElementById("sigillo-agent-problem");
   var choice = document.getElementById("sigillo-agent-choice");
+  var drop = box.querySelector(".drop");
   box.classList.add("ready");
+  // The chosen file stays in the box, by name, with the Python icon: the
+  // input itself is emptied after each read, so that the same file can be
+  // chosen again, and would say that no file is selected.
+  var picked = function (name) {
+    drop.classList.add("picked");
+    drop.querySelector("strong").textContent = name;
+    drop.querySelector("small").textContent = box.dataset.another;
+  };
   var show = function (element, text) {
     done.hidden = true;
     problem.hidden = true;
@@ -306,6 +323,7 @@ ${AGENT_SETUP_SOURCE}
       show(problem, box.dataset.notPython);
       return;
     }
+    picked(file.name);
     var text = await file.text();
     var plain = sigilloAgentSetup(text, base);
     if (plain.status === "already") {
@@ -330,9 +348,12 @@ ${AGENT_SETUP_SOURCE}
     problem.hidden = true;
     tick.checked = false;
     label.hidden = names.length === 0;
+    var servers = { 11434: "Ollama", 1234: "LM Studio", 8080: "llama.cpp", 8000: "vLLM", 1337: "Jan" };
     document.getElementById("sigillo-agent-analysis").textContent = names.length > 0
       ? box.dataset.analysisCloud.replace("{providers}", names.map(function (name) { return routed.labels[name]; }).join(", "))
-      : box.dataset.analysisOther;
+      : routed.localPort > 0
+        ? box.dataset.analysisLocal.replace("{server}", servers[routed.localPort])
+        : box.dataset.analysisOther;
     choice.hidden = false;
     document.getElementById("sigillo-agent-download").onclick = function () {
       var result = tick.checked ? routed : plain;
