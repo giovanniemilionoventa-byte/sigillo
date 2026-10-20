@@ -887,6 +887,7 @@ export function registerSite(app: FastifyInstance, options: SiteOptions): void {
             back: "/",
             hasBlog: posts.length > 0,
             endpoint: options.endpoint,
+            media,
             ...(options.contactEmail === undefined ? {} : { contactEmail: options.contactEmail }),
           }),
         ),

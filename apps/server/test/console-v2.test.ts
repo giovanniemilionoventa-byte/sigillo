@@ -10,6 +10,7 @@ import type { Viewer } from "../src/auth/tenancy.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { buildServer } from "../src/http/server.js";
+import { siteV2Page } from "../src/http/site-v2.js";
 import { THEME_V2 } from "../src/http/style-v2.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
 import { createTestSigner } from "./helpers/signer.js";
@@ -371,6 +372,16 @@ describe("Amministrazione, Account and the pack reader", () => {
 });
 
 describe("the redesigned public home (SIGILLO_SITE_V2)", () => {
+  it("is dark unless the reader chose light, and shows the demo video where it is served", () => {
+    const view = { language: "en" as const, back: "/", hasBlog: false, endpoint: "https://example.test", media: new Set(["demo-en.mp4", "demo-en.vtt"]) };
+    expect(siteV2Page({ ...view, theme: "system" })).toContain('data-theme="dark"');
+    expect(siteV2Page({ ...view, theme: "light" })).toContain('data-theme="light"');
+    const page = siteV2Page({ ...view, theme: "system" });
+    expect(page).toContain('<source src="/media/demo-en.mp4" type="video/mp4">');
+    expect(page).toContain('src="/media/demo-en.vtt"');
+    expect(siteV2Page({ ...view, theme: "system", media: new Set() })).not.toContain("<video");
+  });
+
   it("is previewed for the operator alone, in both languages, with the same marks as the console", async () => {
     await startFull();
     const page = await get(OPERATOR, "/ui/admin/site");
