@@ -4082,3 +4082,11 @@ chiara). Resta dietro `SIGILLO_SITE_V2` (regola 11): solo anteprima per l'ammini
   colori; la pagina «Collega» offre già solo Python (file o righe da incollare).
 - Peso sul verificatore: nessuno.
 
+### Home nuova aperta a tutti (2026-10-20)
+
+Il titolare ha confermato la home nuova e ha chiesto di aprirla a tutti: `docker-compose.yml`
+ora ha `SIGILLO_SITE_V2` con valore di base `all`, così `/` serve la home nuova. Il valore di base
+nel codice resta `operator` (regola 11, per le funzioni future). Per tornare indietro basta
+`SIGILLO_SITE_V2=operator` nel `.env` del server, che vince sul compose. Serve riavviare lo
+stack perché abbia effetto.
+
