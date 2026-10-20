@@ -4100,3 +4100,8 @@ sottotitoli e locandina del sito di prima, solo dove sono serviti), tema scuro q
 lettore non ha scelto «chiaro», fondo quasi nero come nella proposta, riga dei tre fatti su tre
 colonne, tolti i tre link sotto di essa. Test in `console-v2.test.ts`. Verificatore: invariato.
 
+
+
+## Home: collegare l'agente e FAQ (2026-10-20)
+
+La sezione "Collegare l'agente" della home ha ora due colonne: tre passi a sinistra, i comandi in un riquadro a destra. Le FAQ sono una sezione propria dopo i prezzi. Solo `site-v2.ts`, circa +40 righe nella pagina.

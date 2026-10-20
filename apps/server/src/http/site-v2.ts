@@ -30,7 +30,8 @@ interface Copy {
   deliver: { h2: string; story: string[]; contents: string[]; sample: string; verify: string };
   proves: { h2: string; yes: string; no: string; yesLines: string[]; noLines: string[]; see: string; seeText: string; facts: [string, string][] };
   aiAct: { h2: string; rows: { art: string; what: string; how: string }[]; honest: string };
-  connect: { h2: string; steps: string[]; or: string; where: string; copy: string; copied: string };
+  connect: { eyebrow: string; h2: string; lead: string; steps: [string, string][]; or: string; where: string; copy: string; copied: string };
+  faq: { eyebrow: string; h2: string; lead: string };
   pricing: { h2: string; plans: { name: string; price: string; lines: string[]; cta: string; note?: string }[]; unit: string; faq: { q: string; a: string }[] };
   contact: { h2: string; button: string; address: string };
   footer: { product: string; receivers: string; company: string; format: string; privacy: string; about: string; legal: string };
@@ -122,9 +123,11 @@ const IT: Copy = {
     honest: "Da solo non rende conforme un sistema: dipende da cosa fa la tua AI e da come la usi.",
   },
   connect: {
-    h2: "Collegare l'agente: un file",
-    steps: ["Carica il file .py del tuo agente nella console", "Riscaricalo: sigillo è già dentro", "Avvialo dove gira di solito"],
-    or: "oppure, a mano",
+    eyebrow: "Collegare l'agente",
+    h2: "Un file, nessun lavoro in più",
+    lead: "Non cambi il codice del tuo agente: la console aggiunge le righe di sigillo al file.",
+    steps: [["Carica", "Il file .py del tuo agente, nella console."], ["Riscarica", "Il file è lo stesso, con sigillo già dentro."], ["Avvia", "Dove gira di solito: da quel momento ogni azione ha la sua ricevuta."]],
+    or: "Preferisci a mano?",
     where: "Sul server dove gira l'agente",
     copy: "Copia",
     copied: "Copiato",
@@ -144,6 +147,7 @@ const IT: Copy = {
       { q: "Posso verificare senza fidarmi di voi?", a: "Sì: il fascicolo si controlla nel tuo browser, con il verificatore open source." },
     ],
   },
+  faq: { eyebrow: "Domande frequenti", h2: "Prima di scriverci", lead: "Le risposte brevi. Per il resto, scrivici." },
   contact: { h2: "Domande, un pilota, una demo per il tuo team?", button: "Contattaci", address: "scrivi a" },
   footer: { product: "Prodotto", receivers: "Per chi riceve un fascicolo", company: "Azienda", format: "Formato delle ricevute", privacy: "Privacy", about: "Chi siamo", legal: "© 2026 [Ragione sociale] · P.IVA [P.IVA] · [Sede]" },
 };
@@ -234,9 +238,11 @@ const EN: Copy = {
     honest: "On its own it does not make a system compliant: that depends on what your AI does and how you use it.",
   },
   connect: {
-    h2: "Connecting the agent: one file",
-    steps: ["Upload your agent's .py file in the console", "Download it again: sigillo is already inside", "Run it where it usually runs"],
-    or: "or, by hand",
+    eyebrow: "Connecting the agent",
+    h2: "One file, no extra work",
+    lead: "You do not change your agent's code: the console adds the sigillo lines to the file.",
+    steps: [["Upload", "Your agent's .py file, in the console."], ["Download", "The same file, with sigillo already inside."], ["Run", "Where it usually runs: from then on every action has its receipt."]],
+    or: "Prefer to do it by hand?",
     where: "On the server where the agent runs",
     copy: "Copy",
     copied: "Copied",
@@ -256,6 +262,7 @@ const EN: Copy = {
       { q: "Can I verify without trusting you?", a: "Yes: the pack is checked in your browser, with the open-source verifier." },
     ],
   },
+  faq: { eyebrow: "FAQ", h2: "Before you write to us", lead: "The short answers. For the rest, write to us." },
   contact: { h2: "Questions, a pilot, a demo for your team?", button: "Contact us", address: "write to" },
   footer: { product: "Product", receivers: "For whoever receives a pack", company: "Company", format: "Receipt format", privacy: "Privacy", about: "About", legal: "© 2026 [Company name] · VAT [VAT no.] · [Address]" },
 };
@@ -333,7 +340,19 @@ body { background: var(--canvas); }
 .s-price { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .s-plan { display: flex; flex-direction: column; gap: 12px; }
 .s-plan b { font-size: 24px; line-height: 30px; }
+.s-split.s-top { align-items: start; }
+.s-flow { list-style: none; padding: 0; margin: 28px 0 0; display: grid; gap: 14px; }
+.s-flow li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 14px; align-items: start; }
+.s-flow .num { width: 28px; height: 28px; border-radius: 999px; border: 1.5px solid var(--label); display: grid; place-items: center; font-size: 13px; font-weight: 600; }
+.s-flow b { display: block; font-size: 17px; }
+.s-flow span span { color: var(--secondary); }
+.s-term { display: grid; gap: 12px; }
+.s-term .t-meta { margin: 0; }
+.s-code { position: relative; }
+.s-code pre { margin: 0; padding: 18px 88px 18px 18px; background: var(--code); color: var(--on-code); border-radius: 10px; overflow-x: auto; }
+.s-code .copy { position: absolute; top: 10px; right: 10px; }
 .s-faq details { border-top: 1px solid var(--separator); padding: 14px 0; }
+.s-faq details:last-child { border-bottom: 1px solid var(--separator); }
 .s-faq summary { cursor: pointer; font-weight: 600; }
 .s-band { background: var(--action); color: var(--on-action); padding: 56px 0; text-align: center; }
 .s-band h2 { margin: 0 auto 20px; color: inherit; }
@@ -370,7 +389,7 @@ export function siteV2Page(view: { language: Language; contactEmail?: string; ba
       : kind === "proof"
         ? `<span class="sign ink">${PROOF_ICONS.full}<span>${escape(answer)}</span></span>`
         : `<span>${escape(answer)}</span>`;
-  const code = (text: string): string => `<pre class="mono" style="margin:0;padding:16px;background:var(--code);color:var(--on-code);border-radius:10px;overflow-x:auto">${escape(text)}</pre><button type="button" class="copy button" hidden data-copied="${escape(c.connect.copied)}">${escape(c.connect.copy)}</button>`;
+  const code = (text: string): string => `<div class="s-code"><pre class="mono">${escape(text)}</pre><button type="button" class="copy button sm" hidden data-copied="${escape(c.connect.copied)}">${escape(c.connect.copy)}</button></div>`;
   const demo =
     view.media?.has(`demo-${view.language}.mp4`) === true
       ? `<div class="s-video"><video controls preload="none" poster="/media/poster-${view.language}.jpg" aria-label="${escape(c.problem.video)}"><source src="/media/demo-${view.language}.mp4" type="video/mp4">${
@@ -422,16 +441,19 @@ export function siteV2Page(view: { language: Language; contactEmail?: string; ba
 <div class="vlines">${c.aiAct.rows.map((r) => `<div class="vline"><span><span class="chip">${escape(r.art)}</span></span><span><b>${escape(r.what)}</b></span><span>${escape(r.how)}</span></div>`).join("")}</div>
 <p class="notice" style="margin-top:20px">${STATE_ICONS.warn}<span>${escape(c.aiAct.honest)}</span></p></div></section>
 
-<section class="s-sec alt" id="collega"><div class="s-wrap"><h2>${escape(c.connect.h2)}</h2>
-<ol class="steps-v2">${c.connect.steps.map((line, i) => `<li><span class="num">${i + 1}</span><span>${escape(line)}</span></li>`).join("")}</ol>
-<p class="t-meta">${escape(c.connect.or)} · ${escape(c.connect.where)}</p>
+<section class="s-sec alt" id="collega"><div class="s-wrap s-split"><div><p class="s-eyebrow">${escape(c.connect.eyebrow)}</p><h2>${escape(c.connect.h2)}</h2><p class="s-lead">${escape(c.connect.lead)}</p>
+<ol class="s-flow">${c.connect.steps.map(([t, d], i) => `<li><span class="num">${i + 1}</span><span><b>${escape(t)}</b><span>${escape(d)}</span></span></li>`).join("")}</ol></div>
+<div class="s-term"><p class="t-meta">${escape(c.connect.or)} · ${escape(c.connect.where)}</p>
 ${code("pip install sigillo")}
-${code(`import sigillo\nsigillo.init(\n    endpoint="${view.endpoint}",\n    api_key="<…>",\n    system_id="selezione-cv",\n)`)}</div></section>
+${code(`import sigillo\nsigillo.init(\n    endpoint="${view.endpoint}",\n    api_key="<…>",\n    system_id="selezione-cv",\n)`)}</div></div></section>
 
 <section class="s-sec" id="prezzi"><div class="s-wrap"><h2>${escape(c.pricing.h2)}</h2>
 <div class="s-price">${c.pricing.plans.map((p, i) => `<div class="s-card s-plan"><span class="t-meta">${escape(p.name)}</span><b>${escape(p.price)}</b><ul class="s-yes" style="list-style:none;padding:0;display:grid;gap:6px">${p.lines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul>${i === 0 ? start : `<a class="btn" href="${escape(mail)}" rel="noopener">${escape(p.cta)}</a>`}${p.note === undefined ? "" : `<span class="t-meta">${escape(p.note)}</span>`}</div>`).join("")}</div>
 <p class="t-meta">${escape(c.pricing.unit)}</p>
-<div class="s-faq">${c.pricing.faq.map((f, i) => `<details${i === 1 ? " open" : ""}><summary>${escape(f.q)}</summary><p>${escape(f.a)}</p></details>`).join("")}</div></div></section>
+</div></section>
+
+<section class="s-sec alt" id="faq"><div class="s-wrap s-split s-top"><div><p class="s-eyebrow">${escape(c.faq.eyebrow)}</p><h2>${escape(c.faq.h2)}</h2><p class="s-lead">${escape(c.faq.lead)}</p><a class="btn" href="${escape(mail)}" rel="noopener">${escape(c.contact.button)}</a></div>
+<div class="s-faq">${c.pricing.faq.map((f, i) => `<details${i === 0 ? " open" : ""}><summary>${escape(f.q)}</summary><p>${escape(f.a)}</p></details>`).join("")}</div></div></section>
 </main>
 <section class="s-band" id="contatti"><div class="s-wrap"><h2>${escape(c.contact.h2)}</h2><a class="btn" href="${escape(mail)}" rel="noopener">${escape(c.contact.button)}</a>${view.contactEmail === undefined ? "" : `<p>${escape(c.contact.address)} ${escape(view.contactEmail)}</p>`}</div></section>
 <footer class="s-foot"><div class="s-wrap"><div>
