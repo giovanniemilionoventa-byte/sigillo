@@ -4105,3 +4105,23 @@ colonne, tolti i tre link sotto di essa. Test in `console-v2.test.ts`. Verificat
 ## Home: collegare l'agente e FAQ (2026-10-20)
 
 La sezione "Collegare l'agente" della home ha ora due colonne: tre passi a sinistra, i comandi in un riquadro a destra. Le FAQ sono una sezione propria dopo i prezzi. Solo `site-v2.ts`, circa +40 righe nella pagina.
+
+## Modello locale e caricamento dell'agente (2026-10-20)
+
+Su segnalazione del titolare, con l'agente di prova su Llama 3.2 3B in Ollama:
+
+- **Modello locale preso per OpenAI cloud.** Un file che usa la libreria `openai` puntata a un
+  modello sul computer (Ollama, LM Studio, llama.cpp, vLLM, Jan) non è più letto come OpenAI:
+  niente casella "Più sicurezza", nessuna chiave chiesta a mano, l'indirizzo locale resta. La
+  pagina dice "This agent calls a model on your computer (Ollama)". Una vera chiave OpenAI nello
+  stesso file resta vista. `agent-setup.ts`, test in `agent-setup.test.ts` e nel browser.
+- **"llama3.2:3b (openai)" nelle ricevute.** La strumentazione OpenAI di OpenInference non dà il
+  fornitore per un indirizzo che non conosce e dice solo `llm.system = "openai"`. L'SDK 0.8
+  aggiunge `llm.provider` (ollama, lm-studio, llama.cpp, vllm, jan, o "local") quando il client
+  chiama un indirizzo di questo computer; il file caricato chiede l'SDK 0.8 in quel caso. Il
+  server conta lm-studio, jan e local tra i modelli locali, quindi la ricevuta dice "(local)".
+  Le ricevute già firmate restano come sono. Test in `sdk-python/tests/test_init.py`.
+- **Riquadro del caricamento.** Dopo la scelta il riquadro mostra l'icona Python e il nome del
+  file, non più "Nessun file selezionato"; la casella "More security" è accanto al suo testo.
+
+Verificatore: invariato.

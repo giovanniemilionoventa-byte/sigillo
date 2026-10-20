@@ -485,12 +485,16 @@ describe("agent protection: a model on the same computer", () => {
     expect(out).not.toContain('"ollama"');
     expect(out).toContain('os.environ["OLLAMA_API_KEY"] = "sigillo_abc_def"');
     expect(out).toContain("    local_model=True,");
-    expect(out).toContain("< (0, 5):");
+    // 0.8: the SDK that names the local model to the receipt, which the
+    // OpenAI instrumentation would leave as OpenAI (0.5 without the openai library).
+    expect(out).toContain("< (0, 8):");
     if (python) expect(parses(out)).toBe(true);
   });
 
   it("recognises the ollama library as well, and leaves a file with no local model alone", () => {
-    expect(text("import ollama\nollama.chat(model='m')\n", { ...SETTINGS, protection: true })).toContain("local_model=True");
+    const library = text("import ollama\nollama.chat(model='m')\n", { ...SETTINGS, protection: true });
+    expect(library).toContain("local_model=True");
+    expect(library).toContain("< (0, 5):");
     const cloud = text("from openai import OpenAI\nOpenAI()\n", { ...SETTINGS, protection: true });
     expect(cloud).not.toContain("local_model");
     expect(cloud).toContain("< (0, 4):");
@@ -501,7 +505,7 @@ describe("agent protection: a model on the same computer", () => {
     const out = text(lmStudio, { ...SETTINGS, protection: true });
     expect(out).toContain('api_key="sigillo_abc_def"');
     expect(out).toContain("    local_model=1234,");
-    expect(out).toContain("< (0, 7):");
+    expect(out).toContain("< (0, 8):");
     expect(out).not.toContain("OLLAMA_API_KEY");
     expect(text(lmStudio.replace("1234", "8080"), { ...SETTINGS, protection: true })).toContain("local_model=8080,");
     expect(text(lmStudio, { ...SETTINGS, protection: false })).not.toContain("local_model");
@@ -577,6 +581,39 @@ describe("an uploaded agent that calls Mistral by itself", () => {
     expect(result.text).toContain('MISTRAL_URL = "https://get-sigillo.eu/llm/mistral/v1/chat/completions"');
     expect(result.text).toContain('os.environ["MISTRAL_API_KEY"] = "sigillo_abc_def"');
     if (python) expect(parses(result.text)).toBe(true);
+  });
+});
+
+describe("an uploaded agent that calls a model on this computer, with the model gateway", () => {
+  // The agent Giovanni tried (prova-ollama/agente.py): the openai library, pointed at Ollama.
+  const AGENT =
+    'from openai import OpenAI\n\nclient = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")\n\n' +
+    'def triage(ticket):\n    return client.chat.completions.create(model="llama3.2:3b", messages=[]).choices[0].message.content\n';
+  const through = (source: string, protection = false) => {
+    const result = setup(source, { ...SETTINGS, protection, gateway: GATEWAY } as typeof SETTINGS);
+    if (result.status !== "added") throw new Error("expected added");
+    return result as Added & { providers: Record<string, string>; localPort: number };
+  };
+
+  it("is not taken for OpenAI's cloud: no provider to secure, no key to ask for, the address left alone", () => {
+    for (const protection of [false, true]) {
+      const result = through(AGENT, protection);
+      expect(result.providers).toEqual({});
+      expect(result.localPort).toBe(11434);
+      expect(result.text).not.toContain("_BASE_URL");
+      expect(result.text).toContain('base_url="http://localhost:11434/v1"');
+      expect(result.text).toContain("< (0, 8):");
+    }
+  });
+
+  it("does the same for the other local servers, and still sees a real OpenAI key beside one", () => {
+    const lmStudio = through('from openai import OpenAI\nclient = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")\n');
+    expect(lmStudio.providers).toEqual({});
+    expect(lmStudio.localPort).toBe(1234);
+    const key = "sk-proj-" + "a1B2c3D4e5F6g7H8i9J0k1L2";
+    const both = through(AGENT + `cloud = OpenAI(api_key="${key}")\n`);
+    expect(both.providers).toEqual({ openai: key });
+    expect(through(`from openai import OpenAI\nclient = OpenAI(api_key="${key}")\n`).localPort).toBe(0);
   });
 });
 

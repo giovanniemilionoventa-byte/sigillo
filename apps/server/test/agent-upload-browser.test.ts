@@ -136,6 +136,38 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     expect(problems).toEqual([]);
   });
 
+  it("keeps the chosen file in the box, by name and with the Python icon, not as 'no file selected'", async () => {
+    const { page } = await keyPage();
+    expect(await page.locator("#sigillo-agent .drop .empty-icon").isVisible()).toBe(true);
+    expect(await page.locator("#sigillo-agent .drop .picked-icon").isVisible()).toBe(false);
+    expect(await page.locator("#sigillo-agent-file").boundingBox()).toMatchObject({ width: 1 });
+    await upload(page, "triage.py", "print('hello')\n");
+    await page.locator("#sigillo-agent-choice").waitFor({ state: "visible" });
+    expect(await page.locator("#sigillo-agent .drop strong").textContent()).toBe("triage.py");
+    expect(await page.locator("#sigillo-agent .drop .picked-icon").isVisible()).toBe(true);
+    expect(await page.locator("#sigillo-agent .drop .empty-icon").isVisible()).toBe(false);
+    expect(await page.locator("#sigillo-agent .drop small").textContent()).toContain("another file");
+  });
+
+  it("an agent on a model on this computer through the openai library is not taken for OpenAI's cloud", async () => {
+    const { page, problems } = await keyPage();
+    await upload(
+      page,
+      "agente.py",
+      'from openai import OpenAI\nclient = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")\n' +
+        'client.chat.completions.create(model="llama3.2:3b", messages=[])\n',
+    );
+    await page.locator("#sigillo-agent-choice").waitFor({ state: "visible" });
+    const analysis = await page.locator("#sigillo-agent-analysis").textContent();
+    expect(analysis).toContain("on your computer (Ollama)");
+    expect(analysis).not.toContain("cloud model (OpenAI)");
+    expect(await page.locator("#sigillo-agent-secure-label").isVisible()).toBe(false);
+    const file = await downloaded(page);
+    expect(file).not.toContain("_BASE_URL");
+    expect(await page.locator("#sigillo-agent-model").isVisible()).toBe(false);
+    expect(problems).toEqual([]);
+  });
+
   it("offers no option to an agent that calls no cloud model", async () => {
     const { page } = await keyPage();
     await upload(page, "agent.py", "import requests\nprint(requests.get('http://localhost:11434').text)\n");

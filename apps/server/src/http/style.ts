@@ -416,9 +416,18 @@ details.tech .facts { margin-top: 10px; }
 .agent-upload { display: none; }
 #way-python:checked ~ .agent-upload.ready { display: block; }
 .agent-upload .notice { margin: 12px 0 0; }
+.agent-upload .drop { position: relative; cursor: pointer; }
+.agent-upload .drop small { font-size: 13px; color: var(--secondary); }
+.agent-upload .drop:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.agent-upload .drop .picked-icon, .agent-upload .drop.picked .empty-icon { display: none; }
+.agent-upload .drop.picked .picked-icon { display: flex; }
+.agent-upload .drop.picked { border-style: solid; border-color: var(--action); }
 .model-key[hidden] { display: none; }
 .model-key label { display: block; margin: 8px 0; }
-.secure { display: block; margin: 8px 0 12px; }
+.agent-upload .choice, .agent-upload .model-key { margin-top: 12px; padding: 18px 20px; }
+.agent-upload .choice p, .agent-upload .model-key p { margin: 0 0 10px; }
+.secure { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; margin: 8px 0 12px; }
+.secure input { flex: none; width: 18px; height: 18px; min-height: 0; margin: 2px 0 0; padding: 0; }
 .choice[hidden] { display: none; }
 .wait-line { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 14px 18px; font-weight: 500; }
 .wait-line .end { margin-left: auto; }

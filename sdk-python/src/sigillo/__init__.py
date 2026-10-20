@@ -50,6 +50,7 @@ from __future__ import annotations
 # `sigillo.TracerProvider` would be part of it otherwise.
 import atexit as _atexit
 import contextlib as _contextlib
+import contextvars as _contextvars
 import hashlib as _hashlib
 import hmac as _hmac
 import json as _json
@@ -83,7 +84,7 @@ from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
 from . import _gateway, _text, _watchdog
 
 __all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"]
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 _LOG = _logging.getLogger("sigillo")
 _TRACES_PATH = "/v1/traces"
@@ -374,6 +375,7 @@ def _instrument(name: str, provider: _TracerProvider, requested: bool) -> bool:
             from openinference.instrumentation.openai import OpenAIInstrumentor
 
             OpenAIInstrumentor().instrument(tracer_provider=provider)
+            _name_local_models(provider)
     except ImportError as error:
         # Only a missing instrumentation package is "not installed". An import
         # that fails inside it, or inside the framework it wraps (a DLL that
@@ -467,6 +469,99 @@ class _ModelDigestProcessor(_SpanProcessor):
 
     def force_flush(self, timeout_millis: int = 30_000) -> bool:
         return True
+
+
+# The OpenAI instrumentation names the provider from the client's address,
+# and only for the clouds it knows: for a model on this computer (Ollama, LM
+# Studio...) called with the openai library it says nothing but its own
+# `llm.system`, "openai", which a receipt would then show as the provider. The
+# client's address is kept here while it makes a request, and the span the
+# instrumentation opens inside that request is given the local server's name.
+_OPENAI_ADDRESS: _contextvars.ContextVar[tuple[str, int | None] | None] = _contextvars.ContextVar(
+    "sigillo_openai_address", default=None
+)
+
+
+def _local_server(host: str, port: int | None) -> str | None:
+    """The name a receipt gives a model server on this computer, or None for any other address."""
+    from . import _stdlib
+
+    host = host.lower().strip("[]")
+    if "ollama" in host:
+        return "ollama"
+    if host in _stdlib._LOCAL_HOSTS or host == "0.0.0.0":
+        return _stdlib.LOCAL_SERVERS.get(port, "local") if port is not None else "local"
+    return None
+
+
+class _LocalModelProcessor(_SpanProcessor):
+    """Sets `llm.provider` on a span opened by the OpenAI instrumentation while
+    its client talks to a model server on this computer."""
+
+    def on_start(self, span: _Span, parent_context: object = None) -> None:
+        address = _OPENAI_ADDRESS.get()
+        if address is None:
+            return
+        attributes = span.attributes or {}
+        if "llm.system" not in attributes or "llm.provider" in attributes:
+            return
+        server = _local_server(*address)
+        if server is not None:
+            span.set_attribute("llm.provider", server)
+
+    def on_end(self, span: _ReadableSpan) -> None:
+        return None
+
+    def shutdown(self) -> None:
+        return None
+
+    def force_flush(self, timeout_millis: int = 30_000) -> bool:
+        return True
+
+
+def _address_of(client: object) -> tuple[str, int | None] | None:
+    url = getattr(client, "base_url", None)
+    host = getattr(url, "host", None)
+    if not isinstance(host, str):
+        return None
+    port = getattr(url, "port", None)
+    return host, port if isinstance(port, int) else None
+
+
+def _name_local_models(provider: _TracerProvider) -> None:
+    """Wraps `OpenAI.request` and `AsyncOpenAI.request` (already wrapped by the
+    instrumentation, which this wrapper calls) so that the client's address is
+    known while the instrumentation opens its span. Safe to call twice."""
+    import openai
+
+    def sync_wrapper(inner: object) -> object:
+        def request(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            token = _OPENAI_ADDRESS.set(_address_of(self))
+            try:
+                return inner.__get__(self, type(self))(*args, **kwargs)  # type: ignore[attr-defined]
+            finally:
+                _OPENAI_ADDRESS.reset(token)
+
+        return request
+
+    def async_wrapper(inner: object) -> object:
+        async def request(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            token = _OPENAI_ADDRESS.set(_address_of(self))
+            try:
+                return await inner.__get__(self, type(self))(*args, **kwargs)  # type: ignore[attr-defined]
+            finally:
+                _OPENAI_ADDRESS.reset(token)
+
+        return request
+
+    for cls, wrap in ((openai.OpenAI, sync_wrapper), (openai.AsyncOpenAI, async_wrapper)):
+        inner = cls.__dict__.get("request")
+        if inner is None or getattr(inner, "_sigillo_address", False):
+            continue
+        wrapper = wrap(inner)
+        wrapper._sigillo_address = True  # type: ignore[attr-defined]
+        cls.request = wrapper  # type: ignore[method-assign]
+    provider.add_span_processor(_LocalModelProcessor())
 
 
 # Fase 9, decision D6. Which attribute holds a span's input or output — and so

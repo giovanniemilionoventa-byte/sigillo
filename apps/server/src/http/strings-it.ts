@@ -421,9 +421,12 @@ const ui = {
         "{file} scaricato, con sigillo già dentro, che la prima volta si installa da solo. Non usa LangChain, CrewAI né OpenAI: sigillo registra quando è collegato e le azioni che registri tu.",
       already: "{file} usa già sigillo: non c'è niente da aggiungere.",
       notPython: "Scegli il file Python dell'agente (.py, fino a 1 MB).",
+      choose: "Clicca qui per scegliere il file.",
+      another: "Caricato. Clicca qui per sceglierne un altro.",
       or: "oppure",
       analysisCloud: "Questo agente chiama un modello cloud ({providers}).",
       analysisOther: "Non ho trovato nessuna chiave di un modello cloud: l'agente sembra girare sul tuo computer, quindi qui non c'è altro da proteggere.",
+      analysisLocal: "Questo agente usa un modello sul tuo computer ({server}): non ha una chiave del modello, quindi qui non c'è altro da proteggere.",
       download: "Scarica il file",
       secure: "Più sicurezza? Se spunti, la chiave del modello nel tuo file viene tolta e custodita da sigillo, e l'agente può raggiungere il modello solo attraverso sigillo. Se lasci senza spunta, il tuo file tiene la sua chiave.",
       modelFound: "Il tuo file ora chiama il modello attraverso sigillo. Salva qui la chiave del modello, così sigillo la usa al posto tuo.",
@@ -641,8 +644,8 @@ const ui = {
 
 export type Strings = typeof ui;
 
-/** Ollama, vLLM and llama.cpp run on the caller's own machine; the rest do not. */
-const LOCAL_PROVIDERS = new Set(["ollama", "vllm", "llama.cpp", "llamacpp"]);
+/** Ollama, vLLM, llama.cpp, LM Studio and Jan run on the caller's own machine ("local": a server there the SDK does not name); the rest do not. */
+const LOCAL_PROVIDERS = new Set(["ollama", "vllm", "llama.cpp", "llamacpp", "lm-studio", "jan", "local"]);
 
 export function isLocalProvider(provider: string): boolean {
   return LOCAL_PROVIDERS.has(provider.toLowerCase());
