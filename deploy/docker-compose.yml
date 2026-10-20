@@ -177,6 +177,8 @@ services:
       SIGILLO_EXPORT_REGISTER: ${SIGILLO_EXPORT_REGISTER:-all}
       SIGILLO_REPORT_LANGUAGE: ${SIGILLO_REPORT_LANGUAGE:-all}
       SIGILLO_PACK_READER: ${SIGILLO_PACK_READER:-all}
+      # The redesigned public home, served at / (opened to everyone on the project owner's word, 2026-10-20).
+      SIGILLO_SITE_V2: ${SIGILLO_SITE_V2:-all}
     healthcheck:
       # /healthz also asks the signer: 503 while the server cannot sign.
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
