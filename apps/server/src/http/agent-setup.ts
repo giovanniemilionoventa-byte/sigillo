@@ -270,6 +270,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     providers: providers,
     labels: labels,
     localPort: onComputer ? localPort : 0,
+    guarded: local,
   };
 }`;
 
@@ -352,7 +353,7 @@ ${AGENT_SETUP_SOURCE}
     document.getElementById("sigillo-agent-analysis").textContent = names.length > 0
       ? box.dataset.analysisCloud.replace("{providers}", names.map(function (name) { return routed.labels[name]; }).join(", "))
       : routed.localPort > 0
-        ? box.dataset.analysisLocal.replace("{server}", servers[routed.localPort])
+        ? (plain.guarded ? box.dataset.analysisLocalGuarded : box.dataset.analysisLocal).replace("{server}", servers[routed.localPort])
         : box.dataset.analysisOther;
     choice.hidden = false;
     document.getElementById("sigillo-agent-download").onclick = function () {
