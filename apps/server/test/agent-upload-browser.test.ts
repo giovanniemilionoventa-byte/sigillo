@@ -160,10 +160,16 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     await page.locator("#sigillo-agent-choice").waitFor({ state: "visible" });
     const analysis = await page.locator("#sigillo-agent-analysis").textContent();
     expect(analysis).toContain("on your computer (Ollama)");
+    expect(analysis).toContain("guards it already");
+    expect(analysis).not.toContain("nothing more to secure");
     expect(analysis).not.toContain("cloud model (OpenAI)");
     expect(await page.locator("#sigillo-agent-secure-label").isVisible()).toBe(false);
     const file = await downloaded(page);
     expect(file).not.toContain("_BASE_URL");
+    // The protection the text promises is in the file: the door's key, strict mode, the guard on the model.
+    expect(file).toContain("    strict=True,");
+    expect(file).toContain("    local_model=True,");
+    expect(file).not.toContain('api_key="ollama"');
     expect(await page.locator("#sigillo-agent-model").isVisible()).toBe(false);
     expect(problems).toEqual([]);
   });

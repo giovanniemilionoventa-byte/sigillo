@@ -418,6 +418,7 @@ const ui: Strings = {
       analysisCloud: "This agent calls a cloud model ({providers}).",
       analysisOther: "No cloud model key was found: the agent seems to run on your computer, so there is nothing more to secure here.",
       analysisLocal: "This agent calls a model on your computer ({server}): it has no model key, so there is nothing more to secure here.",
+      analysisLocalGuarded: "This agent calls a model on your computer ({server}). It has no model key, and sigillo guards it already: the model answers only to your agent, through a door that records every call, and a receipt says so if it is ever left open.",
       download: "Download the file",
       secure: "More security? If you tick this, the model key in your file is taken out and kept by sigillo, and the agent can reach the model only through sigillo. If you leave it unticked, your file keeps its own key.",
       modelFound: "Your file now calls the model through sigillo. Save the model key here so sigillo can use it on your behalf.",

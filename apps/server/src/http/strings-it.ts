@@ -427,6 +427,7 @@ const ui = {
       analysisCloud: "Questo agente chiama un modello cloud ({providers}).",
       analysisOther: "Non ho trovato nessuna chiave di un modello cloud: l'agente sembra girare sul tuo computer, quindi qui non c'è altro da proteggere.",
       analysisLocal: "Questo agente usa un modello sul tuo computer ({server}): non ha una chiave del modello, quindi qui non c'è altro da proteggere.",
+      analysisLocalGuarded: "Questo agente usa un modello sul tuo computer ({server}). Non ha una chiave del modello e sigillo lo protegge già: il modello risponde solo al tuo agente, attraverso una porta che registra ogni chiamata, e una ricevuta lo dice se resta mai aperto.",
       download: "Scarica il file",
       secure: "Più sicurezza? Se spunti, la chiave del modello nel tuo file viene tolta e custodita da sigillo, e l'agente può raggiungere il modello solo attraverso sigillo. Se lasci senza spunta, il tuo file tiene la sua chiave.",
       modelFound: "Il tuo file ora chiama il modello attraverso sigillo. Salva qui la chiave del modello, così sigillo la usa al posto tuo.",
