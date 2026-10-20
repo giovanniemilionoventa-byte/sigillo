@@ -20,9 +20,13 @@ interface Copy {
   nav: { how: string; deliver: string; aiAct: string; pricing: string; blog: string; verify: string; signIn: string; start: string };
   title: string;
   description: string;
-  hero: { h1: string; lead: string; primary: string; secondary: string; doors: [string, string, string]; facts: string };
-  card: { verdict: string; line: string; key: string; matches: string };
-  how: { h2: string; questions: { q: string; a: string; kind: "ok" | "action" | "proof" }[]; flow: string[] };
+  hero: { eyebrow: string; h1: string; lead: string; primary: string; secondary: string; doors: [string, string, string]; facts: [string, string][] };
+  card: { verdict: string; line: string; key: string; matches: string; title: string; rows: [string, string][]; sealed: string };
+  problem: { eyebrow: string; h2: string; body: string; more: string };
+  disputes: { eyebrow: string; h2: string; body: string; more: string };
+  fit: { eyebrow: string; h2: string; lead: string; forTitle: string; forLead: string; forItems: [string, string][]; notTitle: string; notLead: string; notItems: [string, string][] };
+  steps: { eyebrow: string; h2: string; items: [string, string][] };
+  how: { h2: string; questions: { q: string; a: string; kind: "ok" | "action" | "proof" }[] };
   deliver: { h2: string; story: string[]; contents: string[]; sample: string; verify: string };
   proves: { h2: string; yes: string; no: string; yesLines: string[]; noLines: string[]; see: string; seeText: string; facts: [string, string][] };
   aiAct: { h2: string; rows: { art: string; what: string; how: string }[]; honest: string };
@@ -33,18 +37,55 @@ interface Copy {
 }
 
 const IT: Copy = {
-  nav: { how: "Come funziona", deliver: "Cosa consegni", aiAct: "AI Act", pricing: "Prezzi", blog: "Blog", verify: "Verifica un fascicolo", signIn: "Accedi", start: "Richiedi l'accesso" },
+  nav: { how: "Come funziona", deliver: "Cosa consegni", aiAct: "AI Act", pricing: "Prezzi", blog: "Blog", verify: "Verifica un fascicolo", signIn: "Accedi", start: "Richiedi un pilota gratuito" },
   title: "sigillo · le prove di cosa ha fatto la tua AI",
   description: "sigillo registra ogni azione dei tuoi agenti AI in un registro firmato e sigillato ogni ora. Quando arriva un reclamo o un'ispezione, consegni un fascicolo che chiunque controlla da solo, nel browser.",
   hero: {
-    h1: "Cosa ha fatto la tua AI? Rispondi con le prove.",
-    lead: "sigillo registra ogni azione dei tuoi agenti in un registro firmato e sigillato ogni ora. Quando arriva un reclamo o un'ispezione, consegni un fascicolo che chiunque controlla da solo, nel browser.",
-    primary: "Richiedi l'accesso",
+    eyebrow: "Se un tuo agente AI venisse contestato domani, potresti verificare cosa ha fatto?",
+    h1: "Dimostra cosa ha fatto la tua AI. Quando conta di più.",
+    lead: "sigillo crea registri firmati e con marca temporale delle azioni dei tuoi agenti AI, che chiunque può verificare in modo indipendente, senza esporre i dati riservati della tua azienda.",
+    primary: "Richiedi un pilota gratuito",
     secondary: "Verifica un fascicolo d'esempio",
     doors: ["Rispondi dell'AI in azienda", "Colleghi l'agente", "Hai ricevuto un fascicolo?"],
-    facts: "Pilota gratuito · server in [paese] · verificatore open source",
+    facts: [["Solo impronte", "Prompt e risposte restano da te."], ["Verifichi da solo", "Strumento a riga di comando, anche senza rete."], ["Pilota gratuito", "Nessun dato di pagamento."]],
   },
-  card: { verdict: "Integro", line: "4 ricevute di Selezione CV — backend junior, 13 ottobre 2026, firmate e in ordine.", key: "Codice della chiave", matches: "Corrisponde" },
+  card: {
+    verdict: "Integro",
+    line: "4 ricevute di Selezione CV — backend junior, 13 ottobre 2026, firmate e in ordine.",
+    key: "Codice della chiave",
+    matches: "Corrisponde",
+    title: "Selezione CV — backend junior",
+    rows: [["16:58", "Ha usato «leggi_curriculum»"], ["16:58", "Risposta da «llama3.1:8b»"], ["16:59", "Decisione «scarta_candidato»"], ["17:00", "Sigillata, con marca temporale"]],
+    sealed: "Fascicolo pronto da consegnare. Dati d'esempio.",
+  },
+  problem: {
+    eyebrow: "Il problema",
+    h2: "Se domani dovessi giustificare le azioni della tua AI, avresti le prove?",
+    body: "Gli agenti AI prendono decisioni e compiono azioni con conseguenze reali. Quando vengono contestate, serve più del ricordo di come sono andate le cose. sigillo conserva registri verificabili che mostrano cosa è successo e rendono rilevabili le alterazioni successive.",
+    more: "Cosa prova, cosa no",
+  },
+  disputes: {
+    eyebrow: "Le decisioni della tua AI possono essere contestate. Le tue prove devono essere verificabili.",
+    h2: "Quando nasce una contestazione, non basta la tua parola.",
+    body: "I log ordinari dicono cosa hanno registrato i tuoi sistemi. sigillo aggiunge una prova firmata e con marca temporale, che si controlla in modo indipendente: mostra cosa è stato registrato e se è stato alterato.",
+    more: "Cosa consegni",
+  },
+  fit: {
+    eyebrow: "sigillo fa per te?",
+    h2: "Pensato per chi deve dimostrare cosa ha fatto la sua AI.",
+    lead: "Non ogni flusso di lavoro con l'AI ha bisogno di prove verificabili. La domanda è se puoi permetterti di non averle.",
+    forTitle: "Per chi è",
+    forLead: "Team in cui le azioni dell'AI devono essere attribuibili e verificabili da altri.",
+    forItems: [["Chi sviluppa agenti AI", "Agenti che compiono azioni importanti in sistemi reali."], ["Compliance e rischio", "Chi deve spiegare o indagare cosa ha fatto un sistema AI."], ["Organizzazioni attente alla sicurezza", "Che vogliono prove verificabili senza esporre i dati."]],
+    notTitle: "Per chi non è",
+    notLead: "Team che hanno bisogno solo di monitoraggio di base o di AI conversazionale.",
+    notItems: [["Usi semplici dell'AI", "Scrivere bozze, fare brainstorming, assistenza quotidiana."], ["Chi si accontenta dei log ordinari", "Senza bisogno di far verificare le azioni a un terzo."], ["Chi cerca una piattaforma AI completa", "Hosting di modelli, orchestrazione o osservabilità completa."]],
+  },
+  steps: {
+    eyebrow: "Come funziona",
+    h2: "Dall'azione alla prova verificabile.",
+    items: [["L'agente agisce", "Il tuo agente compie un'azione nei tuoi sistemi. sigillo riceve l'impronta, non il contenuto."], ["Registro firmato, con marca temporale", "Ogni azione è firmata, legata alla precedente e sigillata ogni ora."], ["Verifica indipendente", "Consegni un fascicolo: chiunque lo controlla da solo, senza accedere ai tuoi dati."]],
+  },
   how: {
     h2: "Tre domande, tre risposte",
     questions: [
@@ -52,7 +93,6 @@ const IT: Copy = {
       { q: "Cosa ha fatto l'AI?", a: "L'agente «screener» ha usato lo strumento «leggi_curriculum» alle 16:58.", kind: "action" },
       { q: "Mi prepari le prove?", a: "4 azioni, sigillate alle 17:00, con marca temporale.", kind: "proof" },
     ],
-    flow: ["L'agente lavora come sempre", "Ogni azione è firmata e legata alla precedente, come le pagine numerate di un libro", "Ogni ora un sigillo con marca temporale", "Chiunque può controllare"],
   },
   deliver: {
     h2: "Il fascicolo, visto da chi lo riceve",
@@ -108,18 +148,55 @@ const IT: Copy = {
 };
 
 const EN: Copy = {
-  nav: { how: "How it works", deliver: "What you hand over", aiAct: "AI Act", pricing: "Pricing", blog: "Blog", verify: "Verify an evidence pack", signIn: "Sign in", start: "Request access" },
+  nav: { how: "How it works", deliver: "What you hand over", aiAct: "AI Act", pricing: "Pricing", blog: "Blog", verify: "Verify an evidence pack", signIn: "Sign in", start: "Request a free pilot" },
   title: "sigillo · the evidence of what your AI did",
   description: "sigillo records every action of your AI agents in a signed record, sealed every hour. When a complaint or an inspection comes, you hand over a pack anyone can check alone, in the browser.",
   hero: {
-    h1: "What did your AI do? Answer with the evidence.",
-    lead: "sigillo records every action of your agents in a signed record, sealed every hour. When a complaint or an inspection comes, you hand over a pack anyone can check alone, in the browser.",
-    primary: "Request access",
+    eyebrow: "If your AI agent were challenged tomorrow, could you verify what it did?",
+    h1: "Prove what your AI did. When it matters most.",
+    lead: "sigillo creates signed, timestamped records of your AI agents' actions that can be independently verified, without exposing your company's sensitive data.",
+    primary: "Request a free pilot",
     secondary: "Verify a sample pack",
     doors: ["Answer for the AI at work", "Connect the agent", "Received an evidence pack?"],
-    facts: "Free pilot · server in [country] · open-source verifier",
+    facts: [["Only fingerprints", "Prompts and answers stay with you."], ["Verify it yourself", "Command-line tool, works offline."], ["Free pilot", "No payment details."]],
   },
-  card: { verdict: "Intact", line: "4 receipts of Selezione CV — backend junior, 13 October 2026, signed and in order.", key: "Key code", matches: "Matches" },
+  card: {
+    verdict: "Intact",
+    line: "4 receipts of Selezione CV — backend junior, 13 October 2026, signed and in order.",
+    key: "Key code",
+    matches: "Matches",
+    title: "Selezione CV — backend junior",
+    rows: [["16:58", "Used «leggi_curriculum»"], ["16:58", "Answer from «llama3.1:8b»"], ["16:59", "Decision «scarta_candidato»"], ["17:00", "Sealed, with a timestamp"]],
+    sealed: "Evidence pack ready to hand over. Example data.",
+  },
+  problem: {
+    eyebrow: "The problem",
+    h2: "If you had to justify your AI's actions tomorrow, would you have the evidence?",
+    body: "AI agents make decisions and take actions that have real consequences. When those actions are challenged, you need more than a recollection of events. sigillo preserves verifiable records that show what happened and make later alterations detectable.",
+    more: "What it proves, what it does not",
+  },
+  disputes: {
+    eyebrow: "Your AI decisions can be challenged. Your evidence should be verifiable.",
+    h2: "When disputes arise, don't rely on your word alone.",
+    body: "Ordinary logs tell you what your systems recorded. sigillo adds signed, timestamped evidence that can be checked independently, helping you demonstrate what was recorded and whether it has been altered.",
+    more: "What you hand over",
+  },
+  fit: {
+    eyebrow: "Is sigillo right for you?",
+    h2: "Built for teams that need to prove what their AI did.",
+    lead: "Not every AI workflow needs independently verifiable evidence. The important question is whether you can afford not to have it.",
+    forTitle: "Who it's for",
+    forLead: "Teams where AI actions need to be accountable and independently verifiable.",
+    forItems: [["AI agent developers", "Building agents that take consequential actions in real systems."], ["Compliance and risk teams", "Preparing to explain or investigate what an AI system did."], ["Security-conscious organisations", "Wanting verifiable records without exposing sensitive underlying data."]],
+    notTitle: "Who it's not for",
+    notLead: "Teams that only need basic monitoring or conversational AI.",
+    notItems: [["Simple AI use cases", "Using AI for drafting, brainstorming or everyday assistance."], ["Teams satisfied with ordinary logs", "With no requirement to independently verify recorded actions."], ["Teams looking for a full AI platform", "Needing model hosting, agent orchestration or a complete observability suite."]],
+  },
+  steps: {
+    eyebrow: "How it works",
+    h2: "From action to verifiable record.",
+    items: [["Your agent acts", "Your agent performs an action in your systems. sigillo receives a fingerprint of it, not the content."], ["Signed, timestamped record", "Each action is signed, linked to the one before it and sealed every hour."], ["Independent verification", "You hand over a pack. Anyone can check it alone, without access to your data."]],
+  },
   how: {
     h2: "Three questions, three answers",
     questions: [
@@ -127,7 +204,6 @@ const EN: Copy = {
       { q: "What did the AI do?", a: "The agent «screener» used the tool «leggi_curriculum» at 16:58.", kind: "action" },
       { q: "Can you prepare the evidence?", a: "4 actions, sealed at 17:00, timestamped.", kind: "proof" },
     ],
-    flow: ["The agent works as usual", "Each action is signed and linked to the one before, like the numbered pages of a book", "Every hour a seal with a timestamp", "Anyone can check"],
   },
   deliver: {
     h2: "The evidence pack, as whoever receives it sees it",
@@ -191,27 +267,59 @@ body { background: var(--canvas); }
 .s-top { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--separator); }
 .s-top .s-wrap { display: flex; align-items: center; gap: 20px; min-height: 64px; flex-wrap: wrap; }
 .s-top nav { display: flex; gap: 18px; flex: 1; flex-wrap: wrap; }
-.s-top nav a { color: var(--text); font-weight: 500; }
+.s-top nav a { color: var(--text); font-weight: 500; white-space: nowrap; }
 .s-top .s-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .s-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; color: var(--text); }
 .s-brand svg { width: 24px; height: 24px; }
 .s-sec { padding: 88px 0; }
 .s-sec.alt { background: var(--surface); border-block: 1px solid var(--separator); }
-.s-sec h2 { font-size: 30px; line-height: 36px; font-weight: 600; letter-spacing: -0.01em; max-width: 28ch; margin: 0 0 28px; }
-.s-hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 48px; align-items: center; padding: 72px 0 56px; }
-.s-hero h1 { font-size: 52px; line-height: 56px; font-weight: 600; letter-spacing: -0.025em; margin: 0 0 20px; max-width: 16ch; }
+.s-sec h2 { font-size: 34px; line-height: 40px; font-weight: 700; letter-spacing: -0.01em; max-width: 28ch; margin: 0 0 20px; }
+.s-hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 48px; align-items: center; padding: 72px 24px 56px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 20px; border-radius: 8px; border: 1px solid var(--separator); background: var(--surface); color: var(--text); font-weight: 600; text-decoration: none; }
+.btn:hover { background: var(--fill); text-decoration: none; }
+.btn.pri { background: var(--action); border-color: var(--action); color: var(--on-action); }
+.btn.pri:hover { background: var(--action); filter: brightness(0.92); }
+.btn.sm { min-height: 34px; padding: 0 12px; font-size: 13px; }
+.s-eyebrow { font-size: 12px; line-height: 18px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--secondary); font-weight: 600; margin: 0 0 16px; max-width: 62ch; }
+.s-facts { display: flex; gap: 12px 32px; flex-wrap: wrap; list-style: none; margin: 32px 0 0; padding: 24px 0 0; border-top: 1px solid var(--separator); }
+.s-facts li { display: grid; gap: 2px; max-width: 22ch; }
+.s-facts b { font-size: 14px; }
+.s-facts span { font-size: 13px; color: var(--secondary); }
+.s-narrow > * { max-width: 760px; }
+.s-dispute { padding: 48px; max-width: 820px; }
+.s-dispute h2 { max-width: 24ch; }
+.s-fit { margin-top: 32px; align-items: stretch; }
+.s-fit ul { list-style: none; margin: 20px 0 0; padding: 0; display: grid; gap: 16px; }
+.s-fit li { display: grid; gap: 2px; border-top: 1px solid var(--separator); padding-top: 14px; }
+.s-fit li span { color: var(--secondary); font-size: 14px; }
+.s-fith { font-size: 18px; margin: 0 0 6px; }
+.s-yes-h::before { content: "✓  "; color: var(--ok); }
+.s-no-h::before { content: "–  "; color: var(--secondary); }
+.s-steps { list-style: none; padding: 0; margin: 32px 0 0; }
+.s-steps li { display: grid; gap: 8px; align-content: start; }
+.s-steps span:not(.num) { color: var(--secondary); }
+.s-steps b { font-size: 18px; }
+.s-console { padding: 0; overflow: hidden; }
+.s-chead { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--separator); flex-wrap: wrap; }
+.s-chain { list-style: none; margin: 0; padding: 8px 12px; }
+.s-chain li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; padding: 9px 8px; border-radius: 6px; }
+.s-chain li.on { background: var(--selection); }
+.s-chain time { color: var(--secondary); }
+.s-sealrow { display: flex; gap: 14px; align-items: center; margin: 4px 16px 16px; padding: 12px 14px; border: 1px solid var(--separator); border-radius: 8px; background: var(--canvas); }
+.s-sealrow small { display: block; color: var(--secondary); font-size: 12px; }
+.s-stamp { flex: none; width: 36px; height: 36px; }
+.s-stamp svg { width: 36px; height: 36px; }
+.s-hero h1 { font-size: 56px; line-height: 60px; font-weight: 700; letter-spacing: -0.025em; margin: 0 0 20px; max-width: 14ch; }
 .s-lead { font-size: 20px; line-height: 32px; max-width: 58ch; margin: 0 0 24px; }
 .s-btns { display: flex; gap: 12px; flex-wrap: wrap; }
 .s-doors { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 20px; font-weight: 600; }
 .s-facts { margin-top: 20px; font-size: 13px; color: var(--secondary); font-weight: 500; }
-.s-card { background: var(--surface); border: 1px solid var(--separator); border-radius: 10px; padding: 24px; }
+.s-card { background: var(--surface); border: 1px solid var(--separator); border-radius: 10px; padding: 28px; }
 .s-verdict { display: flex; gap: 16px; align-items: center; color: var(--ok); }
 .s-verdict svg { width: 56px; height: 56px; }
 .s-verdict b { font-size: 24px; line-height: 30px; }
 .s-three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .s-q { font-size: 20px; line-height: 28px; font-weight: 600; margin-bottom: 12px; }
-.s-flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 32px; counter-reset: f; }
-.s-flow li { border-top: 2px solid var(--label); padding-top: 12px; }
 .s-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; align-items: start; }
 .s-paper { background: #fff; color: #16191f; border: 1px solid var(--separator); border-radius: 4px; padding: 24px; box-shadow: 0 12px 32px rgba(16,19,24,.12); }
 .s-price { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
@@ -230,7 +338,7 @@ body { background: var(--canvas); }
 .s-no li::before { content: "–  "; color: var(--secondary); }
 @media (max-width: 900px) {
   .s-hero, .s-two { grid-template-columns: minmax(0, 1fr); }
-  .s-three, .s-price, .s-flow { grid-template-columns: minmax(0, 1fr); }
+  .s-three, .s-price { grid-template-columns: minmax(0, 1fr); }
   .s-hero h1 { font-size: 36px; line-height: 42px; }
   .s-sec { padding: 56px 0; }
   .s-foot .s-wrap > div { grid-template-columns: minmax(0, 1fr); }
@@ -259,17 +367,28 @@ export function siteV2Page(view: { language: Language; contactEmail?: string; ba
 </div></header>
 <main>
 <section class="s-wrap s-hero" id="inizio"><div>
+<p class="s-eyebrow">${escape(c.hero.eyebrow)}</p>
 <h1>${escape(c.hero.h1)}</h1><p class="s-lead">${escape(c.hero.lead)}</p>
 <div class="s-btns">${start}<a class="btn" href="/verify">${escape(c.hero.secondary)}</a></div>
-<div class="s-doors"><a href="#cosa-consegni">${escape(c.hero.doors[0])} ›</a><a href="#collega">${escape(c.hero.doors[1])} ›</a><a href="/verify">${escape(c.hero.doors[2])} ›</a></div>
-<p class="s-facts">${escape(c.hero.facts)}</p></div>
-<div class="s-card" aria-hidden="true"><div class="s-verdict">${PROOF_ICONS.full}<div><b>${escape(c.card.verdict)}</b><br><span style="color:var(--text)">${escape(c.card.line)}</span></div></div>
-<hr style="border:0;border-top:1px solid var(--separator);margin:18px 0"><p class="t-meta" style="margin:0 0 6px">${escape(c.card.key)}</p><p class="mono" style="margin:0 0 6px"><b>9685 533e aa64 29c4</b></p><span class="sign green">${STATE_ICONS.ok}<span>${escape(c.card.matches)}</span></span></div>
+<ul class="s-facts">${c.hero.facts.map(([title, line]) => `<li><b>${escape(title)}</b><span>${escape(line)}</span></li>`).join("")}</ul>
+<div class="s-doors"><a href="#cosa-consegni">${escape(c.hero.doors[0])} ›</a><a href="#collega">${escape(c.hero.doors[1])} ›</a><a href="/verify">${escape(c.hero.doors[2])} ›</a></div></div>
+<div class="s-card s-console" aria-hidden="true"><div class="s-chead"><b>${escape(c.card.title)}</b><span class="sign green">${STATE_ICONS.ok}<span>${escape(c.card.verdict)}</span></span></div>
+<ul class="s-chain">${c.card.rows.map(([time, what], i) => `<li${i === 0 ? ' class="on"' : ""}><time class="mono">${escape(time)}</time><span>${escape(what)}</span></li>`).join("")}</ul>
+<div class="s-sealrow"><span class="s-stamp">${SEAL_SVG}</span><div><b>${escape(c.card.matches)}</b><small class="mono">9685 533e aa64 29c4</small><small>${escape(c.card.sealed)}</small></div></div></div>
 </section>
 
-<section class="s-sec alt" id="come-funziona"><div class="s-wrap"><h2>${escape(c.how.h2)}</h2>
-<div class="s-three">${c.how.questions.map((q) => `<div class="s-card"><p class="s-q">${escape(q.q)}</p>${cardFor(q.kind, q.a)}</div>`).join("")}</div>
-<ol class="s-flow" style="list-style:none;padding:0">${c.how.flow.map((step) => `<li>${escape(step)}</li>`).join("")}</ol></div></section>
+<section class="s-sec" id="problema"><div class="s-wrap s-narrow"><p class="s-eyebrow">${escape(c.problem.eyebrow)}</p><h2>${escape(c.problem.h2)}</h2><p class="s-lead">${escape(c.problem.body)}</p><a class="btn" href="#cosa-prova">${escape(c.problem.more)}</a></div></section>
+
+<section class="s-sec alt" id="contestazioni"><div class="s-wrap"><div class="s-card s-dispute"><p class="s-eyebrow">${escape(c.disputes.eyebrow)}</p><h2>${escape(c.disputes.h2)}</h2><p class="s-lead">${escape(c.disputes.body)}</p><a class="btn" href="#cosa-consegni">${escape(c.disputes.more)}</a></div></div></section>
+
+<section class="s-sec" id="per-chi"><div class="s-wrap"><p class="s-eyebrow">${escape(c.fit.eyebrow)}</p><h2>${escape(c.fit.h2)}</h2><p class="s-lead">${escape(c.fit.lead)}</p>
+<div class="s-two s-fit"><div class="s-card"><h3 class="s-fith s-yes-h">${escape(c.fit.forTitle)}</h3><p class="t-sec">${escape(c.fit.forLead)}</p><ul>${c.fit.forItems.map(([t, d]) => `<li><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ul></div>
+<div class="s-card"><h3 class="s-fith s-no-h">${escape(c.fit.notTitle)}</h3><p class="t-sec">${escape(c.fit.notLead)}</p><ul>${c.fit.notItems.map(([t, d]) => `<li><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ul></div></div></div></section>
+
+<section class="s-sec alt" id="come-funziona"><div class="s-wrap"><p class="s-eyebrow">${escape(c.steps.eyebrow)}</p><h2>${escape(c.steps.h2)}</h2>
+<ol class="s-three s-steps">${c.steps.items.map(([t, d], i) => `<li class="s-card"><span class="num">${i + 1}</span><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ol>
+<h3 class="t-sec" style="margin:40px 0 16px">${escape(c.how.h2)}</h3>
+<div class="s-three">${c.how.questions.map((q) => `<div class="s-card"><p class="s-q">${escape(q.q)}</p>${cardFor(q.kind, q.a)}</div>`).join("")}</div></div></section>
 
 <section class="s-sec" id="cosa-consegni"><div class="s-wrap"><h2>${escape(c.deliver.h2)}</h2>
 <div class="s-two"><div><ol class="steps-v2">${c.deliver.story.map((line, i) => `<li><span class="num">${i + 1}</span><span>${escape(line)}</span></li>`).join("")}</ol>
