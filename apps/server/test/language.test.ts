@@ -153,6 +153,19 @@ describe("the web view, in English and in Italian", () => {
     expect(page).toContain("<h1>Accedi a sigillo</h1>");
   });
 
+  it("is English only, with no switch, unless Italian is switched on (project owner, 2026-10-20)", async () => {
+    const before = process.env["SIGILLO_ITALIAN"];
+    delete process.env["SIGILLO_ITALIAN"];
+    try {
+      const page = await get("/ui/login", { "accept-language": "it-IT,it;q=0.9", cookie: "sigillo_lang=it" });
+      expect(page).toContain('<html lang="en"');
+      expect(page).not.toContain("/ui/lingua");
+      expect(page).not.toContain("Italiano");
+    } finally {
+      if (before !== undefined) process.env["SIGILLO_ITALIAN"] = before;
+    }
+  });
+
   it("offers both languages on the sign-in page, each in its own words, the current one pressed", async () => {
     const page = await get("/ui/login");
     expect(page).toContain('<form method="post" action="/ui/lingua" class="auth-lang" aria-label="Language"><input type="hidden" name="back" value="/ui/login">');

@@ -1,7 +1,7 @@
 import type { Receipt } from "@sigillo/core";
 import type { ChainHealthMonitor, ChainStatus, SystemHealth } from "../health/chain-health.js";
 import type { ReceiptStore, SystemRecord } from "../storage/store.js";
-import { currentBack, currentLanguage } from "./locale.js";
+import { currentBack, currentLanguage, italianOffered } from "./locale.js";
 import { outcomeWord, systemTitle, UI } from "./strings.js";
 import { GOOGLE_LOGO, ICONS, KIND_ICONS, SEAL_SVG, STATE_ICONS, STYLE } from "./style.js";
 import { consoleV2 } from "./console-mode.js";
@@ -335,6 +335,7 @@ ${languageSwitch("auth-lang", currentBack())}
  * can still find theirs.
  */
 export function languageSwitch(className: string, back: string): string {
+  if (!italianOffered()) return "";
   const now = currentLanguage();
   const buttons = (["en", "it"] as const)
     .map(

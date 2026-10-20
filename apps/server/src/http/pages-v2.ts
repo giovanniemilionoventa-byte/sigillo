@@ -3,6 +3,7 @@ import type { ChainStatus } from "../health/chain-health.js";
 import type { ExportRegisterEntry, ReceiptStore, SystemRecord } from "../storage/store.js";
 import { connectionStatus } from "../connection/watch.js";
 import { capital, escape, kindIcon, languageSwitch, STATE_ICON, systemPath, type SystemRow } from "./layout.js";
+import { italianOffered } from "./locale.js";
 import { firstSteps, quotaNotice, receiptPath, type Quota } from "./pages.js";
 import {
   actionKindLabel,
@@ -594,7 +595,7 @@ export function accountPageV2(view: { account: { name: string; detail: string };
 <div class="vline"><span class="k">${escape(t.you)}</span><span>${escape(view.operator ? view.account.name : view.account.detail)}</span><form method="post" action="/ui/logout"><button type="submit">${escape(t.signOut)}</button></form></div>
 ${quota}
 <div class="vline"><span class="k">${escape(t.appearance)}</span><form method="post" action="/ui/impostazioni/tema" class="seg"><input type="hidden" name="back" value="${escape(view.back)}">${themeButton("light", UI.settings.themes.light)}${themeButton("dark", UI.settings.themes.dark)}${themeButton("system", UI.settings.themes.system)}</form><span></span></div>
-<div class="vline"><span class="k">${escape(t.language)}</span>${languageSwitch("seg", view.back)}<span></span></div>
+${italianOffered() ? `<div class="vline"><span class="k">${escape(t.language)}</span>${languageSwitch("seg", view.back)}<span></span></div>` : ""}
 </div></div>`;
 }
 

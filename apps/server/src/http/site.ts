@@ -1,6 +1,6 @@
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { Language } from "./locale.js";
+import { italianOffered, type Language } from "./locale.js";
 import { SITE_TEXTS, type SiteTexts } from "./site-strings.js";
 import { escape } from "./layout.js";
 import { EVIDENCE_CHECK_SOURCE } from "./evidence-check.js";
@@ -530,7 +530,7 @@ ${head}
 <a class="brand" href="/">${SEAL_SVG}<span>sigillo</span></a>
 <nav id="menu"><a class="menu-close" href="#" aria-label="×">${ICON.close}</a>${section("why", t.nav.why)}${section("how", t.nav.how)}${section("ai-act", t.nav.aiAct)}${section("pricing", t.nav.pricing)}${section("connect", t.nav.connect)}${verify}${blog}<a class="menu-only" href="${SIGN_IN}">${escape(t.signIn)}</a></nav>
 <div class="tools">
-<form class="lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="${language === "en" ? "it" : "en"}"><input type="hidden" name="back" value="${escape(context.back ?? path ?? "/")}"><button type="submit" aria-label="${escape(t.switchLabel)}" lang="${language === "en" ? "it" : "en"}">${ICON.globe}${escape(t.switchTo)}</button></form>
+${italianOffered() ? `<form class="lang" method="post" action="/ui/lingua"><input type="hidden" name="lang" value="${language === "en" ? "it" : "en"}"><input type="hidden" name="back" value="${escape(context.back ?? path ?? "/")}"><button type="submit" aria-label="${escape(t.switchLabel)}" lang="${language === "en" ? "it" : "en"}">${ICON.globe}${escape(t.switchTo)}</button></form>` : ""}
 <a class="signin" href="${SIGN_IN}">${escape(t.signIn)}</a>
 <a class="btn primary small" href="${SIGN_UP}">${escape(t.start)}</a>
 <a class="menu-open" href="#menu" aria-label="Menu">${ICON.menu}</a>
