@@ -3,8 +3,8 @@
 Generated from `apps/server/src/assurance/privacy-check.ts` (`sigillo-server privacy inventory --markdown`).
 A test fails if the database schema gains a column this page does not classify, so the page cannot
 silently fall behind the code. To see the same thing for a running installation, with row counts:
-`sigillo-server privacy inventory --db <file>`. To check that content you sent is not stored
-anywhere, see `docs/PRIVACY-CHECK.md`. What the text members of a receipt contain is
+`sigillo-server privacy inventory --db <file>`. Why content never reaches it, and the customer's
+own key, are in `docs/DATA-PROTECTION.md`. What the text members of a receipt contain is
 described in `docs/DATA-INVENTORY.md`.
 
 Nothing in the database holds a prompt, a model answer, a tool argument, a tool result or a

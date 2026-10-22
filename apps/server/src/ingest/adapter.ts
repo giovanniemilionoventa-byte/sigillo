@@ -34,7 +34,7 @@ export interface AdaptedAction {
   /** A digest the caller computed: recorded as plain, or as salted with the nonce below. */
   input_hash: string | null;
   output_hash: string | null;
-  /** The nonce the caller salted its digest under (`sigillo.input.nonce`). */
+  /** The nonce the caller salted its digest under (`sigillo.input.nonce`), or "customer" when the customer keeps it. */
   input_nonce?: string;
   output_nonce?: string;
   /** A value received in the clear, for the store to digest with a salt. Never with a digest beside it. */
@@ -155,9 +155,10 @@ function payloadOf(
   const nonce = text(attributes, `sigillo.${role}.nonce`);
   if (preHashed !== null && SHA256_HEX.test(preHashed)) {
     if (nonce === null) return { hash: preHashed };
-    // Salted by the SDK. A nonce that is not 32 bytes of hex means the digest
-    // cannot be recorded as what it is, so it is not recorded at all.
-    return SHA256_HEX.test(nonce) ? { hash: preHashed, nonce } : { hash: null };
+    // Salted by the SDK, under a nonce it sent or one the customer's key made
+    // and kept ("customer"). Anything else means the digest cannot be
+    // recorded as what it is, so it is not recorded at all.
+    return SHA256_HEX.test(nonce) || nonce === "customer" ? { hash: preHashed, nonce } : { hash: null };
   }
   const raw = text(attributes, ...names);
   if (raw === null) return { hash: null };

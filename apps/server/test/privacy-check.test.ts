@@ -26,7 +26,7 @@ import { ReceiptStore } from "../src/storage/store.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
 
 /**
- * The partner's privacy check (docs/PRIVACY-CHECK.md), run the way a partner
+ * The privacy scan (docs/DATA-PROTECTION.md, last section), run the way a partner
  * runs it: a marker goes through a real agent's records and a real call to the
  * model gateway, in every place an agent puts content, and the scan of the
  * database's columns and raw bytes must not find it. Where the marker goes into

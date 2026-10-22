@@ -282,6 +282,57 @@ tracing.flush()
         found = self._run(["node", str(VERIFY_CLI), "doc", str(export), str(copy)])
         self.assertIn("same text", found)
 
+    def test_with_a_customer_key_only_the_customer_can_open_a_digest(self) -> None:
+        import sigillo
+
+        customer_key = "e2e-" + "7c" * 30
+        content = "Maria Bianchi chiede il rimborso dell'ordine A-1099"
+        tracing = sigillo.init(endpoint=f"http://127.0.0.1:{self.port}", api_key=self.token,
+                               system_id=SYSTEM, instrument=[], customer_key=customer_key,
+                               heartbeat_seconds=3600)
+        try:
+            tracer = tracing.provider.get_tracer("sigillo.tests")
+            with tracer.start_as_current_span("rimborso") as span:
+                span.set_attribute("openinference.span.kind", "TOOL")
+                span.set_attribute("tool.name", "rimborso")
+                span.set_attribute("input.value", content)
+                trace_id = f"{span.get_span_context().trace_id:032x}"
+                span_id = f"{span.get_span_context().span_id:016x}"
+            self.assertTrue(tracing.flush())
+        finally:
+            tracing.shutdown()
+        nonce = sigillo.nonce_for(customer_key, trace_id, span_id, "input")
+
+        export = self.work / "cliente.zip"
+        self._run(["node", str(SERVER_CLI), "export", SYSTEM, "--db", str(self.db_path),
+                   "--signer-socket", str(self.socket_path), "--out", str(export)])
+        with zipfile.ZipFile(export) as archive:
+            receipts = [json.loads(line) for line in archive.read("receipts.jsonl").decode().splitlines() if line]
+        receipt = next(r for r in receipts if r["action"]["name"] == "rimborso")
+        self.assertEqual(receipt["input_hash_scheme"], "salted")
+        self.assertEqual(receipt["source"]["span_id"], span_id)
+
+        # The server holds the digest and nothing that opens it: no opening,
+        # and neither the nonce, the key nor the content anywhere in its files.
+        import sqlite3
+
+        with sqlite3.connect(self.db_path) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM openings").fetchone()[0], 0)
+        stored = b"".join(path.read_bytes() for path in self.work.glob("sigillo.db*"))
+        for secret in (nonce, customer_key, content, "A-1099"):
+            self.assertNotIn(secret.encode("utf-8"), stored)
+
+        # The customer, with the key, opens it with the open-source verifier.
+        opened = subprocess.run(["node", str(VERIFY_CLI), "open", str(export), str(receipt["seq"]), "input",
+                                 "--text", content, "--nonce", nonce],
+                                capture_output=True, text=True, cwd=ROOT, timeout=120)
+        self.assertEqual(opened.returncode, 0, opened.stdout + opened.stderr)
+        self.assertIn("MATCH", opened.stdout)
+        guessed = subprocess.run(["node", str(VERIFY_CLI), "open", str(export), str(receipt["seq"]), "input",
+                                  "--text", content],
+                                 capture_output=True, text=True, cwd=ROOT, timeout=120)
+        self.assertNotEqual(guessed.returncode, 0)
+
     def test_the_server_refuses_a_key_it_did_not_issue(self) -> None:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         connection.request(
