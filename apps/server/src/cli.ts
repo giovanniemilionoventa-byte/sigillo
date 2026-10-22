@@ -7,7 +7,7 @@ import Database from "better-sqlite3";
 import { Command } from "commander";
 import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw, receiptHashHex } from "@sigillo/core";
 import { ApiKeyStore } from "./auth/api-keys.js";
-import { databaseFiles, describeDatabase, inventoryMarkdown, MIN_MARKER_LENGTH, scanDatabase, scanFiles, unclassifiedColumns, type ColumnHit } from "./assurance/privacy-check.js";
+import { databaseFiles, describeDatabase, inventoryMarkdown, MIN_MARKER_LENGTH, newCanary, scanDatabase, scanFiles, unclassifiedColumns, type ColumnHit } from "./assurance/privacy-check.js";
 import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
 import { DailyExporter } from "./backup/daily-export.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
@@ -939,6 +939,13 @@ privacy
     } finally {
       db.close();
     }
+  });
+
+privacy
+  .command("canary")
+  .description("Print a fresh marker to put in a prompt, a tool argument and a tool result of a real run of your agent")
+  .action(() => {
+    process.stdout.write(`${newCanary()}\n`);
   });
 
 privacy

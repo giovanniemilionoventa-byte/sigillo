@@ -65,7 +65,7 @@ Run from the repository root. Node 22 and pnpm 10 are required.
 | `pnpm tsx scripts/gen-vectors.ts` | regenerate `packages/core/test/vectors.json` |
 | `pnpm tsx scripts/screenshots.ts [dir]` | regenerate `docs/screenshots/` against the real web view (default `docs/screenshots`) |
 | `pnpm tsx video/registra.ts tutto && video/monta.sh` | record the demo video from the real console (`video/README.md`) |
-| `sigillo-server privacy inventory\|scan` | what an installation stores, and the wider search for a phrase (the console's Privacy page does it for a customer; `docs/PRIVACY-CHECK.md`) |
+| `sigillo-server privacy inventory\|canary\|scan` | what an installation stores, and the canary test a partner runs (`docs/PRIVACY-CHECK.md`) |
 | `pnpm audit:deps` | known-vulnerability check of Node and Python dependencies (`audit:node`, `audit:python`); see `docs/DEPENDENCY-AUDIT.md` |
 
 Tests import `@sigillo/core` and resolve to `packages/core/src` through a vitest
