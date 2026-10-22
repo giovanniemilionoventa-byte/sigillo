@@ -4145,3 +4145,36 @@ clienti, senza interruttori. `style-v2.ts`, `design/tokens-v2.json`, `site-v2.ts
 `ui.ts`; test aggiornati per la nuova tavolozza e il tema scuro predefinito.
 
 Verificatore: invariato.
+
+## Pacchetto prove per i partner (2026-10-22)
+
+Su richiesta del titolare, dopo il messaggio di Polina (i partner rispondono ai loro clienti dei
+dati, quindi vogliono prove che sigillo non tiene i contenuti):
+
+- **`sigillo-server privacy inventory`**: ogni tabella e colonna del database, con il numero di
+  righe e che tipo di valore tiene. La classificazione è in `apps/server/src/assurance/privacy-check.ts`;
+  `docs/STORAGE-INVENTORY.md` è generato da lì (`--markdown`) e un test fallisce se lo schema
+  guadagna una colonna non classificata, o se la pagina non è aggiornata.
+- **`sigillo-server privacy canary` / `privacy scan <marcatore>`**: il "test del canarino" che un
+  partner o un revisore fa da sé (`docs/PRIVACY-CHECK.md`). Il marcatore passa dal proprio agente;
+  la scansione lo cerca in ogni colonna, nei byte del file e del WAL, e in log, backup ed export
+  indicati (anche dentro gli zip). Esce 2 se lo trova e dice dove. `privacy-check.test.ts` lo fa in
+  CI: marcatore in tutti gli attributi di contenuto noti e in una chiamata vera al gateway, non
+  deve trovarlo; messo in un nome di span o in `user.id`, deve trovarlo.
+- **`sigillo-server org erase <id> --confirm <id>`**: cancellazione di un cliente a fine contratto
+  (i testi privacy la promettevano, il database la impediva). Il database la permette solo dopo che
+  la cancellazione di quell'organizzazione è nel registro amministrativo; la vista
+  `operator_erasable_chains` è ricreata all'apertura sui database esistenti. Nessuna nuova versione
+  di schema: una release precedente legge il database come prima. Toglie anche i legami
+  pseudonimo-persona che nessuna ricevuta rimasta nomina. Solo da riga di comando.
+
+Verificatore: invariato.
+
+
+### Avviso su vite (2026-10-22)
+
+Il controllo delle dipendenze è diventato rosso senza modifiche nostre: nuovi avvisi su `vite`
+8.3.0-8.3.2 (GHSA-587h-7wmj-h5pm, alto, e altri) e su `@vitest/mocker` <4.1.12, entrambi solo
+strumenti di test (`vitest`), non nel prodotto (`pnpm audit --prod` era già pulito). `vitest`
+passa a `^4.1.12`, e `vite`, che arriva solo tramite vitest, è fissato a 8.3.4 con
+`pnpm.overrides` (pnpm non lo riprendeva da solo). Nessuna nuova dipendenza.

@@ -874,11 +874,22 @@ look up, and erase, another's people. On those pages the operator, too, finds
 only people its own systems acted for; erasing a person on a customer's
 request is done with `sigillo-server subject erase` on the server.
 
-**Retention and erasure are not implemented.** Nothing here deletes a
-recorded action, and the append-only triggers actively prevent it. The one
-deletion there is removes a system that never recorded one (see "Renaming,
-archiving and deleting a system"). A deployment with an erasure
-obligation needs a design for it that this version does not have.
+**Retention is not automatic, and erasure is all or nothing.** Nothing
+deletes a recorded action on a schedule, and the append-only triggers refuse
+any deletion of part of a chain: a chain with a hole in it no longer verifies.
+What can be deleted is a whole chain: a system that never recorded an action
+(see "Renaming, archiving and deleting a system"), one of the administrator's
+own systems, or, at the end of a customer's contract, every system of that
+customer with its people and its organization
+(`sigillo-server org erase <id> --confirm <id>`). That last one is allowed by
+the database only once the erasure of that very organization is in the
+administrative log, which the command writes first; a customer whose erasure
+is not logged keeps every guard. The log keeps the organization's id and the
+counts, not its name or its people's emails, but entries written before (the
+sign-up's email and company name) stay, as the log is append-only. Backups
+keep the erased data until they rotate out: two hours on the server, 30 days
+off-site. Erasing the oldest part of a chain while keeping the rest needs a
+new receipt format, proposed in `docs/PROPOSTA-CONSERVAZIONE.md` and not built.
 
 **The default timestamp authority is not qualified under eIDAS.** `TSA_URL`
 points at FreeTSA unless a deployment changes it. A FreeTSA token is a genuine

@@ -171,8 +171,10 @@ describe("the commands that only read", () => {
     expect((await cli("admin-log")).code).toBe(0);
     expect((await cli("key", "list")).code).toBe(0);
     expect((await cli("subject", "find", "nobody")).code).toBe(1);
+    expect((await cli("privacy", "inventory")).code).toBe(0);
+    expect((await cli("privacy", "scan", "sigillo-canary-nothing-sent")).code).toBe(0);
     expect(fileHash()).toBe(before);
-  });
+  }, 60_000);
 
   it("refuse a database at an older schema, without changing it, and migrate brings it up", async () => {
     const raw = new Database(databasePath);
@@ -190,5 +192,5 @@ describe("the commands that only read", () => {
     expect(migrated.code, migrated.stderr).toBe(0);
     expect(migrated.stdout).toContain(`schema ${SCHEMA_VERSION}`);
     expect((await cli("system", "list")).code).toBe(0);
-  });
+  }, 60_000);
 });

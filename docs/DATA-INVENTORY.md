@@ -106,8 +106,8 @@ purpose.
 - **Export**: `receipts.jsonl` holds every member. `artifacts-index.jsonl` repeats
   each artifact's `label`. `report.pdf` names the system and counts actions by
   kind, and shows no other text member.
-- **Server and Caddy logs**: request URLs, including a system's id in the path
-  and web-view search terms in the query string.
+- **Server and Caddy logs**: request paths, including a system's id, without
+  their query string (`docs/SECURITY.md`, "Secrets and logs").
 
 ## Digests are not anonymisation
 
