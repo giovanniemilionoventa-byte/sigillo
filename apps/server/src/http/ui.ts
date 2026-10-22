@@ -12,7 +12,8 @@ import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { archiveFromStore, positionsIn, tokensIn } from "../export/from-store.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
 import { gatewayAllowed, type GatewayOptions, providerRefuses } from "../gateway/llm.js";
-import { isProvider, ProviderKeyError } from "../gateway/provider-keys.js";
+import { isProvider, ProviderKeyError, VaultError, VaultLockedError } from "../gateway/provider-keys.js";
+import { vaultPage, type VaultView } from "./vault-page.js";
 import { AGENT_SETUP_SCRIPT } from "./agent-setup.js";
 import {
   normaliseDisplayName,
@@ -1232,6 +1233,74 @@ ${exportSheet(record)}`,
     return reply.redirect(`${systemPath(systemId)}/collega?fatto=ritirata`, 303);
   });
 
+  // The key vault: the passphrase that seals the account's model keys
+  // (gateway/provider-keys.ts). Present wherever the gateway is.
+  const vaultOwnerOf = (viewer: Viewer): string => (viewer.kind === "operator" ? "operator" : viewer.organizationId);
+  const renderVault = (session: Session, view: Omit<VaultView, "state">, status = 200, reply?: FastifyReply): string | FastifyReply => {
+    const vaults = options.gateway!.keys.vaults;
+    const owner = vaultOwnerOf(session.viewer);
+    const state = !vaults.exists(owner) ? "none" : vaults.isUnlocked(owner, options.now()) ? "open" : "locked";
+    const body = render(session, { title: UI.vault.title, current: "impostazioni", body: vaultPage({ ...view, state }) });
+    return reply === undefined ? body : html(reply, body, status);
+  };
+  const vaultRoute = (path: string, act: (session: Session, request: FastifyRequest, reply: FastifyReply, vaults: GatewayOptions["keys"]["vaults"], owner: string) => FastifyReply | Promise<FastifyReply>) => {
+    const handler = async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+      const session = requireSession(request, reply);
+      if (session === null) return reply;
+      if (options.gateway === undefined) return notFound(session, reply);
+      return act(session, request, reply, options.gateway.keys.vaults, vaultOwnerOf(session.viewer));
+    };
+    if (path === "") app.get("/ui/vault", handler);
+    else app.post(`/ui/vault/${path}`, handler);
+  };
+  const fieldOf = (request: FastifyRequest, name: string): string => {
+    const value = (request.body as Record<string, unknown> | undefined)?.[name];
+    return typeof value === "string" ? value : "";
+  };
+  vaultRoute("", (session, _request, reply) => renderVault(session, {}, 200, reply) as FastifyReply);
+  vaultRoute("create", (session, request, reply, vaults, owner) => {
+    const passphrase = fieldOf(request, "passphrase");
+    if (passphrase !== fieldOf(request, "again")) return renderVault(session, { error: UI.vault.mismatch }, 400, reply) as FastifyReply;
+    try {
+      const recoveryKey = options.gateway!.keys.createVault(owner, passphrase, options.now());
+      request.log.info({ action: "vault.create", owner }, "an account made its key vault");
+      return renderVault(session, { recoveryKey }, 200, reply) as FastifyReply;
+    } catch (error) {
+      if (!(error instanceof VaultError)) throw error;
+      const message = vaults.exists(owner) ? UI.vault.already : UI.vault.tooShort;
+      return renderVault(session, { error: message }, 400, reply) as FastifyReply;
+    }
+  });
+  vaultRoute("unlock", (session, request, reply, vaults, owner) => {
+    try {
+      if (!vaults.exists(owner) || !vaults.unlock(owner, fieldOf(request, "secret"), options.now())) {
+        return renderVault(session, { error: UI.vault.wrong }, 400, reply) as FastifyReply;
+      }
+    } catch (error) {
+      if (!(error instanceof VaultError)) throw error;
+      return renderVault(session, { error: UI.vault.tooMany }, 429, reply) as FastifyReply;
+    }
+    request.log.info({ action: "vault.unlock", owner }, "an account opened its key vault");
+    return reply.redirect("/ui/vault", 303);
+  });
+  vaultRoute("lock", (_session, request, reply, vaults, owner) => {
+    vaults.lock(owner);
+    request.log.info({ action: "vault.lock", owner }, "an account locked its key vault");
+    return reply.redirect("/ui/vault", 303);
+  });
+  vaultRoute("passphrase", (session, request, reply, vaults, owner) => {
+    const passphrase = fieldOf(request, "passphrase");
+    if (passphrase !== fieldOf(request, "again")) return renderVault(session, { error: UI.vault.mismatch }, 400, reply) as FastifyReply;
+    try {
+      vaults.changePassphrase(owner, passphrase, options.now());
+    } catch (error) {
+      if (!(error instanceof VaultError)) throw error;
+      const message = error instanceof VaultLockedError ? UI.vault.lockedTitle : UI.vault.tooShort;
+      return renderVault(session, { error: message }, 400, reply) as FastifyReply;
+    }
+    return renderVault(session, { notice: UI.vault.changed }, 200, reply) as FastifyReply;
+  });
+
   // The provider key of an uploaded agent (agent-setup.ts), sealed
   // (gateway/provider-keys.ts) and never shown again.
   app.post("/ui/systems/:systemId/llm-key", async (request, reply) => {
@@ -1248,8 +1317,9 @@ ${exportSheet(record)}`,
       if (await providerRefuses(body.provider, body.key.trim(), gateway.upstream?.[body.provider])) {
         return html(reply, renderManage(session, record, { error: UI.manage.modelKeyRefused }), 400);
       }
-      gateway.keys.set(systemId, body.provider, body.key, options.now().toISOString());
+      gateway.keys.set(systemId, body.provider, body.key, options.now().toISOString(), options.now());
     } catch (error) {
+      if (error instanceof VaultError) return html(reply, renderVault(session, { error: UI.vault.needFirst }) as string, 409);
       if (!(error instanceof ProviderKeyError)) throw error;
       return html(reply, renderManage(session, record, { error: UI.manage.modelKeyInvalid }), 400);
     }

@@ -25,6 +25,7 @@ beforeEach(() => {
   databasePath = join(directory, "sigillo.db");
   sealingKey = loadOrCreateSealingKey(join(directory, "llm-gateway.key"));
   keys = ProviderKeyStore.open(databasePath, sealingKey);
+  keys.vaults.create("operator", "test passphrase 123", new Date(AT));
 });
 
 afterEach(() => {
@@ -67,9 +68,9 @@ describe("ProviderKeyStore", () => {
   it("gives a saved key back, and stores only its sealed form and last four characters", () => {
     expect(keys.set("bot", "openai", `  ${OPENAI_KEY}\n`, AT)).toEqual({ provider: "openai", last4: "6789", createdAt: AT });
     keys.set("bot", "anthropic", ANTHROPIC_KEY, AT);
-    expect(keys.get("bot", "openai")).toBe(OPENAI_KEY);
-    expect(keys.get("bot", "anthropic")).toBe(ANTHROPIC_KEY);
-    expect(keys.get("other-bot", "openai")).toBeNull();
+    expect(keys.get("bot", "openai", new Date(AT))).toBe(OPENAI_KEY);
+    expect(keys.get("bot", "anthropic", new Date(AT))).toBe(ANTHROPIC_KEY);
+    expect(keys.get("other-bot", "openai", new Date(AT))).toBeNull();
     expect(keys.list("bot")).toEqual([
       { provider: "anthropic", last4: "3210", createdAt: AT },
       { provider: "openai", last4: "6789", createdAt: AT },
@@ -89,16 +90,16 @@ describe("ProviderKeyStore", () => {
     keys.set("bot", "openai", OPENAI_KEY, AT);
     const second = rawRows()[0]!.sealed;
     expect(second).not.toBe(first);
-    expect(keys.get("bot", "openai")).toBe(OPENAI_KEY);
+    expect(keys.get("bot", "openai", new Date(AT))).toBe(OPENAI_KEY);
   });
 
   it("replaces a provider's key and removes it", () => {
     keys.set("bot", "openai", OPENAI_KEY, AT);
     keys.set("bot", "openai", `${OPENAI_KEY}NEW1`, AT);
-    expect(keys.get("bot", "openai")).toBe(`${OPENAI_KEY}NEW1`);
+    expect(keys.get("bot", "openai", new Date(AT))).toBe(`${OPENAI_KEY}NEW1`);
     expect(keys.remove("bot", "openai")).toBe(true);
     expect(keys.remove("bot", "openai")).toBe(false);
-    expect(keys.get("bot", "openai")).toBeNull();
+    expect(keys.get("bot", "openai", new Date(AT))).toBeNull();
   });
 
   it("refuses what does not look like a key", () => {
@@ -115,9 +116,9 @@ describe("ProviderKeyStore", () => {
     db.prepare("INSERT INTO provider_keys (system_id, provider, sealed, last4, created_at) VALUES (?, ?, ?, ?, ?)").run("thief", "openai", sealed, "6789", AT);
     db.prepare("INSERT INTO provider_keys (system_id, provider, sealed, last4, created_at) VALUES (?, ?, ?, ?, ?)").run("bot", "anthropic", sealed, "6789", AT);
     db.close();
-    expect(() => keys.get("thief", "openai")).toThrow();
-    expect(() => keys.get("bot", "anthropic")).toThrow();
-    expect(keys.get("bot", "openai")).toBe(OPENAI_KEY);
+    expect(() => keys.get("thief", "openai", new Date(AT))).toThrow();
+    expect(() => keys.get("bot", "anthropic", new Date(AT))).toThrow();
+    expect(keys.get("bot", "openai", new Date(AT))).toBe(OPENAI_KEY);
   });
 
   it("does not open a key whose sealed form was altered", () => {
@@ -129,15 +130,15 @@ describe("ProviderKeyStore", () => {
       const db = new Database(databasePath);
       db.prepare("UPDATE provider_keys SET sealed = ? WHERE system_id = 'bot'").run(altered.toString("base64"));
       db.close();
-      expect(() => keys.get("bot", "openai")).toThrow();
+      expect(() => keys.get("bot", "openai", new Date(AT))).toThrow();
     }
   });
 
-  it("does not open anything under another sealing key", () => {
+  it("does not open anything without the account's passphrase, whatever key file it has", () => {
     keys.set("bot", "openai", OPENAI_KEY, AT);
     const other = ProviderKeyStore.open(databasePath, loadOrCreateSealingKey(join(directory, "another.key")));
     try {
-      expect(() => other.get("bot", "openai")).toThrow();
+      expect(() => other.get("bot", "openai", new Date(AT))).toThrow();
       expect(other.list("bot")).toEqual([{ provider: "openai", last4: "6789", createdAt: AT }]);
     } finally {
       other.close();

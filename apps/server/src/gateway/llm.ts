@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Receipt } from "@sigillo/core";
 import type { ReceiptStore } from "../storage/store.js";
 import { CATALOG, isProvider, type Provider } from "./catalog.js";
-import type { ProviderKeyStore } from "./provider-keys.js";
+import { VaultLockedError, type ProviderKeyStore } from "./provider-keys.js";
 import { toolRequestsOf } from "./tool-requests.js";
 
 /**
@@ -104,7 +104,13 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
     if (!gatewayAllowed(options.access, store.systemRecord(systemId)?.organization_id ?? null)) {
       return reply.code(403).send({ error: "the model gateway is not available for this account yet" });
     }
-    const providerKey = options.keys.get(systemId, provider);
+    let providerKey: string | null;
+    try {
+      providerKey = options.keys.get(systemId, provider, now());
+    } catch (error) {
+      if (!(error instanceof VaultLockedError)) throw error;
+      return reply.code(423).send({ error: "the account's key vault is locked: its owner must unlock it in the sigillo console" });
+    }
     if (providerKey === null) {
       return reply.code(409).send({ error: `no ${provider} key is set for ${systemId}: add one in the console, on the system's page` });
     }

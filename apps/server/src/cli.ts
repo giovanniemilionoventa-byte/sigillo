@@ -220,6 +220,7 @@ program
         : ProviderKeyStore.open(
             options.db,
             loadOrCreateSealingKey(process.env["SIGILLO_LLM_GATEWAY_KEY_FILE"] || join(dirname(options.db), "llm-gateway.key")),
+            (systemId) => store.systemRecord(systemId)?.organization_id ?? "operator",
           );
 
     // Every chain's tip against the signer's head, before any request is

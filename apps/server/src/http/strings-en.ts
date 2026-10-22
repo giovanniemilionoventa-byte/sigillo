@@ -622,6 +622,40 @@ const ui: Strings = {
     dropHint: "or choose one",
     notModified: "It has not been modified",
   },
+  // The key vault (gateway/provider-keys.ts, vault-page.ts).
+  vault: {
+    title: "Key vault",
+    intro:
+      "The model keys you give us are encrypted with a passphrase only you know. Nothing on the server opens them: not us, and not anyone with access to the disk or a backup.",
+    createTitle: "Create the vault",
+    passphrase: "Passphrase (at least 12 characters)",
+    passphraseAgain: "Repeat the passphrase",
+    create: "Create the vault",
+    mismatch: "The two passphrases do not match.",
+    tooShort: "The passphrase needs at least 12 characters.",
+    already: "The vault already exists.",
+    recoveryTitle: "Recovery key",
+    recoveryText:
+      "Save it now somewhere safe (a password manager will do). We will not show it again and cannot make it again: if you lose both the passphrase and this key, the model keys cannot be recovered and have to be entered again.",
+    recoveryDone: "I have saved it",
+    lockedTitle: "The vault is locked",
+    lockedText:
+      "While it is locked, agents cannot use your model keys. Enter the passphrase (or the recovery key) to open it: it stays open for 12 hours, or until you lock it. If the server restarts, it has to be opened again.",
+    unlock: "Unlock",
+    unlockField: "Passphrase or recovery key",
+    wrong: "Wrong passphrase or recovery key.",
+    tooMany: "Too many wrong attempts: try again in a few minutes.",
+    openTitle: "The vault is open",
+    openText: "Agents can use your model keys. It locks itself after 12 hours.",
+    lock: "Lock now",
+    changeTitle: "Change passphrase",
+    change: "Change passphrase",
+    changed: "Passphrase changed. The recovery key stays the same.",
+    needFirst: "First unlock or create the vault, then enter the model key again.",
+    link: "Keys are encrypted with your passphrase: manage the vault",
+    limits:
+      "The limit: while the vault is open, and while you type the passphrase, the server has what it needs to use the keys, because model calls pass through it. Prompts and answers are not stored.",
+  },
   languages: { en: "English", it: "Italiano" },
   languageLabel: "Language",
 };

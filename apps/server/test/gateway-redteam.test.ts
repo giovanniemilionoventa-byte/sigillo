@@ -85,6 +85,7 @@ beforeAll(async () => {
   agentKey = keys.issue(SYSTEM, NOW).token;
   otherKey = keys.issue(OTHER, NOW).token;
   providerKeys = ProviderKeyStore.open(databasePath, loadOrCreateSealingKey(join(directory, "llm-gateway.key")));
+  providerKeys.vaults.create("operator", "test passphrase 123", new Date(NOW));
   providerKeys.set(SYSTEM, "openai", OPENAI_KEY, NOW);
   providerKeys.set(SYSTEM, "anthropic", ANTHROPIC_KEY, NOW);
   const now = (): Date => new Date(NOW);

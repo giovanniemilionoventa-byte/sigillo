@@ -378,6 +378,7 @@ function modelKeyForm(systemId: string): string {
 <label>${escape(t.modelProvider)} <select name="provider">${PROVIDERS.map((name) => `<option value="${name}">${escape(CATALOG[name].label)}</option>`).join("")}</select></label>
 <label>${escape(t.modelKey)} <input type="password" name="key" autocomplete="off" required></label>
 <p>${escape(t.modelRevoke)}</p>
+<p><a href="/ui/vault">${escape(UI.vault.link)}</a></p>
 <button class="button primary" type="submit">${escape(t.modelSave)}</button>
 </form>
 `;

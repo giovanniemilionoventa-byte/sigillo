@@ -638,6 +638,40 @@ const ui = {
     notModified: "Non è stato modificato",
   },
   // The words inside the connection snippets that are not code.
+  // The key vault (gateway/provider-keys.ts, vault-page.ts).
+  vault: {
+    title: "Cassaforte delle chiavi",
+    intro:
+      "Le chiavi dei modelli che ci affidi sono cifrate con una passphrase che conosci solo tu. Sul server non c'è nulla che le apra: né noi, né chi avesse accesso al disco o a un backup possiamo leggerle.",
+    createTitle: "Crea la cassaforte",
+    passphrase: "Passphrase (almeno 12 caratteri)",
+    passphraseAgain: "Ripeti la passphrase",
+    create: "Crea la cassaforte",
+    mismatch: "Le due passphrase non coincidono.",
+    tooShort: "La passphrase deve avere almeno 12 caratteri.",
+    already: "La cassaforte esiste già.",
+    recoveryTitle: "Chiave di recupero",
+    recoveryText:
+      "Salvala adesso in un posto sicuro (un gestore di password va bene). Non la mostreremo più e non possiamo rigenerarla: se perdi la passphrase e questa chiave, le chiavi dei modelli non si recuperano e vanno inserite di nuovo.",
+    recoveryDone: "L'ho salvata",
+    lockedTitle: "La cassaforte è chiusa",
+    lockedText:
+      "Finché è chiusa, gli agenti non possono usare le tue chiavi dei modelli. Inserisci la passphrase (o la chiave di recupero) per aprirla: resta aperta 12 ore, o finché non la chiudi. Se il server si riavvia, va riaperta.",
+    unlock: "Apri",
+    unlockField: "Passphrase o chiave di recupero",
+    wrong: "Passphrase o chiave di recupero sbagliata.",
+    tooMany: "Troppi tentativi sbagliati: riprova tra qualche minuto.",
+    openTitle: "La cassaforte è aperta",
+    openText: "Gli agenti possono usare le tue chiavi dei modelli. Si chiuderà da sola dopo 12 ore.",
+    lock: "Chiudi adesso",
+    changeTitle: "Cambia passphrase",
+    change: "Cambia passphrase",
+    changed: "Passphrase cambiata. La chiave di recupero resta la stessa.",
+    needFirst: "Prima apri o crea la cassaforte, poi inserisci di nuovo la chiave del modello.",
+    link: "Le chiavi sono cifrate con la tua passphrase: gestisci la cassaforte",
+    limits:
+      "Il limite: mentre la cassaforte è aperta, e mentre scrivi la passphrase, il server ha ciò che serve per usare le chiavi, perché le chiamate ai modelli passano da lui. Prompt e risposte non vengono salvati.",
+  },
   // The two languages, each always named in its own words.
   languages: { en: "English", it: "Italiano" },
   languageLabel: "Lingua",

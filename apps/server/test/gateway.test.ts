@@ -125,6 +125,7 @@ beforeEach(async () => {
   operatorToken = keys.issue(OPERATOR_BOT, "2026-10-05T16:00:00.000Z").token;
   acmeToken = keys.issue(ACME_BOT, "2026-10-05T16:00:00.000Z").token;
   providerKeys = ProviderKeyStore.open(databasePath, loadOrCreateSealingKey(join(directory, "llm-gateway.key")));
+  providerKeys.vaults.create("operator", "test passphrase 123", new Date(NOW));
   for (const systemId of [OPERATOR_BOT, ACME_BOT]) {
     providerKeys.set(systemId, "openai", OPENAI_KEY, ADMIN.ts);
     providerKeys.set(systemId, "anthropic", ANTHROPIC_KEY, ADMIN.ts);
