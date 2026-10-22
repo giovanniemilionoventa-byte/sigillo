@@ -11,7 +11,7 @@ import type { ChainHealthMonitor } from "../health/chain-health.js";
 import { adaptSpans } from "../ingest/adapter.js";
 import { decodeJsonTraces, decodeProtobufTraces, OtlpDecodeError } from "../ingest/otlp.js";
 import { SignerRefusedError, SignerUnavailableError } from "../signer/errors.js";
-import type { ReceiptStore } from "../storage/store.js";
+import { NONCE_KEPT_BY_CUSTOMER, type ReceiptStore } from "../storage/store.js";
 import type { UiSessions } from "../auth/sessions.js";
 import { registerUi, type UiOptions } from "./ui.js";
 
@@ -190,9 +190,9 @@ const receiptRequestSchema = z
       .optional(),
     input_hash: hex64.nullable().optional(),
     output_hash: hex64.nullable().optional(),
-    /** The nonce the caller salted input_hash under: the digest is then recorded as salted. */
-    input_nonce: hex64.optional(),
-    output_nonce: hex64.optional(),
+    /** The nonce the caller salted input_hash under, or "customer" if it keeps it: the digest is then recorded as salted. */
+    input_nonce: hex64.or(z.literal(NONCE_KEPT_BY_CUSTOMER)).optional(),
+    output_nonce: hex64.or(z.literal(NONCE_KEPT_BY_CUSTOMER)).optional(),
     /** A value to digest here with a salt, and discard. Never stored, never logged. */
     input: z.unknown().optional(),
     output: z.unknown().optional(),

@@ -176,6 +176,23 @@ describe("adding sigillo to an agent's file", () => {
     if (python) expect(parses(result.text)).toBe(true);
   });
 
+  it("writes the customer's own key into the file, and asks for the SDK that knows it", () => {
+    const customerKey = "0f".repeat(32);
+    const result = setup("from langchain_openai import ChatOpenAI\n", { ...SETTINGS, customerKey } as typeof SETTINGS);
+    if (result.status !== "added") throw new Error("expected the lines added");
+    const lines = result.text.split("\n");
+    expect(lines[lines.indexOf(`    system_id="${SETTINGS.system}",`) + 1]).toBe(`    customer_key="${customerKey}",`);
+    expect(result.text).toContain("< (0, 9):");
+    if (python) expect(parses(result.text)).toBe(true);
+    // Without one, as before.
+    expect(added("from langchain_openai import ChatOpenAI\n").text).not.toContain("customer_key");
+  });
+
+  it("makes the customer key in the browser, from its own random source, and sends it nowhere", () => {
+    expect(AGENT_SETUP_SCRIPT).toContain("crypto.getRandomValues(new Uint8Array(32))");
+    expect(AGENT_SETUP_SCRIPT).not.toMatch(/fetch\(|XMLHttpRequest|sendBeacon/);
+  });
+
   it("is the code the browser runs", () => {
     expect(AGENT_SETUP_SCRIPT).toContain(AGENT_SETUP_SOURCE);
   });

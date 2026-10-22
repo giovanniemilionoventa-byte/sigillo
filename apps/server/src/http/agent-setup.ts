@@ -222,6 +222,9 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   // mistralai through the gateway, 0.8 for the openai library on a local model) is replaced the same way, and the
   // file then runs itself again, so that nothing from the old one stays
   // loaded. SIGILLO_SETUP_DONE stops that from repeating if the install did not help.
+  // The customer's own key (made by the page in this browser): the SDK salts
+  // every digest under a nonce made from it, and never sends the nonce. 0.9 knows it.
+  if (settings.customerKey) sdkMinor = Math.max(sdkMinor, 9);
   var extras = frameworks.length > 0 ? "[" + frameworks.join(",") + "]" : "";
   var requirement = "sigillo" + extras + " @ " + settings.url;
   var block = gatewayLines.concat(gatewayLines.length > 0 ? [""] : [], ["try:", "    import sigillo"]);
@@ -250,6 +253,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
     "    api_key=" + JSON.stringify(settings.key) + ",",
     "    system_id=" + JSON.stringify(settings.system) + ",",
   );
+  if (settings.customerKey) block.push("    customer_key=" + JSON.stringify(settings.customerKey) + ",");
   // Always said, even when empty: left out, the SDK would try every
   // instrumentation, which is how a plain agent came to be told about crewai.
   block.push("    instrument=" + JSON.stringify(instrument).replace(/,/g, ", ") + ",");
@@ -279,6 +283,7 @@ ${AGENT_SETUP_SOURCE}
 
   var box = document.getElementById("sigillo-agent");
   if (box === null) return;
+  var typed = document.getElementById("sigillo-customer-key");
   var input = document.getElementById("sigillo-agent-file");
   var done = document.getElementById("sigillo-agent-done");
   var problem = document.getElementById("sigillo-agent-problem");
@@ -306,7 +311,16 @@ ${AGENT_SETUP_SOURCE}
     url: box.dataset.url,
     protection: box.dataset.protection === "true",
     stdlib: box.dataset.stdlib === "1",
+    // Made here, in the browser, and written only into the file it gives back:
+    // sigillo never receives it.
+    customerKey: Array.prototype.map
+      .call(crypto.getRandomValues(new Uint8Array(32)), function (byte) {
+        return (byte < 16 ? "0" : "") + byte.toString(16);
+      })
+      .join(""),
   };
+  // The same key in the code to paste by hand, so that either way gets one.
+  if (typed !== null) typed.textContent = base.customerKey;
   var give = function (name, result) {
     var link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([result.text], { type: "text/x-python" }));

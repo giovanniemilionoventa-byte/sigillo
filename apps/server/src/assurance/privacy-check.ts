@@ -5,13 +5,13 @@ import type Database from "better-sqlite3";
 import { readZip } from "@sigillo/core";
 
 /**
- * What a partner, a customer or an assessor can check for themselves about
- * what sigillo keeps, without taking anyone's word for it (docs/PRIVACY-CHECK.md).
+ * What a sigillo installation keeps, for whoever runs it or reviews it
+ * (docs/DATA-PROTECTION.md, last section).
  *
  * Two tools. The inventory classifies every column the schema creates, and a
  * test fails when a column appears that it does not classify, so the page
  * generated from it (docs/STORAGE-INVENTORY.md) cannot fall behind the code.
- * The canary scan looks for a marker the checker sent through their own agent
+ * The scan looks for a marker sent through an agent
  * in every column of every table, in the database file's raw bytes (its write-
  * ahead log included, and so any page that was freed but not overwritten), and
  * in any other file or folder named: logs, backups, exports.
@@ -315,8 +315,8 @@ export function inventoryMarkdown(): string {
     "Generated from `apps/server/src/assurance/privacy-check.ts` (`sigillo-server privacy inventory --markdown`).",
     "A test fails if the database schema gains a column this page does not classify, so the page cannot",
     "silently fall behind the code. To see the same thing for a running installation, with row counts:",
-    "`sigillo-server privacy inventory --db <file>`. To check that content you sent is not stored",
-    "anywhere, see `docs/PRIVACY-CHECK.md`. What the text members of a receipt contain is",
+    "`sigillo-server privacy inventory --db <file>`. Why content never reaches it, and the customer's",
+    "own key, are in `docs/DATA-PROTECTION.md`. What the text members of a receipt contain is",
     "described in `docs/DATA-INVENTORY.md`.",
     "",
     "Nothing in the database holds a prompt, a model answer, a tool argument, a tool result or a",

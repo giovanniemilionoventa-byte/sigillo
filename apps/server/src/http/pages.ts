@@ -307,6 +307,9 @@ export const SDK_REQUIREMENT =
  * endpoints still answer, the SDK itself sends to the first, but neither is
  * offered here.
  */
+/** Where the page's script writes a key it made in the browser; the placeholder stays without the script. */
+const CUSTOMER_KEY_MARK = "\u0000customer-key\u0000";
+
 function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, plainAgents: boolean, protection: boolean = false, gateway: boolean = false): string {
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
@@ -319,6 +322,8 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
     `    endpoint="${endpoint}",`,
     `    api_key="${key}",`,
     `    system_id="${systemId}",`,
+    `    # ${t.customerKeyComment}`,
+    `    customer_key="${CUSTOMER_KEY_MARK}",`,
     '    instrument=["langchain"],',
     ")",
   ].join("\n");
@@ -331,7 +336,7 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
 ${pythonWay}
 </div>
 ${agent}${install}
-<pre class="code python">${escape(python)}</pre>`;
+<pre class="code python">${escape(python).replace(CUSTOMER_KEY_MARK, `<span id="sigillo-customer-key">${escape(t.customerKeyPlaceholder)}</span>`)}</pre>`;
 }
 
 /**

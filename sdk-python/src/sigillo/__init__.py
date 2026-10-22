@@ -58,6 +58,7 @@ import logging as _logging
 import mimetypes as _mimetypes
 import os as _os
 import pathlib as _pathlib
+import re as _re
 import secrets as _secrets
 import subprocess as _subprocess
 import sys as _sys
@@ -83,8 +84,8 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor as _BatchSpanProce
 from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
 from . import _gateway, _text, _watchdog
 
-__all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"]
-__version__ = "0.8.0"
+__all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "nonce_for", "Tracing"]
+__version__ = "0.9.0"
 
 _LOG = _logging.getLogger("sigillo")
 _TRACES_PATH = "/v1/traces"
@@ -637,7 +638,46 @@ def _salted_hash_content_value(value: str, nonce: bytes) -> str:
     return _hashlib.sha256(nonce + _json.dumps(value, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
-def _filtered_attributes(attributes: object, salt: bool = True) -> dict[str, object]:
+# What `sigillo.<role>.nonce` says instead of a nonce when the customer key
+# made it: the server records the digest as salted and keeps no opening.
+_NONCE_KEPT_BY_CUSTOMER = "customer"
+
+_TRACE_ID_HEX = _re.compile(r"[0-9a-f]{32}")
+_SPAN_ID_HEX = _re.compile(r"[0-9a-f]{16}")
+
+
+def nonce_for(customer_key: bytes | str, trace_id: str, span_id: str, role: str) -> str:
+    """The nonce a digest was salted under, when `init` had a `customer_key`:
+    64 hex characters, to give the verifier as `--nonce` together with the
+    content, which shows that a receipt's digest is of that content.
+
+    It is HMAC-SHA256(`customer_key`, "sigillo-nonce-v1\\n" + trace_id + "\\n" +
+    span_id + "\\n" + role), with `trace_id` and `span_id` as the receipt's
+    `source` names them (32 and 16 lowercase hex characters) and `role` either
+    "input" or "output". The key never leaves the customer's process, and
+    neither does the nonce: sigillo receives the digest only, so neither
+    sigillo nor anyone who takes its database can test a guess ("score: 7")
+    against it. Whoever holds the key can rebuild every nonce at any time;
+    once the key is destroyed, nobody can, and every digest it salted is cut
+    off from its content for good.
+    """
+    key_bytes = customer_key.encode("utf-8") if isinstance(customer_key, str) else customer_key
+    if not key_bytes:
+        raise ValueError("customer_key must not be empty")
+    if not _TRACE_ID_HEX.fullmatch(trace_id) or not _SPAN_ID_HEX.fullmatch(span_id):
+        raise ValueError("trace_id and span_id are 32 and 16 lowercase hex characters, as in the receipt's source")
+    if role not in ("input", "output"):
+        raise ValueError('role is "input" or "output"')
+    message = f"sigillo-nonce-v1\n{trace_id}\n{span_id}\n{role}".encode("ascii")
+    return _hmac.new(key_bytes, message, _hashlib.sha256).hexdigest()
+
+
+def _filtered_attributes(
+    attributes: object,
+    salt: bool = True,
+    customer_key: bytes | str | None = None,
+    ids: tuple[str, str] | None = None,
+) -> dict[str, object]:
     kept: dict[str, object] = {}
     if not attributes:
         return kept
@@ -645,7 +685,12 @@ def _filtered_attributes(attributes: object, salt: bool = True) -> dict[str, obj
         digest_name = _CONTENT_ATTRIBUTES.get(key)
         if digest_name is not None:
             if isinstance(value, str) and digest_name not in kept:
-                if salt:
+                if customer_key is not None and ids is not None:
+                    role = "input" if digest_name == "sigillo.input.sha256" else "output"
+                    nonce = bytes.fromhex(nonce_for(customer_key, ids[0], ids[1], role))
+                    kept[digest_name] = _salted_hash_content_value(value, nonce)
+                    kept[_NONCE_ATTRIBUTES[digest_name]] = _NONCE_KEPT_BY_CUSTOMER
+                elif salt:
                     nonce = _secrets.token_bytes(32)
                     kept[digest_name] = _salted_hash_content_value(value, nonce)
                     kept[_NONCE_ATTRIBUTES[digest_name]] = nonce.hex()
@@ -670,7 +715,7 @@ def _filtered_event(event: _Event) -> _Event:
     return _Event(event.name, kept, event.timestamp)
 
 
-def _filtered_span(span: _ReadableSpan, salt: bool = True) -> _ReadableSpan:
+def _filtered_span(span: _ReadableSpan, salt: bool = True, customer_key: bytes | str | None = None) -> _ReadableSpan:
     """A copy of `span`, its attributes replaced, its exception events cut
     down to the exception's class (`_filtered_event`) and its status to its
     code: OpenTelemetry writes "ValueError: <the message>" as the description
@@ -685,7 +730,12 @@ def _filtered_span(span: _ReadableSpan, salt: bool = True) -> _ReadableSpan:
         context=span.context,
         parent=span.parent,
         resource=span.resource,
-        attributes=_filtered_attributes(span.attributes, salt),
+        attributes=_filtered_attributes(
+            span.attributes,
+            salt,
+            customer_key,
+            (f"{span.context.trace_id:032x}", f"{span.context.span_id:016x}") if span.context is not None else None,
+        ),
         events=[_filtered_event(event) for event in span.events],
         links=span.links,
         kind=span.kind,
@@ -703,13 +753,21 @@ class _ContentFilteringExporter(_OTLPSpanExporter):
     process (fase 9, decision D6).
     """
 
-    def __init__(self, *args: object, salt: bool = True, show: bool = False, **kwargs: object) -> None:
+    def __init__(
+        self,
+        *args: object,
+        salt: bool = True,
+        customer_key: bytes | str | None = None,
+        show: bool = False,
+        **kwargs: object,
+    ) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self._salt = salt
+        self._customer_key = customer_key
         self._show = show
 
     def export(self, spans: _Sequence[_ReadableSpan]) -> _SpanExportResult:
-        filtered = [_filtered_span(span, self._salt) for span in spans]
+        filtered = [_filtered_span(span, self._salt, self._customer_key) for span in spans]
         if self._show:
             for span in filtered:
                 _show_span(span)
@@ -754,6 +812,7 @@ def init(
     ollama_url: str | None = None,
     redact_content: bool = True,
     salt_content: bool = True,
+    customer_key: bytes | str | None = None,
     heartbeat_seconds: float = 60.0,
     show_sent: bool = False,
     strict: bool = False,
@@ -800,6 +859,17 @@ def init(
             that reads the nonce (October 2026 or later); an older one would
             record the salted digest as a plain one, so set this to false only
             for such a server.
+        customer_key: none by default. The customer's own secret: each
+            digest is then salted with a nonce made from this key and the
+            span (`nonce_for`), and the nonce is not sent, only the word
+            "customer" in its place. Sigillo receives a digest and nothing
+            that opens it, so not even a short value can be guessed from it
+            on the server, by sigillo or by anyone who breaks into it; the
+            customer, with the key, can rebuild the nonce of any receipt and
+            show what it was of. Keep the key apart from sigillo and keep a
+            copy: once it is lost, nobody can open the digests it salted.
+            Needs a server from 22 October 2026 or later; an older one leaves
+            these digests out of the receipt rather than misrecording them.
         heartbeat_seconds: how often the agent tells the server it is still
             connected, 60 by default. The server calls an agent disconnected
             after three minutes without a beat, and writes that on the chain,
@@ -846,6 +916,16 @@ def init(
         raise ValueError("system_id must not be empty")
     if not heartbeat_seconds > 0:
         raise ValueError("heartbeat_seconds must be a positive number of seconds")
+    if customer_key is not None:
+        if not customer_key:
+            raise ValueError("customer_key must not be empty")
+        if (customer_key.startswith("<") if isinstance(customer_key, str) else customer_key.startswith(b"<")):
+            raise ValueError(
+                "customer_key is still the placeholder: put your own secret there, for example the output of "
+                "python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        if not (redact_content and salt_content):
+            raise ValueError("customer_key salts the digests made here: it needs redact_content and salt_content")
 
     requested = instrument is not None
     if instrument is None:
@@ -872,7 +952,9 @@ def init(
 
     headers = {"Authorization": f"Bearer {api_key}"}
     exporter = (
-        _ContentFilteringExporter(endpoint=traces_endpoint, headers=headers, salt=salt_content, show=show_sent)
+        _ContentFilteringExporter(
+            endpoint=traces_endpoint, headers=headers, salt=salt_content, customer_key=customer_key, show=show_sent
+        )
         if redact_content
         else (_ShowingExporter if show_sent else _OTLPSpanExporter)(endpoint=traces_endpoint, headers=headers)
     )

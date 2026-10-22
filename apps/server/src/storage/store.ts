@@ -89,7 +89,10 @@ export interface ChainEvent {
   output_hash: string | null;
   raw_input?: { value: unknown };
   raw_output?: { value: unknown };
-  /** The 32-byte nonce, hex, the client salted `input_hash` under: the digest is then recorded as salted. */
+  /**
+   * The 32-byte nonce, hex, the client salted `input_hash` under: the digest is
+   * then recorded as salted. Or NONCE_KEPT_BY_CUSTOMER: salted, and no opening kept.
+   */
   input_nonce?: string;
   output_nonce?: string;
   outcome: Outcome;
@@ -131,6 +134,14 @@ export type ReconcileOutcome =
 
 /** A salt nonce as a client sends it: 32 bytes, lowercase hex. */
 const NONCE_HEX = /^[0-9a-f]{64}$/;
+
+/**
+ * Sent in place of a nonce when the client salted its digest under one made
+ * from the customer's own key (the SDK's `customer_key`): the digest is
+ * recorded as salted, and no opening is kept, because none was ever sent.
+ * Only the customer, with the key, can open it.
+ */
+export const NONCE_KEPT_BY_CUSTOMER = "customer";
 
 /** How many receipts to ask the signer's journal for at a time (its limit is 50). */
 const RECOVERY_PAGE = 50;
@@ -2220,11 +2231,13 @@ export class ReceiptStore {
     }
     if (clientNonce !== undefined) {
       // Salted by the client, which never sent the value: the nonce is kept
-      // in `openings` exactly like one made here, and erased the same way.
-      if (clientHash === null || !NONCE_HEX.test(clientNonce)) {
+      // in `openings` exactly like one made here, and erased the same way;
+      // or the customer kept it, and there is nothing to keep here.
+      if (clientHash === null || !(NONCE_HEX.test(clientNonce) || clientNonce === NONCE_KEPT_BY_CUSTOMER)) {
         throw new StorageError(`a ${role} nonce is 64 lowercase hex characters, sent with the digest it salted`);
       }
-      return { hash: clientHash, scheme: HASH_SCHEME_SALTED, nonce: clientNonce };
+      const nonce = clientNonce === NONCE_KEPT_BY_CUSTOMER ? null : clientNonce;
+      return { hash: clientHash, scheme: HASH_SCHEME_SALTED, nonce };
     }
     if (raw === undefined) {
       return { hash: clientHash, scheme: clientHash === null ? null : HASH_SCHEME_PLAIN, nonce: null };
