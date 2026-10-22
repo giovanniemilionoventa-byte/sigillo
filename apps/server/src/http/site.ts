@@ -894,7 +894,7 @@ export function registerSite(app: FastifyInstance, options: SiteOptions): void {
               body: page.body(context),
               head: metaTags(title, description, meta),
               scripts: page.path === "/verify" ? ["/verify.js"] : [],
-              ...(page.back?.startsWith("/blog") === true ? { current: "blog" as const } : {}),
+              ...(page.back?.startsWith("/blog") === true ? { current: "blog" as const } : page.path === "/verify" ? { current: "verify" as const } : {}),
             },
           ),
         );

@@ -98,6 +98,8 @@ describe("the public site, redesigned (SIGILLO_SITE_V2=all)", () => {
     expect(verify).toContain('id="drop"');
     expect(verify).toContain('<script src="/verify.js" defer>');
     expect(verify).toContain('href="/#prezzi"');
+    expect(verify).toContain('<a href="/verify" aria-current="page">Verify</a>');
+    expect((await getNew("/")).body).toContain('<a href="/verify">Verify</a>');
   });
 
   it("sends the old pricing and connect addresses to the new home's sections, which exist", async () => {
