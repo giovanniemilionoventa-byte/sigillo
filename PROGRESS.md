@@ -4178,3 +4178,20 @@ Il controllo delle dipendenze è diventato rosso senza modifiche nostre: nuovi a
 strumenti di test (`vitest`), non nel prodotto (`pnpm audit --prod` era già pulito). `vitest`
 passa a `^4.1.12`, e `vite`, che arriva solo tramite vitest, è fissato a 8.3.4 con
 `pnpm.overrides` (pnpm non lo riprendeva da solo). Nessuna nuova dipendenza.
+
+
+### Correzioni al sito pubblico (2026-10-22)
+
+Il titolare ha segnalato due difetti sul sito nuovo (`SIGILLO_SITE_V2=all`):
+
+- **Pulsanti "What you hand over" e "What it proves, what it does not" non cliccabili**: avevano la
+  classe `light`, che nella console è il pallino di stato (8×8 px, tondo). Il pulsante restava largo
+  42 px e il testo ne usciva. Classe rinominata `inv`. Lo stesso nome `s-top` era usato per
+  l'intestazione fissa e per la colonna delle FAQ: la seconda ora è `s-start`.
+- **/verify, /privacy e il blog mostravano il sito vecchio dentro un menu nuovo**: con il sito nuovo
+  attivo, solo `/` era ridisegnato. Ora tutte e quattro le pagine usano la cornice nuova
+  (`siteV2Inner` in `site-v2.ts`: stessa intestazione, banda contatti e piè di pagina della home);
+  il contenuto è quello di prima (`verify.js` invariato) con le sue regole riportate sui colori
+  nuovi. Anche `/pricing` e `/connect` ora portano a `/#prezzi` e `/#collega`, che esistono.
+
+Verificatore: invariato.
