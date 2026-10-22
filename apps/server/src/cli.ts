@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import { Command } from "commander";
 import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw, receiptHashHex } from "@sigillo/core";
 import { ApiKeyStore } from "./auth/api-keys.js";
+import { databaseFiles, describeDatabase, inventoryMarkdown, MIN_MARKER_LENGTH, newCanary, scanDatabase, scanFiles, unclassifiedColumns, type ColumnHit } from "./assurance/privacy-check.js";
 import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
 import { DailyExporter } from "./backup/daily-export.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
@@ -549,6 +550,27 @@ org
     }
   });
 
+org
+  .command("erase")
+  .description(
+    "Erase a customer at the end of its contract: every system with all its receipts, checkpoints and keys, its " +
+      "people and the organization. Cannot be undone: hand the customer its exports first",
+  )
+  .argument("<organization_id>")
+  .requiredOption("--confirm <organization_id>", "the organization's id, typed out again")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action(async (organizationId: string, options: DatabaseOption & { confirm: string }) => {
+    if (options.confirm !== organizationId) throw new Error("--confirm does not match: nothing was erased");
+    await withStore(options.db, async (store) => {
+      const erased = await store.eraseOrganization(organizationId, cliRequest());
+      process.stdout.write(
+        `erased ${organizationId}: ${erased.systems.length} system(s), ${erased.receipts_erased} receipt(s), ` +
+          `${erased.people} person(s) who signed in, ${erased.subjects_erased} pseudonym link(s)\n`,
+      );
+      process.stdout.write("the erasure is in the administrative log (sigillo-server admin-log); backups keep it until they rotate out\n");
+    });
+  });
+
 program
   .command("admin-log")
   .description(
@@ -888,6 +910,72 @@ openings
       });
     },
   );
+
+const privacy = program
+  .command("privacy")
+  .description("Check for yourself what this installation stores (docs/PRIVACY-CHECK.md)");
+
+privacy
+  .command("inventory")
+  .description("Every table and column of the database, its row count and what kind of value it holds")
+  .option("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .option("--markdown", "print the inventory of this release as docs/STORAGE-INVENTORY.md has it, without a database")
+  .action((options: { db?: string; markdown?: boolean }) => {
+    if (options.markdown === true) {
+      process.stdout.write(inventoryMarkdown());
+      return;
+    }
+    if (options.db === undefined) throw new Error("give --db, or --markdown");
+    const db = new Database(options.db, { readonly: true, fileMustExist: true });
+    try {
+      process.stdout.write(describeDatabase(db));
+      const unknown = unclassifiedColumns(db);
+      if (unknown.length > 0) {
+        process.stderr.write(
+          `UNCLASSIFIED: ${unknown.map(({ table, column }) => `${table}.${column}`).join(", ")}: this release does not describe them\n`,
+        );
+        process.exit(1);
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+privacy
+  .command("canary")
+  .description("Print a fresh marker to put in a prompt, a tool argument and a tool result of a real run of your agent")
+  .action(() => {
+    process.stdout.write(`${newCanary()}\n`);
+  });
+
+privacy
+  .command("scan")
+  .description(
+    "Look for a marker in every column of the database, in the raw bytes of its files (freed pages and the write-ahead " +
+      "log included), and in any other file or folder named: logs, backups, exports. Exits 2 if it is found anywhere",
+  )
+  .argument("<marker>", `the marker sent through the agent (at least ${MIN_MARKER_LENGTH} characters)`)
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .option(
+    "--also <path>",
+    "a file or folder to search as well (repeatable)",
+    (value: string, previous: string[] | undefined) => [...(previous ?? []), value],
+  )
+  .action((marker: string, options: DatabaseOption & { also?: string[] }) => {
+    if (marker.length < MIN_MARKER_LENGTH) throw new Error(`the marker must be at least ${MIN_MARKER_LENGTH} characters`);
+    const db = new Database(options.db, { readonly: true, fileMustExist: true });
+    let columns: ColumnHit[];
+    try {
+      columns = scanDatabase(db, marker);
+    } finally {
+      db.close();
+    }
+    const files = scanFiles([...databaseFiles(options.db), ...(options.also ?? [])], marker);
+    for (const hit of columns) process.stdout.write(`FOUND in ${hit.table}.${hit.column}: ${hit.rows} row(s)\n`);
+    for (const hit of files.hits) process.stdout.write(`FOUND in file ${hit.path}: ${hit.count} time(s)\n`);
+    if (columns.length > 0 || files.hits.length > 0) process.exit(2);
+    process.stdout.write(`not found: every column of the database, and ${files.scanned} file(s)\n`);
+  });
 
 try {
   await program.parseAsync(process.argv);
