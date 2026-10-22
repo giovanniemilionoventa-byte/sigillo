@@ -4170,3 +4170,11 @@ dati, quindi vogliono prove che sigillo non tiene i contenuti):
 
 Verificatore: invariato.
 
+
+### Avviso su vite (2026-10-22)
+
+Il controllo delle dipendenze è diventato rosso senza modifiche nostre: nuovi avvisi su `vite`
+8.3.0-8.3.2 (GHSA-587h-7wmj-h5pm, alto, e altri) e su `@vitest/mocker` <4.1.12, entrambi solo
+strumenti di test (`vitest`), non nel prodotto (`pnpm audit --prod` era già pulito). `vitest`
+passa a `^4.1.12`, e `vite`, che arriva solo tramite vitest, è fissato a 8.3.4 con
+`pnpm.overrides` (pnpm non lo riprendeva da solo). Nessuna nuova dipendenza.
