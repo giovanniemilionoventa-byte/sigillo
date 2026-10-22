@@ -1,99 +1,65 @@
 # Checking for yourself that sigillo does not keep your content
 
-This page is for a partner, a customer, or an assessor they hire, who wants
-to check what a sigillo installation stores instead of taking anyone's word
-for it. It takes about fifteen minutes and needs shell access to the machine
-the server runs on (on your own installation, or on ours with us beside you).
-
 The claim being checked: **prompts, model answers, tool arguments, tool
 results and documents never reach sigillo's storage.** They reach it only as
 SHA-256 digests (salted, for input and output). What sigillo does store is
 listed column by column in `docs/STORAGE-INVENTORY.md`, and the text members
 of a receipt are described in `docs/DATA-INVENTORY.md`.
 
-## The canary test
+## For a customer: the Privacy page
 
-1. **Get a marker.** A random string nobody could produce by accident:
+In the console, **Privacy** (`/ui/privacy`), for every account:
 
-   ```
-   sigillo-server privacy canary
-   sigillo-canary-3f9c0b7e1d2a4c5b8e6f7a9d0c1b2e3f
-   ```
+1. The page offers a random phrase (`sigillo-check-...`). Put it into
+   something your agent handles: a prompt, a document it reads, a tool
+   argument. Or type a phrase of your own, taken from your real data (at
+   least 8 characters).
+2. Press **Check now**. Sigillo searches everything it stores for your account:
+   your recorded actions, the documents they name, your systems' names, the
+   administrative log, keys, account details, the people your agents acted
+   for.
+3. The answer is one of two:
+   - **Not found**: the phrase is in nothing Sigillo stores for your account.
+   - **Found**, with where, in words, and what it means. The only expected
+     places are labels your agent itself sent (a span, tool or system *name*
+     that contains the phrase: use neutral names) and personal identifiers you
+     gave Sigillo (a user id, an email), which can be erased on request.
+     Anywhere else is a defect: please tell us.
 
-2. **Send it through your real agent**, connected to sigillo as you would in
-   production (the SDK, OpenTelemetry, or the model gateway). Put the marker
-   everywhere your agent puts content: in the user's prompt, in a document it
-   reads, in a tool's arguments, in what a tool returns, so that the model
-   repeats it in its answer. Run the agent once and check in the console that
-   the actions were recorded.
+What the search cannot do, and the page says so: it shows what is *stored*,
+not what passes through the server's memory (with the optional model gateway
+the prompt travels through the server during a call and is not saved), and it
+cannot see what your model provider keeps.
 
-3. **Scan for it**, on the server:
+Safety of the page itself: it is behind the sign-in; the search is cut down to
+the signed-in account's own systems and account details (`auth/tenancy.ts`), so
+one customer's answer never reveals anything of another's, and the operator's
+search covers the operator's own systems only; the phrase travels in a POST
+body (not in an address, not in the log), is escaped when shown back and is
+never written anywhere; one check per account every 3 seconds.
+`apps/server/test/privacy-page.test.ts` covers each of these, and fails if a
+table is added to the schema without a decision on whether the search covers
+it.
 
-   ```
-   sigillo-server privacy scan <marker> --db /var/lib/sigillo/sigillo.db \
-     --also /var/lib/sigillo-backups --also <a folder of server logs> --also <an export zip>
-   ```
+## For whoever runs the server, or an assessor: the command line
 
-   The scan looks in every column of every table of the database, then in the
-   raw bytes of the database file and of its write-ahead log, which also covers
-   pages that were freed but not yet overwritten. Every file under each
-   `--also` path is searched as well, and each zip (an export, a daily export)
-   is opened and searched entry by entry. The marker is searched for as UTF-8
-   and as UTF-16.
-
-   The expected result, and exit code 0:
-
-   ```
-   not found: every column of the database, and 14 file(s)
-   ```
-
-   If the marker is found, the scan says where, and exits with code 2:
-
-   ```
-   FOUND in receipts.action_name: 1 row(s)
-   FOUND in receipts.canonical: 1 row(s)
-   FOUND in file /var/lib/sigillo/sigillo.db: 2 time(s)
-   ```
-
-## When the marker is found
-
-It is found only where your agent put it in a field that sigillo records as
-sent, by design:
-
-| where it was found | what put it there | what to do |
-|---|---|---|
-| `subjects.identifier` | the marker was the user id (`user.id` / `enduser.id`) | expected: the identifier is kept, outside the evidence, so that a person can be found and erased. `sigillo-server subject erase --identifier <marker>` removes it, and the scan then finds nothing |
-| `receipts.action_name`, `receipts.canonical` | the marker was in a span's *name* (`"reply to <marker>"`), a tool name, an agent name or a model name | name spans and tools with code identifiers, never with data (`docs/DATA-INVENTORY.md`, "Recommendations") |
-| `artifacts.label` | the marker was an artifact label (a file name, for example) | label documents with a category such as `curriculum` |
-| `systems.display_name`, `admin_log.detail` | the marker was typed as a system's name | name systems neutrally |
-
-Anywhere else is a defect. Please report it to us: we treat it as a security
-incident (the incident plan in the partner pack).
-
-## What the test does and does not show
-
-- It shows what **this installation** stores, at the moment you run it, for
-  the paths you gave. It does not look at other machines: a reverse proxy's
-  logs (Caddy writes no request bodies, see `deploy/Caddyfile`), an off-site
-  backup copy (encrypted, see `docs/SECURITY.md`), or the model provider your
-  gateway calls go to (that provider receives the prompt, as it would without
-  sigillo).
-- It shows storage, not memory. While a request is being handled, its content
-  is in the server's memory: the model gateway must hold the prompt to forward
-  it. Nothing writes it out.
-- It does not replace an independent assessment. It makes one quick and
-  repeatable: an assessor can run it, read the code it runs
-  (`apps/server/src/assurance/privacy-check.ts`), and read the test that runs
-  the same check on every change (`apps/server/test/privacy-check.test.ts`).
+`sigillo-server privacy scan <phrase> --db <file> [--also <folder or file>]...`
+does the same search more widely: every column of every table, the raw bytes
+of the database file and its write-ahead log (which also covers pages that were
+freed but not yet overwritten), and every file under each `--also` path (logs,
+backups, exports; zips are opened and searched entry by entry), as UTF-8 and
+UTF-16. It exits 0 and prints `not found: ...` if nothing holds the phrase, and
+exits 2 and says where if something does. The phrase must be at least 16
+characters. `sigillo-server privacy inventory --db <file>` prints every table
+and column with its row count and its kind, and exits 1 if this release has a
+column it does not describe.
 
 ## The same check, on every change
 
-`apps/server/test/privacy-check.test.ts` runs this procedure in the test suite,
-which CI runs on every change. It sends the marker through an agent's spans in
-every content attribute the server knows (OpenInference, OpenTelemetry GenAI,
-tool parameters, an exception message) and through a real call to the model
-gateway, prompt and answer, then scans: nothing may be found. It also checks
-that the scan *does* find the marker when it is put in a field recorded as
-sent, so a scan that cannot fail would itself fail the test. A third test fails
-whenever the database gains a column that `docs/STORAGE-INVENTORY.md` does not
-classify.
+`apps/server/test/privacy-check.test.ts` puts a phrase through an agent's
+spans in every content attribute the server knows (OpenInference, GenAI, tool
+parameters, an exception message) and through a real model-gateway call, then
+scans: nothing may be found. It also checks that the scan *does* find the
+phrase when it is put in a field recorded as sent, so a scan that cannot fail
+would itself fail the test. Another test fails whenever the database gains a
+column that `docs/STORAGE-INVENTORY.md` does not classify.

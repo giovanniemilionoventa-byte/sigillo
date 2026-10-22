@@ -4155,12 +4155,11 @@ dati, quindi vogliono prove che sigillo non tiene i contenuti):
   righe e che tipo di valore tiene. La classificazione è in `apps/server/src/assurance/privacy-check.ts`;
   `docs/STORAGE-INVENTORY.md` è generato da lì (`--markdown`) e un test fallisce se lo schema
   guadagna una colonna non classificata, o se la pagina non è aggiornata.
-- **`sigillo-server privacy canary` / `privacy scan <marcatore>`**: il "test del canarino" che un
-  partner o un revisore fa da sé (`docs/PRIVACY-CHECK.md`). Il marcatore passa dal proprio agente;
-  la scansione lo cerca in ogni colonna, nei byte del file e del WAL, e in log, backup ed export
-  indicati (anche dentro gli zip). Esce 2 se lo trova e dice dove. `privacy-check.test.ts` lo fa in
-  CI: marcatore in tutti gli attributi di contenuto noti e in una chiamata vera al gateway, non
-  deve trovarlo; messo in un nome di span o in `user.id`, deve trovarlo.
+- **`sigillo-server privacy scan <frase>`**: la ricerca larga per chi gestisce il server o un
+  revisore (`docs/PRIVACY-CHECK.md`): ogni colonna, i byte del file e del WAL, e log, backup ed export
+  indicati (anche dentro gli zip). Esce 2 se trova e dice dove. `privacy-check.test.ts` lo fa in
+  CI: la frase in tutti gli attributi di contenuto noti e in una chiamata vera al gateway, non
+  deve trovarla; messa in un nome di span o in `user.id`, deve trovarla.
 - **`sigillo-server org erase <id> --confirm <id>`**: cancellazione di un cliente a fine contratto
   (i testi privacy la promettevano, il database la impediva). Il database la permette solo dopo che
   la cancellazione di quell'organizzazione è nel registro amministrativo; la vista
@@ -4195,3 +4194,18 @@ Il titolare ha segnalato due difetti sul sito nuovo (`SIGILLO_SITE_V2=all`):
   nuovi. Anche `/pricing` e `/connect` ora portano a `/#prezzi` e `/#collega`, che esistono.
 
 Verificatore: invariato.
+
+### Pagina Privacy nella console (2026-10-22)
+
+Su richiesta del titolare, per un controllo semplice per il cliente, al posto del comando da
+terminale per i clienti (il comando `privacy canary` è tolto: la frase la propone la pagina):
+`/ui/privacy`, per tutti gli account. Propone una frase casuale da far passare dall'agente (o se ne
+scrive una propria), poi un pulsante cerca la frase in tutto ciò che Sigillo conserva per quell'account
+e risponde "non trovata" o dove, a parole. Limiti dichiarati nella pagina: mostra ciò che è conservato,
+non ciò che passa dalla memoria (gateway modelli), e non vede il fornitore del modello.
+Sicurezza: dietro il login; la ricerca è ristretta ai sistemi e ai dati dell'account di chi guarda
+(`tenancy.ts`, `scanScope`), quindi non rivela nulla di altri clienti; la frase arriva in un POST,
+non finisce in indirizzi né nel log, è scritta con escape e non viene salvata; un controllo ogni
+3 secondi per account; 8-200 caratteri. Un test fallisce se lo schema guadagna una tabella su cui non
+si è deciso se la ricerca la copre. `privacy-page.test.ts`. Verificatore: invariato.
+

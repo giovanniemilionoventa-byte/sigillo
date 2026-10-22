@@ -27,6 +27,8 @@ import { registerAccounts, TRANSFER_COOKIE, TRANSFER_PATH, TRANSFER_TTL_MS } fro
 import { consoleV2, switchAllows, withConsoleV2 } from "./console-mode.js";
 import { siteV2Page } from "./site-v2.js";
 import { PACK_READER_SCRIPT } from "./pack-reader.js";
+import { MAX_PHRASE_LENGTH, MIN_PHRASE_LENGTH, newCanary } from "../assurance/privacy-check.js";
+import { privacyPage } from "./privacy-page.js";
 import { packReaderPage, adminTabs, actionsPage, actionsQuery, changesPage, evidencePage, keyCode, keysSection, accountPageV2, servicePage, sealsPage, statoPage, type RunPreview } from "./pages-v2.js";
 import { registerFonts } from "./fonts.js";
 import {
@@ -1050,6 +1052,38 @@ ${verifyDocumentResult(store, fingerprints, from, matches, options.now())}
         body,
       }),
     );
+  });
+
+  // The privacy page: a phrase searched in the viewer's own stored data
+  // (assurance/privacy-check.ts). The phrase comes in a POST body, which the
+  // log does not record, and is never written anywhere.
+  const lastPrivacyCheck = new Map<string, number>();
+  const PRIVACY_CHECK_GAP_MS = 3_000;
+
+  app.get("/ui/privacy", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    return html(reply, render(session, { title: UI.privacy.title, current: "privacy", body: privacyPage({ phrase: newCanary() }) }));
+  });
+
+  app.post("/ui/privacy/check", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const body = request.body as { phrase?: unknown } | undefined;
+    const phrase = typeof body?.phrase === "string" ? body.phrase.trim() : "";
+    const page = (view: Parameters<typeof privacyPage>[0], status = 200): FastifyReply =>
+      html(reply, render(session, { title: UI.privacy.title, current: "privacy", body: privacyPage(view) }), status);
+    // eslint-disable-next-line no-control-regex
+    if (phrase.length < MIN_PHRASE_LENGTH || /[\u0000-\u001f\u007f]/.test(phrase)) {
+      return page({ phrase, error: UI.privacy.tooShort(MIN_PHRASE_LENGTH) }, 400);
+    }
+    if (phrase.length > MAX_PHRASE_LENGTH) return page({ phrase: phrase.slice(0, MAX_PHRASE_LENGTH), error: UI.privacy.tooLong(MAX_PHRASE_LENGTH) }, 400);
+    const who = session.viewer.kind === "operator" ? "operator" : session.viewer.organizationId;
+    const now = options.now().getTime();
+    if (now - (lastPrivacyCheck.get(who) ?? 0) < PRIVACY_CHECK_GAP_MS) return page({ phrase, error: UI.privacy.tooOften }, 429);
+    lastPrivacyCheck.set(who, now);
+    const ids = session.store.listSystemRecords().map((record) => record.system_id);
+    return page({ phrase, result: session.store.searchOwnData(phrase, ids, session.viewer.kind === "operator" ? null : session.viewer.organizationId) });
   });
 
   const notFound = (session: Session, reply: FastifyReply): FastifyReply =>

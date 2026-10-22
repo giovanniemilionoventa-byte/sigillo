@@ -156,6 +156,12 @@ export function storeFor(store: ReceiptStore, viewer: Viewer): ReceiptStore {
         )
         .slice(0, limit ?? 100),
 
+    // The privacy page: a phrase searched in this viewer's own systems and
+    // account. Whatever the caller names, only systems this viewer owns are
+    // searched, and the account is always its own.
+    searchOwnData: (phrase: string, systemIds: readonly string[]) =>
+      store.searchOwnData(phrase, systemIds.filter(visible), organizationId),
+
     // A system created here is this viewer's, from its genesis on.
     createSystem: (systemId: string, ts: string) => store.createSystem(systemId, ts, organizationId),
 

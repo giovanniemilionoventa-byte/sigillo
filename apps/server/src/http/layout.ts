@@ -42,6 +42,7 @@ export type NavCurrent =
   | "sistemi"
   | "clienti"
   | "verifica"
+  | "privacy"
   | "impostazioni"
   | `system:${string}`;
 
@@ -216,6 +217,7 @@ ${systems === "" ? "" : `<ul class="side-list">${systems}</ul>`}
 ${item("/ui/sistemi", "sistemi", ICONS.list, UI.nav.allSystems)}
 <p class="side-head">${escape(UI.nav.tools)}</p>
 ${item("/ui/verify-document", "verifica", ICONS.docCheck, UI.nav.verificaDocumento)}
+${item("/ui/privacy", "privacy", ICONS.lock, UI.nav.privacy)}
 ${shell.operator ? item("/ui/clienti", "clienti", ICONS.building, UI.nav.clienti, shell.waiting) : ""}
 <div class="side-spacer"></div>
 </nav>
@@ -256,6 +258,7 @@ function sidebarV2(shell: Shell, current: NavCurrent | undefined): string {
 ${item("/ui", "registro", ICONS_V2.pulse, t.stato)}
 ${item("/ui/actions", "azioni", ICONS.list, t.azioni)}
 ${item("/ui/evidence", "prove", ICONS_V2.evidence, t.prove)}
+${item("/ui/privacy", "privacy", ICONS.lock, t.privacy)}
 <div class="side-rule" role="presentation"></div>
 <p class="side-group">${escape(t.systems)}</p>
 ${systems === "" ? "" : `<ul class="side-list">${systems}</ul>`}

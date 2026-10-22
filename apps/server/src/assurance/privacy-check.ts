@@ -8,13 +8,15 @@ import { readZip } from "@sigillo/core";
  * What a partner, a customer or an assessor can check for themselves about
  * what sigillo keeps, without taking anyone's word for it (docs/PRIVACY-CHECK.md).
  *
- * Two tools. The inventory classifies every column the schema creates, and a
+ * Three tools. The inventory classifies every column the schema creates, and a
  * test fails when a column appears that it does not classify, so the page
  * generated from it (docs/STORAGE-INVENTORY.md) cannot fall behind the code.
- * The canary scan looks for a marker the checker sent through their own agent
- * in every column of every table, in the database file's raw bytes (its write-
- * ahead log included, and so any page that was freed but not overwritten), and
- * in any other file or folder named: logs, backups, exports.
+ * The scoped search (scanScope) is the console's Privacy page: a phrase looked
+ * for in one customer's own rows only. The scan (scanDatabase, scanFiles) is
+ * for whoever runs the server: a phrase looked for in every column of every
+ * table, in the database file's raw bytes (its write-ahead log included, and
+ * so any page that was freed but not overwritten), and in any other file or
+ * folder named: logs, backups, exports.
  */
 
 /** What kind of value a column holds. */
@@ -337,13 +339,17 @@ export function inventoryMarkdown(): string {
   return out.join("\n");
 }
 
-/** A marker to send through an agent, and look for afterwards. */
+/** A phrase to send through an agent, and look for afterwards: random, so nothing else holds it. */
 export function newCanary(): string {
-  return `sigillo-canary-${randomBytes(16).toString("hex")}`;
+  return `sigillo-check-${randomBytes(12).toString("hex")}`;
 }
 
 /** Shorter markers could match by accident, and say nothing when they do not. */
 export const MIN_MARKER_LENGTH = 16;
+
+/** What the console's privacy page accepts: long enough to mean something, short enough to be a phrase. */
+export const MIN_PHRASE_LENGTH = 8;
+export const MAX_PHRASE_LENGTH = 200;
 
 export interface ColumnHit {
   table: string;
@@ -411,4 +417,91 @@ export function scanFiles(paths: string[], marker: string): { scanned: number; h
 /** The database file and the files SQLite keeps beside it. */
 export function databaseFiles(databasePath: string): string[] {
   return [databasePath, `${databasePath}-wal`, `${databasePath}-journal`].filter((path) => existsSync(path));
+}
+
+/** What a customer's phrase is searched in: its own systems and its own account, and nothing of anyone else's. */
+export interface Scope {
+  systemIds: readonly string[];
+  /** The customer's organization, or null for the operator's own systems. */
+  organizationId: string | null;
+}
+
+/**
+ * Tables with no row of any one customer, left out of a customer's search on
+ * purpose: the signing keys are public, and a timestamp token is the
+ * authority's own binary answer over a hash. Every other table of the schema
+ * must be scoped in `scopeOf`: a test fails when a table is in neither, so a
+ * table added later cannot be missed.
+ */
+export const NOT_SEARCHED = new Set(["signing_keys", "timestamps"]);
+
+/** The SQL that cuts one table down to a customer's rows, or null where it has none to show. */
+function scopeOf(table: string, scope: Scope): { where: string; params: string[] } | null {
+  const ids = scope.systemIds;
+  const marks = ids.map(() => "?").join(", ");
+  const bySystem = { where: `system_id IN (${marks})`, params: [...ids] };
+  switch (table) {
+    case "systems":
+    case "api_keys":
+    case "transfer_links":
+    case "receipts":
+    case "checkpoints":
+    case "artifacts":
+    case "export_register":
+    case "connections":
+    case "provider_keys":
+    case "admin_log":
+    case "openings":
+      return ids.length === 0 ? null : bySystem;
+    case "organizations":
+      return scope.organizationId === null ? null : { where: "organization_id = ?", params: [scope.organizationId] };
+    case "users":
+    case "vaults":
+      return scope.organizationId === null ? null : { where: `${table === "vaults" ? "owner" : "organization_id"} = ?`, params: [scope.organizationId] };
+    case "subjects":
+      return ids.length === 0
+        ? null
+        : {
+            where: `token IN (SELECT json_extract(canonical, '$.actor.on_behalf_of') FROM receipts WHERE system_id IN (${marks}))`,
+            params: [...ids],
+          };
+    default:
+      return null;
+  }
+}
+
+/** Tables the schema has and neither `scopeOf` nor `NOT_SEARCHED` knows: none, or a table was added without a decision. */
+export function unscopedTables(db: Database.Database): string[] {
+  const probe: Scope = { systemIds: ["x"], organizationId: "x" };
+  const tables = [...new Set(liveColumns(db).map(({ table }) => table))];
+  return tables.filter((table) => !NOT_SEARCHED.has(table) && scopeOf(table, probe) === null);
+}
+
+export interface PhraseHit {
+  table: string;
+  column: string;
+  rows: number;
+  kind: StorageClass | null;
+  purpose: string;
+}
+
+/**
+ * Searches one customer's own rows, in every column, for a phrase. A phrase
+ * that sits in another customer's rows is not found here and not mentioned:
+ * the answer must not tell one customer anything about another.
+ */
+export function scanScope(db: Database.Database, phrase: string, scope: Scope): PhraseHit[] {
+  const hits: PhraseHit[] = [];
+  for (const { table, column } of liveColumns(db)) {
+    const cut = scopeOf(table, scope);
+    if (cut === null) continue;
+    const { rows } = db
+      .prepare(`SELECT count(*) AS rows FROM "${table}" WHERE (${cut.where}) AND instr(CAST("${column}" AS TEXT), ?) > 0`)
+      .get(...cut.params, phrase) as { rows: number };
+    if (rows > 0) {
+      const known = STORAGE_INVENTORY[table];
+      hits.push({ table, column, rows, kind: known?.columns[column]?.[0] ?? null, purpose: known?.purpose ?? table });
+    }
+  }
+  return hits;
 }

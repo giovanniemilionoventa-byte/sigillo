@@ -41,6 +41,7 @@ import {
 import { SignerRefusedError } from "../signer/errors.js";
 import { applySchema, requireCurrentSchema } from "./schema.js";
 import { CONNECTION_PREFIX } from "../connection/names.js";
+import { scanScope, type PhraseHit } from "../assurance/privacy-check.js";
 
 /**
  * Whatever holds the private key. In production this is the separate signer
@@ -1260,6 +1261,15 @@ export class ReceiptStore {
     this.write.prepare("DELETE FROM provider_keys WHERE system_id = ?").run(systemId);
     this.write.prepare("DELETE FROM systems WHERE system_id = ?").run(systemId);
     return deleted;
+  }
+
+  /**
+   * Where a phrase sits in what is stored for these systems and this
+   * organization (assurance/privacy-check.ts): the console's privacy page.
+   * Read-only, and cut down to the caller's own rows.
+   */
+  searchOwnData(phrase: string, systemIds: readonly string[], organizationId: string | null): PhraseHit[] {
+    return scanScope(this.read, phrase, { systemIds, organizationId });
   }
 
   /** When a system by this identifier was deleted, from the administrative log, or null if it never was. */
