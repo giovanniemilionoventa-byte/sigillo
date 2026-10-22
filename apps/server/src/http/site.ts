@@ -30,7 +30,7 @@ import { BLOG_STYLE, blogIndexBody, postBody, postJsonLd } from "./site-blog.js"
  * The pages of the site, which the language switch may return to. Pricing and
  * connecting are sections of the home page; their old addresses lead there.
  */
-import { siteV2Page } from "./site-v2.js";
+import { siteV2Inner, siteV2Page } from "./site-v2.js";
 
 export const SITE_PATHS = ["/", "/verify", "/privacy"] as const;
 type SitePath = (typeof SITE_PATHS)[number];
@@ -45,6 +45,8 @@ export function isSiteBack(path: string): boolean {
 
 /** Pages that became sections of the home page, and where they are now. */
 const MOVED: Record<string, string> = { "/pricing": "/#pricing", "/connect": "/#connect" };
+/** The same pages on the redesigned home, whose sections have other ids. */
+const MOVED_V2: Record<string, string> = { "/pricing": "/#prezzi", "/connect": "/#collega" };
 
 /** Where the console's sign-in and sign-up pages are. */
 const SIGN_IN = "/ui/login";
@@ -495,15 +497,9 @@ function mailLink(email: string, subject: string): string {
   return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subject)}`;
 }
 
-function sitePage(context: PageContext, title: string, body: string, meta: PageMeta = {}): string {
-  const { t, path, language } = context;
-  const contactHref = context.contactEmail === undefined ? undefined : mailLink(context.contactEmail, "Sigillo");
-  const section = (id: string, label: string): string => `<a href="/#${id}">${escape(label)}</a>`;
-  const verify = `<a href="/verify"${path === "/verify" ? ' aria-current="page"' : ""}>${escape(t.nav.verify)}</a>`;
-  const external = (href: string, label: string): string => `<a href="${escape(href)}" target="_blank" rel="noopener">${escape(label)}</a>`;
-  const blog = context.hasBlog ? `<a href="/blog"${context.back?.startsWith("/blog") === true ? ' aria-current="page"' : ""}>${escape(t.blog.nav)}</a>` : "";
-  const description = meta.description ?? t.home.lead;
-  const head = [
+/** The canonical, robots, Open Graph and JSON-LD tags a page asks for. */
+function metaTags(title: string, description: string, meta: PageMeta): string {
+  return [
     meta.canonical === undefined ? "" : `<link rel="canonical" href="${escape(meta.canonical)}">`,
     meta.noindex === true ? '<meta name="robots" content="noindex">' : "",
     `<meta property="og:site_name" content="Sigillo"><meta property="og:type" content="${meta.kind ?? "website"}"><meta property="og:title" content="${escape(title)}"><meta property="og:description" content="${escape(description)}">`,
@@ -513,6 +509,17 @@ function sitePage(context: PageContext, title: string, body: string, meta: PageM
   ]
     .filter((line) => line !== "")
     .join("\n");
+}
+
+function sitePage(context: PageContext, title: string, body: string, meta: PageMeta = {}): string {
+  const { t, path, language } = context;
+  const contactHref = context.contactEmail === undefined ? undefined : mailLink(context.contactEmail, "Sigillo");
+  const section = (id: string, label: string): string => `<a href="/#${id}">${escape(label)}</a>`;
+  const verify = `<a href="/verify"${path === "/verify" ? ' aria-current="page"' : ""}>${escape(t.nav.verify)}</a>`;
+  const external = (href: string, label: string): string => `<a href="${escape(href)}" target="_blank" rel="noopener">${escape(label)}</a>`;
+  const blog = context.hasBlog ? `<a href="/blog"${context.back?.startsWith("/blog") === true ? ' aria-current="page"' : ""}>${escape(t.blog.nav)}</a>` : "";
+  const description = meta.description ?? t.home.lead;
+  const head = metaTags(title, description, meta);
   return `<!doctype html>
 <html lang="${language}">
 <head>
@@ -862,8 +869,37 @@ export function registerSite(app: FastifyInstance, options: SiteOptions): void {
       ...(page.back === undefined ? {} : { back: page.back }),
       ...(options.contactEmail === undefined ? {} : { contactEmail: options.contactEmail }),
     };
-    let body = sitePage(context, page.title(t), page.body(context), page.meta?.(context));
     const theme = options.themeOf(request);
+    if (options.siteV2 === true) {
+      const meta = page.meta?.(context) ?? {};
+      const title = page.title(t);
+      const description = meta.description ?? t.home.lead;
+      return reply
+        .type("text/html; charset=utf-8")
+        .header("cache-control", "private, no-cache")
+        .header("vary", "Cookie, Accept-Language")
+        .send(
+          siteV2Inner(
+            {
+              language,
+              theme,
+              back: page.back ?? page.path ?? "/",
+              hasBlog: posts.length > 0,
+              endpoint: options.endpoint,
+              ...(options.contactEmail === undefined ? {} : { contactEmail: options.contactEmail }),
+            },
+            {
+              title,
+              description,
+              body: page.body(context),
+              head: metaTags(title, description, meta),
+              scripts: page.path === "/verify" ? ["/verify.js"] : [],
+              ...(page.back?.startsWith("/blog") === true ? { current: "blog" as const } : {}),
+            },
+          ),
+        );
+    }
+    let body = sitePage(context, page.title(t), page.body(context), page.meta?.(context));
     if (theme !== "system") body = body.replace(/^(<!doctype html>\n<html lang="[a-z]+")>/, `$1 data-theme="${theme}">`);
     // The page depends on the language and theme cookies, so no shared cache
     // may keep one reader's copy for another.
@@ -896,7 +932,7 @@ export function registerSite(app: FastifyInstance, options: SiteOptions): void {
   for (const path of SITE_PATHS.filter((candidate) => !(options.siteV2 === true && candidate === "/"))) {
     app.get(path, async (request, reply) => respond(request, reply, { path, title: BODIES[path].title, body: BODIES[path].body }));
   }
-  for (const [from, to] of Object.entries(MOVED)) {
+  for (const [from, to] of Object.entries(options.siteV2 === true ? MOVED_V2 : MOVED)) {
     app.get(from, async (_request, reply) => reply.redirect(to, 301));
   }
 
