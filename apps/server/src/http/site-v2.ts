@@ -18,7 +18,7 @@ import { BLOG_STYLE } from "./site-blog.js";
  */
 
 interface Copy {
-  nav: { how: string; deliver: string; aiAct: string; pricing: string; blog: string; verify: string; signIn: string; start: string };
+  nav: { how: string; deliver: string; aiAct: string; pricing: string; blog: string; verify: string; verifyShort: string; signIn: string; start: string };
   title: string;
   description: string;
   hero: { eyebrow: string; h1: string; lead: string; primary: string; secondary: string; facts: [string, string][] };
@@ -39,7 +39,7 @@ interface Copy {
 }
 
 const IT: Copy = {
-  nav: { how: "Come funziona", deliver: "Cosa consegni", aiAct: "AI Act", pricing: "Prezzi", blog: "Blog", verify: "Verifica un fascicolo", signIn: "Accedi", start: "Richiedi un pilota gratuito" },
+  nav: { how: "Come funziona", deliver: "Cosa consegni", aiAct: "AI Act", pricing: "Prezzi", blog: "Blog", verify: "Verifica un fascicolo", verifyShort: "Verifica", signIn: "Accedi", start: "Richiedi un pilota gratuito" },
   title: "sigillo · le prove di cosa ha fatto la tua AI",
   description: "sigillo registra ogni azione dei tuoi agenti AI in un registro firmato e sigillato ogni ora. Quando arriva un reclamo o un'ispezione, consegni un fascicolo che chiunque controlla da solo, nel browser.",
   hero: {
@@ -154,7 +154,7 @@ const IT: Copy = {
 };
 
 const EN: Copy = {
-  nav: { how: "How it works", deliver: "What you hand over", aiAct: "AI Act", pricing: "Pricing", blog: "Blog", verify: "Verify an evidence pack", signIn: "Sign in", start: "Request a free pilot" },
+  nav: { how: "How it works", deliver: "What you hand over", aiAct: "AI Act", pricing: "Pricing", blog: "Blog", verify: "Verify an evidence pack", verifyShort: "Verify", signIn: "Sign in", start: "Request a free pilot" },
   title: "sigillo · the evidence of what your AI did",
   description: "sigillo records every action of your AI agents in a signed record, sealed every hour. When a complaint or an inspection comes, you hand over a pack anyone can check alone, in the browser.",
   hero: {
@@ -444,7 +444,7 @@ export interface SiteV2View {
 }
 
 /** The home's header, contact band and footer, shared with the inner pages (`home`: false puts the page's path in front of every anchor). */
-function chrome(view: SiteV2View, home: boolean, current: "blog" | null): { header: string; band: string; footer: string; start: string; mail: string } {
+function chrome(view: SiteV2View, home: boolean, current: "blog" | "verify" | null): { header: string; band: string; footer: string; start: string; mail: string } {
   const c = COPY[view.language];
   const to = (id: string): string => `${home ? "" : "/"}#${id}`;
   const mail =
@@ -455,7 +455,7 @@ function chrome(view: SiteV2View, home: boolean, current: "blog" | null): { head
   const blog = view.hasBlog ? `<a href="/blog"${current === "blog" ? ' aria-current="page"' : ""}>${escape(c.nav.blog)}</a>` : "";
   const header = `<header class="s-top"><div class="s-wrap">
 <a class="s-brand" href="/">${SEAL_SVG}<span>sigillo</span></a>
-<nav aria-label="${escape(c.nav.how)}"><a href="${to("come-funziona")}">${escape(c.nav.how)}</a><a href="${to("cosa-consegni")}">${escape(c.nav.deliver)}</a><a href="${to("ai-act")}">${escape(c.nav.aiAct)}</a><a href="${to("prezzi")}">${escape(c.nav.pricing)}</a>${blog}</nav>
+<nav aria-label="${escape(c.nav.how)}"><a href="${to("come-funziona")}">${escape(c.nav.how)}</a><a href="${to("cosa-consegni")}">${escape(c.nav.deliver)}</a><a href="${to("ai-act")}">${escape(c.nav.aiAct)}</a><a href="${to("prezzi")}">${escape(c.nav.pricing)}</a><a href="/verify"${current === "verify" ? ' aria-current="page"' : ""}>${escape(c.nav.verifyShort)}</a>${blog}</nav>
 <div class="s-right">${languageSwitch("seg", view.back)}<a class="s-signin" href="/ui/login">${escape(c.nav.signIn)}</a>${start}</div>
 </div></header>`;
   const band = `<section class="s-band" id="contatti"><div class="s-wrap"><div><div><h2>${escape(c.hero.h1)}</h2><p>${escape(c.contact.h2)}${view.contactEmail === undefined ? "" : ` ${escape(c.contact.address)} ${escape(view.contactEmail)}`}</p></div>${start}</div></div></section>`;
@@ -470,7 +470,7 @@ function chrome(view: SiteV2View, home: boolean, current: "blog" | null): { head
 /** The inner pages (verify, privacy, blog) in the new site's frame: `body` is the page's own markup, `head` its extra tags. */
 export function siteV2Inner(
   view: SiteV2View,
-  page: { title: string; description: string; body: string; head?: string; scripts?: readonly string[]; current?: "blog" },
+  page: { title: string; description: string; body: string; head?: string; scripts?: readonly string[]; current?: "blog" | "verify" },
 ): string {
   const { header, footer } = chrome(view, false, page.current ?? null);
   const theme = ` data-theme="${view.theme === "light" ? "light" : "dark"}"`;
