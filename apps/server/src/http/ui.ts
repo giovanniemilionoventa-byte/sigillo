@@ -12,7 +12,8 @@ import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { archiveFromStore, positionsIn, tokensIn } from "../export/from-store.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
 import { gatewayAllowed, type GatewayOptions, providerRefuses } from "../gateway/llm.js";
-import { isProvider, ProviderKeyError, VaultError, VaultLockedError } from "../gateway/provider-keys.js";
+import { isProvider, ProviderKeyError, VaultError, VaultLockedError, VaultSealedError } from "../gateway/provider-keys.js";
+import { ScheduleError } from "../gateway/vault-schedule.js";
 import { vaultPage, type VaultView } from "./vault-page.js";
 import { AGENT_SETUP_SCRIPT } from "./agent-setup.js";
 import {
@@ -1239,8 +1240,10 @@ ${exportSheet(record)}`,
   const renderVault = (session: Session, view: Omit<VaultView, "state">, status = 200, reply?: FastifyReply): string | FastifyReply => {
     const vaults = options.gateway!.keys.vaults;
     const owner = vaultOwnerOf(session.viewer);
-    const state = !vaults.exists(owner) ? "none" : vaults.isUnlocked(owner, options.now()) ? "open" : "locked";
-    const body = render(session, { title: UI.vault.title, current: "impostazioni", body: vaultPage({ ...view, state }) });
+    const at = options.now();
+    const state = !vaults.exists(owner) ? "none" : vaults.isUnlocked(owner, at) ? "open" : "locked";
+    const page = vaultPage({ ...view, state, schedule: vaults.schedule(owner), sealedNow: vaults.isSealed(owner, at) });
+    const body = render(session, { title: UI.vault.title, current: "impostazioni", body: page });
     return reply === undefined ? body : html(reply, body, status);
   };
   const vaultRoute = (path: string, act: (session: Session, request: FastifyRequest, reply: FastifyReply, vaults: GatewayOptions["keys"]["vaults"], owner: string) => FastifyReply | Promise<FastifyReply>) => {
@@ -1277,6 +1280,7 @@ ${exportSheet(record)}`,
         return renderVault(session, { error: UI.vault.wrong }, 400, reply) as FastifyReply;
       }
     } catch (error) {
+      if (error instanceof VaultSealedError) return renderVault(session, {}, 423, reply) as FastifyReply;
       if (!(error instanceof VaultError)) throw error;
       return renderVault(session, { error: UI.vault.tooMany }, 429, reply) as FastifyReply;
     }
@@ -1287,6 +1291,31 @@ ${exportSheet(record)}`,
     vaults.lock(owner);
     request.log.info({ action: "vault.lock", owner }, "an account locked its key vault");
     return reply.redirect("/ui/vault", 303);
+  });
+  // Sealed hours (gateway/vault-schedule.ts). The server can close the vault
+  // by itself; it never opens it by itself.
+  const saveSchedule = (session: Session, reply: FastifyReply, vaults: GatewayOptions["keys"]["vaults"], owner: string, schedule: unknown): FastifyReply => {
+    try {
+      vaults.setSchedule(owner, schedule, options.now());
+    } catch (error) {
+      if (!(error instanceof VaultError) && !(error instanceof ScheduleError)) throw error;
+      return renderVault(session, { error: error instanceof ScheduleError ? UI.vault.scheduleInvalid : UI.vault.needFirst }, 400, reply) as FastifyReply;
+    }
+    return reply.redirect("/ui/vault", 303);
+  };
+  vaultRoute("schedule/add", (session, request, reply, vaults, owner) => {
+    const days = [0, 1, 2, 3, 4, 5, 6].filter((d) => fieldOf(request, `day${d}`) !== "");
+    const current = vaults.schedule(owner);
+    const windows = [...(current?.windows ?? []), { days, from: fieldOf(request, "from"), to: fieldOf(request, "to") }];
+    request.log.info({ action: "vault.schedule", owner }, "an account changed the sealed hours of its key vault");
+    return saveSchedule(session, reply, vaults, owner, { timezone: fieldOf(request, "timezone").trim(), windows });
+  });
+  vaultRoute("schedule/remove", (session, request, reply, vaults, owner) => {
+    const current = vaults.schedule(owner);
+    if (current === null) return reply.redirect("/ui/vault", 303);
+    const index = Number(fieldOf(request, "index"));
+    request.log.info({ action: "vault.schedule", owner }, "an account changed the sealed hours of its key vault");
+    return saveSchedule(session, reply, vaults, owner, { ...current, windows: current.windows.filter((_, i) => i !== index) });
   });
   vaultRoute("passphrase", (session, request, reply, vaults, owner) => {
     const passphrase = fieldOf(request, "passphrase");

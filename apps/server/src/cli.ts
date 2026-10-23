@@ -321,8 +321,14 @@ program
     checkpointer.start();
     dailyExporter?.start();
     if (pause === null) connections.start();
+    // A vault's sealed hours close it even when no request comes: the data key
+    // leaves memory when the window starts.
+    const vaultSweep =
+      providerKeys === undefined ? undefined : setInterval(() => providerKeys.vaults.sweep(new Date()), 30_000);
+    vaultSweep?.unref();
 
     const shutdown = (): void => {
+      if (vaultSweep !== undefined) clearInterval(vaultSweep);
       connections.stop();
       checkpointer.stop();
       dailyExporter?.stop();

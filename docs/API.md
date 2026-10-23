@@ -390,7 +390,8 @@ ends. `GET` (a model list) is forwarded and not recorded.
 
 Errors of the gateway itself: `401` without a valid sigillo key, `403` when the
 gateway is not open to the system's account, `404` for an unknown provider or a
-path not under the provider's API version, `409` when the system has no key for that provider, `415`
+path not under the provider's API version, `409` when the system has no key for that provider, `423` when the account's key
+vault is locked or sealed (below), `415`
 for a body that is not JSON, `502` when the provider does not answer; plus the
 `503` and `429` every ingest endpoint can give (signer away, writes paused,
 monthly limit).
@@ -399,6 +400,34 @@ Who may use it is set by `SIGILLO_LLM_GATEWAY`: `operator` (the code's default)
 for the administrator's own systems only, `all` for every account (the
 deployment's `docker-compose.yml` sets it), `off` for none. The
 console's block follows the same setting.
+
+### The key vault: `POST /vault/lock` and `POST /vault/unlock`
+
+The provider keys of an account are sealed under a passphrase only the customer
+knows (`apps/server/src/gateway/provider-keys.ts`). While the vault is locked
+the gateway answers `423`. The customer controls it from the console
+(`/ui/vault`) and, for their own agent, from these two calls, which take the
+system's sigillo key as `Authorization: Bearer`:
+
+| call | body | answer |
+| --- | --- | --- |
+| `POST /vault/lock` | none | `200 {"state":"locked"}` |
+| `POST /vault/unlock` | `{"secret": "<passphrase or recovery key>"}` | `200 {"state":"open"}`; `403` for a wrong secret; `400` without a secret or without a vault; `423` inside sealed hours; `429` after five wrong attempts in fifteen minutes |
+
+The passphrase is in the body and nowhere else, and is never stored or logged:
+the server opens the vault with it for as long as it stays open (12 hours at
+most) and keeps nothing that opens it afterwards.
+
+**Sealed hours.** In the console the customer can set weekly windows, in their
+own time zone, during which the vault is kept sealed (for example every night
+from 22:00 to 06:00, or Saturday and Sunday). When a window starts the server
+closes the vault by itself, within about thirty seconds, and drops the data key
+from memory; until it ends, both the console and `POST /vault/unlock` refuse to
+open it (`423`) and the gateway answers `423`. The end of a window does not
+open the vault: that needs the passphrase, so it is the customer, or their agent
+with a passphrase it keeps, who unlocks it. Closing on a schedule needs no
+secret; opening on a schedule would need the server to keep one, and it does
+not.
 
 ## `GET /healthz`
 

@@ -215,6 +215,17 @@ CREATE TABLE IF NOT EXISTS vaults (
   created_at        TEXT NOT NULL
 ) STRICT;
 
+-- When an account's vault is kept sealed (gateway/vault-schedule.ts): weekly
+-- windows, in the account's own time zone, during which the vault is closed and
+-- cannot be opened. Closing on a schedule needs no secret; opening never
+-- happens by itself. Not evidence: the customer edits it freely.
+CREATE TABLE IF NOT EXISTS vault_schedule (
+  owner       TEXT PRIMARY KEY,
+  timezone    TEXT NOT NULL,
+  windows     TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+) STRICT;
+
 -- What an administrator did to a system outside its chain: renaming,
 -- archiving, and deleting an empty one. Append-only like the evidence, and
 -- deliberately outside any chain: a deleted system's chain no longer exists
@@ -389,7 +400,8 @@ function ensureColumn(db: Database.Database, table: string, column: string, type
 // 6: the script guard's columns on connections (script_hash, script_changed).
 // 7: the register of evidence packs handed out (export_register), and the index of a run's receipts.
 // 8: the vaults of accounts, and the vault_owner column of provider_keys (null: still sealed under the server's own key).
-export const SCHEMA_VERSION = 8;
+// 9: the sealed-hours schedule of an account's vault (vault_schedule).
+export const SCHEMA_VERSION = 9;
 
 export class NewerSchemaError extends Error {
   constructor(readonly found: number) {

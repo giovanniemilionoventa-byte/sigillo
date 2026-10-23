@@ -40,6 +40,7 @@ let agentToken: string;
 let provider: Server;
 let providerUrl: string;
 let providerSaw: string[];
+let clock = NOW;
 
 beforeAll(async () => {
   provider = createServer((request, response) => {
@@ -54,6 +55,7 @@ afterAll(() => new Promise<void>((resolve) => provider.close(() => resolve())));
 
 beforeEach(async () => {
   providerSaw = [];
+  clock = NOW;
   directory = mkdtempSync(join(tmpdir(), "sigillo-vault-ui-"));
   const databasePath = join(directory, "sigillo.db");
   signer = createTestSigner();
@@ -73,7 +75,7 @@ beforeEach(async () => {
     store,
     keys,
     gateway: { keys: providerKeys, access: "all", upstream: { openai: providerUrl } },
-    now: () => new Date(NOW),
+    now: () => new Date(clock),
     ui: {
       password: "an administrator password",
       signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
@@ -95,7 +97,7 @@ afterEach(async () => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-const cookie = (viewer: Viewer): string => `sigillo_session=${sessions.issue(viewer, Date.parse(NOW)).value}`;
+const cookie = (viewer: Viewer): string => `sigillo_session=${sessions.issue(viewer, Date.parse(clock)).value}`;
 const post = (viewer: Viewer, url: string, payload: Record<string, string>) =>
   app.inject({
     method: "POST",
@@ -161,5 +163,57 @@ describe("the key vault in the console", () => {
 
   it("is not served to someone who has not signed in", async () => {
     expect((await app.inject({ method: "GET", url: "/ui/vault" })).statusCode).toBe(302);
+  });
+
+  it("seals on the customer's hours, shows it, and refuses every way of opening it until the hours end", async () => {
+    await post(ACME, "/ui/vault/create", { passphrase: PASSPHRASE, again: PASSPHRASE });
+    await post(ACME, `/ui/systems/${ACME_BOT}/llm-key`, { provider: "openai", key: OPENAI_KEY });
+    expect((await post(ACME, "/ui/vault/schedule/add", { from: "22:00", to: "06:00", timezone: "Europe/Rome" })).statusCode).toBe(400); // no day chosen
+    expect((await post(ACME, "/ui/vault/schedule/add", { day1: "1", from: "22:00", to: "06:00", timezone: "Nowhere/City" })).statusCode).toBe(400);
+    const added = await app.inject({
+      method: "POST",
+      url: "/ui/vault/schedule/add",
+      headers: { cookie: cookie(ACME), "content-type": "application/x-www-form-urlencoded" },
+      payload: "day4=1&day5=1&from=22%3A00&to=06%3A00&timezone=Europe%2FRome",
+    });
+    expect(added.statusCode).toBe(303);
+    expect(providerKeys.vaults.schedule("acme")?.windows).toEqual([{ days: [4, 5], from: "22:00", to: "06:00" }]);
+    expect((await chat()).statusCode).toBe(200); // Thursday 12:00 in Rome: not sealed
+
+    clock = "2026-10-22T21:00:00.000Z"; // Thursday 23:00 in Rome
+    const refused = await chat();
+    expect(refused.statusCode).toBe(423);
+    expect(refused.body).toContain("sealed by its schedule");
+    expect((await post(ACME, "/ui/vault/unlock", { secret: PASSPHRASE })).statusCode).toBe(423);
+    const page = await app.inject({ method: "GET", url: "/ui/vault", headers: { cookie: cookie(ACME) } });
+    expect(page.body).toContain("sealed by your hours");
+    expect(page.body).not.toContain('action="/ui/vault/unlock"');
+
+    clock = "2026-10-23T05:00:00.000Z"; // Friday 07:00: the window is over, the vault is still locked
+    expect((await chat()).statusCode).toBe(423);
+    expect((await post(ACME, "/ui/vault/unlock", { secret: PASSPHRASE })).statusCode).toBe(303);
+    expect((await chat()).statusCode).toBe(200);
+
+    expect((await post(ACME, "/ui/vault/schedule/remove", { index: "0" })).statusCode).toBe(303);
+    expect(providerKeys.vaults.schedule("acme")?.windows).toEqual([]);
+  });
+
+  it("lets the customer's own agent lock and unlock the vault with its API key and the passphrase", async () => {
+    await post(ACME, "/ui/vault/create", { passphrase: PASSPHRASE, again: PASSPHRASE });
+    await post(ACME, `/ui/systems/${ACME_BOT}/llm-key`, { provider: "openai", key: OPENAI_KEY });
+    const call = (path: string, payload: object, token = agentToken) =>
+      app.inject({ method: "POST", url: path, headers: { authorization: `Bearer ${token}` }, payload });
+
+    expect((await call("/vault/unlock", { secret: PASSPHRASE }, "sgl_not_a_key")).statusCode).toBe(401);
+    expect((await call("/vault/lock", {})).statusCode).toBe(200);
+    expect((await chat()).statusCode).toBe(423);
+    expect((await call("/vault/unlock", { secret: "not the passphrase at all" })).statusCode).toBe(403);
+    expect((await call("/vault/unlock", {})).statusCode).toBe(400);
+    expect((await call("/vault/unlock", { secret: PASSPHRASE })).statusCode).toBe(200);
+    expect((await chat()).statusCode).toBe(200);
+
+    await post(ACME, "/ui/vault/schedule/add", { day4: "1", from: "00:00", to: "23:59", timezone: "Europe/Rome" });
+    const sealed = await call("/vault/unlock", { secret: PASSPHRASE });
+    expect(sealed.statusCode).toBe(423);
   });
 });

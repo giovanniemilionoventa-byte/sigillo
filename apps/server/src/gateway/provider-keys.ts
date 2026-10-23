@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:
 import { readFileSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { applySchema } from "../storage/schema.js";
+import { checkSchedule, isSealedAt, type VaultSchedule } from "./vault-schedule.js";
 
 /**
  * The cloud-model keys the gateway holds for a system (gateway/llm.ts): the
@@ -79,9 +80,17 @@ export class VaultError extends Error {
 
 /** The account's vault is closed: its owner has not entered the passphrase since the server last started, or the unlocked time ran out. */
 export class VaultLockedError extends VaultError {
-  constructor(readonly owner: string) {
-    super("this account's vault is locked: its owner must unlock it in the console");
+  constructor(readonly owner: string, message = "this account's vault is locked: its owner must unlock it in the console") {
+    super(message);
     this.name = "VaultLockedError";
+  }
+}
+
+/** The vault is closed because the owner's schedule says so (vault-schedule.ts): it cannot be opened until the window ends. */
+export class VaultSealedError extends VaultLockedError {
+  constructor(owner: string) {
+    super(owner, "this account's vault is sealed by its schedule: it can be unlocked again when the sealed hours end");
+    this.name = "VaultSealedError";
   }
 }
 
@@ -130,7 +139,7 @@ export class Vaults {
   dataKey(owner: string, at: Date): Buffer | null {
     const held = this.open.get(owner);
     if (held === undefined) return null;
-    if (at.getTime() >= held.until) {
+    if (at.getTime() >= held.until || this.isSealed(owner, at)) {
       this.lock(owner);
       return null;
     }
@@ -163,6 +172,7 @@ export class Vaults {
       | { salt: string; wrapped_by_pass: string; wrapped_by_recov: string }
       | undefined;
     if (row === undefined) throw new VaultError("this account has no vault yet");
+    if (this.isSealed(owner, at)) throw new VaultSealedError(owner);
     const recent = (this.failures.get(owner) ?? []).filter((t) => at.getTime() - t < GUESS_WINDOW_MS);
     if (recent.length >= GUESSES) throw new VaultError("too many wrong attempts: try again in a few minutes");
     const dataKey = this.tryOpen(owner, secret, row);
@@ -189,6 +199,42 @@ export class Vaults {
     } catch {
       return null;
     }
+  }
+
+  /** The owner's sealed hours, or null if they have set none. */
+  schedule(owner: string): VaultSchedule | null {
+    const row = this.db.prepare("SELECT timezone, windows FROM vault_schedule WHERE owner = ?").get(owner) as
+      | { timezone: string; windows: string }
+      | undefined;
+    if (row === undefined) return null;
+    return { timezone: row.timezone, windows: JSON.parse(row.windows) as VaultSchedule["windows"] };
+  }
+
+  /** Saves the sealed hours (an empty list of windows clears them) and closes the vault at once if one is running. Throws ScheduleError for a malformed one. */
+  setSchedule(owner: string, schedule: unknown, at: Date): void {
+    if (!this.exists(owner)) throw new VaultError("this account has no vault yet");
+    const checked = checkSchedule(schedule);
+    this.db
+      .prepare(
+        `INSERT INTO vault_schedule (owner, timezone, windows, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (owner) DO UPDATE SET timezone = excluded.timezone, windows = excluded.windows, updated_at = excluded.updated_at`,
+      )
+      .run(owner, checked.timezone, JSON.stringify(checked.windows), at.toISOString());
+    if (this.isSealed(owner, at)) this.lock(owner);
+  }
+
+  isSealed(owner: string, at: Date): boolean {
+    const schedule = this.schedule(owner);
+    return schedule !== null && isSealedAt(schedule, at);
+  }
+
+  /** Closes every vault whose sealed hours have begun or whose time ran out, so the data key leaves memory when the window starts and not at the next request. */
+  sweep(at: Date): string[] {
+    const closed: string[] = [];
+    for (const owner of [...this.open.keys()]) {
+      if (this.dataKey(owner, at) === null) closed.push(owner);
+    }
+    return closed;
   }
 
   lock(owner: string): void {
@@ -280,7 +326,7 @@ export class ProviderKeyStore {
     const aadBytes = associatedData(systemId, provider);
     if (row.vault_owner === null) return open(this.legacyKey, sealed, aadBytes).toString("utf8");
     const dataKey = this.vaults.dataKey(row.vault_owner, at);
-    if (dataKey === null) throw new VaultLockedError(row.vault_owner);
+    if (dataKey === null) throw this.vaults.isSealed(row.vault_owner, at) ? new VaultSealedError(row.vault_owner) : new VaultLockedError(row.vault_owner);
     return open(dataKey, sealed, aadBytes).toString("utf8");
   }
 
