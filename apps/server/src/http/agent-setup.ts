@@ -225,6 +225,8 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
   // The customer's own key (made by the page in this browser): the SDK salts
   // every digest under a nonce made from it, and never sends the nonce. 0.9 knows it.
   if (settings.customerKey) sdkMinor = Math.max(sdkMinor, 9);
+  // 0.10: a local model that was already open no longer ends the agent.
+  if (local) sdkMinor = Math.max(sdkMinor, 10);
   var extras = frameworks.length > 0 ? "[" + frameworks.join(",") + "]" : "";
   var requirement = "sigillo" + extras + " @ " + settings.url;
   var block = gatewayLines.concat(gatewayLines.length > 0 ? [""] : [], ["try:", "    import sigillo"]);

@@ -85,7 +85,7 @@ from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
 from . import _gateway, _text, _watchdog
 
 __all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "nonce_for", "Tracing"]
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 _LOG = _logging.getLogger("sigillo")
 _TRACES_PATH = "/v1/traces"
