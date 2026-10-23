@@ -89,7 +89,10 @@ export interface ChainEvent {
   output_hash: string | null;
   raw_input?: { value: unknown };
   raw_output?: { value: unknown };
-  /** The 32-byte nonce, hex, the client salted `input_hash` under: the digest is then recorded as salted. */
+  /**
+   * The 32-byte nonce, hex, the client salted `input_hash` under: the digest is
+   * then recorded as salted. Or NONCE_KEPT_BY_CUSTOMER: salted, and no opening kept.
+   */
   input_nonce?: string;
   output_nonce?: string;
   outcome: Outcome;
@@ -131,6 +134,14 @@ export type ReconcileOutcome =
 
 /** A salt nonce as a client sends it: 32 bytes, lowercase hex. */
 const NONCE_HEX = /^[0-9a-f]{64}$/;
+
+/**
+ * Sent in place of a nonce when the client salted its digest under one made
+ * from the customer's own key (the SDK's `customer_key`): the digest is
+ * recorded as salted, and no opening is kept, because none was ever sent.
+ * Only the customer, with the key, can open it.
+ */
+export const NONCE_KEPT_BY_CUSTOMER = "customer";
 
 /** How many receipts to ask the signer's journal for at a time (its limit is 50). */
 const RECOVERY_PAGE = 50;
@@ -340,6 +351,8 @@ export type AdminAction =
   | "organization.reject"
   /** An organization with no recorded action was deleted, with its empty systems and its people. */
   | "organization.delete"
+  /** A customer was erased at the end of its contract: every system with its whole record, its people, the organization. */
+  | "organization.erase"
   /** Someone signed up and was given a new organization, waiting for approval. */
   | "user.register"
   /** A system was given to an organization, moved to another, or taken back by the operator. */
@@ -1143,57 +1156,121 @@ export class ReceiptStore {
       if (record.organization_id !== null) {
         throw new StorageError(`${systemId} belongs to a customer: only the administrator's own systems can be erased with their receipts`);
       }
-      const rows = this.write
-        .prepare("SELECT seq, hash FROM receipts WHERE system_id = ? ORDER BY seq")
-        .all(systemId) as ChainTip[];
-      const genesis = rows[0];
-      const last = rows[rows.length - 1];
-      if (genesis === undefined || last === undefined) throw new StorageError(`${systemId} has no chain`);
-
-      const checkpointIds = (
-        this.write.prepare("SELECT id FROM checkpoints WHERE system_id = ?").all(systemId) as { id: number }[]
-      ).map((row) => row.id);
-      const timestamps = checkpointIds.reduce(
-        (total, id) =>
-          total +
-          (this.write.prepare("SELECT COUNT(*) AS n FROM timestamps WHERE checkpoint_id = ?").get(id) as { n: number }).n,
-        0,
-      );
-      const apiKeys = (
-        this.write.prepare("SELECT key_id FROM api_keys WHERE system_id = ? ORDER BY created_at").all(systemId) as {
-          key_id: string;
-        }[]
-      ).map((row) => row.key_id);
-
-      const deleted = {
-        system_id: systemId,
-        display_name: record.display_name,
-        created_at: record.created_at,
-        genesis_hash: genesis.hash,
-        checkpoints: checkpointIds.length,
-        timestamps,
-        api_keys: apiKeys,
-        organization_id: record.organization_id,
-        receipts_erased: rows.length - 1,
-        last_hash: last.hash,
-      };
-
-      this.logAdmin("system.delete", systemId, request, { ...deleted }, genesis.hash);
-      for (const id of checkpointIds) {
-        this.write.prepare("DELETE FROM timestamps WHERE checkpoint_id = ?").run(id);
-      }
-      this.write.prepare("DELETE FROM checkpoints WHERE system_id = ?").run(systemId);
-      this.write.prepare("DELETE FROM artifacts WHERE system_id = ?").run(systemId);
-      this.write.prepare("DELETE FROM openings WHERE system_id = ?").run(systemId);
-      this.write.prepare("DELETE FROM receipts WHERE system_id = ?").run(systemId);
-      this.write.prepare("DELETE FROM export_register WHERE system_id = ?").run(systemId);
-      this.write.prepare("DELETE FROM api_keys WHERE system_id = ?").run(systemId);
-      this.write.prepare("DELETE FROM transfer_links WHERE system_id = ?").run(systemId);
-      this.write.prepare("DELETE FROM connections WHERE system_id = ?").run(systemId);
-      this.write.prepare("DELETE FROM provider_keys WHERE system_id = ?").run(systemId);
-      this.write.prepare("DELETE FROM systems WHERE system_id = ?").run(systemId);
-      return deleted;
+      return this.eraseChain(systemId, record, request);
     });
+  }
+
+  /**
+   * Erases a customer at the end of its contract, at its request or once its
+   * data is due to go: every system with its whole record (receipts,
+   * checkpoints, tokens, keys), its people, the organization, and the
+   * pseudonym links no remaining receipt names. The erasure is logged first,
+   * which is what lets the delete guards (schema.ts) let the receipts go, then
+   * each system's deletion as usual. The log keeps the organization's id and
+   * counts, not its name, its systems' names or its people's emails. What it
+   * cannot reach: entries written earlier (the sign-up's email and company
+   * name), the customer's own exports, and backups until they rotate out.
+   */
+  async eraseOrganization(
+    organizationId: string,
+    request: AdminRequest,
+  ): Promise<{ systems: string[]; receipts_erased: number; people: number; subjects_erased: number }> {
+    const erased = await this.enqueue(() =>
+      this.inTransaction(async () => {
+        const organization = this.organization(organizationId, this.write);
+        if (organization === null) throw new StorageError(`unknown organization ${organizationId}`);
+        const records = this.write
+          .prepare(`${SYSTEM_RECORDS} WHERE s.organization_id = ? ORDER BY s.system_id`)
+          .all(organizationId) as SystemRecord[];
+        const receipts = this.write
+          .prepare(
+            "SELECT COUNT(*) AS n FROM receipts r JOIN systems s ON s.system_id = r.system_id WHERE s.organization_id = ? AND r.seq > 0",
+          )
+          .get(organizationId) as { n: number };
+        const people = this.write.prepare("SELECT COUNT(*) AS n FROM users WHERE organization_id = ?").get(organizationId) as {
+          n: number;
+        };
+        this.logAdmin("organization.erase", "", request, {
+          organization_id: organizationId,
+          systems: records.length,
+          receipts_erased: receipts.n,
+          people: people.n,
+        });
+        for (const record of records) this.eraseChain(record.system_id, { ...record, display_name: null }, request);
+        this.write.prepare("DELETE FROM users WHERE organization_id = ?").run(organizationId);
+        this.write.prepare("DELETE FROM organizations WHERE organization_id = ?").run(organizationId);
+        const subjects = this.write
+          .prepare(
+            `DELETE FROM subjects WHERE token NOT IN (
+               SELECT json_extract(canonical, '$.actor.on_behalf_of') FROM receipts
+               WHERE json_extract(canonical, '$.actor.on_behalf_of') IS NOT NULL
+             )`,
+          )
+          .run().changes;
+        return {
+          systems: records.map((record) => record.system_id),
+          receipts_erased: receipts.n,
+          people: people.n,
+          subjects_erased: subjects,
+        };
+      }),
+    );
+    await this.foldWriteAheadLog();
+    return erased;
+  }
+
+  /** Deletes one chain and everything hanging from it, inside an administrative transaction, and logs it. */
+  private eraseChain(systemId: string, record: SystemRecord, request: AdminRequest): DeletedSystem & { receipts_erased: number } {
+    const rows = this.write
+      .prepare("SELECT seq, hash FROM receipts WHERE system_id = ? ORDER BY seq")
+      .all(systemId) as ChainTip[];
+    const genesis = rows[0];
+    const last = rows[rows.length - 1];
+    if (genesis === undefined || last === undefined) throw new StorageError(`${systemId} has no chain`);
+
+    const checkpointIds = (
+      this.write.prepare("SELECT id FROM checkpoints WHERE system_id = ?").all(systemId) as { id: number }[]
+    ).map((row) => row.id);
+    const timestamps = checkpointIds.reduce(
+      (total, id) =>
+        total +
+        (this.write.prepare("SELECT COUNT(*) AS n FROM timestamps WHERE checkpoint_id = ?").get(id) as { n: number }).n,
+      0,
+    );
+    const apiKeys = (
+      this.write.prepare("SELECT key_id FROM api_keys WHERE system_id = ? ORDER BY created_at").all(systemId) as {
+        key_id: string;
+      }[]
+    ).map((row) => row.key_id);
+
+    const deleted = {
+      system_id: systemId,
+      display_name: record.display_name,
+      created_at: record.created_at,
+      genesis_hash: genesis.hash,
+      checkpoints: checkpointIds.length,
+      timestamps,
+      api_keys: apiKeys,
+      organization_id: record.organization_id,
+      receipts_erased: rows.length - 1,
+      last_hash: last.hash,
+    };
+
+    this.logAdmin("system.delete", systemId, request, { ...deleted }, genesis.hash);
+    for (const id of checkpointIds) {
+      this.write.prepare("DELETE FROM timestamps WHERE checkpoint_id = ?").run(id);
+    }
+    this.write.prepare("DELETE FROM checkpoints WHERE system_id = ?").run(systemId);
+    this.write.prepare("DELETE FROM artifacts WHERE system_id = ?").run(systemId);
+    this.write.prepare("DELETE FROM openings WHERE system_id = ?").run(systemId);
+    this.write.prepare("DELETE FROM receipts WHERE system_id = ?").run(systemId);
+    this.write.prepare("DELETE FROM export_register WHERE system_id = ?").run(systemId);
+    this.write.prepare("DELETE FROM api_keys WHERE system_id = ?").run(systemId);
+    this.write.prepare("DELETE FROM transfer_links WHERE system_id = ?").run(systemId);
+    this.write.prepare("DELETE FROM connections WHERE system_id = ?").run(systemId);
+    this.write.prepare("DELETE FROM provider_keys WHERE system_id = ?").run(systemId);
+    this.write.prepare("DELETE FROM systems WHERE system_id = ?").run(systemId);
+    return deleted;
   }
 
   /** When a system by this identifier was deleted, from the administrative log, or null if it never was. */
@@ -2154,11 +2231,13 @@ export class ReceiptStore {
     }
     if (clientNonce !== undefined) {
       // Salted by the client, which never sent the value: the nonce is kept
-      // in `openings` exactly like one made here, and erased the same way.
-      if (clientHash === null || !NONCE_HEX.test(clientNonce)) {
+      // in `openings` exactly like one made here, and erased the same way;
+      // or the customer kept it, and there is nothing to keep here.
+      if (clientHash === null || !(NONCE_HEX.test(clientNonce) || clientNonce === NONCE_KEPT_BY_CUSTOMER)) {
         throw new StorageError(`a ${role} nonce is 64 lowercase hex characters, sent with the digest it salted`);
       }
-      return { hash: clientHash, scheme: HASH_SCHEME_SALTED, nonce: clientNonce };
+      const nonce = clientNonce === NONCE_KEPT_BY_CUSTOMER ? null : clientNonce;
+      return { hash: clientHash, scheme: HASH_SCHEME_SALTED, nonce };
     }
     if (raw === undefined) {
       return { hash: clientHash, scheme: clientHash === null ? null : HASH_SCHEME_PLAIN, nonce: null };

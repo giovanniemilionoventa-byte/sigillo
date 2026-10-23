@@ -27,8 +27,8 @@ const NOW = "2026-10-04T10:00:00.000Z";
 const PUBLIC_URL = "https://sigillo.example.com";
 const REPOSITORY_ROOT = new URL("../../..", import.meta.url).pathname;
 
-function server(directory: string, withAccounts: boolean): FastifyInstance {
-  const databasePath = join(directory, `sigillo-${withAccounts ? "a" : "b"}.db`);
+function server(directory: string, withAccounts: boolean, redesigned = false): FastifyInstance {
+  const databasePath = join(directory, `sigillo-${withAccounts ? "a" : "b"}${redesigned ? "2" : ""}.db`);
   const signer = createTestSigner();
   const store = ReceiptStore.open(databasePath, signer);
   const keys = ApiKeyStore.open(databasePath);
@@ -41,6 +41,7 @@ function server(directory: string, withAccounts: boolean): FastifyInstance {
       signerKey: { key_id: signer.keyId, public_key_base64: signer.publicKeyBase64 },
       healthMonitor: new ChainHealthMonitor(store, signer.publicKey, 24 * 3600_000),
       checkpointer: new Checkpointer({ store, now: () => new Date(NOW) }),
+      ...(redesigned ? { consoleV2: "operator" as const, features: { siteV2: "all" } as never } : {}),
       ...(withAccounts
         ? {
             accounts: {
@@ -63,6 +64,7 @@ function server(directory: string, withAccounts: boolean): FastifyInstance {
 let directory: string;
 let app: FastifyInstance;
 let operatorOnly: FastifyInstance;
+let redesigned: FastifyInstance;
 
 beforeAll(async () => {
   directory = mkdtempSync(join(tmpdir(), "sigillo-site-"));
@@ -70,15 +72,51 @@ beforeAll(async () => {
   operatorOnly = server(directory, false);
   await app.ready();
   await operatorOnly.ready();
+  redesigned = server(directory, true, true);
+  await redesigned.ready();
 });
 
 afterAll(async () => {
   await app.close();
   await operatorOnly.close();
+  await redesigned.close();
   rmSync(directory, { recursive: true, force: true });
 });
 
 const get = (url: string, headers: Record<string, string> = {}) => app.inject({ method: "GET", url, headers });
+
+describe("the public site, redesigned (SIGILLO_SITE_V2=all)", () => {
+  const getNew = (url: string) => redesigned.inject({ method: "GET", url });
+
+  it("draws /verify, /privacy and the blog in the new frame, not the first site's", async () => {
+    for (const path of ["/", "/verify", "/privacy", "/blog"]) {
+      const body = (await getNew(path)).body;
+      expect(body, path).toContain('class="s-top"');
+      expect(body, path).not.toContain('<nav id="menu">');
+    }
+    const verify = (await getNew("/verify")).body;
+    expect(verify).toContain('id="drop"');
+    expect(verify).toContain('<script src="/verify.js" defer>');
+    expect(verify).toContain('href="/#prezzi"');
+    expect(verify).toContain('<a href="/verify" aria-current="page">Verify</a>');
+    expect((await getNew("/")).body).toContain('<a href="/verify">Verify</a>');
+  });
+
+  it("sends the old pricing and connect addresses to the new home's sections, which exist", async () => {
+    const home = (await getNew("/")).body;
+    for (const [from, to] of [["/pricing", "/#prezzi"], ["/connect", "/#collega"]] as const) {
+      const moved = await getNew(from);
+      expect(moved.headers.location, from).toBe(to);
+      expect(home, to).toContain(`id="${to.slice(2)}"`);
+    }
+  });
+
+  it("keeps the home's buttons clear of the console's status-dot class", async () => {
+    const home = (await getNew("/")).body;
+    expect(home).not.toMatch(/class="btn light"/);
+    expect(home).not.toMatch(/class="[^"]*\bs-top\b[^"]*" *>\s*<div><p class="s-eyebrow">/);
+  });
+});
 
 describe("the public site", () => {
   it("is what / shows where customers sign in, and every page links to the console's sign-in", async () => {

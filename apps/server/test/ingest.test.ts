@@ -580,6 +580,20 @@ describe("content already hashed by the SDK (fase 9, D6)", () => {
     expect(action).not.toHaveProperty("output_nonce");
   });
 
+  it("passes on a digest whose nonce the customer keeps, without a nonce", () => {
+    const span = jsonSpan({
+      attributes: {
+        "openinference.span.kind": "TOOL",
+        "tool.name": "leggi_curriculum",
+        "sigillo.input.sha256": SHA_A,
+        "sigillo.input.nonce": "customer",
+      },
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.input_hash).toBe(SHA_A);
+    expect(action?.input_nonce).toBe("customer");
+  });
+
   it("records no digest at all when the nonce beside it is malformed: it could not be recorded as what it is", () => {
     const span = jsonSpan({
       attributes: {

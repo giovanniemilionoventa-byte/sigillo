@@ -4174,3 +4174,85 @@ con l'agente suo, con `POST /vault/unlock` (chiave sigillo + passphrase nel corp
 per chiudere). Per tutti gli account, nessun interruttore solo-admin. Schema 9 (`vault_schedule`).
 Test: `vault-schedule.test.ts`, `vault-ui.test.ts`. Documentato in `docs/API.md`. Il verificatore
 è invariato.
+
+## Pacchetto prove per i partner (2026-10-22)
+
+Su richiesta del titolare, dopo il messaggio di Polina (i partner rispondono ai loro clienti dei
+dati, quindi vogliono prove che sigillo non tiene i contenuti):
+
+- **`sigillo-server privacy inventory`**: ogni tabella e colonna del database, con il numero di
+  righe e che tipo di valore tiene. La classificazione è in `apps/server/src/assurance/privacy-check.ts`;
+  `docs/STORAGE-INVENTORY.md` è generato da lì (`--markdown`) e un test fallisce se lo schema
+  guadagna una colonna non classificata, o se la pagina non è aggiornata.
+- **`sigillo-server privacy scan <marcatore>`** (il comando `privacy canary` e
+  `docs/PRIVACY-CHECK.md` sono stati tolti lo stesso giorno, vedi "La chiave del cliente"): il
+  "test del canarino" che un partner o un revisore fa da sé. Il marcatore passa dal proprio agente;
+  la scansione lo cerca in ogni colonna, nei byte del file e del WAL, e in log, backup ed export
+  indicati (anche dentro gli zip). Esce 2 se lo trova e dice dove. `privacy-check.test.ts` lo fa in
+  CI: marcatore in tutti gli attributi di contenuto noti e in una chiamata vera al gateway, non
+  deve trovarlo; messo in un nome di span o in `user.id`, deve trovarlo.
+- **`sigillo-server org erase <id> --confirm <id>`**: cancellazione di un cliente a fine contratto
+  (i testi privacy la promettevano, il database la impediva). Il database la permette solo dopo che
+  la cancellazione di quell'organizzazione è nel registro amministrativo; la vista
+  `operator_erasable_chains` è ricreata all'apertura sui database esistenti. Nessuna nuova versione
+  di schema: una release precedente legge il database come prima. Toglie anche i legami
+  pseudonimo-persona che nessuna ricevuta rimasta nomina. Solo da riga di comando.
+
+Verificatore: invariato.
+
+
+### Avviso su vite (2026-10-22)
+
+Il controllo delle dipendenze è diventato rosso senza modifiche nostre: nuovi avvisi su `vite`
+8.3.0-8.3.2 (GHSA-587h-7wmj-h5pm, alto, e altri) e su `@vitest/mocker` <4.1.12, entrambi solo
+strumenti di test (`vitest`), non nel prodotto (`pnpm audit --prod` era già pulito). `vitest`
+passa a `^4.1.12`, e `vite`, che arriva solo tramite vitest, è fissato a 8.3.4 con
+`pnpm.overrides` (pnpm non lo riprendeva da solo). Nessuna nuova dipendenza.
+
+
+### Correzioni al sito pubblico (2026-10-22)
+
+Il titolare ha segnalato due difetti sul sito nuovo (`SIGILLO_SITE_V2=all`):
+
+- **Pulsanti "What you hand over" e "What it proves, what it does not" non cliccabili**: avevano la
+  classe `light`, che nella console è il pallino di stato (8×8 px, tondo). Il pulsante restava largo
+  42 px e il testo ne usciva. Classe rinominata `inv`. Lo stesso nome `s-top` era usato per
+  l'intestazione fissa e per la colonna delle FAQ: la seconda ora è `s-start`.
+- **/verify, /privacy e il blog mostravano il sito vecchio dentro un menu nuovo**: con il sito nuovo
+  attivo, solo `/` era ridisegnato. Ora tutte e quattro le pagine usano la cornice nuova
+  (`siteV2Inner` in `site-v2.ts`: stessa intestazione, banda contatti e piè di pagina della home);
+  il contenuto è quello di prima (`verify.js` invariato) con le sue regole riportate sui colori
+  nuovi. Anche `/pricing` e `/connect` ora portano a `/#prezzi` e `/#collega`, che esistono.
+
+Verificatore: invariato.
+
+
+### La chiave del cliente (2026-10-22)
+
+Il titolare non vuole una pagina di prova nella console ("un mini test che sembra truccato"): la
+prova dev'essere la documentazione, con ogni cliente che ha una sua chiave. Quindi:
+
+- **Tolta** la pagina Privacy della console (PR #105, mai unita: commit annullato) e il comando
+  `sigillo-server privacy canary` con `docs/PRIVACY-CHECK.md`. Restano `privacy inventory` e
+  `privacy scan` per chi gestisce un server, e i test automatici.
+- **SDK 0.9.0, `customer_key`**: il nonce di ogni impronta salata è
+  HMAC-SHA256(chiave, "sigillo-nonce-v1\n" + trace_id + "\n" + span_id + "\n" + ruolo), calcolato
+  nel processo del cliente e mai inviato: al suo posto va la parola `customer`. `sigillo.nonce_for`
+  lo ricostruisce, per `sigillo-verify open --nonce`. Rifiuta una chiave vuota, il segnaposto
+  `<...>`, e `redact_content`/`salt_content` spenti.
+- **Server**: `sigillo.<ruolo>.nonce = "customer"` (OTLP) e `input_nonce: "customer"` (API JSON)
+  registrano l'impronta come `salted` senza riga in `openings`. Formato delle ricevute invariato
+  (stessa versione 4, stessa impronta salata: cambia solo chi tiene il nonce), quindi niente nuova
+  versione `v`. Un server più vecchio scarta queste impronte invece di registrarle come plain.
+- **"Carica il tuo agente"**: il browser crea la chiave (`crypto.getRandomValues`, 32 byte) e la
+  scrive nel file restituito; il codice da incollare a mano la riceve allo stesso modo, altrimenti
+  mostra un segnaposto. Il file chiede l'SDK 0.9.
+- **`docs/DATA-PROTECTION.md`**: spiega in chiaro come funziona, perché nessuno tranne il cliente
+  può risalire al contenuto, cosa sigillo vede comunque, e dove leggere ogni affermazione nel
+  codice. `docs/FORMAT.md` 2.7 descrive la derivazione.
+- Test: SDK (derivazione con vettore HMAC indipendente, nonce mai nel corpo inviato), server
+  (adattatore, API, nessuna `openings`), pagina di caricamento, e il percorso completo con firmatore,
+  server e verificatore veri: chiave, nonce e contenuto assenti dai file del server, `open` con il
+  nonce ricostruito dà MATCH, senza dà NO MATCH.
+
+Verificatore: invariato.

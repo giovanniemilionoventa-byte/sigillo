@@ -3,6 +3,7 @@ import { STYLE_V2 } from "./style-v2.js";
 import { ICONS, SEAL_SVG, STATE_ICONS } from "./style.js";
 import { PROOF_ICONS } from "./style-v2.js";
 import type { Language } from "./locale.js";
+import { BLOG_STYLE } from "./site-blog.js";
 
 /**
  * The redesigned public home (SIGILLO_SITE_V2): one page with anchors, drawn
@@ -17,7 +18,7 @@ import type { Language } from "./locale.js";
  */
 
 interface Copy {
-  nav: { how: string; deliver: string; aiAct: string; pricing: string; blog: string; verify: string; signIn: string; start: string };
+  nav: { how: string; deliver: string; aiAct: string; pricing: string; blog: string; verify: string; verifyShort: string; signIn: string; start: string };
   title: string;
   description: string;
   hero: { eyebrow: string; h1: string; lead: string; primary: string; secondary: string; facts: [string, string][] };
@@ -38,7 +39,7 @@ interface Copy {
 }
 
 const IT: Copy = {
-  nav: { how: "Come funziona", deliver: "Cosa consegni", aiAct: "AI Act", pricing: "Prezzi", blog: "Blog", verify: "Verifica un fascicolo", signIn: "Accedi", start: "Richiedi un pilota gratuito" },
+  nav: { how: "Come funziona", deliver: "Cosa consegni", aiAct: "AI Act", pricing: "Prezzi", blog: "Blog", verify: "Verifica un fascicolo", verifyShort: "Verifica", signIn: "Accedi", start: "Richiedi un pilota gratuito" },
   title: "sigillo · le prove di cosa ha fatto la tua AI",
   description: "sigillo registra ogni azione dei tuoi agenti AI in un registro firmato e sigillato ogni ora. Quando arriva un reclamo o un'ispezione, consegni un fascicolo che chiunque controlla da solo, nel browser.",
   hero: {
@@ -153,7 +154,7 @@ const IT: Copy = {
 };
 
 const EN: Copy = {
-  nav: { how: "How it works", deliver: "What you hand over", aiAct: "AI Act", pricing: "Pricing", blog: "Blog", verify: "Verify an evidence pack", signIn: "Sign in", start: "Request a free pilot" },
+  nav: { how: "How it works", deliver: "What you hand over", aiAct: "AI Act", pricing: "Pricing", blog: "Blog", verify: "Verify an evidence pack", verifyShort: "Verify", signIn: "Sign in", start: "Request a free pilot" },
   title: "sigillo · the evidence of what your AI did",
   description: "sigillo records every action of your AI agents in a signed record, sealed every hour. When a complaint or an inspection comes, you hand over a pack anyone can check alone, in the browser.",
   hero: {
@@ -291,8 +292,8 @@ body { background: var(--canvas); }
 .btn:hover { background: var(--fill); text-decoration: none; }
 .btn.pri { background: var(--action); border-color: var(--action); color: var(--on-action); }
 .btn.pri:hover { background: var(--action); filter: brightness(0.92); }
-.btn.light { background: var(--text); border-color: var(--text); color: var(--canvas); }
-.btn.light:hover { background: var(--text); filter: brightness(0.9); }
+.btn.inv { background: var(--text); border-color: var(--text); color: var(--canvas); }
+.btn.inv:hover { background: var(--text); filter: brightness(0.9); }
 .btn.sm { min-height: 34px; padding: 0 12px; font-size: 13px; }
 .s-eyebrow { font-size: 12px; line-height: 18px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--secondary); font-weight: 600; margin: 0 0 16px; max-width: 62ch; }
 .s-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 28px; list-style: none; margin: 36px 0 0; padding: 24px 0 0; border-top: 1px solid var(--separator); }
@@ -350,7 +351,7 @@ body { background: var(--canvas); }
 .s-price { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .s-plan { display: flex; flex-direction: column; gap: 12px; }
 .s-plan b { font-size: 24px; line-height: 30px; }
-.s-split.s-top { align-items: start; }
+.s-split.s-start { align-items: start; }
 .s-flow { list-style: none; padding: 0; margin: 28px 0 0; display: grid; gap: 14px; }
 .s-flow li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 14px; align-items: start; }
 .s-flow .num { width: 28px; height: 28px; border-radius: 999px; border: 1.5px solid var(--label); display: grid; place-items: center; font-size: 13px; font-weight: 600; }
@@ -387,14 +388,113 @@ body { background: var(--canvas); }
 }
 `;
 
+/**
+ * The verify, privacy and blog bodies are written with the first site's class
+ * names (site.ts, site-blog.ts). The two palettes are the same, so these rules
+ * only point the old names at the new tokens and restate the few old rules
+ * those bodies need.
+ */
+const INNER_RULES = `
+:root { --page: var(--canvas); --band: var(--surface); --line: var(--separator); --ink: var(--text); --primary: var(--action); --blue: var(--link); --blue-fill: var(--selection); --green: var(--ok); --green-fill: var(--ok-fill); --box-c: var(--secondary); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+.narrow { max-width: 800px; }
+.page-head { text-align: center; padding: 72px 24px 40px; }
+.page-head h1 { text-align: center; font-size: 44px; line-height: 50px; letter-spacing: -0.02em; font-weight: 600; margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--separator); border-radius: 10px; padding: 28px; }
+.ico { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.ico.blue { color: var(--blue); background: var(--blue-fill); }
+.ico.green { color: var(--green); background: var(--green-fill); }
+.btn.outline { background: transparent; color: var(--text); }
+.drop { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; cursor: pointer; border: 2px dashed var(--control); border-radius: 10px; background: var(--surface); padding: 48px 24px; }
+.drop.over { border-color: var(--action); }
+.drop b { font-size: 18px; }
+.drop .ico { width: 64px; height: 64px; }
+.drop .ico svg { width: 30px; height: 30px; }
+.drop:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+#check { padding-bottom: 72px; }
+#result { margin-top: 24px; }
+.verdict { display: flex; gap: 14px; align-items: flex-start; }
+.verdict svg { width: 32px; height: 32px; margin-top: 2px; }
+.verdict h3 { margin: 0 0 4px; font-size: 22px; }
+.verdict.ok { color: var(--ok); }
+.verdict.bad { color: var(--bad); }
+.verdict p { color: var(--text); margin: 0; }
+#result dl { display: grid; grid-template-columns: auto 1fr; gap: 10px 24px; margin: 22px 0 0; padding-top: 18px; border-top: 1px solid var(--separator); }
+#result dt { font-weight: 600; }
+#result dd { margin: 0; }
+#result details { padding: 0; margin-top: 18px; border: 0; }
+#result code { font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
+.more { text-align: center; margin-top: 24px; font-weight: 500; }
+.prose h2 { text-align: left; font-size: 22px; line-height: 28px; margin: 36px 0 10px; }
+.prose p { margin: 0 0 12px; }
+.prose { padding-bottom: 56px; }
+@media (max-width: 860px) { .page-head h1 { font-size: 34px; line-height: 40px; } }
+${BLOG_STYLE}`;
+
 /** The redesigned home, as a whole document. */
-export function siteV2Page(view: { language: Language; contactEmail?: string; back: string; theme: "light" | "dark" | "system"; hasBlog: boolean; endpoint: string; media?: ReadonlySet<string> }): string {
+export interface SiteV2View {
+  language: Language;
+  contactEmail?: string;
+  back: string;
+  theme: "light" | "dark" | "system";
+  hasBlog: boolean;
+  endpoint: string;
+  media?: ReadonlySet<string>;
+}
+
+/** The home's header, contact band and footer, shared with the inner pages (`home`: false puts the page's path in front of every anchor). */
+function chrome(view: SiteV2View, home: boolean, current: "blog" | "verify" | null): { header: string; band: string; footer: string; start: string; mail: string } {
   const c = COPY[view.language];
+  const to = (id: string): string => `${home ? "" : "/"}#${id}`;
   const mail =
     view.contactEmail === undefined
-      ? "#contatti"
+      ? to("contatti")
       : `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(view.contactEmail)}&su=${encodeURIComponent("sigillo")}`;
   const start = `<a class="btn pri" href="/ui/registrati">${escape(c.nav.start)}</a>`;
+  const blog = view.hasBlog ? `<a href="/blog"${current === "blog" ? ' aria-current="page"' : ""}>${escape(c.nav.blog)}</a>` : "";
+  const header = `<header class="s-top"><div class="s-wrap">
+<a class="s-brand" href="/">${SEAL_SVG}<span>sigillo</span></a>
+<nav aria-label="${escape(c.nav.how)}"><a href="${to("come-funziona")}">${escape(c.nav.how)}</a><a href="${to("cosa-consegni")}">${escape(c.nav.deliver)}</a><a href="${to("ai-act")}">${escape(c.nav.aiAct)}</a><a href="${to("prezzi")}">${escape(c.nav.pricing)}</a><a href="/verify"${current === "verify" ? ' aria-current="page"' : ""}>${escape(c.nav.verifyShort)}</a>${blog}</nav>
+<div class="s-right">${languageSwitch("seg", view.back)}<a class="s-signin" href="/ui/login">${escape(c.nav.signIn)}</a>${start}</div>
+</div></header>`;
+  const band = `<section class="s-band" id="contatti"><div class="s-wrap"><div><div><h2>${escape(c.hero.h1)}</h2><p>${escape(c.contact.h2)}${view.contactEmail === undefined ? "" : ` ${escape(c.contact.address)} ${escape(view.contactEmail)}`}</p></div>${start}</div></div></section>`;
+  const footer = `<footer class="s-foot"><div class="s-wrap"><div>
+<section><h4>${escape(c.footer.product)}</h4><ul><li><a href="${to("come-funziona")}">${escape(c.nav.how)}</a></li><li><a href="${to("cosa-consegni")}">${escape(c.nav.deliver)}</a></li><li><a href="${to("prezzi")}">${escape(c.nav.pricing)}</a></li></ul></section>
+<section><h4>${escape(c.footer.receivers)}</h4><ul><li><a href="/verify">${escape(c.nav.verify)}</a></li><li><a href="${REPOSITORY}/tree/main/packages/verifier" target="_blank" rel="noopener">Open source</a></li><li><a href="${REPOSITORY}/blob/main/docs/FORMAT.md" target="_blank" rel="noopener">${escape(c.footer.format)}</a></li></ul></section>
+<section><h4>${escape(c.footer.company)}</h4><ul><li><a href="/privacy">${escape(c.footer.privacy)}</a></li>${blog === "" ? "" : `<li><a href="/blog">${escape(c.nav.blog)}</a></li>`}<li><a href="/ui/login">${escape(c.nav.signIn)}</a></li></ul></section></div>
+<p>${escape(c.footer.legal)}</p></div></footer>`;
+  return { header, band, footer, start, mail };
+}
+
+/** The inner pages (verify, privacy, blog) in the new site's frame: `body` is the page's own markup, `head` its extra tags. */
+export function siteV2Inner(
+  view: SiteV2View,
+  page: { title: string; description: string; body: string; head?: string; scripts?: readonly string[]; current?: "blog" | "verify" },
+): string {
+  const { header, footer } = chrome(view, false, page.current ?? null);
+  const theme = ` data-theme="${view.theme === "light" ? "light" : "dark"}"`;
+  return `<!doctype html>
+<html lang="${view.language}"${theme}><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>${escape(page.title)}</title><meta name="description" content="${escape(page.description)}">
+${page.head ?? ""}
+<link rel="icon" href="/favicon.ico" type="image/svg+xml">
+<style>${STYLE_V2}${SITE_RULES}${INNER_RULES}</style>
+</head><body>
+${header}
+<main>
+${page.body}
+</main>
+${footer}
+<script src="/site.js" defer></script>${(page.scripts ?? []).map((src) => `\n<script src="${src}" defer></script>`).join("")}
+</body></html>`;
+}
+
+export function siteV2Page(view: SiteV2View): string {
+  const c = COPY[view.language];
+  const { header, band, footer, start, mail } = chrome(view, true, null);
   const cardFor = (kind: "ok" | "action" | "proof", answer: string): string =>
     kind === "ok"
       ? `<span class="sign green">${STATE_ICONS.ok}<span>${escape(answer)}</span></span>`
@@ -408,11 +508,7 @@ export function siteV2Page(view: { language: Language; contactEmail?: string; ba
           view.media.has(`demo-${view.language}.vtt`) ? `<track kind="subtitles" src="/media/demo-${view.language}.vtt" srclang="${view.language}" label="${escape(c.problem.subtitles)}">` : ""
         }</video></div>`
       : "";
-  const body = `<header class="s-top"><div class="s-wrap">
-<a class="s-brand" href="/">${SEAL_SVG}<span>sigillo</span></a>
-<nav aria-label="${escape(c.nav.how)}"><a href="#come-funziona">${escape(c.nav.how)}</a><a href="#cosa-consegni">${escape(c.nav.deliver)}</a><a href="#ai-act">${escape(c.nav.aiAct)}</a><a href="#prezzi">${escape(c.nav.pricing)}</a>${view.hasBlog ? `<a href="/blog">${escape(c.nav.blog)}</a>` : ""}</nav>
-<div class="s-right">${languageSwitch("seg", view.back)}<a class="s-signin" href="/ui/login">${escape(c.nav.signIn)}</a>${start}</div>
-</div></header>
+  const body = `${header}
 <main>
 <section class="s-wrap s-hero" id="inizio"><div>
 <p class="s-eyebrow">${escape(c.hero.eyebrow)}</p>
@@ -424,9 +520,9 @@ export function siteV2Page(view: { language: Language; contactEmail?: string; ba
 <div class="s-sealrow"><span class="s-stamp">${SEAL_SVG}</span><div><b>${escape(c.card.matches)}</b><small class="mono">9685 533e aa64 29c4</small><small>${escape(c.card.sealed)}</small></div></div></div>
 </section>
 
-<section class="s-sec" id="problema"><div class="s-wrap${demo === "" ? " s-narrow" : " s-split"}"><div><p class="s-eyebrow">${escape(c.problem.eyebrow)}</p><h2>${escape(c.problem.h2)}</h2><p class="s-lead">${escape(c.problem.body)}</p><a class="btn light" href="#cosa-prova">${escape(c.problem.more)}</a></div>${demo}</div></section>
+<section class="s-sec" id="problema"><div class="s-wrap${demo === "" ? " s-narrow" : " s-split"}"><div><p class="s-eyebrow">${escape(c.problem.eyebrow)}</p><h2>${escape(c.problem.h2)}</h2><p class="s-lead">${escape(c.problem.body)}</p><a class="btn inv" href="#cosa-prova">${escape(c.problem.more)}</a></div>${demo}</div></section>
 
-<section class="s-sec alt" id="contestazioni"><div class="s-wrap"><div class="s-card s-dispute"><p class="s-eyebrow">${escape(c.disputes.eyebrow)}</p><h2>${escape(c.disputes.h2)}</h2><p class="s-lead">${escape(c.disputes.body)}</p><a class="btn light" href="#cosa-consegni">${escape(c.disputes.more)}</a></div></div></section>
+<section class="s-sec alt" id="contestazioni"><div class="s-wrap"><div class="s-card s-dispute"><p class="s-eyebrow">${escape(c.disputes.eyebrow)}</p><h2>${escape(c.disputes.h2)}</h2><p class="s-lead">${escape(c.disputes.body)}</p><a class="btn inv" href="#cosa-consegni">${escape(c.disputes.more)}</a></div></div></section>
 
 <section class="s-sec" id="per-chi"><div class="s-wrap"><p class="s-eyebrow">${escape(c.fit.eyebrow)}</p><h2>${escape(c.fit.h2)}</h2><p class="s-lead">${escape(c.fit.lead)}</p>
 <div class="s-two s-fit"><div class="s-card"><h3 class="s-fith s-yes-h">${escape(c.fit.forTitle)}</h3><p class="t-sec">${escape(c.fit.forLead)}</p><ul>${c.fit.forItems.map(([t, d]) => `<li><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ul></div>
@@ -464,15 +560,11 @@ ${code(`import sigillo\nsigillo.init(\n    endpoint="${view.endpoint}",\n    api
 <p class="t-meta">${escape(c.pricing.unit)}</p>
 </div></section>
 
-<section class="s-sec alt" id="faq"><div class="s-wrap s-split s-top"><div><p class="s-eyebrow">${escape(c.faq.eyebrow)}</p><h2>${escape(c.faq.h2)}</h2><p class="s-lead">${escape(c.faq.lead)}</p><a class="btn" href="${escape(mail)}" rel="noopener">${escape(c.contact.button)}</a></div>
+<section class="s-sec alt" id="faq"><div class="s-wrap s-split s-start"><div><p class="s-eyebrow">${escape(c.faq.eyebrow)}</p><h2>${escape(c.faq.h2)}</h2><p class="s-lead">${escape(c.faq.lead)}</p><a class="btn" href="${escape(mail)}" rel="noopener">${escape(c.contact.button)}</a></div>
 <div class="s-faq">${c.pricing.faq.map((f, i) => `<details${i === 0 ? " open" : ""}><summary>${escape(f.q)}</summary><p>${escape(f.a)}</p></details>`).join("")}</div></div></section>
 </main>
-<section class="s-band" id="contatti"><div class="s-wrap"><div><div><h2>${escape(c.hero.h1)}</h2><p>${escape(c.contact.h2)}${view.contactEmail === undefined ? "" : ` ${escape(c.contact.address)} ${escape(view.contactEmail)}`}</p></div>${start}</div></div></section>
-<footer class="s-foot"><div class="s-wrap"><div>
-<section><h4>${escape(c.footer.product)}</h4><ul><li><a href="#come-funziona">${escape(c.nav.how)}</a></li><li><a href="#cosa-consegni">${escape(c.nav.deliver)}</a></li><li><a href="#prezzi">${escape(c.nav.pricing)}</a></li></ul></section>
-<section><h4>${escape(c.footer.receivers)}</h4><ul><li><a href="/verify">${escape(c.nav.verify)}</a></li><li><a href="${REPOSITORY}/tree/main/packages/verifier" target="_blank" rel="noopener">Open source</a></li><li><a href="${REPOSITORY}/blob/main/docs/FORMAT.md" target="_blank" rel="noopener">${escape(c.footer.format)}</a></li></ul></section>
-<section><h4>${escape(c.footer.company)}</h4><ul><li><a href="/privacy">${escape(c.footer.privacy)}</a></li>${view.hasBlog ? `<li><a href="/blog">${escape(c.nav.blog)}</a></li>` : ""}<li><a href="/ui/login">${escape(c.nav.signIn)}</a></li></ul></section></div>
-<p>${escape(c.footer.legal)}</p></div></footer>`;
+${band}
+${footer}`;
 
   // Dark unless the reader chose light: the proposed design is drawn dark first.
   const theme = ` data-theme="${view.theme === "light" ? "light" : "dark"}"`;

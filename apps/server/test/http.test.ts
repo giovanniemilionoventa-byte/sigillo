@@ -204,12 +204,38 @@ describe("a digest salted by the client", () => {
     expect(openSaltedDigest(receipt.input_hash ?? "", fromHex(nonce), content)).toBe(true);
   });
 
+  it("is recorded as salted with no opening at all when the customer keeps the nonce", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/receipts",
+      headers: auth(),
+      payload: {
+        actor: { agent: "planner" },
+        action: { kind: "tool_call", name: "x" },
+        outcome: "ok",
+        input_hash: salted(),
+        input_nonce: "customer",
+      },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const receipt = store.readChain(SYSTEM).at(-1);
+    if (receipt?.v !== 4) throw new Error("not v4");
+    expect(receipt.input_hash).toBe(salted());
+    expect(receipt.input_hash_scheme).toBe("salted");
+    expect(store.opening(SYSTEM, receipt.seq, "input")).toBeNull();
+    expect(store.openingsOf(SYSTEM, [receipt.seq])).toEqual([]);
+    // The customer, who kept the nonce, still opens it.
+    expect(openSaltedDigest(receipt.input_hash ?? "", fromHex(nonce), content)).toBe(true);
+  });
+
   it("refuses a nonce without its digest, beside the value, or malformed", async () => {
     const base = { actor: { agent: "planner" }, action: { kind: "tool_call", name: "x" }, outcome: "ok" };
     for (const payload of [
       { ...base, input_nonce: nonce },
       { ...base, input: content, input_nonce: nonce },
       { ...base, input_hash: salted(), input_nonce: "AB".repeat(32) },
+      { ...base, input_nonce: "customer" },
+      { ...base, input: content, input_nonce: "customer" },
       { ...base, output_hash: null, output_nonce: nonce },
     ]) {
       const response = await app.inject({ method: "POST", url: "/api/v1/receipts", headers: auth(), payload });

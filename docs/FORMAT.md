@@ -292,6 +292,14 @@ receipt, and is `null` exactly when its digest is `null`.
   and deletable; whoever holds the nonce and the content can show the digest is
   of that content ("opening" it), and once the nonce is deleted nobody can.
 
+  A client may instead make the nonce from a secret of the customer's own and
+  keep it: the Python SDK's `customer_key` makes it as HMAC-SHA256(key,
+  `"sigillo-nonce-v1\n" + trace_id + "\n" + span_id + "\n" + role`), with the
+  receipt's `source` identifiers and `role` either `input` or `output`, and
+  sends the word `customer` in its place. The receipt is the same `salted`
+  digest; the server simply has no nonce to keep, and only the key's holder
+  can open it (`--nonce` below). See `docs/DATA-PROTECTION.md`.
+
 With the nonce `000102…1e1f` (the bytes 0 to 31) and the value `"score: 7"`,
 whose RFC 8785 form is the 10 bytes `"score: 7"` with the quotes, the salted
 digest is

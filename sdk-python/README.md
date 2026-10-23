@@ -152,6 +152,23 @@ from its content. A server older than October 2026 does not read the nonce and
 would record the salted digest as a plain one: only for such a server, pass
 `salt_content=False`.
 
+## Your own key
+
+```python
+sigillo.init(..., customer_key="<a secret of your own>")
+```
+
+With `customer_key` (version 0.9 and later), the nonce of each salted digest
+is made here from your key and the action's identifiers, and is **not sent**:
+the server receives the digest, and the word `customer` where the nonce would
+be. Neither sigillo nor anyone who takes its database can open the digest or
+test a guess against it. You can, at any time, with `sigillo.nonce_for(key,
+trace_id, span_id, "input")` and `sigillo-verify open --nonce`. The console's
+"Upload your agent" writes a key made in your browser into the file. Keep a
+copy: without it nobody can show what a digest was of, and destroying it is
+how every digest it salted is erased for good. See
+[docs/DATA-PROTECTION.md](../docs/DATA-PROTECTION.md).
+
 ## Seeing what leaves your computer
 
 `sigillo.init(..., show_sent=True)` prints, on standard error, one line for

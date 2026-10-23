@@ -283,10 +283,12 @@ WHERE genesis.seq = 0
     SELECT 1 FROM receipts later WHERE later.system_id = genesis.system_id AND later.seq > 0
   );
 
--- The administrator's own systems, whose whole record the administrator has
--- chosen to erase (ReceiptStore.eraseOperatorSystem): a system with no
--- organization, and a logged deletion that says how many receipts went with
--- it. A customer's system is never in this view, whatever the log says.
+-- The chains whose whole record the administrator has chosen to erase: a
+-- logged deletion that says how many receipts went with it, of either the
+-- administrator's own system (ReceiptStore.eraseOperatorSystem), or a system
+-- of a customer whose erasure at the end of its contract is itself logged
+-- first (ReceiptStore.eraseOrganization). Any other customer's system is
+-- never in this view, whatever the log says about the system alone.
 CREATE VIEW IF NOT EXISTS operator_erasable_chains AS
 SELECT system.system_id
 FROM systems system
@@ -294,7 +296,12 @@ JOIN admin_log entry
   ON entry.action = 'system.delete'
  AND entry.system_id = system.system_id
  AND json_extract(entry.detail, '$.receipts_erased') IS NOT NULL
-WHERE system.organization_id IS NULL;
+WHERE system.organization_id IS NULL
+   OR EXISTS (
+     SELECT 1 FROM admin_log erasure
+     WHERE erasure.action = 'organization.erase'
+       AND json_extract(erasure.detail, '$.organization_id') = system.organization_id
+   );
 
 CREATE TRIGGER IF NOT EXISTS receipts_no_update BEFORE UPDATE ON receipts
 BEGIN SELECT RAISE(ABORT, 'append-only: a receipt cannot be modified'); END;
@@ -459,6 +466,25 @@ function replaceOlderDeleteGuards(db: Database.Database): void {
 }
 
 /**
+ * Databases written before a customer could be erased at the end of its
+ * contract carry the view that knows only the administrator's own systems.
+ * `CREATE VIEW IF NOT EXISTS` leaves it as it is, so it is dropped and made
+ * again from SCHEMA_SQL, in one transaction. The triggers name the view, and
+ * read it afresh each time they fire. No new schema version: a release that
+ * predates the change reads this database as before, and erases no customer.
+ */
+function replaceOlderErasableView(db: Database.Database): void {
+  const view = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'view' AND name = 'operator_erasable_chains'").get() as
+    | { sql: string }
+    | undefined;
+  if (view === undefined || view.sql.includes("organization.erase")) return;
+  db.transaction(() => {
+    db.exec("DROP VIEW operator_erasable_chains");
+    db.exec(SCHEMA_SQL);
+  })();
+}
+
+/**
  * Applies the schema and every migration, in the order a database needs them:
  * the tables first (a no-op on one that already has them), then any column a
  * later version added, then the indexes that depend on those columns. Every
@@ -472,6 +498,7 @@ export function applySchema(db: Database.Database): void {
   }
   db.exec(SCHEMA_SQL);
   replaceOlderDeleteGuards(db);
+  replaceOlderErasableView(db);
   ensureColumn(db, "receipts", "source_trace_id", "TEXT");
   ensureColumn(db, "receipts", "source_span_id", "TEXT");
   ensureColumn(db, "systems", "display_name", "TEXT");

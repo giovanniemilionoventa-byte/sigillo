@@ -9,6 +9,7 @@ dependency list to what the specification allows.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import http.server
 import importlib.util
 import json
@@ -745,12 +746,12 @@ class SigilloInitTest(unittest.TestCase):
     def test_the_public_surface_is_three_functions_and_a_handle(self) -> None:
         self.assertEqual(
             sigillo.__all__,
-            ["init", "artifact", "current_span_from_callbacks", "pseudonym", "Tracing"],
+            ["init", "artifact", "current_span_from_callbacks", "pseudonym", "nonce_for", "Tracing"],
         )
         public = [name for name in dir(sigillo) if not name.startswith("_")]
         self.assertEqual(
             sorted(name for name in public if callable(getattr(sigillo, name))),
-            ["Tracing", "artifact", "current_span_from_callbacks", "init", "pseudonym"],
+            ["Tracing", "artifact", "current_span_from_callbacks", "init", "nonce_for", "pseudonym"],
         )
 
 
@@ -1185,6 +1186,73 @@ class ContentFilterTest(unittest.TestCase):
         self.assertEqual(len(seen), 3)
         plain = hashlib.sha256(json.dumps("score: 7").encode("utf-8")).hexdigest()
         self.assertNotIn(plain, seen)
+
+    def test_with_a_customer_key_the_nonce_never_leaves_and_the_key_alone_rebuilds_it(self) -> None:
+        key = "4f1c0d9a8b7e6f5a4c3b2a1908f7e6d5c4b3a291807f6e5d4c3b2a1908f7e6d5"
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], customer_key=key)
+        self.addCleanup(tracing.shutdown)
+        input_value = "Maria Bianchi, nata il 3 marzo 1990"
+        output_value = "ammessa"
+
+        body = self._emit(
+            tracing,
+            {"openinference.span.kind": "TOOL", "tool.name": "t", "input.value": input_value, "output.value": output_value},
+        )
+
+        span = _first_span(body)
+        attributes = _string_attributes(span.attributes)
+        trace_id, span_id = span.trace_id.hex(), span.span_id.hex()
+        for role, value in (("input", input_value), ("output", output_value)):
+            # What is sent says only that the customer holds the nonce.
+            self.assertEqual(attributes[f"sigillo.{role}.nonce"], "customer")
+            nonce = bytes.fromhex(sigillo.nonce_for(key, trace_id, span_id, role))
+            self.assertEqual(len(nonce), 32)
+            self.assertNotIn(nonce, body)
+            self.assertNotIn(nonce.hex().encode("ascii"), body)
+            self.assertEqual(
+                attributes[f"sigillo.{role}.sha256"],
+                hashlib.sha256(nonce + json.dumps(value, ensure_ascii=False).encode("utf-8")).hexdigest(),
+            )
+        self.assertNotIn(key.encode("ascii"), body)
+        self.assertNotIn(input_value.encode("utf-8"), body)
+
+    def test_the_customer_nonce_is_hmac_sha256_of_the_span_and_role_under_the_key(self) -> None:
+        key = "chiave-del-cliente"
+        trace_id, span_id = "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b8"
+        expected = hmac.new(
+            key.encode("utf-8"), f"sigillo-nonce-v1\n{trace_id}\n{span_id}\ninput".encode("ascii"), hashlib.sha256
+        ).hexdigest()
+        self.assertEqual(sigillo.nonce_for(key, trace_id, span_id, "input"), expected)
+        self.assertEqual(sigillo.nonce_for(key.encode("utf-8"), trace_id, span_id, "input"), expected)
+        others = {
+            sigillo.nonce_for(key, trace_id, span_id, "output"),
+            sigillo.nonce_for(key, trace_id, "00f067aa0ba902b9", "input"),
+            sigillo.nonce_for(key, "4bf92f3577b34da6a3ce929d0e0e4737", span_id, "input"),
+            sigillo.nonce_for("altra-chiave", trace_id, span_id, "input"),
+        }
+        self.assertEqual(len(others), 4)
+        self.assertNotIn(expected, others)
+
+    def test_nonce_for_refuses_what_cannot_name_a_receipt(self) -> None:
+        good = ("k", "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b8", "input")
+        for bad in (
+            ("", *good[1:]),
+            (good[0], "4BF92F3577B34DA6A3CE929D0E0E4736", *good[2:]),
+            (good[0], good[1], "00f067aa0ba902", good[3]),
+            (*good[:3], "both"),
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                sigillo.nonce_for(*bad)
+
+    def test_a_customer_key_needs_salting(self) -> None:
+        with self.assertRaises(ValueError):
+            sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], customer_key="k", salt_content=False)
+        with self.assertRaises(ValueError):
+            sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], customer_key="k", redact_content=False)
+        with self.assertRaises(ValueError):
+            sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], customer_key="")
+        with self.assertRaises(ValueError):
+            sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], customer_key="<your-own-key>")
 
     @unittest.skipIf(_core_requirements_met() is not None, _core_requirements_met() or "")
     def test_the_plain_digest_still_matches_the_server_when_salting_is_turned_off(self) -> None:
