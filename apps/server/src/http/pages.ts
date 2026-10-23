@@ -310,10 +310,10 @@ export const SDK_REQUIREMENT =
 /** Where the page's script writes a key it made in the browser; the placeholder stays without the script. */
 const CUSTOMER_KEY_MARK = "\u0000customer-key\u0000";
 
-function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, plainAgents: boolean, protection: boolean = false, gateway: boolean = false): string {
+function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, plainAgents: boolean, protection: boolean = false, gateway: boolean = false, vault: boolean = false): string {
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
-  const agent = upload && token !== null ? agentUpload(systemId, endpoint, token, plainAgents, protection, gateway) : "";
+  const agent = upload && token !== null ? agentUpload(systemId, endpoint, token, plainAgents, protection, gateway, vault) : "";
   const python = [
     `# ${t.pasteAtTop}`,
     "import sigillo",
@@ -345,14 +345,14 @@ ${agent}${install}
  * run (the `ready` class), so a browser without scripts sees the code alone.
  * What the script writes is in the data attributes, in the reader's language.
  */
-function agentUpload(systemId: string, endpoint: string, token: string, plainAgents: boolean, protection: boolean, gateway: boolean): string {
+function agentUpload(systemId: string, endpoint: string, token: string, plainAgents: boolean, protection: boolean, gateway: boolean, vault: boolean): string {
   const t = UI.connect.upload;
   const url = SDK_REQUIREMENT.slice(SDK_REQUIREMENT.indexOf("@") + 1).trim();
   return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}"${plainAgents ? ' data-stdlib="1"' : ""} data-protection="${protection}"${gateway ? ` data-gateway="${escape(endpoint.replace(/\/+$/, ""))}/llm"` : ""} data-analysis-cloud="${escape(t.analysisCloud)}" data-analysis-local="${escape(t.analysisLocal)}" data-analysis-local-guarded="${escape(t.analysisLocalGuarded)}" data-analysis-other="${escape(t.analysisOther)}" data-another="${escape(t.another)}" data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}">
 <label class="drop"><span class="tile-icon blue empty-icon" aria-hidden="true">${ICONS.upload}</span><span class="tile-icon blue picked-icon" aria-hidden="true">${ICONS.python}</span><strong>${escape(t.drop)}</strong><small>${escape(t.choose)}</small><input type="file" class="sr" id="sigillo-agent-file" accept=".py,text/x-python"></label>
 <p class="notice ok" id="sigillo-agent-done" role="status" hidden>${STATE_ICONS.ok}<span></span></p>
 <p class="notice warn" id="sigillo-agent-problem" role="alert" hidden>${STATE_ICONS.warn}<span></span></p>
-${gateway ? `${choiceBox()}${modelKeyForm(systemId)}` : ""}<p class="or">${escape(t.or)}</p>
+${gateway ? `${choiceBox()}${modelKeyForm(systemId, vault)}` : ""}<p class="or">${escape(t.or)}</p>
 <script src="/ui/agent-setup.js" defer></script>
 </div>
 `;
@@ -376,15 +376,14 @@ function choiceBox(): string {
  * could still use it and skip sigillo. A plain form: the page makes no
  * requests of its own (Content-Security-Policy).
  */
-function modelKeyForm(systemId: string): string {
+function modelKeyForm(systemId: string, vault: boolean): string {
   const t = UI.connect.upload;
   return `<form class="card model-key" id="sigillo-agent-model" method="post" action="/ui/systems/${encodeURIComponent(systemId)}/llm-key" hidden>
 <p>${escape(t.modelFound)}</p>
 <label>${escape(t.modelProvider)} <select name="provider">${PROVIDERS.map((name) => `<option value="${name}">${escape(CATALOG[name].label)}</option>`).join("")}</select></label>
 <label>${escape(t.modelKey)} <input type="password" name="key" autocomplete="off" required></label>
 <p>${escape(t.modelRevoke)}</p>
-<p><a href="/ui/vault">${escape(UI.vault.link)}</a></p>
-<button class="button primary" type="submit">${escape(t.modelSave)}</button>
+${vault ? `<p><a href="/ui/vault">${escape(UI.vault.link)}</a></p>\n` : ""}<button class="button primary" type="submit">${escape(t.modelSave)}</button>
 </form>
 `;
 }
@@ -410,6 +409,8 @@ export function connectPage(view: {
   protection?: boolean;
   /** Whether an uploaded agent is also pointed at the model gateway (agent-setup.ts). */
   gateway?: boolean;
+  /** Whether the account's key vault is on (SIGILLO_KEY_VAULT), so the step links to it. */
+  vault?: boolean;
 }): string {
   const t = UI.connect;
   const { record, token, mode } = view;
@@ -425,7 +426,7 @@ export function connectPage(view: {
         : `${mode === "connect" ? '<meta http-equiv="refresh" content="10">' : ""}<div class="card wait-line" role="status"><span class="spinner" aria-hidden="true"></span><span>${escape(t.waiting)}</span><a class="end" href="${path}/collega">${escape(t.check)}</a></div>`;
   return `<div class="narrow">${pageHead(title)}
 ${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
-${connectWays(record.system_id, view.endpoint, token, view.upload ?? false, view.plainAgents ?? false, view.protection ?? false, view.gateway ?? false)}
+${connectWays(record.system_id, view.endpoint, token, view.upload ?? false, view.plainAgents ?? false, view.protection ?? false, view.gateway ?? false, view.vault ?? false)}
 ${wait}
 </div>`;
 }

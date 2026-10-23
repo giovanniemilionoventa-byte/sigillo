@@ -995,7 +995,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
         render(session, {
           title: UI.connect.ready(systemTitle(record)),
           current: `system:${systemId}`,
-          body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), protection: offersProtection(record), gateway: offersGateway(record) })}`,
+          body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), protection: offersProtection(record), gateway: offersGateway(record), vault: options.gateway?.keys.vaultEnabled ?? false })}`,
         }),
       );
     } catch (error) {
@@ -1194,7 +1194,7 @@ ${exportSheet(record)}`,
   // The state of the account's key vault, for the settings page of a system the gateway serves.
   const vaultStateFor = (session: Session, record: SystemRecord): "none" | "locked" | "open" | "sealed" | null => {
     const gateway = options.gateway;
-    if (gateway === undefined || !gatewayAllowed(gateway.access, record.organization_id)) return null;
+    if (gateway === undefined || !gateway.keys.vaultEnabled || !gatewayAllowed(gateway.access, record.organization_id)) return null;
     const vaults = gateway.keys.vaults;
     const owner = session.viewer.kind === "operator" ? "operator" : session.viewer.organizationId;
     const at = options.now();
@@ -1264,6 +1264,8 @@ ${exportSheet(record)}`,
       if (options.gateway === undefined) return notFound(session, reply);
       return act(session, request, reply, options.gateway.keys.vaults, vaultOwnerOf(session.viewer));
     };
+    // Suspended unless SIGILLO_KEY_VAULT=on: no page, no route, a plain 404.
+    if (options.gateway?.keys.vaultEnabled !== true) return;
     if (path === "") app.get("/ui/vault", handler);
     else app.post(`/ui/vault/${path}`, handler);
   };
@@ -1408,7 +1410,7 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.newKey(systemTitle(record)),
         current: `system:${systemId}`,
-        body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), protection: offersProtection(record), gateway: offersGateway(record) })}`,
+        body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), protection: offersProtection(record), gateway: offersGateway(record), vault: options.gateway?.keys.vaultEnabled ?? false })}`,
       }),
     );
   });

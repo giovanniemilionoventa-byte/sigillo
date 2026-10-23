@@ -102,27 +102,29 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
     }
     return act(vaultOwnerOf(systemId));
   };
-  app.post("/vault/lock", (request, reply) =>
-    vaultCall(request, reply, (owner) => {
-      options.keys.vaults.lock(owner);
-      return reply.code(200).send({ state: "locked" });
-    }),
-  );
-  app.post("/vault/unlock", (request, reply) =>
-    vaultCall(request, reply, (owner) => {
-      const secret = (request.body as { secret?: unknown } | null | undefined)?.secret;
-      const vaults = options.keys.vaults;
-      if (typeof secret !== "string" || !vaults.exists(owner)) return reply.code(400).send({ error: "a secret (the passphrase) is required, and the account needs a vault" });
-      try {
-        if (!vaults.unlock(owner, secret, now())) return reply.code(403).send({ error: "wrong passphrase or recovery key" });
-      } catch (error) {
-        if (error instanceof VaultSealedError) return reply.code(423).send({ error: error.message });
-        if (!(error instanceof VaultError)) throw error;
-        return reply.code(429).send({ error: "too many wrong attempts: try again in a few minutes" });
-      }
-      return reply.code(200).send({ state: "open" });
-    }),
-  );
+  if (options.keys.vaultEnabled) {
+    app.post("/vault/lock", (request, reply) =>
+      vaultCall(request, reply, (owner) => {
+        options.keys.vaults.lock(owner);
+        return reply.code(200).send({ state: "locked" });
+      }),
+    );
+    app.post("/vault/unlock", (request, reply) =>
+      vaultCall(request, reply, (owner) => {
+        const secret = (request.body as { secret?: unknown } | null | undefined)?.secret;
+        const vaults = options.keys.vaults;
+        if (typeof secret !== "string" || !vaults.exists(owner)) return reply.code(400).send({ error: "a secret (the passphrase) is required, and the account needs a vault" });
+        try {
+          if (!vaults.unlock(owner, secret, now())) return reply.code(403).send({ error: "wrong passphrase or recovery key" });
+        } catch (error) {
+          if (error instanceof VaultSealedError) return reply.code(423).send({ error: error.message });
+          if (!(error instanceof VaultError)) throw error;
+          return reply.code(429).send({ error: "too many wrong attempts: try again in a few minutes" });
+        }
+        return reply.code(200).send({ state: "open" });
+      }),
+    );
+  }
 
   const handle = async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const { provider, "*": rest } = request.params as { provider: string; "*": string };
