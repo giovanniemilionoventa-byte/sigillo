@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Receipt } from "@sigillo/core";
 import type { ReceiptStore } from "../storage/store.js";
 import { CATALOG, isProvider, type Provider } from "./catalog.js";
-import type { ProviderKeyStore } from "./provider-keys.js";
+import { VaultError, VaultLockedError, VaultSealedError, type ProviderKeyStore } from "./provider-keys.js";
 import { toolRequestsOf } from "./tool-requests.js";
 
 /**
@@ -90,6 +90,40 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
   const { store, now } = guards;
   const upstreamOf = (provider: Provider): string => (options.upstream?.[provider] ?? UPSTREAM(provider)).replace(/\/+$/, "");
 
+  // The vault, for the customer's own agent: lock it when its work is done,
+  // unlock it when it starts, with the passphrase it keeps. The passphrase
+  // goes in the body, never in an address.
+  const vaultOwnerOf = (systemId: string): string => store.systemRecord(systemId)?.organization_id ?? "operator";
+  const vaultCall = async (request: FastifyRequest, reply: FastifyReply, act: (owner: string) => unknown): Promise<unknown> => {
+    const systemId = await guards.authenticate(request, bearerOf(request));
+    if (systemId === null) return reply.code(401).send({ error: "a valid sigillo API key is required" });
+    if (!gatewayAllowed(options.access, store.systemRecord(systemId)?.organization_id ?? null)) {
+      return reply.code(403).send({ error: "the model gateway is not available for this account yet" });
+    }
+    return act(vaultOwnerOf(systemId));
+  };
+  app.post("/vault/lock", (request, reply) =>
+    vaultCall(request, reply, (owner) => {
+      options.keys.vaults.lock(owner);
+      return reply.code(200).send({ state: "locked" });
+    }),
+  );
+  app.post("/vault/unlock", (request, reply) =>
+    vaultCall(request, reply, (owner) => {
+      const secret = (request.body as { secret?: unknown } | null | undefined)?.secret;
+      const vaults = options.keys.vaults;
+      if (typeof secret !== "string" || !vaults.exists(owner)) return reply.code(400).send({ error: "a secret (the passphrase) is required, and the account needs a vault" });
+      try {
+        if (!vaults.unlock(owner, secret, now())) return reply.code(403).send({ error: "wrong passphrase or recovery key" });
+      } catch (error) {
+        if (error instanceof VaultSealedError) return reply.code(423).send({ error: error.message });
+        if (!(error instanceof VaultError)) throw error;
+        return reply.code(429).send({ error: "too many wrong attempts: try again in a few minutes" });
+      }
+      return reply.code(200).send({ state: "open" });
+    }),
+  );
+
   const handle = async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const { provider, "*": rest } = request.params as { provider: string; "*": string };
     if (!isProvider(provider) || !CATALOG[provider].path.test(rest) || rest.split("/").includes("..")) {
@@ -104,7 +138,18 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
     if (!gatewayAllowed(options.access, store.systemRecord(systemId)?.organization_id ?? null)) {
       return reply.code(403).send({ error: "the model gateway is not available for this account yet" });
     }
-    const providerKey = options.keys.get(systemId, provider);
+    let providerKey: string | null;
+    try {
+      providerKey = options.keys.get(systemId, provider, now());
+    } catch (error) {
+      if (!(error instanceof VaultLockedError)) throw error;
+      const sealed = error instanceof VaultSealedError;
+      return reply.code(423).send({
+        error: sealed
+          ? "the account's key vault is sealed by its schedule: it can be unlocked again when the sealed hours end"
+          : "the account's key vault is locked: its owner must unlock it in the sigillo console, or unlock it with POST /vault/unlock",
+      });
+    }
     if (providerKey === null) {
       return reply.code(409).send({ error: `no ${provider} key is set for ${systemId}: add one in the console, on the system's page` });
     }

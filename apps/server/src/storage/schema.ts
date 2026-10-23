@@ -201,6 +201,31 @@ CREATE TABLE IF NOT EXISTS provider_keys (
   PRIMARY KEY (system_id, provider)
 ) STRICT;
 
+-- The vault of an account (gateway/provider-keys.ts): the data key its model
+-- keys are sealed under, itself sealed twice, once under a key derived from the
+-- customer's passphrase and once under a recovery key shown to them once. A
+-- copy of this table opens nothing without one of the two. owner is the
+-- organization's id, or "operator" for the systems that have none. Not
+-- evidence, and not append-only: a passphrase must be changeable.
+CREATE TABLE IF NOT EXISTS vaults (
+  owner             TEXT PRIMARY KEY,
+  salt              TEXT NOT NULL,
+  wrapped_by_pass   TEXT NOT NULL,
+  wrapped_by_recov  TEXT NOT NULL,
+  created_at        TEXT NOT NULL
+) STRICT;
+
+-- When an account's vault is kept sealed (gateway/vault-schedule.ts): weekly
+-- windows, in the account's own time zone, during which the vault is closed and
+-- cannot be opened. Closing on a schedule needs no secret; opening never
+-- happens by itself. Not evidence: the customer edits it freely.
+CREATE TABLE IF NOT EXISTS vault_schedule (
+  owner       TEXT PRIMARY KEY,
+  timezone    TEXT NOT NULL,
+  windows     TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+) STRICT;
+
 -- What an administrator did to a system outside its chain: renaming,
 -- archiving, and deleting an empty one. Append-only like the evidence, and
 -- deliberately outside any chain: a deleted system's chain no longer exists
@@ -381,7 +406,9 @@ function ensureColumn(db: Database.Database, table: string, column: string, type
 // 5: the cloud-model keys the gateway holds for a system (provider_keys).
 // 6: the script guard's columns on connections (script_hash, script_changed).
 // 7: the register of evidence packs handed out (export_register), and the index of a run's receipts.
-export const SCHEMA_VERSION = 7;
+// 8: the vaults of accounts, and the vault_owner column of provider_keys (null: still sealed under the server's own key).
+// 9: the sealed-hours schedule of an account's vault (vault_schedule).
+export const SCHEMA_VERSION = 9;
 
 export class NewerSchemaError extends Error {
   constructor(readonly found: number) {
@@ -481,6 +508,7 @@ export function applySchema(db: Database.Database): void {
   ensureColumn(db, "connections", "script_hash", "TEXT");
   ensureColumn(db, "connections", "script_changed", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "artifacts", "text_sha256", "TEXT");
+  ensureColumn(db, "provider_keys", "vault_owner", "TEXT");
   // Databases written before empty systems could be deleted carry the
   // unconditional delete triggers. The guards that replace them were created
   // just above, by SCHEMA_SQL, so there is no moment with neither.

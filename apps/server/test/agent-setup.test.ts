@@ -256,6 +256,7 @@ beforeEach(async () => {
   await store.createSystem(ACME_BOT, NOW, "acme");
   keys = ApiKeyStore.open(databasePath);
   providerKeys = ProviderKeyStore.open(databasePath, loadOrCreateSealingKey(join(directory, "llm-gateway.key")));
+  providerKeys.vaults.create("operator", "test passphrase 123", new Date(NOW));
 });
 
 afterEach(async () => {
@@ -464,11 +465,11 @@ describe("an uploaded agent through the model gateway", () => {
       });
     const saved = await post(OPERATOR, OPERATOR_BOT, `provider=openai&key=${OPENAI_KEY}`);
     expect(saved.statusCode).toBe(303);
-    expect(providerKeys.get(OPERATOR_BOT, "openai")).toBe(OPENAI_KEY);
+    expect(providerKeys.get(OPERATOR_BOT, "openai", new Date(NOW))).toBe(OPENAI_KEY);
     expect((await post(OPERATOR, OPERATOR_BOT, "provider=openai&key=nope")).statusCode).toBe(400);
     expect((await post(OPERATOR, OPERATOR_BOT, "provider=other&key=" + OPENAI_KEY)).statusCode).toBe(400);
     expect((await post(ACME, ACME_BOT, `provider=openai&key=${OPENAI_KEY}`)).statusCode).toBe(404);
-    expect(providerKeys.get(ACME_BOT, "openai")).toBeNull();
+    expect(providerKeys.get(ACME_BOT, "openai", new Date(NOW))).toBeNull();
   });
 
   it("does not save a key the provider refuses, such as one that lost a character on the way, and says so", async () => {
@@ -481,7 +482,7 @@ describe("an uploaded agent through the model gateway", () => {
     });
     expect(refused.statusCode).toBe(400);
     expect(refused.body).toContain("refused this key");
-    expect(providerKeys.get(OPERATOR_BOT, "openai")).toBeNull();
+    expect(providerKeys.get(OPERATOR_BOT, "openai", new Date(NOW))).toBeNull();
   });
 });
 

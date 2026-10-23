@@ -215,6 +215,17 @@ each account's key vault (schema 8, the key vault). Kept: while the account exis
 | `wrapped_by_recov` | sealed | the vault's data key, sealed under the recovery key |
 | `created_at` | time |  |
 
+## `vault_schedule`
+
+the hours in which an account's key vault is kept sealed (schema 9). Kept: while the account exists.
+
+| column | class | note |
+|---|---|---|
+| `owner` | identifier | the account |
+| `timezone` | operational | for example Europe/Rome |
+| `windows` | operational | weekly windows: days and times, nothing of the customer's content |
+| `updated_at` | time |  |
+
 ## `admin_log`
 
 administrative actions outside the chains (renames, deletions, erasures, sign-ups). Kept: append-only, enforced by database triggers.

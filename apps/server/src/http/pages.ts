@@ -383,6 +383,7 @@ function modelKeyForm(systemId: string): string {
 <label>${escape(t.modelProvider)} <select name="provider">${PROVIDERS.map((name) => `<option value="${name}">${escape(CATALOG[name].label)}</option>`).join("")}</select></label>
 <label>${escape(t.modelKey)} <input type="password" name="key" autocomplete="off" required></label>
 <p>${escape(t.modelRevoke)}</p>
+<p><a href="/ui/vault">${escape(UI.vault.link)}</a></p>
 <button class="button primary" type="submit">${escape(t.modelSave)}</button>
 </form>
 `;
@@ -469,6 +470,8 @@ export function managePage(
   transfer: { open: boolean } | null = null,
   /** The administrator's own system: it can be deleted whatever it recorded. */
   erasable: boolean = false,
+  /** The account's key vault, when the model gateway serves this system. */
+  vault: "none" | "locked" | "open" | "sealed" | null = null,
 ): string {
   const t = UI.manage;
   const path = systemPath(record.system_id);
@@ -520,6 +523,7 @@ ${block(
   `<div class="inline"><code class="keybox" aria-label="${escape(t.keyLabel)}">${escape(current)}</code><a class="button" href="#nuova-chiave">${escape(t.newKey)}</a></div>
 <p class="section"><a href="${path}/collega">${escape(t.connect)}</a></p>`,
 )}
+${vault === null ? "" : block("grey", ICONS.lock, t.vaultTitle, `<p>${escape(t.vaultState[vault])}</p>\n<p class="section"><a href="/ui/vault">${escape(t.vaultLink)}</a></p>`)}
 ${transfer === null ? "" : block("grey", ICONS.link, t.transferTitle, transferBody(path, transfer.open))}
 ${block("grey", ICONS.archive, t.archiveTitle, archive)}
 ${block("red", ICONS.trash, t.deleteTitle, removal)}

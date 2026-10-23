@@ -221,6 +221,7 @@ program
         : ProviderKeyStore.open(
             options.db,
             loadOrCreateSealingKey(process.env["SIGILLO_LLM_GATEWAY_KEY_FILE"] || join(dirname(options.db), "llm-gateway.key")),
+            (systemId) => store.systemRecord(systemId)?.organization_id ?? "operator",
           );
 
     // Every chain's tip against the signer's head, before any request is
@@ -321,8 +322,14 @@ program
     checkpointer.start();
     dailyExporter?.start();
     if (pause === null) connections.start();
+    // A vault's sealed hours close it even when no request comes: the data key
+    // leaves memory when the window starts.
+    const vaultSweep =
+      providerKeys === undefined ? undefined : setInterval(() => providerKeys.vaults.sweep(new Date()), 30_000);
+    vaultSweep?.unref();
 
     const shutdown = (): void => {
+      if (vaultSweep !== undefined) clearInterval(vaultSweep);
       connections.stop();
       checkpointer.stop();
       dailyExporter?.stop();

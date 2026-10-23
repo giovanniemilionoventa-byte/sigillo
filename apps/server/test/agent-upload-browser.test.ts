@@ -44,6 +44,7 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     store = ReceiptStore.open(databasePath, signer);
     keys = ApiKeyStore.open(databasePath);
     providerKeys = ProviderKeyStore.open(databasePath, loadOrCreateSealingKey(join(directory, "llm-gateway.key")));
+    providerKeys.vaults.create("operator", "test passphrase 123", new Date(NOW));
     await store.createSystem(SYSTEM, NOW);
     sessions = new UiSessions();
     const now = (): Date => new Date(NOW);
@@ -132,7 +133,7 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     expect(await page.locator("#sigillo-agent-model").isVisible()).toBe(true);
     expect(await page.locator("#sigillo-agent-model input[name=key]").inputValue()).toBe(OPENAI_KEY);
     await Promise.all([page.waitForURL(/\/manage/), page.click("#sigillo-agent-model button")]);
-    expect(providerKeys.get(SYSTEM, "openai")).toBe(OPENAI_KEY);
+    expect(providerKeys.get(SYSTEM, "openai", new Date(NOW))).toBe(OPENAI_KEY);
     expect(problems).toEqual([]);
   });
 

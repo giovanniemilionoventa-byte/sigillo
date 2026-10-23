@@ -4146,6 +4146,35 @@ clienti, senza interruttori. `style-v2.ts`, `design/tokens-v2.json`, `site-v2.ts
 
 Verificatore: invariato.
 
+### Cassaforte delle chiavi: cifratura con la passphrase del cliente (2026-10-22)
+
+Le chiavi dei modelli (`provider_keys`) non sono più cifrate con la chiave del server. Ogni
+account (organizzazione, o "operator") ha una cassaforte: una chiave dati casuale, conservata
+cifrata due volte (da una chiave derivata con scrypt dalla passphrase del cliente, e da una
+chiave di recupero mostrata una volta sola). La chiave dati sta solo nella memoria del processo,
+messa lì quando il cliente apre la cassaforte (12 ore, o finché non la chiude, o fino al
+riavvio). Senza passphrase né chiave di recupero, il database, il file `llm-gateway.key` e i
+backup non aprono nulla. Gateway: 423 se la cassaforte è chiusa. Pagina `/ui/vault` per tutti
+(nessun interruttore). Le chiavi già salvate col vecchio metodo passano sotto la cassaforte
+quando il cliente la crea (`createVault`); il file `llm-gateway.key` serve solo a questo.
+Schema 8. Ricevute: invariate (nome azione, orari, impronte restano in chiaro: sono firmate e
+concatenate, cambiarle rompe la verifica). Test: `vault.test.ts`, `vault-ui.test.ts`.
+Il verificatore è invariato.
+
+### Cassaforte: orari di chiusura e apertura da API (2026-10-23)
+
+Il cliente decide quando la cassaforte resta chiusa. Oltre all'interruttore (apri con la
+passphrase / «Chiudi adesso») può impostare finestre settimanali nel proprio fuso orario (per
+esempio ogni notte 22:00–06:00, o il fine settimana): all'inizio di una finestra il server la
+chiude da solo (controllo ad ogni richiesta, più uno sweep ogni 30 secondi che toglie la chiave
+dati dalla memoria) e finché dura non si può aprire, né dalla console né dall'API; il gateway
+risponde 423. Alla fine della finestra non si riapre da sola: aprire richiede la passphrase, che il
+server non conserva (chiudere da soli si può, aprire da soli no). Il cliente apre dalla console o,
+con l'agente suo, con `POST /vault/unlock` (chiave sigillo + passphrase nel corpo; `POST /vault/lock`
+per chiudere). Per tutti gli account, nessun interruttore solo-admin. Schema 9 (`vault_schedule`).
+Test: `vault-schedule.test.ts`, `vault-ui.test.ts`. Documentato in `docs/API.md`. Il verificatore
+è invariato.
+
 ## Pacchetto prove per i partner (2026-10-22)
 
 Su richiesta del titolare, dopo il messaggio di Polina (i partner rispondono ai loro clienti dei
