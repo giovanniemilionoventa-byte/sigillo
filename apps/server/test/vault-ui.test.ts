@@ -216,4 +216,18 @@ describe("the key vault in the console", () => {
     const sealed = await call("/vault/unlock", { secret: PASSPHRASE });
     expect(sealed.statusCode).toBe(423);
   });
+
+  it("shows the vault, with its state, on the system's settings page", async () => {
+    const manage = () => app.inject({ method: "GET", url: `/ui/systems/${ACME_BOT}/manage`, headers: { cookie: cookie(ACME) } });
+    let page = await manage();
+    expect(page.body).toContain('href="/ui/vault"');
+    expect(page.body).toContain("Not created yet");
+    await post(ACME, "/ui/vault/create", { passphrase: PASSPHRASE, again: PASSPHRASE });
+    expect((await manage()).body).toContain("Open: agents can use");
+    await post(ACME, "/ui/vault/lock", {});
+    expect((await manage()).body).toContain("Locked: agents cannot");
+    await post(ACME, "/ui/vault/schedule/add", { day4: "1", from: "00:00", to: "23:59", timezone: "Europe/Rome" });
+    page = await manage();
+    expect(page.body).toContain("Sealed by your hours");
+  });
 });

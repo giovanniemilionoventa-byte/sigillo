@@ -1188,8 +1188,19 @@ ${exportSheet(record)}`,
       record,
       "manage",
       `${systemTitle(record)} — ${UI.settings.title}`,
-      managePage(record, extra, activeKeys(record.system_id), offersTransfer(record) ? { open: session.store.hasOpenTransfer(record.system_id, options.now().toISOString()) } : null, session.viewer.kind === "operator"),
+      managePage(record, extra, activeKeys(record.system_id), offersTransfer(record) ? { open: session.store.hasOpenTransfer(record.system_id, options.now().toISOString()) } : null, session.viewer.kind === "operator", vaultStateFor(session, record)),
     );
+  };
+  // The state of the account's key vault, for the settings page of a system the gateway serves.
+  const vaultStateFor = (session: Session, record: SystemRecord): "none" | "locked" | "open" | "sealed" | null => {
+    const gateway = options.gateway;
+    if (gateway === undefined || !gatewayAllowed(gateway.access, record.organization_id)) return null;
+    const vaults = gateway.keys.vaults;
+    const owner = session.viewer.kind === "operator" ? "operator" : session.viewer.organizationId;
+    const at = options.now();
+    if (!vaults.exists(owner)) return "none";
+    if (vaults.isUnlocked(owner, at)) return "open";
+    return vaults.isSealed(owner, at) ? "sealed" : "locked";
   };
 
   // Keys into UI.manage, read when a page is written, in its reader's language.
