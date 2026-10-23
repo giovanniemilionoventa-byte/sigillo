@@ -664,9 +664,9 @@ const ui: Strings = {
     needFirst: "First unlock or create the vault, then enter the model key again.",
     link: "Keys are encrypted with your passphrase: manage the vault",
     day: (d: number): string => ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][d] ?? "",
-    scheduleTitle: "Sealed hours",
+    scheduleTitle: "Sealed hours (optional)",
     scheduleText:
-      "Choose when the vault must stay sealed (for example every night, or at weekends). In those hours it closes by itself and cannot be opened: no model key passes through the server. When the hours end the vault does not reopen by itself, because opening it needs your passphrase: you open it, or your own agent does with the passphrase it keeps.",
+      "An extra option, not needed to protect the keys (the vault already does that). In the hours you choose, the server cannot use your keys: your agents' calls to the models are refused. For example every night, or at weekends. When the hours end the vault stays locked until you open it.",
     scheduleNone: "No hours set: the vault closes only when you close it or after 12 hours.",
     scheduleDays: "Days on which it starts",
     scheduleFrom: "Sealed from",
