@@ -89,13 +89,15 @@ ${schedulePart(view)}`;
 <p>${escape(t.openText)}</p>
 <form method="post" action="/ui/vault/lock"><button type="submit">${escape(t.lock)}</button></form>
 </div>
-<form class="card padded fields" method="post" action="/ui/vault/passphrase">
-<h2>${escape(t.changeTitle)}</h2>
+${schedulePart(view)}
+<details class="card padded">
+<summary>${escape(t.changeTitle)}</summary>
+<form class="fields" method="post" action="/ui/vault/passphrase">
 ${field(t.passphrase, "passphrase")}
 ${field(t.passphraseAgain, "again")}
 <button type="submit">${escape(t.change)}</button>
 </form>
-${schedulePart(view)}`;
+</details>`;
   }
   return `<h1>${escape(t.title)}</h1>
 <p>${escape(t.intro)}</p>
