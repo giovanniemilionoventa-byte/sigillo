@@ -401,7 +401,15 @@ for the administrator's own systems only, `all` for every account (the
 deployment's `docker-compose.yml` sets it), `off` for none. The
 console's block follows the same setting.
 
-### The key vault: `POST /vault/lock` and `POST /vault/unlock`
+### The key vault: `POST /vault/lock` and `POST /vault/unlock` (suspended)
+
+**Suspended since 2026-10-23.** By default (`SIGILLO_KEY_VAULT` unset or `off`)
+none of this exists: `/ui/vault` and both calls answer `404`, a model key is
+sealed (AES-256-GCM) under the server's own key, which is kept in a file apart
+from the database and its backups, and the console shows its last four
+characters only. A key a vault had sealed earlier reads as not set, and is
+entered again. `SIGILLO_KEY_VAULT=on` brings the vault back as described
+below; nothing in the code was removed.
 
 The provider keys of an account are sealed under a passphrase only the customer
 knows (`apps/server/src/gateway/provider-keys.ts`). While the vault is locked

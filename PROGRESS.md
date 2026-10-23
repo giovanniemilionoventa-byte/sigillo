@@ -4256,3 +4256,15 @@ prova dev'essere la documentazione, con ogni cliente che ha una sua chiave. Quin
   nonce ricostruito dà MATCH, senza dà NO MATCH.
 
 Verificatore: invariato.
+
+## Cassaforte sospesa (2026-10-23)
+
+Su richiesta del titolare la cassaforte delle chiavi (PR #102, #107, #109) è sospesa per tutti,
+senza interruttore solo-admin. Interruttore unico: `SIGILLO_KEY_VAULT` (`off` di default, `on` la
+riattiva; `config.ts`). Spenta: niente `/ui/vault`, niente `POST /vault/lock|unlock` (404), niente
+riquadro nelle impostazioni né link nel passo «chiave del modello», niente sweep; le chiavi nuove
+sono cifrate (AES-256-GCM) con la chiave del server, tenuta in un file separato dal database e dai
+backup, e la console mostra solo le ultime 4 cifre. Una chiave già sigillata da una cassaforte si
+legge come «non impostata» e va reinserita. Il codice e le tabelle (`vaults`, `vault_schedule`)
+restano, per riattivare con una riga di configurazione. Test: `vault-suspended.test.ts`; i test
+della cassaforte restano e girano con la cassaforte accesa. Il verificatore è invariato.

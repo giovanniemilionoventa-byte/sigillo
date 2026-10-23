@@ -144,6 +144,20 @@ export function llmGateway(env: Environment): "off" | "operator" | "all" {
 }
 
 /**
+ * SIGILLO_KEY_VAULT: whether customers' model keys are sealed under a
+ * passphrase-protected vault (gateway/provider-keys.ts, vault-page.ts).
+ * `off`, the default, is how it was suspended on 2026-10-23: no vault page,
+ * no /vault/* calls, new keys sealed under the server's own key. `on` brings
+ * the vault back; the code and its tables are untouched.
+ */
+export function keyVault(env: Environment): boolean {
+  const value = env["SIGILLO_KEY_VAULT"];
+  if (value === undefined || value.length === 0 || value === "off") return false;
+  if (value === "on") return true;
+  throw new ConfigError(`SIGILLO_KEY_VAULT must be on or off, received ${JSON.stringify(value)}`);
+}
+
+/**
  * SIGILLO_CONSOLE_V2: who gets the redesigned console (design/DESIGN.md,
  * direction "Il filo e il sigillo"): three places, Stato, Azioni and Prove,
  * with the systems below a line. `off`, `operator` (the default: new, so the

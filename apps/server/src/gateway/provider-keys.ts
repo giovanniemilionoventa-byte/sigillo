@@ -274,18 +274,29 @@ export class ProviderKeyStore {
     /** Opens only keys sealed before vaults existed; the customer's vault takes them over when it is made. */
     private readonly legacyKey: Buffer,
     private readonly ownerOf: (systemId: string) => string,
+    /**
+     * Whether keys are sealed under the customer's vault. Off (the console's
+     * setting, SIGILLO_KEY_VAULT): new keys are sealed under the server's own
+     * key, as before vaults existed, and nothing asks for a passphrase.
+     */
+    readonly vaultEnabled: boolean,
   ) {
     this.vaults = new Vaults(db);
   }
 
   /** `ownerOf`: whose vault a system's keys belong to (its organization's id, or "operator"). */
-  static open(location: string, legacyKey: Buffer, ownerOf: (systemId: string) => string = () => "operator"): ProviderKeyStore {
+  static open(
+    location: string,
+    legacyKey: Buffer,
+    ownerOf: (systemId: string) => string = () => "operator",
+    vaultEnabled = true,
+  ): ProviderKeyStore {
     if (legacyKey.length !== 32) throw new ProviderKeyError("the sealing key must be 32 bytes");
     const db = new Database(location);
     db.pragma("journal_mode = WAL");
     db.pragma("busy_timeout = 5000");
     applySchema(db);
-    return new ProviderKeyStore(db, legacyKey, ownerOf);
+    return new ProviderKeyStore(db, legacyKey, ownerOf, vaultEnabled);
   }
 
   /** Saves `key` for the system, replacing any it had for that provider. Needs the owner's vault, unlocked. */
@@ -296,12 +307,22 @@ export class ProviderKeyStore {
         "this does not look like an API key: letters, digits, '-', '_' and '.', 20 characters or more, nothing else",
       );
     }
+    const last4 = cleaned.slice(-4);
+    if (!this.vaultEnabled) {
+      const sealed = seal(this.legacyKey, Buffer.from(cleaned, "utf8"), associatedData(systemId, provider));
+      this.upsert(systemId, provider, sealed, last4, createdAt, null);
+      return { provider, last4, createdAt };
+    }
     const owner = this.ownerOf(systemId);
     if (!this.vaults.exists(owner)) throw new VaultError("create the account's vault first");
     const dataKey = this.vaults.dataKey(owner, at);
     if (dataKey === null) throw new VaultLockedError(owner);
     const sealed = seal(dataKey, Buffer.from(cleaned, "utf8"), associatedData(systemId, provider));
-    const last4 = cleaned.slice(-4);
+    this.upsert(systemId, provider, sealed, last4, createdAt, owner);
+    return { provider, last4, createdAt };
+  }
+
+  private upsert(systemId: string, provider: Provider, sealed: Buffer, last4: string, createdAt: string, owner: string | null): void {
     this.db
       .prepare(
         `INSERT INTO provider_keys (system_id, provider, sealed, last4, created_at, vault_owner)
@@ -310,7 +331,6 @@ export class ProviderKeyStore {
          SET sealed = excluded.sealed, last4 = excluded.last4, created_at = excluded.created_at, vault_owner = excluded.vault_owner`,
       )
       .run(systemId, provider, sealed.toString("base64"), last4, createdAt, owner);
-    return { provider, last4, createdAt };
   }
 
   /**
@@ -324,6 +344,9 @@ export class ProviderKeyStore {
     if (row === undefined) return null;
     const sealed = Buffer.from(row.sealed, "base64");
     const aadBytes = associatedData(systemId, provider);
+    // A key a vault sealed before the vault was suspended cannot be opened
+    // without it: it reads as not set, and the customer enters it again.
+    if (row.vault_owner !== null && !this.vaultEnabled) return null;
     if (row.vault_owner === null) return open(this.legacyKey, sealed, aadBytes).toString("utf8");
     const dataKey = this.vaults.dataKey(row.vault_owner, at);
     if (dataKey === null) throw this.vaults.isSealed(row.vault_owner, at) ? new VaultSealedError(row.vault_owner) : new VaultLockedError(row.vault_owner);

@@ -12,7 +12,7 @@ import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throt
 import { DailyExporter } from "./backup/daily-export.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
 import { ConnectionWatch } from "./connection/watch.js";
-import { agentProtection, agentUpload, consoleFeatures, consoleV2, cookieSecure, firebaseAccounts, ingestPause, llmGateway, llmToolRequests, plainAgents, port, positiveInteger, readSecret, scriptGuard, transfer, trustProxy } from "./config.js";
+import { agentProtection, agentUpload, consoleFeatures, consoleV2, cookieSecure, firebaseAccounts, ingestPause, keyVault, llmGateway, llmToolRequests, plainAgents, port, positiveInteger, readSecret, scriptGuard, transfer, trustProxy } from "./config.js";
 import { FirebaseAuth } from "./auth/firebase.js";
 import { archiveFromStore, positionsIn, tokensIn } from "./export/from-store.js";
 import { loadOrCreateSealingKey, ProviderKeyStore } from "./gateway/provider-keys.js";
@@ -222,6 +222,7 @@ program
             options.db,
             loadOrCreateSealingKey(process.env["SIGILLO_LLM_GATEWAY_KEY_FILE"] || join(dirname(options.db), "llm-gateway.key")),
             (systemId) => store.systemRecord(systemId)?.organization_id ?? "operator",
+            keyVault(process.env),
           );
 
     // Every chain's tip against the signer's head, before any request is
@@ -325,7 +326,7 @@ program
     // A vault's sealed hours close it even when no request comes: the data key
     // leaves memory when the window starts.
     const vaultSweep =
-      providerKeys === undefined ? undefined : setInterval(() => providerKeys.vaults.sweep(new Date()), 30_000);
+      providerKeys === undefined || !providerKeys.vaultEnabled ? undefined : setInterval(() => providerKeys.vaults.sweep(new Date()), 30_000);
     vaultSweep?.unref();
 
     const shutdown = (): void => {
