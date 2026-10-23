@@ -236,6 +236,16 @@ export const STORAGE_INVENTORY: Record<string, TableEntry> = {
       created_at: ["time", ""],
     },
   },
+  vault_schedule: {
+    purpose: "the hours in which an account's key vault is kept sealed (schema 9)",
+    kept: "while the account exists",
+    columns: {
+      owner: ["identifier", "the account"],
+      timezone: ["operational", "for example Europe/Rome"],
+      windows: ["operational", "weekly windows: days and times, nothing of the customer's content"],
+      updated_at: ["time", ""],
+    },
+  },
   admin_log: {
     purpose: "administrative actions outside the chains (renames, deletions, erasures, sign-ups)",
     kept: "append-only, enforced by database triggers",

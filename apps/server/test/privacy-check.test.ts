@@ -148,6 +148,7 @@ beforeEach(async () => {
   keys = ApiKeyStore.open(databasePath);
   token = keys.issue(SYSTEM, NOW).token;
   providerKeys = ProviderKeyStore.open(databasePath, loadOrCreateSealingKey(join(directory, "llm-gateway.key")));
+  providerKeys.createVault("operator", "correct horse battery staple", new Date(NOW));
   providerKeys.set(SYSTEM, "openai", "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789", NOW);
   app = buildServer({
     store,
