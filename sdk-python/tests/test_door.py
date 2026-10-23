@@ -287,6 +287,48 @@ class DoorTest(unittest.TestCase):
         agent.wait(timeout=15)  # ended by the guard
         self.assertEqual(json.loads(_Capture.bodies[0])["action"]["name"], "sigillo.local_model.open")
 
+    def test_the_guard_says_an_open_model_once_and_leaves_the_agent_when_the_door_is_beside_it(self) -> None:
+        import subprocess
+        import sys
+
+        from sigillo import _watchdog
+
+        _Capture.bodies = []
+        agent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(agent.kill)
+        config = {
+            "period": 0.1, "probe": f"http://127.0.0.1:{self.model.server_address[1]}", "keep": True,
+            "script": None, "script_hash": None, "sdk_hash": _watchdog.package_hash(
+                __import__("os").path.dirname(_watchdog.__file__)),
+            "parent": agent.pid, "receipts": f"http://127.0.0.1:{self.sigillo.server_address[1]}/api/v1/receipts",
+            "api_key": KEY,
+        }
+        guard = subprocess.Popen([sys.executable, "-I", _watchdog.__file__], stdin=subprocess.PIPE)
+        self.addCleanup(guard.kill)
+        guard.stdin.write((json.dumps(config) + "\n").encode())
+        guard.stdin.flush()
+        for _ in range(50):
+            if _Capture.bodies:
+                break
+            time.sleep(0.1)
+        time.sleep(0.5)
+        self.assertEqual(len(_Capture.bodies), 1)  # said once
+        self.assertIsNone(agent.poll())  # and the agent goes on
+
+    def test_calls_to_a_model_that_was_open_are_sent_to_the_door_beside_it_with_the_key(self) -> None:
+        from sigillo import _stdlib
+
+        reached = []
+        self.addCleanup(_stdlib.uninstall)
+        _stdlib._originals["urlopen"] = lambda request, *a, **k: reached.append(request)
+        _stdlib.use_door(KEY, 11434, 5555)
+        _stdlib._urlopen("http://127.0.0.1:11434/api/chat", b"{}")
+        self.assertEqual(reached[0].full_url, "http://127.0.0.1:5555/api/chat")
+        self.assertEqual(reached[0].get_header("Authorization"), f"Bearer {KEY}")
+        reached.clear()
+        _stdlib._urlopen("http://127.0.0.1:9999/other")  # not the model: left where it is
+        self.assertEqual(reached[0], "http://127.0.0.1:9999/other")
+
 
 if __name__ == "__main__":
     unittest.main()

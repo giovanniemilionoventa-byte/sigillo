@@ -93,6 +93,14 @@ _HEARTBEAT_PATH = "/api/v1/heartbeat"
 _LOCAL_MODEL = "http://127.0.0.1:11434"
 
 
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
 def _local_port(local_model: object) -> int:
     """`local_model=True` means Ollama's port; a number names the port of another local server."""
     return local_model if isinstance(local_model, int) and local_model is not True else 11434
@@ -155,9 +163,11 @@ class _Heartbeat:
         on_halt: _Callable[[str], None] | None = None,
         guard_seconds: float = 5.0,
         local_model: bool | int = False,
+        local_open: bool = False,
     ) -> None:
         self._url = url
         self._local_model = local_model
+        self._local_open = local_open
         self._show = show
         self._strict = strict
         self._on_halt = on_halt or _halt_process
@@ -199,6 +209,7 @@ class _Heartbeat:
             "period": self._guard_period,
             # Where the local model is expected (the door, see door.py); the
             # guard says so if it answers without the key.
+            "keep": self._local_open,  # a model left open is said in a receipt, not ended
             "probe": _LOCAL_MODEL.replace("11434", str(_local_port(self._local_model))) if self._local_model else None,
             "receipts": self._url[: -len(_HEARTBEAT_PATH)] + "/api/v1/receipts",
         }
@@ -898,7 +909,10 @@ def init(
             Ollama behind it start here, for as long as the agent runs, unless
             the door is already there; the guard process checks at every round that the model
             does not answer at 127.0.0.1:11434 without the key, and writes a
-            `sigillo.local_model.open` receipt when it does. A port number
+            `sigillo.local_model.open` receipt when it does. If the model was
+            already open (Ollama's tray app, say), the agent is not ended: a door
+            opens beside it on a free port, the agent's calls go there with the
+            key, and the open model is recorded in that receipt. A port number
             instead of True (1234 LM Studio, 8080 llama.cpp, 8000 vLLM) does the
             same for that server, which must be started on the next port up
             (the door cannot start it); only Ollama is started by the door.
@@ -964,6 +978,7 @@ def init(
     # working even where the global provider was already set by something else.
     _trace.set_tracer_provider(provider)
     instrumented = tuple(name for name in instrument if _instrument(name, provider, requested))
+    local_open, redirect = False, None
     if local_model and strict:
         # The door, and Ollama behind it, start with the agent's file: one step.
         from . import door as _door
@@ -974,7 +989,17 @@ def init(
             serve=port == 11434,
         )
         if started == "ollama open":
-            _LOG.warning("sigillo: the local model is already open on port %d: the agent will be ended; close the model and start the agent again, so that sigillo can open it", port)
+            # The model was already open (Ollama's tray app, say) and cannot be moved: a
+            # door opens beside it on a free port, the agent's calls go there with the key
+            # and become receipts, and the open model is said in a receipt by the guard.
+            redirect = _free_port()
+            if _door.ensure(endpoint, api_key, system_id, local=f"http://127.0.0.1:{redirect}",
+                            upstream=f"http://127.0.0.1:{port}", serve=False) == "door":
+                local_open = True
+                _LOG.warning("sigillo: the local model is already open on port %d: the agent goes on through the door on port %d and the open model is recorded; close the model and start the agent again to seal it", port, redirect)
+            else:
+                redirect = None
+                _LOG.warning("sigillo: the local model is already open on port %d and the door beside it did not start", port)
         elif started == "door" and port != 11434:
             _LOG.warning("sigillo: the door waits on port %d; start your model on port %d (the door cannot start it)", port, port + 1)
         elif started == "failed":
@@ -983,11 +1008,11 @@ def init(
         # The calls to the local model carry the key, and are recorded by the door.
         from . import _stdlib
 
-        _stdlib.use_door(api_key, _local_port(local_model))
+        _stdlib.use_door(api_key, _local_port(local_model), redirect)
 
     heartbeat = _Heartbeat(
         _heartbeat_endpoint(traces_endpoint), api_key, heartbeat_seconds, show=show_sent, strict=strict, on_halt=on_halt,
-        local_model=local_model,
+        local_model=local_model, local_open=local_open,
     )
     heartbeat.start()
 

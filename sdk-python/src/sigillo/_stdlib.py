@@ -68,10 +68,22 @@ _LOCAL_PORT = 11434
 LOCAL_SERVERS = {11434: "ollama", 1234: "lm-studio", 8080: "llama.cpp", 8000: "vllm", 1337: "jan"}
 
 
-def use_door(key: str | None, port: int = 11434) -> None:
-    global _door_key, _LOCAL_PORT
+_REDIRECT: int | None = None  # a door beside a model that was already open: calls to _LOCAL_PORT go there
+
+
+def use_door(key: str | None, port: int = 11434, redirect: int | None = None) -> None:
+    global _door_key, _LOCAL_PORT, _REDIRECT
     _door_key = key
     _LOCAL_PORT = port
+    _REDIRECT = redirect
+
+
+def _at_door(url: str) -> str:
+    """The address a call really goes to: the door's port, when the door is beside the model."""
+    if _REDIRECT is None:
+        return url
+    parts = _parse.urlsplit(url)
+    return parts._replace(netloc=f"{parts.hostname}:{_REDIRECT}").geturl()
 
 
 def _is_door(url: object) -> bool:
@@ -121,8 +133,9 @@ def install(provider: object) -> None:
 
 def uninstall() -> None:
     """Puts everything back as it was. For tests."""
-    global _tracer, _door_key
+    global _tracer, _door_key, _REDIRECT
     _door_key = None
+    _REDIRECT = None
     for owner, name, original in _patched:
         setattr(owner, name, original)
     _patched.clear()
@@ -225,6 +238,7 @@ def _urlopen(url, *args, **kwargs):  # type: ignore[no-untyped-def]
     full = getattr(url, "full_url", url)
     if _is_door(full):
         request = url if isinstance(url, _request.Request) else _request.Request(full)
+        request.full_url = _at_door(full)
         if not request.has_header("Authorization"):
             request.add_header("Authorization", f"Bearer {_door_key}")
         return original(request, *args, **kwargs)
@@ -238,6 +252,7 @@ def _urlopen(url, *args, **kwargs):  # type: ignore[no-untyped-def]
 def _requests_send(self, request, *args, **kwargs):  # type: ignore[no-untyped-def]
     original: _Callable = _originals["requests"]  # type: ignore[assignment]
     if _is_door(request.url):
+        request.url = _at_door(request.url)
         request.headers.setdefault("Authorization", f"Bearer {_door_key}")
         return original(self, request, *args, **kwargs)
     if _tracer is None or not _from_the_agent(1):
@@ -262,6 +277,8 @@ def _httpx_key(request) -> None:  # type: ignore[no-untyped-def]
 def _httpx_send(self, request, *args, **kwargs):  # type: ignore[no-untyped-def]
     original: _Callable = _originals["httpx"]  # type: ignore[assignment]
     if _is_door(str(request.url)):
+        if _REDIRECT is not None:
+            request.url = request.url.copy_with(port=_REDIRECT)
         _httpx_key(request)
         return original(self, request, *args, **kwargs)
     if _tracer is None or not _from_the_agent(1):
@@ -274,6 +291,8 @@ def _httpx_send(self, request, *args, **kwargs):  # type: ignore[no-untyped-def]
 async def _httpx_async_send(self, request, *args, **kwargs):  # type: ignore[no-untyped-def]
     original: _Callable = _originals["httpx async"]  # type: ignore[assignment]
     if _is_door(str(request.url)):
+        if _REDIRECT is not None:
+            request.url = request.url.copy_with(port=_REDIRECT)
         _httpx_key(request)
         return await original(self, request, *args, **kwargs)
     if _tracer is None or not _from_the_agent(1):
