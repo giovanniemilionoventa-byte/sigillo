@@ -114,6 +114,9 @@ def main() -> None:
             now = model_state(config["probe"])
             if now == "open" and was != "open":
                 _say_open(config)
+                if config.get("keep"):  # the agent goes through a door beside it: said once, not ended
+                    was = now
+                    continue
                 sys.stderr.write("sigillo: the local model answers without the sigillo key: ending the agent\n")
                 _end(config["parent"])
                 os._exit(0)
