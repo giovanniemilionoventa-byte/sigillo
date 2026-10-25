@@ -4268,3 +4268,19 @@ backup, e la console mostra solo le ultime 4 cifre. Una chiave già sigillata da
 legge come «non impostata» e va reinserita. Il codice e le tabelle (`vaults`, `vault_schedule`)
 restano, per riattivare con una riga di configurazione. Test: `vault-suspended.test.ts`; i test
 della cassaforte restano e girano con la cassaforte accesa. Il verificatore è invariato.
+
+## Pagina privacy tecnica (2026-10-25)
+
+Su richiesta del titolare e della partner (Polina: una pagina per sviluppatori e tecnici, sobria,
+con i dettagli veri) `/privacy` è riscritta: indice laterale, schema del percorso dei dati,
+esempio di ricevuta v4 annotato, crittografia (RFC 8785, SHA-256, Ed25519, Merkle RFC 6962,
+RFC 3161, nonce del cliente), chiavi e segreti, inventario di cosa si conserva e per quanto,
+connessioni in uscita, comandi di cancellazione, limiti noti, comandi del verificatore. In fondo
+restano titolare, cookie e diritti (i testi di `site-strings.ts`, data aggiornata). In inglese e
+in italiano; `apps/server/src/http/site-privacy.ts`. Ogni riga viene da `docs/FORMAT.md`,
+`SECURITY.md`, `DATA-INVENTORY.md` e dal pacchetto partner; quando il codice cambia cosa si
+conserva, si invia o si cancella, la pagina cambia nello stesso commit. Nessuna cassaforte,
+nessuna prova che il cliente debba lanciare. Il contatto è `SITE_CONTACT_EMAIL` (l'indirizzo
+`privacy@` non esiste ancora: da creare prima di scriverlo). Test: `site.test.ts`. Il verificatore
+è invariato. Corretto anche un test di `agent-setup.test.ts` (aspettava SDK 0.10 anche senza protezione), rosso su `main` dal merge #111;
+solo il test, il codice non cambia.
