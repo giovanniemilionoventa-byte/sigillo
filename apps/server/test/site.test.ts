@@ -1,6 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { chromium } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -98,10 +99,10 @@ describe("the public site, redesigned (SIGILLO_SITE_V2=all)", () => {
     expect(verify).toContain('id="drop"');
     expect(verify).toContain('<script src="/verify.js" defer>');
     expect(verify).toContain('href="/#prezzi"');
-    expect(verify).toContain('<a class="s-signin s-verify" href="/verify" aria-current="page">Verify</a>');
+    expect(verify).toContain('<a href="/verify" aria-current="page">Verify</a>');
     const home = (await getNew("/")).body;
     const menu = home.slice(home.indexOf("<nav"), home.indexOf("</header>"));
-    expect(menu).toContain('<a class="s-signin s-verify" href="/verify">Verify</a>');
+    expect(menu).toContain('<a href="/verify">Verify</a>');
     expect(menu).toContain('<a href="/privacy">Privacy</a>');
     expect(menu).not.toMatch(/AI Act|What you hand over/);
     expect((await getNew("/privacy")).body).toContain('<a href="/privacy" aria-current="page">Privacy</a>');
@@ -452,6 +453,29 @@ describe("the site in a browser, under deploy/Caddyfile's policy", () => {
     }
   }, 60_000);
 
+  it.skipIf(!existsSync(join(REPOSITORY_ROOT, "packages/verifier/dist/cli.js")))("serves the offline verifier as a file that runs unzipped and checks a real pack", async () => {
+    const response = await app.inject({ method: "GET", url: "/sigillo-verify.zip" });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toBe("application/zip");
+    expect(String(response.headers["content-disposition"])).toContain("sigillo-verify.zip");
+    const folder = join(directory, "offline");
+    for (const entry of readZip(response.rawPayload)) {
+      mkdirSync(dirname(join(folder, entry.name)), { recursive: true });
+      writeFileSync(join(folder, entry.name), entry.data);
+    }
+    // The file holds the repository's verifier, byte for byte.
+    expect(readFileSync(join(folder, "sigillo-verify/node_modules/@sigillo/verifier/dist/verify.js"))).toEqual(readFileSync(join(REPOSITORY_ROOT, "packages/verifier/dist/verify.js")));
+    writeFileSync(join(directory, "pack-offline.zip"), await evidencePack());
+    const run = spawnSync("node", [join(folder, "sigillo-verify/sigillo-verify.mjs"), join(directory, "pack-offline.zip")], { encoding: "utf8" });
+    expect(run.status, run.stdout + run.stderr).toBe(0);
+    expect(run.stdout).toContain("OK");
+    for (const language of ["en", "it"]) {
+      const page = (await get("/verify", { "accept-language": language })).body;
+      expect(page).toContain('href="/sigillo-verify.zip"');
+      expect(page).toContain('id="drop"');
+    }
+  });
+
   it("keeps its one script to what it says", () => {
     // Neither script sends anything anywhere or writes markup: the evidence
     // pack stays in the reader's browser.
@@ -462,9 +486,10 @@ describe("the site in a browser, under deploy/Caddyfile's policy", () => {
 });
 
 /** A small real evidence pack: three receipts, one checkpoint, as the server exports them. */
+let packs = 0;
 async function evidencePack(): Promise<Uint8Array> {
   const signer = createTestSigner();
-  const store = ReceiptStore.open(join(directory, "pack.db"), signer);
+  const store = ReceiptStore.open(join(directory, `pack-${(packs += 1)}.db`), signer);
   try {
     await store.createSystem("site-bot", "2026-10-04T09:00:00.000Z");
     for (const index of [1, 2]) {

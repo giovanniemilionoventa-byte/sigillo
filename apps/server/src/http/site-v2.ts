@@ -21,18 +21,18 @@ interface Copy {
   nav: { how: string; deliver: string; aiAct: string; pricing: string; blog: string; verify: string; verifyShort: string; signIn: string; start: string };
   title: string;
   description: string;
-  hero: { eyebrow: string; h1: string; lead: string; primary: string; secondary: string; facts: [string, string][] };
+  hero: { h1: string; lead: string; primary: string; secondary: string; facts: [string, string][] };
   card: { verdict: string; line: string; key: string; matches: string; title: string; rows: [string, string][]; sealed: string };
-  problem: { eyebrow: string; h2: string; body: string; more: string; video: string; subtitles: string };
-  disputes: { eyebrow: string; h2: string; body: string; more: string };
-  fit: { eyebrow: string; h2: string; lead: string; forTitle: string; forLead: string; forItems: [string, string][]; notTitle: string; notLead: string; notItems: [string, string][] };
-  steps: { eyebrow: string; h2: string; items: [string, string][] };
+  problem: { h2: string; body: string; more: string; video: string; subtitles: string };
+  disputes: { h2: string; body: string; more: string };
+  fit: { h2: string; lead: string; forTitle: string; forLead: string; forItems: [string, string][]; notTitle: string; notLead: string; notItems: [string, string][] };
+  steps: { h2: string; items: [string, string][] };
   how: { h2: string; questions: { q: string; a: string; kind: "ok" | "action" | "proof" }[] };
   deliver: { h2: string; story: string[]; contents: string[]; sample: string; verify: string; date: string; actions: string[]; privacyTitle: string; privacyText: string; privacyLink: string };
   proves: { h2: string; yes: string; no: string; yesLines: string[]; noLines: string[]; see: string; seeText: string; facts: [string, string][] };
   aiAct: { h2: string; rows: { art: string; what: string; how: string }[]; honest: string };
-  connect: { eyebrow: string; h2: string; lead: string; steps: [string, string][]; or: string; where: string; copy: string; copied: string };
-  faq: { eyebrow: string; h2: string; lead: string };
+  connect: { h2: string; lead: string; steps: [string, string][]; or: string; where: string; copy: string; copied: string };
+  faq: { h2: string; lead: string };
   pricing: { h2: string; plans: { name: string; price: string; lines: string[]; cta: string; note?: string }[]; unit: string; faq: { q: string; a: string }[] };
   contact: { h2: string; button: string; address: string };
   footer: { product: string; receivers: string; company: string; format: string; privacy: string; about: string; legal: string };
@@ -43,7 +43,6 @@ const IT: Copy = {
   title: "sigillo · le prove di cosa ha fatto la tua AI",
   description: "sigillo registra ogni azione dei tuoi agenti AI in un registro firmato e sigillato ogni ora. Quando arriva un reclamo o un'ispezione, consegni un fascicolo che chiunque controlla da solo, nel browser.",
   hero: {
-    eyebrow: "Se un tuo agente AI venisse contestato domani, potresti verificare cosa ha fatto?",
     h1: "Dimostra cosa ha fatto la tua AI. Quando conta di più.",
     lead: "sigillo crea registri firmati e con marca temporale delle azioni dei tuoi agenti AI, che chiunque può verificare in modo indipendente, senza esporre i dati riservati della tua azienda.",
     primary: "Richiedi un pilota gratuito",
@@ -60,7 +59,6 @@ const IT: Copy = {
     sealed: "Fascicolo pronto da consegnare. Dati d'esempio.",
   },
   problem: {
-    eyebrow: "Il problema",
     h2: "Se domani dovessi giustificare le azioni della tua AI, avresti le prove?",
     body: "Gli agenti AI prendono decisioni e compiono azioni con conseguenze reali. Quando vengono contestate, serve più del ricordo di come sono andate le cose. sigillo conserva registri verificabili che mostrano cosa è successo e rendono rilevabili le alterazioni successive.",
     more: "Cosa prova, cosa no",
@@ -68,13 +66,11 @@ const IT: Copy = {
     subtitles: "Italiano",
   },
   disputes: {
-    eyebrow: "Le decisioni della tua AI possono essere contestate. Le tue prove devono essere verificabili.",
     h2: "Quando nasce una contestazione, non basta la tua parola.",
     body: "I log ordinari dicono cosa hanno registrato i tuoi sistemi. sigillo aggiunge una prova firmata e con marca temporale, che si controlla in modo indipendente: mostra cosa è stato registrato e se è stato alterato.",
     more: "Cosa consegni",
   },
   fit: {
-    eyebrow: "sigillo fa per te?",
     h2: "Pensato per chi deve dimostrare cosa ha fatto la sua AI.",
     lead: "Non ogni flusso di lavoro con l'AI ha bisogno di prove verificabili. La domanda è se puoi permetterti di non averle.",
     forTitle: "Per chi è",
@@ -85,7 +81,6 @@ const IT: Copy = {
     notItems: [["Usi semplici dell'AI", "Scrivere bozze, fare brainstorming, assistenza quotidiana."], ["Chi si accontenta dei log ordinari", "Senza bisogno di far verificare le azioni a un terzo."], ["Chi cerca una piattaforma AI completa", "Hosting di modelli, orchestrazione o osservabilità completa."]],
   },
   steps: {
-    eyebrow: "Come funziona",
     h2: "Dall'azione alla prova verificabile.",
     items: [["L'agente agisce", "Il tuo agente compie un'azione nei tuoi sistemi. sigillo riceve l'impronta, non il contenuto."], ["Registro firmato, con marca temporale", "Ogni azione è firmata, legata alla precedente e sigillata ogni ora."], ["Verifica indipendente", "Consegni un fascicolo: chiunque lo controlla da solo, senza accedere ai tuoi dati."]],
   },
@@ -129,7 +124,6 @@ const IT: Copy = {
     honest: "Da solo non rende conforme un sistema: dipende da cosa fa la tua AI e da come la usi.",
   },
   connect: {
-    eyebrow: "Collegare l'agente",
     h2: "Un file, nessun lavoro in più",
     lead: "Non cambi il codice del tuo agente: la console aggiunge le righe di sigillo al file.",
     steps: [["Carica", "Il file .py del tuo agente, nella console."], ["Riscarica", "Il file è lo stesso, con sigillo già dentro."], ["Avvia", "Dove gira di solito: da quel momento ogni azione ha la sua ricevuta."]],
@@ -153,7 +147,7 @@ const IT: Copy = {
       { q: "Posso verificare senza fidarmi di voi?", a: "Sì: il fascicolo si controlla nel tuo browser, con il verificatore open source." },
     ],
   },
-  faq: { eyebrow: "Domande frequenti", h2: "Prima di scriverci", lead: "Le risposte brevi. Per il resto, scrivici." },
+  faq: { h2: "Prima di scriverci", lead: "Le risposte brevi. Per il resto, scrivici." },
   contact: { h2: "Domande, un pilota, una demo per il tuo team?", button: "Contattaci", address: "scrivi a" },
   footer: { product: "Prodotto", receivers: "Per chi riceve un fascicolo", company: "Azienda", format: "Formato delle ricevute", privacy: "Privacy", about: "Chi siamo", legal: "© 2026 [Ragione sociale] · P.IVA [P.IVA] · [Sede]" },
 };
@@ -163,7 +157,6 @@ const EN: Copy = {
   title: "sigillo · the evidence of what your AI did",
   description: "sigillo records every action of your AI agents in a signed record, sealed every hour. When a complaint or an inspection comes, you hand over a pack anyone can check alone, in the browser.",
   hero: {
-    eyebrow: "If your AI agent were challenged tomorrow, could you verify what it did?",
     h1: "Prove what your AI did. When it matters most.",
     lead: "sigillo creates signed, timestamped records of your AI agents' actions that can be independently verified, without exposing your company's sensitive data.",
     primary: "Request a free pilot",
@@ -180,7 +173,6 @@ const EN: Copy = {
     sealed: "Evidence pack ready to hand over. Example data.",
   },
   problem: {
-    eyebrow: "The problem",
     h2: "If you had to justify your AI's actions tomorrow, would you have the evidence?",
     body: "AI agents make decisions and take actions that have real consequences. When those actions are challenged, you need more than a recollection of events. sigillo preserves verifiable records that show what happened and make later alterations detectable.",
     more: "What it proves, what it does not",
@@ -188,13 +180,11 @@ const EN: Copy = {
     subtitles: "English",
   },
   disputes: {
-    eyebrow: "Your AI decisions can be challenged. Your evidence should be verifiable.",
     h2: "When disputes arise, don't rely on your word alone.",
     body: "Ordinary logs tell you what your systems recorded. sigillo adds signed, timestamped evidence that can be checked independently, helping you demonstrate what was recorded and whether it has been altered.",
     more: "What you hand over",
   },
   fit: {
-    eyebrow: "Is sigillo right for you?",
     h2: "Built for teams that need to prove what their AI did.",
     lead: "Not every AI workflow needs independently verifiable evidence. The important question is whether you can afford not to have it.",
     forTitle: "Who it's for",
@@ -205,7 +195,6 @@ const EN: Copy = {
     notItems: [["Simple AI use cases", "Using AI for drafting, brainstorming or everyday assistance."], ["Teams satisfied with ordinary logs", "With no requirement to independently verify recorded actions."], ["Teams looking for a full AI platform", "Needing model hosting, agent orchestration or a complete observability suite."]],
   },
   steps: {
-    eyebrow: "How it works",
     h2: "From action to verifiable record.",
     items: [["Your agent acts", "Your agent performs an action in your systems. sigillo receives a fingerprint of it, not the content."], ["Signed, timestamped record", "Each action is signed, linked to the one before it and sealed every hour."], ["Independent verification", "You hand over a pack. Anyone can check it alone, without access to your data."]],
   },
@@ -249,7 +238,6 @@ const EN: Copy = {
     honest: "On its own it does not make a system compliant: that depends on what your AI does and how you use it.",
   },
   connect: {
-    eyebrow: "Connecting the agent",
     h2: "One file, no extra work",
     lead: "You do not change your agent's code: the console adds the sigillo lines to the file.",
     steps: [["Upload", "Your agent's .py file, in the console."], ["Download", "The same file, with sigillo already inside."], ["Run", "Where it usually runs: from then on every action has its receipt."]],
@@ -273,7 +261,7 @@ const EN: Copy = {
       { q: "Can I verify without trusting you?", a: "Yes: the pack is checked in your browser, with the open-source verifier." },
     ],
   },
-  faq: { eyebrow: "FAQ", h2: "Before you write to us", lead: "The short answers. For the rest, write to us." },
+  faq: { h2: "Before you write to us", lead: "The short answers. For the rest, write to us." },
   contact: { h2: "Questions, a pilot, a demo for your team?", button: "Contact us", address: "write to" },
   footer: { product: "Product", receivers: "For whoever receives a pack", company: "Company", format: "Receipt format", privacy: "Privacy", about: "About", legal: "© 2026 [Company name] · VAT [VAT no.] · [Address]" },
 };
@@ -305,7 +293,6 @@ body { background: var(--canvas); }
 .btn.inv { background: var(--text); border-color: var(--text); color: var(--canvas); }
 .btn.inv:hover { background: var(--text); filter: brightness(0.9); }
 .btn.sm { min-height: 34px; padding: 0 12px; font-size: 13px; }
-.s-eyebrow { font-size: 12px; line-height: 18px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--secondary); font-weight: 600; margin: 0 0 16px; max-width: 62ch; }
 .s-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 28px; list-style: none; margin: 36px 0 0; padding: 24px 0 0; border-top: 1px solid var(--separator); }
 .s-facts li { display: grid; gap: 2px; align-content: start; }
 .s-facts b { font-size: 14px; }
@@ -387,7 +374,6 @@ body { background: var(--canvas); }
 .s-yes li::before { content: "✓  "; color: var(--ok); font-weight: 700; }
 .s-no li::before { content: "–  "; color: var(--secondary); }
 @media (max-width: 1000px) { .s-top nav { display: none; } .s-top .s-right { margin-left: auto; } }
-@media (max-width: 700px) { .s-top .s-verify { display: none; } }
 @media (max-width: 900px) {
   .s-split { grid-template-columns: minmax(0, 1fr); gap: 32px; }
   .s-facts { grid-template-columns: minmax(0, 1fr); }
@@ -466,8 +452,8 @@ function chrome(view: SiteV2View, home: boolean, current: "blog" | "verify" | "p
   const blog = view.hasBlog ? `<a href="/blog"${current === "blog" ? ' aria-current="page"' : ""}>${escape(c.nav.blog)}</a>` : "";
   const header = `<header class="s-top"><div class="s-wrap">
 <a class="s-brand" href="/">${SEAL_SVG}<span>sigillo</span></a>
-<nav aria-label="${escape(c.nav.how)}"><a href="${to("come-funziona")}">${escape(c.nav.how)}</a><a href="${to("prezzi")}">${escape(c.nav.pricing)}</a><a href="/privacy"${current === "privacy" ? ' aria-current="page"' : ""}>${escape(c.footer.privacy)}</a>${blog}</nav>
-<div class="s-right">${languageSwitch("seg", view.back)}<a class="s-signin s-verify" href="/verify"${current === "verify" ? ' aria-current="page"' : ""}>${escape(c.nav.verifyShort)}</a><a class="s-signin" href="/ui/login">${escape(c.nav.signIn)}</a>${start}</div>
+<nav aria-label="${escape(c.nav.how)}"><a href="${to("come-funziona")}">${escape(c.nav.how)}</a><a href="${to("prezzi")}">${escape(c.nav.pricing)}</a><a href="/verify"${current === "verify" ? ' aria-current="page"' : ""}>${escape(c.nav.verifyShort)}</a><a href="/privacy"${current === "privacy" ? ' aria-current="page"' : ""}>${escape(c.footer.privacy)}</a>${blog}</nav>
+<div class="s-right">${languageSwitch("seg", view.back)}<a class="s-signin" href="/ui/login">${escape(c.nav.signIn)}</a>${start}</div>
 </div></header>`;
   const band = `<section class="s-band" id="contatti"><div class="s-wrap"><div><div><h2>${escape(c.hero.h1)}</h2><p>${escape(c.contact.h2)}${view.contactEmail === undefined ? "" : ` ${escape(c.contact.address)} ${escape(view.contactEmail)}`}</p></div>${start}</div></div></section>`;
   const footer = `<footer class="s-foot"><div class="s-wrap"><div>
@@ -522,7 +508,6 @@ export function siteV2Page(view: SiteV2View): string {
   const body = `${header}
 <main>
 <section class="s-wrap s-hero" id="inizio"><div>
-<p class="s-eyebrow">${escape(c.hero.eyebrow)}</p>
 <h1>${escape(c.hero.h1)}</h1><p class="s-lead">${escape(c.hero.lead)}</p>
 <div class="s-btns">${start}<a class="btn" href="/verify">${escape(c.hero.secondary)}</a></div>
 <ul class="s-facts">${c.hero.facts.map(([title, line]) => `<li><b>${escape(title)}</b><span>${escape(line)}</span></li>`).join("")}</ul></div>
@@ -531,15 +516,15 @@ export function siteV2Page(view: SiteV2View): string {
 <div class="s-sealrow"><span class="s-stamp">${SEAL_SVG}</span><div><b>${escape(c.card.matches)}</b><small class="mono">9685 533e aa64 29c4</small><small>${escape(c.card.sealed)}</small></div></div></div>
 </section>
 
-<section class="s-sec" id="problema"><div class="s-wrap${demo === "" ? " s-narrow" : " s-split"}"><div><p class="s-eyebrow">${escape(c.problem.eyebrow)}</p><h2>${escape(c.problem.h2)}</h2><p class="s-lead">${escape(c.problem.body)}</p><a class="btn inv" href="#cosa-prova">${escape(c.problem.more)}</a></div>${demo}</div></section>
+<section class="s-sec" id="problema"><div class="s-wrap${demo === "" ? " s-narrow" : " s-split"}"><div><h2>${escape(c.problem.h2)}</h2><p class="s-lead">${escape(c.problem.body)}</p><a class="btn inv" href="#cosa-prova">${escape(c.problem.more)}</a></div>${demo}</div></section>
 
-<section class="s-sec alt" id="contestazioni"><div class="s-wrap"><div class="s-card s-dispute"><p class="s-eyebrow">${escape(c.disputes.eyebrow)}</p><h2>${escape(c.disputes.h2)}</h2><p class="s-lead">${escape(c.disputes.body)}</p><a class="btn inv" href="#cosa-consegni">${escape(c.disputes.more)}</a></div></div></section>
+<section class="s-sec alt" id="contestazioni"><div class="s-wrap"><div class="s-card s-dispute"><h2>${escape(c.disputes.h2)}</h2><p class="s-lead">${escape(c.disputes.body)}</p><a class="btn inv" href="#cosa-consegni">${escape(c.disputes.more)}</a></div></div></section>
 
-<section class="s-sec" id="per-chi"><div class="s-wrap"><p class="s-eyebrow">${escape(c.fit.eyebrow)}</p><h2>${escape(c.fit.h2)}</h2><p class="s-lead">${escape(c.fit.lead)}</p>
+<section class="s-sec" id="per-chi"><div class="s-wrap"><h2>${escape(c.fit.h2)}</h2><p class="s-lead">${escape(c.fit.lead)}</p>
 <div class="s-two s-fit"><div class="s-card"><h3 class="s-fith s-yes-h">${escape(c.fit.forTitle)}</h3><p class="t-sec">${escape(c.fit.forLead)}</p><ul>${c.fit.forItems.map(([t, d]) => `<li><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ul></div>
 <div class="s-card"><h3 class="s-fith s-no-h">${escape(c.fit.notTitle)}</h3><p class="t-sec">${escape(c.fit.notLead)}</p><ul>${c.fit.notItems.map(([t, d]) => `<li><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ul></div></div></div></section>
 
-<section class="s-sec alt" id="come-funziona"><div class="s-wrap"><p class="s-eyebrow">${escape(c.steps.eyebrow)}</p><h2>${escape(c.steps.h2)}</h2>
+<section class="s-sec alt" id="come-funziona"><div class="s-wrap"><h2>${escape(c.steps.h2)}</h2>
 <ol class="s-flow3">${c.steps.items.map(([t, d], i) => `<li><span class="s-ico" aria-hidden="true">${[ICONS.terminal, ICONS.doc, ICONS.docCheck][i] ?? ""}</span><span><b>${i + 1}. ${escape(t)}</b><span>${escape(d)}</span></span></li>`).join("")}</ol>
 <h3 class="t-sec" style="margin:40px 0 16px">${escape(c.how.h2)}</h3>
 <div class="s-three">${c.how.questions.map((q) => `<div class="s-card"><p class="s-q">${escape(q.q)}</p>${cardFor(q.kind, q.a)}</div>`).join("")}</div></div></section>
@@ -561,7 +546,7 @@ export function siteV2Page(view: SiteV2View): string {
 <div class="vlines">${c.aiAct.rows.map((r) => `<div class="vline"><span><span class="chip">${escape(r.art)}</span></span><span><b>${escape(r.what)}</b></span><span>${escape(r.how)}</span></div>`).join("")}</div>
 <p class="notice" style="margin-top:20px">${STATE_ICONS.warn}<span>${escape(c.aiAct.honest)}</span></p></div></section>
 
-<section class="s-sec alt" id="collega"><div class="s-wrap s-split"><div><p class="s-eyebrow">${escape(c.connect.eyebrow)}</p><h2>${escape(c.connect.h2)}</h2><p class="s-lead">${escape(c.connect.lead)}</p>
+<section class="s-sec alt" id="collega"><div class="s-wrap s-split"><div><h2>${escape(c.connect.h2)}</h2><p class="s-lead">${escape(c.connect.lead)}</p>
 <ol class="s-flow">${c.connect.steps.map(([t, d], i) => `<li><span class="num">${i + 1}</span><span><b>${escape(t)}</b><span>${escape(d)}</span></span></li>`).join("")}</ol></div>
 <div class="s-term"><p class="t-meta">${escape(c.connect.or)} · ${escape(c.connect.where)}</p>
 ${code("pip install sigillo")}
@@ -572,7 +557,7 @@ ${code(`import sigillo\nsigillo.init(\n    endpoint="${view.endpoint}",\n    api
 <p class="t-meta">${escape(c.pricing.unit)}</p>
 </div></section>
 
-<section class="s-sec alt" id="faq"><div class="s-wrap s-split s-start"><div><p class="s-eyebrow">${escape(c.faq.eyebrow)}</p><h2>${escape(c.faq.h2)}</h2><p class="s-lead">${escape(c.faq.lead)}</p><a class="btn" href="${escape(mail)}" rel="noopener">${escape(c.contact.button)}</a></div>
+<section class="s-sec alt" id="faq"><div class="s-wrap s-split s-start"><div><h2>${escape(c.faq.h2)}</h2><p class="s-lead">${escape(c.faq.lead)}</p><a class="btn" href="${escape(mail)}" rel="noopener">${escape(c.contact.button)}</a></div>
 <div class="s-faq">${c.pricing.faq.map((f, i) => `<details${i === 0 ? " open" : ""}><summary>${escape(f.q)}</summary><p>${escape(f.a)}</p></details>`).join("")}</div></div></section>
 </main>
 ${band}
