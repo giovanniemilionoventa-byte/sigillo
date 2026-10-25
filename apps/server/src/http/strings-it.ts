@@ -680,9 +680,9 @@ const ui = {
     needFirst: "Prima apri o crea la cassaforte, poi inserisci di nuovo la chiave del modello.",
     link: "Le chiavi sono cifrate con la tua passphrase: gestisci la cassaforte",
     day: (d: number): string => ["Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"][d] ?? "",
-    scheduleTitle: "Orari di chiusura",
+    scheduleTitle: "Orari di chiusura (facoltativo)",
     scheduleText:
-      "Scegli quando la cassaforte deve restare sigillata (per esempio ogni notte, o nel fine settimana). In quegli orari si chiude da sola e non si può aprire: nessuna chiave dei modelli passa dal server. Quando gli orari finiscono la cassaforte non si riapre da sola, perché per aprirla serve la tua passphrase: la apri tu, oppure il tuo agente con la passphrase che custodisce lui.",
+      "Un'opzione in più, non serve per proteggere le chiavi (lo fa già la cassaforte). Negli orari che scegli, il server non può usare le tue chiavi: le chiamate dei tuoi agenti ai modelli vengono rifiutate. Per esempio ogni notte, o nel fine settimana. Finiti gli orari la cassaforte resta chiusa finché non la apri tu.",
     scheduleNone: "Nessun orario impostato: la cassaforte si chiude solo quando la chiudi tu o dopo 12 ore.",
     scheduleDays: "Giorni in cui inizia",
     scheduleFrom: "Chiusa dalle",
