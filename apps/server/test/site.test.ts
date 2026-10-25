@@ -136,6 +136,25 @@ describe("the public site", () => {
     expect((await operatorOnly.inject({ method: "GET", url: "/pricing" })).statusCode).toBe(404);
   });
 
+  it("draws /privacy as the technical page, in both languages, with every table of contents link pointing at a section", async () => {
+    for (const [header, heading, word] of [
+      ["en", "What Sigillo stores, how it is protected, and how to check.", "Controller, cookies and your rights"],
+      ["it", "Cosa conserva Sigillo, come è protetto e come controllarlo.", "Titolare, cookie e diritti"],
+    ] as const) {
+      const page = (await get("/privacy", { "accept-language": header })).body;
+      expect(page, header).toContain(escapeHtml(heading));
+      expect(page, header).toContain(escapeHtml(word));
+      const links = [...page.matchAll(/<a href="#([a-z]+)"><span class="n">/g)].map((match) => match[1]);
+      expect(links, header).toHaveLength(11);
+      for (const id of links) expect(page, `${header} #${id}`).toContain(`class="pv-sec" id="${id}"`);
+      // What the page claims about the receipt is what FORMAT.md specifies.
+      for (const claim of ["RFC 8785", "Ed25519", "RFC 3161", "AES-256-GCM", "scrypt", "network_mode: none"]) expect(page, claim).toContain(claim);
+      // The legal basics stay on the page: controller, cookies, rights.
+      for (const part of SITE_TEXTS[header].privacy.sections) expect(page, part.heading).toContain(escapeHtml(part.heading));
+      expect(page).not.toMatch(/vault|cassaforte/i);
+    }
+  });
+
   it("is one page with every section, and sends the old pricing and connect pages to their sections", async () => {
     const home = (await get("/")).body;
     for (const id of ["why", "how", "ai-act", "pricing", "connect", "contact"]) {

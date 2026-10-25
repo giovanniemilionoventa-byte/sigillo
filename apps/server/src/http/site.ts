@@ -31,6 +31,7 @@ import { BLOG_STYLE, blogIndexBody, postBody, postJsonLd } from "./site-blog.js"
  * connecting are sections of the home page; their old addresses lead there.
  */
 import { siteV2Inner, siteV2Page } from "./site-v2.js";
+import { privacyPage } from "./site-privacy.js";
 
 export const SITE_PATHS = ["/", "/verify", "/privacy"] as const;
 type SitePath = (typeof SITE_PATHS)[number];
@@ -715,18 +716,15 @@ function verifyBody(context: PageContext): string {
 
 function privacyBody(context: PageContext): string {
   const p = context.t.privacy;
-  const contact =
-    context.contactEmail === undefined
-      ? ""
-      : `<p><a href="${escape(mailLink(context.contactEmail, "Sigillo"))}" target="_blank" rel="noopener">${escape(context.contactEmail)}</a></p>`;
-  return `<div class="wrap page-head"><h1>${escape(p.title)}</h1></div>
-<div class="wrap narrow prose">
-${p.sections
-  .map((section) => `<h2>${escape(section.heading)}</h2>\n${section.paragraphs.map((text) => `<p>${escape(text)}</p>`).join("\n")}`)
-  .join("\n")}
-${contact}
-<p>${escape(p.updated)}</p>
-</div>`;
+  return privacyPage({
+    language: context.language,
+    legal: p.sections,
+    updated: p.updated,
+    docs: `${REPOSITORY}/blob/main/docs`,
+    ...(context.contactEmail === undefined
+      ? {}
+      : { contactHref: mailLink(context.contactEmail, "Sigillo"), contactLabel: context.contactEmail }),
+  });
 }
 
 const BODIES: Record<SitePath, { title: (t: SiteTexts) => string; body: (context: PageContext) => string }> = {

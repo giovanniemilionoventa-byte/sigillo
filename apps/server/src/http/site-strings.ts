@@ -322,7 +322,7 @@ const EN: SiteTexts = {
         ],
       },
     ],
-    updated: "Last updated 6 October 2026.",
+    updated: "Last updated 25 October 2026.",
   },
   blog: {
     nav: "Blog",
@@ -536,7 +536,7 @@ const IT: SiteTexts = {
         ],
       },
     ],
-    updated: "Ultimo aggiornamento 6 ottobre 2026.",
+    updated: "Ultimo aggiornamento 25 ottobre 2026.",
   },
   blog: {
     nav: "Blog",
