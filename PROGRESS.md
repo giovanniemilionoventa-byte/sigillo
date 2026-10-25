@@ -4292,3 +4292,9 @@ Su richiesta del titolare: nella home inglese il fascicolo d'esempio (titolo, az
 italiano; la carta d'esempio della sezione «cosa consegni» ora legge titolo, data e azioni dalla
 lingua scelta (`site-v2.ts`). Nella stessa sezione c'è un riquadro breve sulla privacy che rimanda
 a `/privacy`, nelle due lingue. Test: `site.test.ts`. Nessuna modifica al formato né al verificatore.
+
+## Menu del sito ridotto, con Privacy (2026-10-25)
+
+Su indicazione del titolare il menu in alto passa da sei voci a quattro: How it works, Pricing,
+Privacy, Blog; a destra Verify, Sign in e il pulsante del pilota. «What you hand over» e «AI Act»
+escono dal menu ma restano come sezioni della home (e nel piè di pagina). Test: `site.test.ts`.

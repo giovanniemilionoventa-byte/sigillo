@@ -387,6 +387,7 @@ body { background: var(--canvas); }
 .s-yes li::before { content: "✓  "; color: var(--ok); font-weight: 700; }
 .s-no li::before { content: "–  "; color: var(--secondary); }
 @media (max-width: 1000px) { .s-top nav { display: none; } .s-top .s-right { margin-left: auto; } }
+@media (max-width: 700px) { .s-top .s-verify { display: none; } }
 @media (max-width: 900px) {
   .s-split { grid-template-columns: minmax(0, 1fr); gap: 32px; }
   .s-facts { grid-template-columns: minmax(0, 1fr); }
@@ -454,7 +455,7 @@ export interface SiteV2View {
 }
 
 /** The home's header, contact band and footer, shared with the inner pages (`home`: false puts the page's path in front of every anchor). */
-function chrome(view: SiteV2View, home: boolean, current: "blog" | "verify" | null): { header: string; band: string; footer: string; start: string; mail: string } {
+function chrome(view: SiteV2View, home: boolean, current: "blog" | "verify" | "privacy" | null): { header: string; band: string; footer: string; start: string; mail: string } {
   const c = COPY[view.language];
   const to = (id: string): string => `${home ? "" : "/"}#${id}`;
   const mail =
@@ -465,8 +466,8 @@ function chrome(view: SiteV2View, home: boolean, current: "blog" | "verify" | nu
   const blog = view.hasBlog ? `<a href="/blog"${current === "blog" ? ' aria-current="page"' : ""}>${escape(c.nav.blog)}</a>` : "";
   const header = `<header class="s-top"><div class="s-wrap">
 <a class="s-brand" href="/">${SEAL_SVG}<span>sigillo</span></a>
-<nav aria-label="${escape(c.nav.how)}"><a href="${to("come-funziona")}">${escape(c.nav.how)}</a><a href="${to("cosa-consegni")}">${escape(c.nav.deliver)}</a><a href="${to("ai-act")}">${escape(c.nav.aiAct)}</a><a href="${to("prezzi")}">${escape(c.nav.pricing)}</a><a href="/verify"${current === "verify" ? ' aria-current="page"' : ""}>${escape(c.nav.verifyShort)}</a>${blog}</nav>
-<div class="s-right">${languageSwitch("seg", view.back)}<a class="s-signin" href="/ui/login">${escape(c.nav.signIn)}</a>${start}</div>
+<nav aria-label="${escape(c.nav.how)}"><a href="${to("come-funziona")}">${escape(c.nav.how)}</a><a href="${to("prezzi")}">${escape(c.nav.pricing)}</a><a href="/privacy"${current === "privacy" ? ' aria-current="page"' : ""}>${escape(c.footer.privacy)}</a>${blog}</nav>
+<div class="s-right">${languageSwitch("seg", view.back)}<a class="s-signin s-verify" href="/verify"${current === "verify" ? ' aria-current="page"' : ""}>${escape(c.nav.verifyShort)}</a><a class="s-signin" href="/ui/login">${escape(c.nav.signIn)}</a>${start}</div>
 </div></header>`;
   const band = `<section class="s-band" id="contatti"><div class="s-wrap"><div><div><h2>${escape(c.hero.h1)}</h2><p>${escape(c.contact.h2)}${view.contactEmail === undefined ? "" : ` ${escape(c.contact.address)} ${escape(view.contactEmail)}`}</p></div>${start}</div></div></section>`;
   const footer = `<footer class="s-foot"><div class="s-wrap"><div>
@@ -480,7 +481,7 @@ function chrome(view: SiteV2View, home: boolean, current: "blog" | "verify" | nu
 /** The inner pages (verify, privacy, blog) in the new site's frame: `body` is the page's own markup, `head` its extra tags. */
 export function siteV2Inner(
   view: SiteV2View,
-  page: { title: string; description: string; body: string; head?: string; scripts?: readonly string[]; current?: "blog" | "verify" },
+  page: { title: string; description: string; body: string; head?: string; scripts?: readonly string[]; current?: "blog" | "verify" | "privacy" },
 ): string {
   const { header, footer } = chrome(view, false, page.current ?? null);
   const theme = ` data-theme="${view.theme === "light" ? "light" : "dark"}"`;
