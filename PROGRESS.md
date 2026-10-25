@@ -4282,5 +4282,5 @@ in italiano; `apps/server/src/http/site-privacy.ts`. Ogni riga viene da `docs/FO
 conserva, si invia o si cancella, la pagina cambia nello stesso commit. Nessuna cassaforte,
 nessuna prova che il cliente debba lanciare. Il contatto è `SITE_CONTACT_EMAIL` (l'indirizzo
 `privacy@` non esiste ancora: da creare prima di scriverlo). Test: `site.test.ts`. Il verificatore
-è invariato. Noto: `agent-setup.test.ts` ("< (0, 10):") fallisce già su `main` in questo ambiente,
-non toccato qui.
+è invariato. Corretto anche un test di `agent-setup.test.ts` (aspettava SDK 0.10 anche senza protezione), rosso su `main` dal merge #111;
+solo il test, il codice non cambia.

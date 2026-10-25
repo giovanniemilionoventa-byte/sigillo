@@ -620,7 +620,9 @@ describe("an uploaded agent that calls a model on this computer, with the model 
       expect(result.localPort).toBe(11434);
       expect(result.text).not.toContain("_BASE_URL");
       expect(result.text).toContain('base_url="http://localhost:11434/v1"');
-      expect(result.text).toContain("< (0, 10):");
+      // 0.10 is what the guard needs (a local model already open no longer ends the agent); without protection
+      // there is no guard, and 0.8 (the openai library on a local model) is enough.
+      expect(result.text).toContain(protection ? "< (0, 10):" : "< (0, 8):");
     }
   });
 
