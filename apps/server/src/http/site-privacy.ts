@@ -14,7 +14,6 @@ type Row = readonly [string, string];
 
 interface Texts {
   title: string;
-  eyebrow: string;
   onThisPage: string;
   sources: string;
   sections: {
@@ -47,7 +46,6 @@ interface Texts {
 
 const EN: Texts = {
   title: "What Sigillo stores, how it is protected, and how to check.",
-  eyebrow: "Privacy and security · EU law (GDPR) applies",
   onThisPage: "On this page",
   sources: "Source documents",
   sections: {
@@ -180,7 +178,6 @@ const EN: Texts = {
 
 const IT: Texts = {
   title: "Cosa conserva Sigillo, come è protetto e come controllarlo.",
-  eyebrow: "Privacy e sicurezza · si applica il diritto UE (GDPR)",
   onThisPage: "In questa pagina",
   sources: "Documenti di riferimento",
   sections: {
@@ -420,8 +417,7 @@ export function privacyPage(view: PrivacyView): string {
   const rows = (items: readonly Row[]): string =>
     `<div class="pv-box pv-rows">${items.map(([name, text]) => `<div><span class="name">${escape(name)}</span><span class="dim">${escape(text)}</span></div>`).join("")}</div>`;
   const section = (key: keyof Texts["sections"], inner: string): string => {
-    const number = String(SECTION_ORDER.indexOf(key) + 1).padStart(2, "0");
-    return `<div class="pv-sec" id="${key}"><p class="pv-k">${number}</p><h2>${escape(t.sections[key])}</h2>${t.intro[key] === "" ? "" : `<p class="lead">${escape(t.intro[key])}</p>`}${inner}</div>`;
+    return `<div class="pv-sec" id="${key}"><h2>${escape(t.sections[key])}</h2>${t.intro[key] === "" ? "" : `<p class="lead">${escape(t.intro[key])}</p>`}${inner}</div>`;
   };
   const sub = (title: string, note: string, extra = ""): string => `<div class="pv-sub${extra}"><b>${escape(title)}</b><span>${escape(note)}</span></div>`;
   const f = t.flowBoxes;
@@ -483,6 +479,6 @@ ${view.contactHref === undefined ? "" : `<p class="lead" style="margin-top:20px"
   ).join("")}<div class="src"><p class="pv-k">${escape(t.sources)}</p>${SOURCES.map((name) => `<a href="${escape(`${view.docs}/${name}`)}">${escape(name)}</a>`).join("")}</div></div>`;
 
   return `<style>${RULES}</style>
-<div class="pv"><p class="pv-k">${escape(t.eyebrow)}</p><h1>${escape(t.title)}</h1>
+<div class="pv"><h1>${escape(t.title)}</h1>
 <div class="pv-layout">${toc}<div>${SECTION_ORDER.map((key) => section(key, bodies[key])).join("\n")}</div></div></div>`;
 }
