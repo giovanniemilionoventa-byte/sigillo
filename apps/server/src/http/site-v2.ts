@@ -28,7 +28,7 @@ interface Copy {
   fit: { eyebrow: string; h2: string; lead: string; forTitle: string; forLead: string; forItems: [string, string][]; notTitle: string; notLead: string; notItems: [string, string][] };
   steps: { eyebrow: string; h2: string; items: [string, string][] };
   how: { h2: string; questions: { q: string; a: string; kind: "ok" | "action" | "proof" }[] };
-  deliver: { h2: string; story: string[]; contents: string[]; sample: string; verify: string };
+  deliver: { h2: string; story: string[]; contents: string[]; sample: string; verify: string; date: string; actions: string[]; privacyTitle: string; privacyText: string; privacyLink: string };
   proves: { h2: string; yes: string; no: string; yesLines: string[]; noLines: string[]; see: string; seeText: string; facts: [string, string][] };
   aiAct: { h2: string; rows: { art: string; what: string; how: string }[]; honest: string };
   connect: { eyebrow: string; h2: string; lead: string; steps: [string, string][]; or: string; where: string; copy: string; copied: string };
@@ -102,6 +102,11 @@ const IT: Copy = {
     story: ["Il candidato n. 7 chiede cosa ha fatto l'AI con il suo curriculum.", "In due clic trovi l'esecuzione: 4 azioni, alle 16:58.", "Consegni il fascicolo: lo controlla da solo, nel browser."],
     contents: ["report.pdf, in italiano", "le ricevute firmate", "i sigilli con marca temporale", "le istruzioni per chi controlla"],
     sample: "Il fascicolo d'esempio",
+    date: "13/10/2026",
+    actions: ["leggi_curriculum", "valuta_candidato", "qwen2.5:3b", "invia_email"],
+    privacyTitle: "E i dati?",
+    privacyText: "Sigillo conserva solo impronte, mai il testo di prompt e risposte. Le regole complete, anche tecniche, sono nella pagina privacy.",
+    privacyLink: "Leggi la privacy",
     verify: "Controllalo su /verify",
   },
   proves: {
@@ -167,11 +172,11 @@ const EN: Copy = {
   },
   card: {
     verdict: "Intact",
-    line: "4 receipts of Selezione CV — backend junior, 13 October 2026, signed and in order.",
+    line: "4 receipts of CV screening — junior backend, 13 October 2026, signed and in order.",
     key: "Key code",
     matches: "Matches",
-    title: "Selezione CV — backend junior",
-    rows: [["16:58", "Used «leggi_curriculum»"], ["16:58", "Answer from «llama3.1:8b»"], ["16:59", "Decision «scarta_candidato»"], ["17:00", "Sealed, with a timestamp"]],
+    title: "CV screening — junior backend",
+    rows: [["16:58", "Used «read_cv»"], ["16:58", "Answer from «llama3.1:8b»"], ["16:59", "Decision «reject_candidate»"], ["17:00", "Sealed, with a timestamp"]],
     sealed: "Evidence pack ready to hand over. Example data.",
   },
   problem: {
@@ -208,15 +213,20 @@ const EN: Copy = {
     h2: "Three questions, three answers",
     questions: [
       { q: "Is everything all right?", a: "No alteration. All 3 systems are recording.", kind: "ok" },
-      { q: "What did the AI do?", a: "The agent «screener» used the tool «leggi_curriculum» at 16:58.", kind: "action" },
+      { q: "What did the AI do?", a: "The agent «screener» used the tool «read_cv» at 16:58.", kind: "action" },
       { q: "Can you prepare the evidence?", a: "4 actions, sealed at 17:00, timestamped.", kind: "proof" },
     ],
   },
   deliver: {
     h2: "The evidence pack, as whoever receives it sees it",
     story: ["Candidate no. 7 asks what the AI did with their CV.", "In two clicks you find the run: 4 actions, at 16:58.", "You hand over the pack: they check it alone, in the browser."],
-    contents: ["report.pdf, in Italian", "the signed receipts", "the seals with their timestamps", "the instructions for whoever checks"],
+    contents: ["report.pdf, in English", "the signed receipts", "the seals with their timestamps", "the instructions for whoever checks"],
     sample: "The sample pack",
+    date: "13/10/2026",
+    actions: ["read_cv", "evaluate_candidate", "qwen2.5:3b", "send_email"],
+    privacyTitle: "And your data?",
+    privacyText: "Sigillo stores only fingerprints, never the text of prompts or answers. The full rules, technical details included, are on the privacy page.",
+    privacyLink: "Read the privacy page",
     verify: "Check it on /verify",
   },
   proves: {
@@ -536,8 +546,9 @@ export function siteV2Page(view: SiteV2View): string {
 <section class="s-sec" id="cosa-consegni"><div class="s-wrap"><h2>${escape(c.deliver.h2)}</h2>
 <div class="s-two"><div><ol class="steps-v2">${c.deliver.story.map((line, i) => `<li><span class="num">${i + 1}</span><span>${escape(line)}</span></li>`).join("")}</ol>
 <ul class="s-yes" style="list-style:none;padding:0;display:grid;gap:6px">${c.deliver.contents.map((line) => `<li>${escape(line)}</li>`).join("")}</ul>
-<p><a class="btn" href="/verify">${escape(c.deliver.verify)} ›</a></p></div>
-<div class="s-paper" aria-hidden="true"><p style="margin:0;font-weight:700">${escape(c.deliver.sample)}</p><p class="mono" style="margin:8px 0">Selezione CV — backend junior · 13/10/2026</p><p style="margin:0"><b>${escape(c.card.verdict)}</b> · 9685 533e aa64 29c4</p><hr style="border:0;border-top:1px solid #dce0e6"><ul style="list-style:none;padding:0;margin:0;display:grid;gap:4px;font-size:13px"><li>16:58 · leggi_curriculum</li><li>16:58 · valuta_candidato</li><li>16:58 · qwen2.5:3b</li><li>16:59 · invia_email</li></ul></div></div></div></section>
+<p><a class="btn" href="/verify">${escape(c.deliver.verify)} ›</a></p>
+<div class="s-card" style="margin-top:24px"><h3 class="t-sec">${escape(c.deliver.privacyTitle)}</h3><p>${escape(c.deliver.privacyText)}</p><a class="btn inv" href="/privacy">${escape(c.deliver.privacyLink)} ›</a></div></div>
+<div class="s-paper" aria-hidden="true"><p style="margin:0;font-weight:700">${escape(c.deliver.sample)}</p><p class="mono" style="margin:8px 0">${escape(c.card.title)} · ${escape(c.deliver.date)}</p><p style="margin:0"><b>${escape(c.card.verdict)}</b> · 9685 533e aa64 29c4</p><hr style="border:0;border-top:1px solid #dce0e6"><ul style="list-style:none;padding:0;margin:0;display:grid;gap:4px;font-size:13px">${c.deliver.actions.map((a, i) => `<li>${["16:58", "16:58", "16:58", "16:59"][i]} · ${escape(a)}</li>`).join("")}</ul></div></div></div></section>
 
 <section class="s-sec alt" id="cosa-prova"><div class="s-wrap"><h2>${escape(c.proves.h2)}</h2>
 <div class="s-two"><div class="s-card"><h3 class="t-sec">${escape(c.proves.yes)}</h3><ul class="s-yes" style="list-style:none;padding:0;display:grid;gap:8px">${c.proves.yesLines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul></div>

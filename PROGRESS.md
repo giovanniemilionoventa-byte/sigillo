@@ -4284,3 +4284,11 @@ nessuna prova che il cliente debba lanciare. Il contatto è `SITE_CONTACT_EMAIL`
 `privacy@` non esiste ancora: da creare prima di scriverlo). Test: `site.test.ts`. Il verificatore
 è invariato. Corretto anche un test di `agent-setup.test.ts` (aspettava SDK 0.10 anche senza protezione), rosso su `main` dal merge #111;
 solo il test, il codice non cambia.
+
+## Home: fascicolo d'esempio in inglese e sezione privacy (2026-10-25)
+
+Su richiesta del titolare: nella home inglese il fascicolo d'esempio (titolo, azioni `read_cv`,
+`evaluate_candidate`, `send_email`, `reject_candidate`, «report.pdf, in English») non ha più testo
+italiano; la carta d'esempio della sezione «cosa consegni» ora legge titolo, data e azioni dalla
+lingua scelta (`site-v2.ts`). Nella stessa sezione c'è un riquadro breve sulla privacy che rimanda
+a `/privacy`, nelle due lingue. Test: `site.test.ts`. Nessuna modifica al formato né al verificatore.
