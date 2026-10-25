@@ -98,8 +98,13 @@ describe("the public site, redesigned (SIGILLO_SITE_V2=all)", () => {
     expect(verify).toContain('id="drop"');
     expect(verify).toContain('<script src="/verify.js" defer>');
     expect(verify).toContain('href="/#prezzi"');
-    expect(verify).toContain('<a href="/verify" aria-current="page">Verify</a>');
-    expect((await getNew("/")).body).toContain('<a href="/verify">Verify</a>');
+    expect(verify).toContain('<a class="s-signin s-verify" href="/verify" aria-current="page">Verify</a>');
+    const home = (await getNew("/")).body;
+    const menu = home.slice(home.indexOf("<nav"), home.indexOf("</header>"));
+    expect(menu).toContain('<a class="s-signin s-verify" href="/verify">Verify</a>');
+    expect(menu).toContain('<a href="/privacy">Privacy</a>');
+    expect(menu).not.toMatch(/AI Act|What you hand over/);
+    expect((await getNew("/privacy")).body).toContain('<a href="/privacy" aria-current="page">Privacy</a>');
   });
 
   it("sends the old pricing and connect addresses to the new home's sections, which exist", async () => {
