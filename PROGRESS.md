@@ -4298,3 +4298,16 @@ a `/privacy`, nelle due lingue. Test: `site.test.ts`. Nessuna modifica al format
 Su indicazione del titolare il menu in alto passa da sei voci a quattro: How it works, Pricing,
 Privacy, Blog; a destra Verify, Sign in e il pulsante del pilota. «What you hand over» e «AI Act»
 escono dal menu ma restano come sezioni della home (e nel piè di pagina). Test: `site.test.ts`.
+
+## Titoli senza sottotitoli, Verify nel menu, verificatore scaricabile (2026-10-25)
+
+- Tolte le scritte piccole in grigio sopra i titoli (home e privacy, in tutte e due le lingue):
+  dove dicevano qualcosa di utile, lo dice già il titolo o la riga che lo segue.
+- «Verify» torna una voce normale del menu (How it works, Pricing, Verify, Privacy, Blog), non più
+  accanto a «Sign in».
+- Pagina `/verify`: oltre al controllo nel browser, un riquadro «Check it offline» con il
+  download `/sigillo-verify.zip` e le due righe da copiare. Il file (`verifier-bundle.ts`) è
+  composto al momento della richiesta dai file installati: build del verificatore, di `core`, e
+  `commander`, `canonicalize`, `zod`; così non può divergere dal repository. Si scompatta e si
+  lancia con Node 22, senza installare nulla. Test: `site.test.ts` lo scompatta e verifica un
+  fascicolo vero; il codice del verificatore è invariato. Nessuna dipendenza nuova.

@@ -101,7 +101,7 @@ export interface SiteTexts {
     details: string;
     /** Plain words for each check of evidence-check.ts that can fail. */
     reasons: Record<string, string>;
-    cli: string;
+    offline: { title: string; text: string; download: string; steps: string; note: string };
   };
   privacy: {
     title: string;
@@ -286,7 +286,13 @@ const EN: SiteTexts = {
       "checkpoint-json": "A seal is damaged.",
       "checkpoint-schema": "A seal is damaged.",
     },
-    cli: "Full check, timestamps included: the command-line verifier",
+    offline: {
+      title: "Check it offline",
+      text: "The same open-source verifier, for your own computer. It also checks the timestamps, which the browser cannot. It needs Node 22 or later; nothing is installed and nothing is uploaded.",
+      download: "Download the verifier",
+      steps: "unzip sigillo-verify.zip\nnode sigillo-verify/sigillo-verify.mjs evidence-pack.zip",
+      note: "For the timestamps, add --tsa-ca with the authority's certificate; to check who signed, add --key-id with the key code you were given. The README inside the file has the details.",
+    },
   },
   privacy: {
     title: "Privacy",
@@ -500,7 +506,13 @@ const IT: SiteTexts = {
       "checkpoint-json": "Un sigillo è danneggiato.",
       "checkpoint-schema": "Un sigillo è danneggiato.",
     },
-    cli: "Controllo completo, marche temporali comprese: il verificatore da riga di comando",
+    offline: {
+      title: "Controllalo senza rete",
+      text: "Lo stesso verificatore open source, da usare sul tuo computer. Controlla anche le marche temporali, che il browser non può controllare. Serve Node 22 o successivo; non si installa nulla e nulla viene caricato.",
+      download: "Scarica il verificatore",
+      steps: "unzip sigillo-verify.zip\nnode sigillo-verify/sigillo-verify.mjs fascicolo.zip",
+      note: "Per le marche temporali aggiungi --tsa-ca con il certificato dell'autorità; per sapere chi ha firmato aggiungi --key-id con il codice della chiave che ti hanno dato. Il README dentro il file spiega il resto.",
+    },
   },
   privacy: {
     title: "Privacy",

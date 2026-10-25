@@ -1,3 +1,4 @@
+import { VERIFIER_ZIP_NAME, verifierZip } from "./verifier-bundle.js";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { italianOffered, type Language } from "./locale.js";
@@ -710,7 +711,10 @@ function verifyBody(context: PageContext): string {
 <span>${escape(v.private)}</span></label>
 <div id="result" class="card" hidden aria-live="polite"></div>
 <template id="icon-ok">${STATE_ICONS.ok}</template><template id="icon-bad">${STATE_ICONS.bad}</template>
-<p class="more"><a href="${REPOSITORY}/tree/main/packages/verifier">${escape(v.cli)} ›</a></p>
+<div class="card" id="offline" style="margin-top:24px"><h2 style="margin-top:0">${escape(v.offline.title)}</h2><p>${escape(v.offline.text)}</p>
+<p><a class="btn" href="/${VERIFIER_ZIP_NAME}" download>${escape(v.offline.download)}</a></p>
+<pre style="overflow:auto;padding:12px;border-radius:8px;border:1px solid var(--separator, #dce0e6)"><code>${escape(v.offline.steps)}</code></pre>
+<p style="font-size:13px">${escape(v.offline.note)}</p></div>
 </div>`;
 }
 
@@ -841,6 +845,14 @@ export function registerSite(app: FastifyInstance, options: SiteOptions): void {
 
   app.get("/verify.js", async (_request, reply) =>
     reply.type("text/javascript; charset=utf-8").header("cache-control", "public, max-age=3600").send(VERIFY_SCRIPT),
+  );
+
+  app.get(`/${VERIFIER_ZIP_NAME}`, async (_request, reply) =>
+    reply
+      .type("application/zip")
+      .header("content-disposition", `attachment; filename="${VERIFIER_ZIP_NAME}"`)
+      .header("cache-control", "public, max-age=3600")
+      .send(verifierZip().zip),
   );
 
   app.get("/site.js", async (_request, reply) =>
