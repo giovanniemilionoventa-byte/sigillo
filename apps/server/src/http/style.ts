@@ -482,6 +482,7 @@ details.tech .facts { margin-top: 10px; }
 .auth-box .or { margin: 20px 0; }
 .chip { display: inline-flex; gap: 8px; align-items: center; margin: -12px 0 24px; padding: 6px 12px; border-radius: 999px;
   background: var(--fill); font-size: 14px; overflow-wrap: anywhere; }
+.auth-home { margin: 22px 0 0; font-size: 13px; }
 .auth-foot { display: flex; justify-content: center; gap: 8px 18px; flex-wrap: wrap; margin-top: 22px; font-size: 13px; }
 .auth-box .notice { text-align: left; }
 .auth-box .auth-lang { flex-direction: row; justify-content: center; gap: 4px; margin-top: 28px; }

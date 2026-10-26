@@ -4311,3 +4311,14 @@ escono dal menu ma restano come sezioni della home (e nel piè di pagina). Test:
   `commander`, `canonicalize`, `zod`; così non può divergere dal repository. Si scompatta e si
   lancia con Node 22, senza installare nulla. Test: `site.test.ts` lo scompatta e verifica un
   fascicolo vero; il codice del verificatore è invariato. Nessuna dipendenza nuova.
+
+## Correzioni di Polina al design (2026-10-26)
+
+Dai messaggi di Polina: pulsanti di una riga e al massimo tre parole («Request a pilot», «Verify a
+sample», «What it proves», «See the pack», «Open the verifier», e le versioni italiane); i due
+riquadri «Proves / Does not prove» alla stessa altezza; titolo e nota della sezione AI Act su una
+riga, nota centrata; la sezione AI Act spostata dopo «When disputes arise», dove l'ha indicata
+lei; nei prezzi i pulsanti allineati in basso; nella pagina privacy il riquadro «Signer» non si
+rompe più (la sua classe `sign` coincideva con quella della console, ora `pv-sign`); la pagina di
+accesso ha un link per tornare al sito. Una delle sue immagini («fill this out») arrivava vuota:
+da chiarire con lei. Test: `site.test.ts`, intera suite verde.
