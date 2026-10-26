@@ -318,12 +318,12 @@ export function authPage(
         ? `<div class="tile-icon yellow" aria-hidden="true">${ICONS.clock}</div>`
         : SEAL_SVG;
   return `${documentStart(`${title} — sigillo`)}<body>
+<a class="auth-back" href="/" aria-label="${escape(UI.account.toSite)}">← sigillo</a>
 <main class="auth" id="main"><div class="auth-box">
 ${icon}
 <h1>${escape(title)}</h1>
 ${options.message === undefined ? "" : `<p class="message">${escape(options.message)}</p>`}
 ${options.head ?? ""}${body}
-<p class="auth-home"><a href="/">← ${escape(UI.account.toSite)}</a></p>
 ${languageSwitch("auth-lang", currentBack())}
 </div></main>
 </body></html>`;
