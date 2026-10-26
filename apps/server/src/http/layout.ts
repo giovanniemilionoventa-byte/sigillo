@@ -256,6 +256,7 @@ function sidebarV2(shell: Shell, current: NavCurrent | undefined): string {
 ${item("/ui", "registro", ICONS_V2.pulse, t.stato)}
 ${item("/ui/actions", "azioni", ICONS.list, t.azioni)}
 ${item("/ui/evidence", "prove", ICONS_V2.evidence, t.prove)}
+${item("/ui/verify-document", "verifica", ICONS.docCheck, UI.nav.verificaDocumento)}
 <div class="side-rule" role="presentation"></div>
 <p class="side-group">${escape(t.systems)}</p>
 ${systems === "" ? "" : `<ul class="side-list">${systems}</ul>`}
