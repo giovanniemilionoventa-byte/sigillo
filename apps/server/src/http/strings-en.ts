@@ -250,7 +250,7 @@ const ui: Strings = {
     toReset: "Forgot your password?",
     toLogin: "Back to sign-in",
     toAdmin: "Sign in as administrator",
-    toSite: "Back to the sigillo site",
+    toSite: "Back to sigillo",
     wrong: "Wrong email or password. After too many attempts, signing in is paused for a few minutes.",
     unavailable: "The sign-in service is not responding. Try again in a few minutes.",
     googleFailed: "Signing in with Google did not work. Try again.",

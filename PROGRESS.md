@@ -4320,5 +4320,5 @@ riquadri «Proves / Does not prove» alla stessa altezza; titolo e nota della se
 riga, nota centrata; la sezione AI Act spostata dopo «When disputes arise», dove l'ha indicata
 lei; nei prezzi i pulsanti allineati in basso; nella pagina privacy il riquadro «Signer» non si
 rompe più (la sua classe `sign` coincideva con quella della console, ora `pv-sign`); la pagina di
-accesso ha un link per tornare al sito. Una delle sue immagini («fill this out») arrivava vuota:
+accesso ha una freccia «← sigillo» in alto a sinistra per tornare al sito (prima era un link in fondo, tolto su richiesta del titolare). Una delle sue immagini («fill this out») arrivava vuota:
 da chiarire con lei. Test: `site.test.ts`, intera suite verde.

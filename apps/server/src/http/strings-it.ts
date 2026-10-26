@@ -255,7 +255,7 @@ const ui = {
     toReset: "Password dimenticata?",
     toLogin: "Torna all'accesso",
     toAdmin: "Entra come amministratore",
-    toSite: "Torna al sito di sigillo",
+    toSite: "Torna a sigillo",
     wrong: "Email o password non corrette. Dopo troppi tentativi l'accesso resta sospeso per qualche minuto.",
     unavailable: "Il servizio di accesso non risponde. Riprova tra qualche minuto.",
     googleFailed: "L'accesso con Google non è riuscito. Riprova.",
