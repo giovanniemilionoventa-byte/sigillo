@@ -323,6 +323,7 @@ ${icon}
 <h1>${escape(title)}</h1>
 ${options.message === undefined ? "" : `<p class="message">${escape(options.message)}</p>`}
 ${options.head ?? ""}${body}
+<p class="auth-home"><a href="/">← ${escape(UI.account.toSite)}</a></p>
 ${languageSwitch("auth-lang", currentBack())}
 </div></main>
 </body></html>`;

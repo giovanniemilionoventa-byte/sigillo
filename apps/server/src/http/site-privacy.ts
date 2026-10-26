@@ -379,8 +379,8 @@ const RULES = `
 .pv-sub { border: 1px solid var(--pv-line); border-radius: 5px; padding: 10px 12px; font-size: 13px; }
 .pv-sub b { display: block; }
 .pv-sub span { color: var(--pv-muted); font-size: 12px; }
-.pv-sub.you { border-color: var(--pv-accent); }
-.pv-sub.sign { border-color: var(--pv-ok); }
+.pv-sub.pv-you { border-color: var(--pv-accent); }
+.pv-sub.pv-sign { border-color: var(--pv-ok); }
 .pv-arrow { display: flex; align-items: center; justify-content: center; font-family: var(--mono, ui-monospace, monospace); font-size: 11px; color: var(--pv-muted); writing-mode: vertical-rl; }
 .pv-inner { border: 1px solid var(--pv-line); border-radius: 5px; padding: 12px; }
 .pv-three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
@@ -424,9 +424,9 @@ export function privacyPage(view: PrivacyView): string {
 
   const summary = `<div class="pv-facts">${t.facts.map(([label, value]) => `<div class="pv-box pv-fact"><p class="pv-k">${escape(label)}</p><b>${escape(value)}</b></div>`).join("")}</div>`;
   const flow = `<div class="pv-box pv-diagram"><div class="pv-top">
-${sub(f.customer, f.customerNote, " you").replace("</div>", `<div class="pv-mono" style="margin-top:10px;font-size:12px">sha256(nonce ‖ content)</div></div>`)}
+${sub(f.customer, f.customerNote, " pv-you").replace("</div>", `<div class="pv-mono" style="margin-top:10px;font-size:12px">sha256(nonce ‖ content)</div></div>`)}
 <div class="pv-arrow">${escape(f.https)}</div>
-<div class="pv-inner"><div class="pv-three">${f.serverBoxes.map(([title, note], i) => sub(title, note, i === 2 ? " sign" : "")).join("")}</div>${sub(f.database[0], f.database[1])}</div></div>
+<div class="pv-inner"><div class="pv-three">${f.serverBoxes.map(([title, note], i) => sub(title, note, i === 2 ? " pv-sign" : "")).join("")}</div>${sub(f.database[0], f.database[1])}</div></div>
 <div class="pv-four">${f.outside.map(([title, note]) => sub(title, note)).join("")}</div></div>
 <div class="pv-box pv-rows paths" style="margin-top:14px"><div class="h"><span>${escape(t.paths.head[0])}</span><span>${escape(t.paths.head[1])}</span><span>${escape(t.paths.head[2])}</span></div>${t.paths.rows
     .map(([n, path, what]) => `<div><span class="name dim">${escape(n)}</span><span>${escape(path)}</span><span class="dim">${escape(what)}</span></div>`)

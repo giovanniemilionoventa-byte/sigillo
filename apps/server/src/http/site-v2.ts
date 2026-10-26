@@ -39,14 +39,14 @@ interface Copy {
 }
 
 const IT: Copy = {
-  nav: { how: "Come funziona", deliver: "Cosa consegni", aiAct: "AI Act", pricing: "Prezzi", blog: "Blog", verify: "Verifica un fascicolo", verifyShort: "Verifica", signIn: "Accedi", start: "Richiedi un pilota gratuito" },
+  nav: { how: "Come funziona", deliver: "Cosa consegni", aiAct: "AI Act", pricing: "Prezzi", blog: "Blog", verify: "Verifica un fascicolo", verifyShort: "Verifica", signIn: "Accedi", start: "Richiedi un pilota" },
   title: "sigillo · le prove di cosa ha fatto la tua AI",
   description: "sigillo registra ogni azione dei tuoi agenti AI in un registro firmato e sigillato ogni ora. Quando arriva un reclamo o un'ispezione, consegni un fascicolo che chiunque controlla da solo, nel browser.",
   hero: {
     h1: "Dimostra cosa ha fatto la tua AI. Quando conta di più.",
     lead: "sigillo crea registri firmati e con marca temporale delle azioni dei tuoi agenti AI, che chiunque può verificare in modo indipendente, senza esporre i dati riservati della tua azienda.",
-    primary: "Richiedi un pilota gratuito",
-    secondary: "Verifica un fascicolo d'esempio",
+    primary: "Richiedi un pilota",
+    secondary: "Verifica un esempio",
     facts: [["Solo impronte", "Prompt e risposte restano da te."], ["Verifichi da solo", "Strumento a riga di comando, anche senza rete."], ["Pilota gratuito", "Nessun dato di pagamento."]],
   },
   card: {
@@ -61,14 +61,14 @@ const IT: Copy = {
   problem: {
     h2: "Se domani dovessi giustificare le azioni della tua AI, avresti le prove?",
     body: "Gli agenti AI prendono decisioni e compiono azioni con conseguenze reali. Quando vengono contestate, serve più del ricordo di come sono andate le cose. sigillo conserva registri verificabili che mostrano cosa è successo e rendono rilevabili le alterazioni successive.",
-    more: "Cosa prova, cosa no",
+    more: "Cosa prova",
     video: "Demo di sigillo, 3 minuti",
     subtitles: "Italiano",
   },
   disputes: {
     h2: "Quando nasce una contestazione, non basta la tua parola.",
     body: "I log ordinari dicono cosa hanno registrato i tuoi sistemi. sigillo aggiunge una prova firmata e con marca temporale, che si controlla in modo indipendente: mostra cosa è stato registrato e se è stato alterato.",
-    more: "Cosa consegni",
+    more: "Vedi il fascicolo",
   },
   fit: {
     h2: "Pensato per chi deve dimostrare cosa ha fatto la sua AI.",
@@ -102,7 +102,7 @@ const IT: Copy = {
     privacyTitle: "E i dati?",
     privacyText: "Sigillo conserva solo impronte, mai il testo di prompt e risposte. Le regole complete, anche tecniche, sono nella pagina privacy.",
     privacyLink: "Leggi la privacy",
-    verify: "Controllalo su /verify",
+    verify: "Apri la verifica",
   },
   proves: {
     h2: "Cosa prova, cosa no",
@@ -153,14 +153,14 @@ const IT: Copy = {
 };
 
 const EN: Copy = {
-  nav: { how: "How it works", deliver: "What you hand over", aiAct: "AI Act", pricing: "Pricing", blog: "Blog", verify: "Verify an evidence pack", verifyShort: "Verify", signIn: "Sign in", start: "Request a free pilot" },
+  nav: { how: "How it works", deliver: "What you hand over", aiAct: "AI Act", pricing: "Pricing", blog: "Blog", verify: "Verify an evidence pack", verifyShort: "Verify", signIn: "Sign in", start: "Request a pilot" },
   title: "sigillo · the evidence of what your AI did",
   description: "sigillo records every action of your AI agents in a signed record, sealed every hour. When a complaint or an inspection comes, you hand over a pack anyone can check alone, in the browser.",
   hero: {
     h1: "Prove what your AI did. When it matters most.",
     lead: "sigillo creates signed, timestamped records of your AI agents' actions that can be independently verified, without exposing your company's sensitive data.",
-    primary: "Request a free pilot",
-    secondary: "Verify a sample pack",
+    primary: "Request a pilot",
+    secondary: "Verify a sample",
     facts: [["Only fingerprints", "Prompts and answers stay with you."], ["Verify it yourself", "Command-line tool, works offline."], ["Free pilot", "No payment details."]],
   },
   card: {
@@ -175,14 +175,14 @@ const EN: Copy = {
   problem: {
     h2: "If you had to justify your AI's actions tomorrow, would you have the evidence?",
     body: "AI agents make decisions and take actions that have real consequences. When those actions are challenged, you need more than a recollection of events. sigillo preserves verifiable records that show what happened and make later alterations detectable.",
-    more: "What it proves, what it does not",
+    more: "What it proves",
     video: "sigillo demo, 3 minutes",
     subtitles: "English",
   },
   disputes: {
     h2: "When disputes arise, don't rely on your word alone.",
     body: "Ordinary logs tell you what your systems recorded. sigillo adds signed, timestamped evidence that can be checked independently, helping you demonstrate what was recorded and whether it has been altered.",
-    more: "What you hand over",
+    more: "See the pack",
   },
   fit: {
     h2: "Built for teams that need to prove what their AI did.",
@@ -216,7 +216,7 @@ const EN: Copy = {
     privacyTitle: "And your data?",
     privacyText: "Sigillo stores only fingerprints, never the text of prompts or answers. The full rules, technical details included, are on the privacy page.",
     privacyLink: "Read the privacy page",
-    verify: "Check it on /verify",
+    verify: "Open the verifier",
   },
   proves: {
     h2: "What it proves, what it does not",
@@ -343,11 +343,16 @@ body { background: var(--canvas); }
 .s-verdict b { font-size: 24px; line-height: 30px; }
 .s-three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .s-q { font-size: 20px; line-height: 28px; font-weight: 600; margin-bottom: 12px; }
+.s-eq { align-items: stretch !important; }
+#ai-act h2 { max-width: none; }
+#ai-act .notice { width: fit-content; max-width: 100%; margin: 20px auto 0; }
+@media (min-width: 1000px) { #ai-act .notice { white-space: nowrap; } }
 .s-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; align-items: start; }
 .s-paper { background: #fff; color: #16191f; border: 1px solid var(--separator); border-radius: 4px; padding: 24px; box-shadow: 0 12px 32px rgba(16,19,24,.12); }
 .s-price { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .s-plan { display: flex; flex-direction: column; gap: 12px; }
 .s-plan b { font-size: 24px; line-height: 30px; }
+.s-plan ul { flex: 1; align-content: start; }
 .s-split.s-start { align-items: start; }
 .s-flow { list-style: none; padding: 0; margin: 28px 0 0; display: grid; gap: 14px; }
 .s-flow li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 14px; align-items: start; }
@@ -520,31 +525,32 @@ export function siteV2Page(view: SiteV2View): string {
 
 <section class="s-sec alt" id="contestazioni"><div class="s-wrap"><div class="s-card s-dispute"><h2>${escape(c.disputes.h2)}</h2><p class="s-lead">${escape(c.disputes.body)}</p><a class="btn inv" href="#cosa-consegni">${escape(c.disputes.more)}</a></div></div></section>
 
-<section class="s-sec" id="per-chi"><div class="s-wrap"><h2>${escape(c.fit.h2)}</h2><p class="s-lead">${escape(c.fit.lead)}</p>
+<section class="s-sec" id="ai-act"><div class="s-wrap"><h2>${escape(c.aiAct.h2)}</h2>
+<div class="vlines">${c.aiAct.rows.map((r) => `<div class="vline"><span><span class="chip">${escape(r.art)}</span></span><span><b>${escape(r.what)}</b></span><span>${escape(r.how)}</span></div>`).join("")}</div>
+<p class="notice" style="margin-top:20px">${STATE_ICONS.warn}<span>${escape(c.aiAct.honest)}</span></p></div></section>
+
+<section class="s-sec alt" id="per-chi"><div class="s-wrap"><h2>${escape(c.fit.h2)}</h2><p class="s-lead">${escape(c.fit.lead)}</p>
 <div class="s-two s-fit"><div class="s-card"><h3 class="s-fith s-yes-h">${escape(c.fit.forTitle)}</h3><p class="t-sec">${escape(c.fit.forLead)}</p><ul>${c.fit.forItems.map(([t, d]) => `<li><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ul></div>
 <div class="s-card"><h3 class="s-fith s-no-h">${escape(c.fit.notTitle)}</h3><p class="t-sec">${escape(c.fit.notLead)}</p><ul>${c.fit.notItems.map(([t, d]) => `<li><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ul></div></div></div></section>
 
-<section class="s-sec alt" id="come-funziona"><div class="s-wrap"><h2>${escape(c.steps.h2)}</h2>
+<section class="s-sec" id="come-funziona"><div class="s-wrap"><h2>${escape(c.steps.h2)}</h2>
 <ol class="s-flow3">${c.steps.items.map(([t, d], i) => `<li><span class="s-ico" aria-hidden="true">${[ICONS.terminal, ICONS.doc, ICONS.docCheck][i] ?? ""}</span><span><b>${i + 1}. ${escape(t)}</b><span>${escape(d)}</span></span></li>`).join("")}</ol>
 <h3 class="t-sec" style="margin:40px 0 16px">${escape(c.how.h2)}</h3>
 <div class="s-three">${c.how.questions.map((q) => `<div class="s-card"><p class="s-q">${escape(q.q)}</p>${cardFor(q.kind, q.a)}</div>`).join("")}</div></div></section>
 
-<section class="s-sec" id="cosa-consegni"><div class="s-wrap"><h2>${escape(c.deliver.h2)}</h2>
+<section class="s-sec alt" id="cosa-consegni"><div class="s-wrap"><h2>${escape(c.deliver.h2)}</h2>
 <div class="s-two"><div><ol class="steps-v2">${c.deliver.story.map((line, i) => `<li><span class="num">${i + 1}</span><span>${escape(line)}</span></li>`).join("")}</ol>
 <ul class="s-yes" style="list-style:none;padding:0;display:grid;gap:6px">${c.deliver.contents.map((line) => `<li>${escape(line)}</li>`).join("")}</ul>
 <p><a class="btn" href="/verify">${escape(c.deliver.verify)} ›</a></p>
 <div class="s-card" style="margin-top:24px"><h3 class="t-sec">${escape(c.deliver.privacyTitle)}</h3><p>${escape(c.deliver.privacyText)}</p><a class="btn inv" href="/privacy">${escape(c.deliver.privacyLink)} ›</a></div></div>
 <div class="s-paper" aria-hidden="true"><p style="margin:0;font-weight:700">${escape(c.deliver.sample)}</p><p class="mono" style="margin:8px 0">${escape(c.card.title)} · ${escape(c.deliver.date)}</p><p style="margin:0"><b>${escape(c.card.verdict)}</b> · 9685 533e aa64 29c4</p><hr style="border:0;border-top:1px solid #dce0e6"><ul style="list-style:none;padding:0;margin:0;display:grid;gap:4px;font-size:13px">${c.deliver.actions.map((a, i) => `<li>${["16:58", "16:58", "16:58", "16:59"][i]} · ${escape(a)}</li>`).join("")}</ul></div></div></div></section>
 
-<section class="s-sec alt" id="cosa-prova"><div class="s-wrap"><h2>${escape(c.proves.h2)}</h2>
-<div class="s-two"><div class="s-card"><h3 class="t-sec">${escape(c.proves.yes)}</h3><ul class="s-yes" style="list-style:none;padding:0;display:grid;gap:8px">${c.proves.yesLines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul></div>
+<section class="s-sec" id="cosa-prova"><div class="s-wrap"><h2>${escape(c.proves.h2)}</h2>
+<div class="s-two s-eq"><div class="s-card"><h3 class="t-sec">${escape(c.proves.yes)}</h3><ul class="s-yes" style="list-style:none;padding:0;display:grid;gap:8px">${c.proves.yesLines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul></div>
 <div class="s-card"><h3 class="t-sec">${escape(c.proves.no)}</h3><ul class="s-no" style="list-style:none;padding:0;display:grid;gap:8px">${c.proves.noLines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul></div></div>
 <h3 class="t-sec" style="margin-top:28px">${escape(c.proves.see)}</h3><p style="max-width:66ch">${escape(c.proves.seeText)}</p>
 <div class="s-three">${c.proves.facts.map(([k, v]) => `<div class="s-card"><p class="t-meta" style="margin:0">${escape(k)}</p><b>${escape(v)}</b></div>`).join("")}</div></div></section>
 
-<section class="s-sec" id="ai-act"><div class="s-wrap"><h2>${escape(c.aiAct.h2)}</h2>
-<div class="vlines">${c.aiAct.rows.map((r) => `<div class="vline"><span><span class="chip">${escape(r.art)}</span></span><span><b>${escape(r.what)}</b></span><span>${escape(r.how)}</span></div>`).join("")}</div>
-<p class="notice" style="margin-top:20px">${STATE_ICONS.warn}<span>${escape(c.aiAct.honest)}</span></p></div></section>
 
 <section class="s-sec alt" id="collega"><div class="s-wrap s-split"><div><h2>${escape(c.connect.h2)}</h2><p class="s-lead">${escape(c.connect.lead)}</p>
 <ol class="s-flow">${c.connect.steps.map(([t, d], i) => `<li><span class="num">${i + 1}</span><span><b>${escape(t)}</b><span>${escape(d)}</span></span></li>`).join("")}</ol></div>
@@ -553,7 +559,7 @@ ${code("pip install sigillo")}
 ${code(`import sigillo\nsigillo.init(\n    endpoint="${view.endpoint}",\n    api_key="<…>",\n    system_id="selezione-cv",\n)`)}</div></div></section>
 
 <section class="s-sec" id="prezzi"><div class="s-wrap"><h2>${escape(c.pricing.h2)}</h2>
-<div class="s-price">${c.pricing.plans.map((p, i) => `<div class="s-card s-plan"><span class="t-meta">${escape(p.name)}</span><b>${escape(p.price)}</b><ul class="s-yes" style="list-style:none;padding:0;display:grid;gap:6px">${p.lines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul>${i === 0 ? start : `<a class="btn" href="${escape(mail)}" rel="noopener">${escape(p.cta)}</a>`}${p.note === undefined ? "" : `<span class="t-meta">${escape(p.note)}</span>`}</div>`).join("")}</div>
+<div class="s-price">${c.pricing.plans.map((p, i) => `<div class="s-card s-plan"><span class="t-meta">${escape(p.name)}</span><b>${escape(p.price)}</b><ul class="s-yes" style="list-style:none;padding:0;display:grid;gap:6px">${p.lines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul>${p.note === undefined ? "" : `<span class="t-meta">${escape(p.note)}</span>`}${i === 0 ? start : `<a class="btn" href="${escape(mail)}" rel="noopener">${escape(p.cta)}</a>`}</div>`).join("")}</div>
 <p class="t-meta">${escape(c.pricing.unit)}</p>
 </div></section>
 
