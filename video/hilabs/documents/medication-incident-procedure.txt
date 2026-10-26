@@ -1,0 +1,8 @@
+FICTIONAL SAMPLE - Riverside Hospital
+Medication Incident Procedure, version 1.4
+
+1. Report the incident in the incident system immediately.
+2. Make the patient safe and inform the responsible physician.
+3. The Chief Pharmacist reviews the report within 24 hours.
+4. Serious incidents are escalated to the Medical Director within 48 hours.
+5. A summary of every incident is reviewed at the monthly safety meeting.
