@@ -36,3 +36,6 @@ video/out/
 auto-update.log
 deploy/.auto-update.lock
 deploy/.auto-update.failed
+
+# rust (sdk-rust/)
+sdk-rust/target/

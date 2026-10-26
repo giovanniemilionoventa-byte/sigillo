@@ -54,6 +54,8 @@ export interface ProviderEntry {
   // How a file is seen to use it, all as regular-expression sources.
   /** The Python packages that call it (`import x`, `from x import`). */
   libraries?: string;
+  /** The Rust crates that call it, as the code names them (`use x`, `x::`) or Cargo.toml depends on them, with `-` read as `_`. */
+  crates?: string;
   /** Packages that call it in a way the gateway cannot carry (gRPC): a file importing one is left as it is. */
   unreachable?: string;
   /** What its keys look like, where that tells them apart. */
@@ -73,6 +75,8 @@ export interface ProviderEntry {
   sharedVariables?: string[];
   /** The variables its clients read their address from, each with the path to add after `/llm/<provider>`. */
   addressVariables: Record<string, string>;
+  /** Further such variables that only Rust clients read (openai-api-rs's `OPENAI_API_BASE`). */
+  crateAddressVariables?: Record<string, string>;
 }
 
 /** Any provider path: URL-safe characters, Gemini's colon included. `..` is refused apart. */
@@ -86,6 +90,8 @@ export const CATALOG: Record<Provider, ProviderEntry> = {
     path: V1,
     check: "v1/models",
     libraries: "openai|langchain_openai",
+    crates: "async_openai|openai_api_rs|openai_dive|rig::providers::openai",
+    crateAddressVariables: { OPENAI_API_BASE: "/v1" },
     key: "\\bsk-(?!ant-|or-)[A-Za-z0-9_-]{20,}",
     models: "(?:openai[/:])?(?:gpt-(?!oss)[\\w.-]+|o[134]-[\\w.-]+|chatgpt-[\\w.-]+)",
     keyVariables: ["OPENAI_API_KEY"],
@@ -98,6 +104,7 @@ export const CATALOG: Record<Provider, ProviderEntry> = {
     check: "v1/models",
     auth: "x-api-key",
     libraries: "anthropic|langchain_anthropic",
+    crates: "anthropic|anthropic_sdk|anthropic_rs|misanthropic|clust|rig::providers::anthropic",
     key: "\\bsk-ant-[A-Za-z0-9_-]{20,}",
     models: "(?:anthropic[/:])?claude-[\\w.-]+",
     keyVariables: ["ANTHROPIC_API_KEY"],
@@ -115,6 +122,7 @@ export const CATALOG: Record<Provider, ProviderEntry> = {
     libraries: "google\\.genai|langchain_google_genai|google\\s+import\\s+(?:[\\w\\s,]*,\\s*)?genai\\b",
     // The older google-generativeai talks gRPC, which no address variable redirects.
     unreachable: "google\\.generativeai|google\\s+import\\s+(?:[\\w\\s,]*,\\s*)?generativeai\\b",
+    crates: "gemini_rust|google_ai_rs|rig::providers::gemini",
     key: "\\bAIza[A-Za-z0-9_-]{35}\\b",
     keyNeedsMore: true,
     models: "(?:gemini/|google-gla:|google-genai:|google_genai:)?gemini-[\\w.-]+",
@@ -128,6 +136,7 @@ export const CATALOG: Record<Provider, ProviderEntry> = {
     path: V1,
     check: "v1/models",
     libraries: "mistralai|langchain_mistralai",
+    crates: "mistralai_client|rig::providers::mistral",
     named: "mistral",
     models:
       "(?:mistral(?:ai)?[/:])?(?:mistral-(?:large|medium|small|tiny|saba)[\\w.-]*|open-mi[sx]tral[\\w.-]*|(?:codestral|magistral|ministral|pixtral|devstral)-[\\w.-]+)",
@@ -141,6 +150,7 @@ export const CATALOG: Record<Provider, ProviderEntry> = {
     path: /^openai\/v1\/[A-Za-z0-9._~\/-]+$/,
     check: "openai/v1/models",
     libraries: "groq|langchain_groq",
+    crates: "groq_api_rs|rig::providers::groq",
     key: "\\bgsk_[A-Za-z0-9]{20,}",
     named: "groq",
     keyVariables: ["GROQ_API_KEY"],
@@ -152,6 +162,7 @@ export const CATALOG: Record<Provider, ProviderEntry> = {
     path: /^api\/v1\/[A-Za-z0-9._~\/:-]+$/,
     // Its model list answers anyone: the key's own page does not.
     check: "api/v1/key",
+    crates: "openrouter_rs|openrouter_api|rig::providers::openrouter",
     key: "\\bsk-or-[A-Za-z0-9_-]{20,}",
     named: "openrouter",
     keyVariables: ["OPENROUTER_API_KEY"],
@@ -163,6 +174,7 @@ export const CATALOG: Record<Provider, ProviderEntry> = {
     path: ANY_PATH,
     check: "models",
     libraries: "langchain_deepseek",
+    crates: "deepseek_api|rig::providers::deepseek",
     openaiShaped: true,
     named: "deepseek",
     models: "(?:deepseek[/:])?deepseek-(?:chat|reasoner)",
@@ -175,6 +187,7 @@ export const CATALOG: Record<Provider, ProviderEntry> = {
     path: V1,
     check: "v1/models",
     libraries: "langchain_xai",
+    crates: "rig::providers::xai",
     unreachable: "xai_sdk",
     key: "\\bxai-[A-Za-z0-9]{20,}",
     named: "xai|grok",
@@ -188,6 +201,7 @@ export const CATALOG: Record<Provider, ProviderEntry> = {
     path: V1,
     check: "v1/models",
     libraries: "together|langchain_together",
+    crates: "rig::providers::together",
     key: "\\btgp_v1_[A-Za-z0-9_-]{20,}",
     named: "together",
     keyVariables: ["TOGETHER_API_KEY", "TOGETHERAI_API_KEY"],
@@ -210,6 +224,7 @@ export const CATALOG: Record<Provider, ProviderEntry> = {
     path: ANY_PATH,
     check: "v1/models",
     libraries: "perplexity|langchain_perplexity",
+    crates: "rig::providers::perplexity",
     key: "\\bpplx-[A-Za-z0-9]{20,}",
     named: "perplexity|pplx",
     keyVariables: ["PERPLEXITY_API_KEY", "PERPLEXITYAI_API_KEY", "PPLX_API_KEY"],
@@ -221,6 +236,7 @@ export const CATALOG: Record<Provider, ProviderEntry> = {
     path: /^(v1|v2|compatibility\/v1)\/[A-Za-z0-9._~\/-]+$/,
     check: "v1/models",
     libraries: "cohere|langchain_cohere",
+    crates: "cohere_rust|rig::providers::cohere",
     named: "cohere",
     keyVariables: ["CO_API_KEY", "COHERE_API_KEY"],
     addressVariables: { CO_API_URL: "", COHERE_API_BASE: "" },

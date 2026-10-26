@@ -410,17 +410,21 @@ details.tech .facts { margin-top: 10px; }
 .code { display: none; margin: 0; padding: 20px 22px; border-radius: 14px; background: var(--code); color: var(--on-code);
   font: 13px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .code.install { margin-bottom: 12px; user-select: all; -webkit-user-select: all; }
-#way-python:checked ~ .ways [for="way-python"] { box-shadow: 0 0 0 2px var(--action); }
-#way-python:focus-visible ~ .ways [for="way-python"] { outline: 2px solid var(--focus); outline-offset: 2px; }
-#way-python:checked ~ .code.python { display: block; }
+#way-python:checked ~ .ways [for="way-python"], #way-rust:checked ~ .ways [for="way-rust"] { box-shadow: 0 0 0 2px var(--action); }
+#way-python:focus-visible ~ .ways [for="way-python"], #way-rust:focus-visible ~ .ways [for="way-rust"] { outline: 2px solid var(--focus); outline-offset: 2px; }
+#way-python:checked ~ .code.python, #way-rust:checked ~ .code.rust { display: block; }
+.code.rust + .code.rust { margin-top: 12px; }
+.code-note { display: none; margin: 16px 0 8px; color: var(--secondary); font-size: 13.5px; }
+#way-rust:checked ~ .code-note.rust { display: block; }
 .agent-upload { display: none; }
-#way-python:checked ~ .agent-upload.ready { display: block; }
+#way-python:checked ~ .agent-upload.ready, #way-rust:checked ~ .agent-upload.ready { display: block; }
 .agent-upload .notice { margin: 12px 0 0; }
 .agent-upload .drop { position: relative; cursor: pointer; }
 .agent-upload .drop small { font-size: 13px; color: var(--secondary); }
 .agent-upload .drop:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
 .agent-upload .drop .picked-icon, .agent-upload .drop.picked .empty-icon { display: none; }
-.agent-upload .drop.picked .picked-icon { display: flex; }
+.agent-upload .drop.picked .python-icon, .agent-upload .drop.picked.rust .rust-icon { display: flex; }
+.agent-upload .drop.picked.rust .python-icon { display: none; }
 .agent-upload .drop.picked { border-style: solid; border-color: var(--action); }
 .model-key[hidden] { display: none; }
 .model-key label { display: block; margin: 8px 0; }
@@ -623,6 +627,10 @@ export const ICONS = {
   clock: line('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   upload: line('<path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 20h14"/>'),
   terminal: line('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3"/><path d="M12 15h5"/>'),
+  // A gear with an R in it, the shape Rust's own mark is known by, drawn in the same line style.
+  rust: line(
+    '<circle cx="12" cy="12" r="7"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/><path d="M4.9 4.9L7 7"/><path d="M17 17l2.1 2.1"/><path d="M4.9 19.1L7 17"/><path d="M17 7l2.1-2.1"/><path d="M10 15.5v-7h2.6a2 2 0 0 1 0 4H10"/><path d="M12.4 12.5l2 3"/>',
+  ),
   python: line(
     '<path d="M12 3c-4 0-4 2-4 3v2h5v1H6c-2 0-3 1-3 4s1 4 3 4h1v-2c0-2 1-3 3-3h5c1 0 2-1 2-2V6c0-2-2-3-5-3z"/><path d="M12 21c4 0 4-2 4-3v-2h-5v-1h7c2 0 3-1 3-4s-1-4-3-4h-1v2c0 2-1 3-3 3h-5c-1 0-2 1-2 2v4c0 2 2 3 5 3z"/>',
   ),
