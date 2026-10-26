@@ -301,9 +301,17 @@ export const SDK_REQUIREMENT =
   "sigillo[langchain] @ https://github.com/giovanniemilionoventa-byte/sigillo/archive/refs/heads/main.zip#subdirectory=sdk-python";
 
 /**
+ * The Rust crate (sdk-rust/) as Cargo fetches it: from the same repository,
+ * where Cargo finds the package named sigillo by itself, and compiles it with
+ * the agent at the next `cargo build`. No registry account is involved.
+ */
+export const RUST_REPOSITORY = "https://github.com/giovanniemilionoventa-byte/sigillo";
+export const RUST_DEPENDENCY = `{ git = "${RUST_REPOSITORY}", branch = "main" }`;
+
+/**
  * How to connect an agent, with the key in the snippet, or a placeholder where
- * it is not shown. Python only: its heartbeat is what lets sigillo say when an
- * agent was disconnected (connection/watch.ts). The OpenTelemetry and HTTP
+ * it is not shown. Python and Rust: their SDKs' heartbeat is what lets sigillo
+ * say when an agent was disconnected (connection/watch.ts). The OpenTelemetry and HTTP
  * endpoints still answer, the SDK itself sends to the first, but neither is
  * offered here.
  */
@@ -328,15 +336,45 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
     ")",
   ].join("\n");
   const pythonWay = `<label class="way" for="way-python"><span class="tile-icon blue" aria-hidden="true">${ICONS.python}</span>${escape(t.ways.python)}</label>`;
+  const rustWay = `<label class="way" for="way-rust"><span class="tile-icon blue" aria-hidden="true">${ICONS.rust}</span>${escape(t.ways.rust)}</label>`;
   // The install command is a box of its own, one click selects all of it:
   // inside the code it would be a comment, and a copy of that line would not run.
   const install = `<pre class="code python install">${escape(`pip install "${SDK_REQUIREMENT}"`)}</pre>`;
+  const rust = [
+    `// ${t.rust.atStart}`,
+    "let _sigillo = sigillo::init(",
+    `    sigillo::Config::new("${endpoint}", "${key}", "${systemId}")`,
+    `        // ${t.customerKeyComment}`,
+    `        .customer_key("${CUSTOMER_KEY_MARK}"),`,
+    ")",
+    '.expect("sigillo");',
+  ].join("\n");
+  const cargo = [`# Cargo.toml, [dependencies]`, `sigillo = ${RUST_DEPENDENCY}`].join("\n");
+  const compiled = [
+    `# ${t.rust.compiled}`,
+    `cargo install --git ${RUST_REPOSITORY} sigillo`,
+    "",
+    `# sigillo.env`,
+    `SIGILLO_ENDPOINT=${endpoint}`,
+    `SIGILLO_API_KEY=${key}`,
+    `SIGILLO_SYSTEM_ID=${systemId}`,
+    `SIGILLO_CUSTOMER_KEY=${CUSTOMER_KEY_MARK}`,
+    "",
+    "sigillo-run --env-file sigillo.env -- ./your-agent",
+  ].join("\n");
+  const slot = `<span class="sigillo-customer-key">${escape(t.customerKeyPlaceholder)}</span>`;
   return `<input type="radio" name="way" id="way-python" class="sr" checked>
+<input type="radio" name="way" id="way-rust" class="sr">
 <div class="ways">
 ${pythonWay}
+${rustWay}
 </div>
 ${agent}${install}
-<pre class="code python">${escape(python).replace(CUSTOMER_KEY_MARK, `<span id="sigillo-customer-key">${escape(t.customerKeyPlaceholder)}</span>`)}</pre>`;
+<pre class="code python">${escape(python).replace(CUSTOMER_KEY_MARK, slot)}</pre>
+<pre class="code rust install">${escape(cargo)}</pre>
+<pre class="code rust">${escape(rust).replace(CUSTOMER_KEY_MARK, slot)}</pre>
+<p class="code-note rust">${escape(t.rust.compiledNote)}</p>
+<pre class="code rust">${escape(compiled).replace(CUSTOMER_KEY_MARK, slot)}</pre>`;
 }
 
 /**
@@ -348,8 +386,8 @@ ${agent}${install}
 function agentUpload(systemId: string, endpoint: string, token: string, plainAgents: boolean, protection: boolean, gateway: boolean, vault: boolean): string {
   const t = UI.connect.upload;
   const url = SDK_REQUIREMENT.slice(SDK_REQUIREMENT.indexOf("@") + 1).trim();
-  return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}"${plainAgents ? ' data-stdlib="1"' : ""} data-protection="${protection}"${gateway ? ` data-gateway="${escape(endpoint.replace(/\/+$/, ""))}/llm"` : ""} data-analysis-cloud="${escape(t.analysisCloud)}" data-analysis-local="${escape(t.analysisLocal)}" data-analysis-local-guarded="${escape(t.analysisLocalGuarded)}" data-analysis-other="${escape(t.analysisOther)}" data-another="${escape(t.another)}" data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}">
-<label class="drop"><span class="tile-icon blue empty-icon" aria-hidden="true">${ICONS.upload}</span><span class="tile-icon blue picked-icon" aria-hidden="true">${ICONS.python}</span><strong>${escape(t.drop)}</strong><small>${escape(t.choose)}</small><input type="file" class="sr" id="sigillo-agent-file" accept=".py,text/x-python"></label>
+  return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}"${plainAgents ? ' data-stdlib="1"' : ""} data-protection="${protection}"${gateway ? ` data-gateway="${escape(endpoint.replace(/\/+$/, ""))}/llm"` : ""} data-analysis-cloud="${escape(t.analysisCloud)}" data-analysis-local="${escape(t.analysisLocal)}" data-analysis-local-guarded="${escape(t.analysisLocalGuarded)}" data-analysis-other="${escape(t.analysisOther)}" data-another="${escape(t.another)}" data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}" data-no-main="${escape(t.noMain)}" data-done-rust="${escape(t.doneRust)}" data-done-rust-no-cargo="${escape(t.doneRustNoCargo)}" data-crate="${escape(RUST_DEPENDENCY)}" data-crate-repository="${escape(RUST_REPOSITORY)}">
+<label class="drop"><span class="tile-icon blue empty-icon" aria-hidden="true">${ICONS.upload}</span><span class="tile-icon blue picked-icon python-icon" aria-hidden="true">${ICONS.python}</span><span class="tile-icon blue picked-icon rust-icon" aria-hidden="true">${ICONS.rust}</span><strong>${escape(t.drop)}</strong><small>${escape(t.choose)}</small><input type="file" class="sr" id="sigillo-agent-file" accept=".py,.rs,.toml,text/x-python" multiple></label>
 <p class="notice ok" id="sigillo-agent-done" role="status" hidden>${STATE_ICONS.ok}<span></span></p>
 <p class="notice warn" id="sigillo-agent-problem" role="alert" hidden>${STATE_ICONS.warn}<span></span></p>
 ${gateway ? `${choiceBox()}${modelKeyForm(systemId, vault)}` : ""}<p class="or">${escape(t.or)}</p>

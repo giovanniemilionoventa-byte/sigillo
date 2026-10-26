@@ -19,6 +19,7 @@ besides the sigillo package itself.
 from __future__ import annotations
 
 import argparse
+import base64
 import hmac
 import http.server
 import json
@@ -48,8 +49,20 @@ def _handler(upstream: str, token: str, tracer: object, server: str = "ollama") 
             pass
 
         def _allowed(self) -> bool:
+            # The key as a bearer token, as x-api-key, or as the password of
+            # basic authentication: what a client sends when the key is in
+            # the model's address (http://sigillo:<key>@127.0.0.1:11434), the
+            # one way to give it to a client with no setting for a key.
             given = self.headers.get("Authorization", "")
-            given = given[7:] if given[:7].lower() == "bearer " else self.headers.get("x-api-key", "")
+            if given[:7].lower() == "bearer ":
+                given = given[7:]
+            elif given[:6].lower() == "basic ":
+                try:
+                    given = base64.b64decode(given[6:].strip(), validate=True).decode("utf-8").partition(":")[2]
+                except (ValueError, UnicodeDecodeError):
+                    given = ""
+            else:
+                given = self.headers.get("x-api-key", "")
             return hmac.compare_digest(given.encode(), token.encode())
 
         def _refuse(self, code: int, message: str) -> None:

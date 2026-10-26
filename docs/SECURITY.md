@@ -705,7 +705,8 @@ and nothing else.
   activity (a day by default), and that is all: silence is reported as
   inactivity, never as tampering, and an export of the period is simply
   shorter.
-  An agent on the Python SDK is the exception, as far as it goes: its
+  An agent on the Python SDK or the Rust crate, or started by `sigillo-run`,
+  is the exception, as far as it goes: its
   heartbeat (`docs/API.md`, `POST /api/v1/heartbeat`) makes a silence of more
   than three minutes a signed `sigillo.connection.lost` receipt on the chain,
   dated at the last beat, whether sigillo's code was removed, the process

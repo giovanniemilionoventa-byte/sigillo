@@ -39,7 +39,8 @@ function walk(dir, files = []) {
     return files;
   }
   for (const entry of entries) {
-    if (entry.name === "node_modules" || entry.name === "dist" || entry.name.startsWith(".")) {
+    // target/ is Cargo's build output (sdk-rust/).
+    if (entry.name === "node_modules" || entry.name === "dist" || entry.name === "target" || entry.name.startsWith(".")) {
       continue;
     }
     const full = join(dir, entry.name);

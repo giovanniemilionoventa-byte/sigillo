@@ -32,6 +32,9 @@ This file collects the permanent rules for anyone (human or AI) working on this 
   `.github/workflows/dependency-audit.yml`. Added in pilot phase 3 for the
   dependency check; pending the project owner's confirmation.
 - **Python**: `opentelemetry-sdk`, `opentelemetry-exporter-otlp-proto-http`; optional extras `openinference-instrumentation-langchain`, `openinference-instrumentation-crewai`, `openinference-instrumentation-openai` (added in phase 2, N2, for agents that call an OpenAI-compatible server directly).
+- **Rust** (`sdk-rust/`): `ureq` (HTTP, rustls only), `ring` (SHA-256, HMAC, random bytes),
+  `unicode-normalization` (NFC for sigillo-text/1); dev: `serde_json`. Added for the Rust SDK
+  on the project owner's instruction of 2026-10-26; pending the project owner's confirmation.
 - Anything else: ask the project owner before adding it.
 
 ## Repository layout
@@ -43,6 +46,7 @@ packages/verifier    open-source CLI, depends only on core (+ system openssl for
 apps/signer          separate process holding the private key and its own record of every chain
 apps/server          ingest, storage, checkpoints, timestamps, export, minimal UI
 sdk-python/          thin Python package (separate folder, not a pnpm workspace member)
+sdk-rust/            the Rust crate and the sigillo-run launcher (Cargo, not a pnpm workspace member)
 deploy/              Dockerfile, docker-compose.yml, Caddyfile
 docs/                FORMAT.md, SECURITY.md, API.md
 ```
@@ -66,6 +70,7 @@ Run from the repository root. Node 22 and pnpm 10 are required.
 | `pnpm tsx scripts/screenshots.ts [dir]` | regenerate `docs/screenshots/` against the real web view (default `docs/screenshots`) |
 | `pnpm tsx video/registra.ts tutto && video/monta.sh` | record the demo video from the real console (`video/README.md`) |
 | `sigillo-server privacy inventory\|scan` | what an installation stores, and a search for a phrase in its database, logs and backups (`docs/DATA-PROTECTION.md`) |
+| `cd sdk-rust && cargo test` | the Rust SDK's tests; the end-to-end ones need `pnpm build` first |
 | `pnpm audit:deps` | known-vulnerability check of Node and Python dependencies (`audit:node`, `audit:python`); see `docs/DEPENDENCY-AUDIT.md` |
 
 Tests import `@sigillo/core` and resolve to `packages/core/src` through a vitest

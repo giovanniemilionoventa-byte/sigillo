@@ -407,8 +407,14 @@ const ui = {
     newKey: (name: string): string => `Nuova chiave per ${name}`,
     heading: "Collega il tuo agente",
     title: (name: string): string => `Collega ${name}`,
-    ways: { python: "SDK Python" },
+    ways: { python: "SDK Python", rust: "SDK Rust" },
     pasteAtTop: "Incolla questo all'inizio del file Python del tuo agente:",
+    rust: {
+      atStart: "all'inizio di fn main(), prima di tutto il resto:",
+      compiled: "un agente già compilato, senza toccare il suo codice:",
+      compiledNote:
+        "Un programma già compilato non si può modificare: lo avvia sigillo-run, che manda il battito per lui, controlla l'impronta del programma e lo ferma se cambia (--strict). Le sue chiamate al modello si registrano attraverso il gateway.",
+    },
     keyPlaceholder: "<la-chiave-del-sistema>",
     customerKeyComment: "la tua chiave: sigillo non la riceve mai. Tienine una copia.",
     customerKeyPlaceholder: "<la-tua-chiave>",
@@ -417,12 +423,17 @@ const ui = {
     arrived: (when: string): string => `Prima ricevuta arrivata: ${when}`,
     goToSystem: "Vai al sistema",
     upload: {
-      drop: "Carica il file .py del tuo agente",
+      drop: "Carica il file del tuo agente: .py, oppure main.rs e Cargo.toml",
       done: "{file} scaricato, con sigillo già dentro. Avvia l'agente come sempre: la prima volta installa da solo quello che serve. Il file contiene anche la tua chiave (customer_key), creata in questo browser: sigillo non la riceve mai, quindi non può leggere né indovinare i tuoi contenuti. Tienine una copia.",
       doneNoFramework:
         "{file} scaricato, con sigillo già dentro, che la prima volta si installa da solo. Non usa LangChain, CrewAI né OpenAI: sigillo registra quando è collegato e le azioni che registri tu. Il file contiene anche la tua chiave (customer_key), creata in questo browser: sigillo non la riceve mai. Tienine una copia.",
+      doneRust:
+        "{file} scaricati, con sigillo già dentro. Sostituisci i tuoi file con questi e compila come sempre (cargo run o cargo build): la prima volta Cargo scarica e compila sigillo da solo. main.rs contiene anche la tua chiave (customer_key), creata in questo browser: sigillo non la riceve mai. Tienine una copia.",
+      doneRustNoCargo:
+        "{file} scaricato, con sigillo già dentro. Aggiungi sigillo al progetto con {install}, poi compila come sempre: Cargo lo scarica e lo compila da solo. Il file contiene anche la tua chiave (customer_key), creata in questo browser: sigillo non la riceve mai. Tienine una copia.",
       already: "{file} usa già sigillo: non c'è niente da aggiungere.",
-      notPython: "Scegli il file Python dell'agente (.py, fino a 1 MB).",
+      notPython: "Scegli il file Python dell'agente (.py) oppure i suoi file Rust (main.rs e Cargo.toml), fino a 1 MB ciascuno.",
+      noMain: "Non trovo fn main() nei file Rust scelti: carica il file che la contiene (di solito src/main.rs), insieme a Cargo.toml.",
       choose: "Clicca qui per scegliere il file.",
       another: "Caricato. Clicca qui per sceglierne un altro.",
       or: "oppure",

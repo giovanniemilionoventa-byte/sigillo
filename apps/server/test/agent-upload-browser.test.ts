@@ -140,12 +140,13 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
   it("keeps the chosen file in the box, by name and with the Python icon, not as 'no file selected'", async () => {
     const { page } = await keyPage();
     expect(await page.locator("#sigillo-agent .drop .empty-icon").isVisible()).toBe(true);
-    expect(await page.locator("#sigillo-agent .drop .picked-icon").isVisible()).toBe(false);
+    expect(await page.locator("#sigillo-agent .drop .python-icon").isVisible()).toBe(false);
+    expect(await page.locator("#sigillo-agent .drop .rust-icon").isVisible()).toBe(false);
     expect(await page.locator("#sigillo-agent-file").boundingBox()).toMatchObject({ width: 1 });
     await upload(page, "triage.py", "print('hello')\n");
     await page.locator("#sigillo-agent-choice").waitFor({ state: "visible" });
     expect(await page.locator("#sigillo-agent .drop strong").textContent()).toBe("triage.py");
-    expect(await page.locator("#sigillo-agent .drop .picked-icon").isVisible()).toBe(true);
+    expect(await page.locator("#sigillo-agent .drop .python-icon").isVisible()).toBe(true);
     expect(await page.locator("#sigillo-agent .drop .empty-icon").isVisible()).toBe(false);
     expect(await page.locator("#sigillo-agent .drop small").textContent()).toContain("another file");
   });
@@ -175,6 +176,53 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     expect(problems).toEqual([]);
   });
 
+  /** The files a click downloads: one for a Python agent, main.rs and Cargo.toml for a Rust one. */
+  async function downloadedAll(page: Page, count: number): Promise<Record<string, string>> {
+    const files: Record<string, string> = {};
+    const arrived = new Promise<void>((resolve) => {
+      page.on("download", async (download) => {
+        files[download.suggestedFilename()] = readFileSync(await download.path(), "utf8");
+        if (Object.keys(files).length === count) resolve();
+      });
+    });
+    await page.click("#sigillo-agent-download");
+    await arrived;
+    return files;
+  }
+
+  it("a Rust agent: main.rs and Cargo.toml come back with sigillo in them, the model key kept by sigillo when ticked", async () => {
+    const { page, problems } = await keyPage();
+    const main = `use async_openai::{config::OpenAIConfig, Client};\n\n#[tokio::main]\nasync fn main() {\n    let client = Client::with_config(OpenAIConfig::new().with_api_key("${OPENAI_KEY}"));\n}\n`;
+    const manifest = '[package]\nname = "agente"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\nasync-openai = "0.42"\n';
+    await page.setInputFiles("#sigillo-agent-file", [
+      { name: "main.rs", mimeType: "text/plain", buffer: Buffer.from(main) },
+      { name: "Cargo.toml", mimeType: "text/plain", buffer: Buffer.from(manifest) },
+    ]);
+    await page.locator("#sigillo-agent-choice").waitFor({ state: "visible" });
+    expect(await page.locator("#sigillo-agent .drop strong").textContent()).toBe("main.rs, Cargo.toml");
+    expect(await page.locator("#sigillo-agent .drop .rust-icon").isVisible()).toBe(true);
+    expect(await page.locator("#sigillo-agent .drop .python-icon").isVisible()).toBe(false);
+    expect(await page.locator("#sigillo-agent-analysis").textContent()).toContain("OpenAI");
+    await page.check("#sigillo-agent-secure");
+    const files = await downloadedAll(page, 2);
+    expect(files["main.rs"]).toContain("let _sigillo = sigillo::init(");
+    expect(files["main.rs"]).toMatch(/\.customer_key\("[0-9a-f]{64}"\)/);
+    expect(files["main.rs"]).toContain('.env("OPENAI_BASE_URL", ');
+    expect(files["main.rs"]).not.toContain(OPENAI_KEY);
+    expect(files["Cargo.toml"]).toContain('sigillo = { git = "https://github.com/giovanniemilionoventa-byte/sigillo", branch = "main" }');
+    expect(await page.locator("#sigillo-agent-done").textContent()).toContain("Cargo fetches and compiles sigillo by itself");
+    expect(await page.locator("#sigillo-agent-model input[name=key]").inputValue()).toBe(OPENAI_KEY);
+    expect(problems).toEqual([]);
+  });
+
+  it("a Rust file without fn main is not taken: the page asks for the one that has it", async () => {
+    const { page, problems } = await keyPage();
+    await page.setInputFiles("#sigillo-agent-file", { name: "lib.rs", mimeType: "text/plain", buffer: Buffer.from("pub fn help() {}\n") });
+    await page.locator("#sigillo-agent-problem").waitFor({ state: "visible" });
+    expect(await page.locator("#sigillo-agent-problem").textContent()).toContain("No fn main()");
+    expect(problems).toEqual([]);
+  });
+
   it("offers no option to an agent that calls no cloud model", async () => {
     const { page } = await keyPage();
     await upload(page, "agent.py", "import requests\nprint(requests.get('http://localhost:11434').text)\n");
@@ -182,5 +230,17 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     expect(await page.locator("#sigillo-agent-secure-label").isVisible()).toBe(false);
     const file = await downloaded(page);
     expect(file).not.toContain("_BASE_URL");
+  });
+
+  it("shows the Rust way too: the dependency, the call, and the launcher for a compiled agent, with the customer key", async () => {
+    const { page } = await keyPage();
+    await page.click('label[for="way-rust"]');
+    const shown = (await page.locator("pre.code.rust").allTextContents()).join("\n");
+    expect(shown).toContain("sigillo = { git = ");
+    expect(shown).toContain("let _sigillo = sigillo::init(");
+    expect(shown).toContain("sigillo-run --env-file sigillo.env");
+    expect(shown).toMatch(/customer_key\("[0-9a-f]{64}"\)/);
+    expect(await page.locator("pre.code.python").first().isVisible()).toBe(false);
+    expect(await page.locator("#sigillo-agent").isVisible()).toBe(true);
   });
 });

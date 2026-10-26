@@ -4311,3 +4311,28 @@ escono dal menu ma restano come sezioni della home (e nel piè di pagina). Test:
   `commander`, `canonicalize`, `zod`; così non può divergere dal repository. Si scompatta e si
   lancia con Node 22, senza installare nulla. Test: `site.test.ts` lo scompatta e verifica un
   fascicolo vero; il codice del verificatore è invariato. Nessuna dipendenza nuova.
+
+## SDK per agenti in Rust (2026-10-26)
+
+Su richiesta del titolare («tutto con la stessa sicurezza del codice Python»), nuovo crate
+`sdk-rust/` (`sigillo`), fuori dal workspace pnpm, con le stesse misure dell'SDK Python:
+
+- impronte con sale (nonce casuale di 32 byte o derivato con HMAC dalla chiave del cliente),
+  sigillo-text/1, pseudonimi: stessi vettori di `packages/core` e di Python (`tests/vectors.rs`,
+  più un confronto su 3000 stringhe casuali con la libreria standard di Python);
+- heartbeat (`start`/`beat`/`stop` con l'hash dell'eseguibile), modalità rigorosa con un processo
+  di guardia (lo stesso programma rilanciato con `SIGILLO_GUARD_PROCESS`) che ferma l'agente,
+  stato 70, se il programma cambia o la guardia sparisce;
+- gateway dei modelli tramite le variabili lette dai crate async-openai, rig e openai-api-rs;
+- la porta davanti al modello locale (Ollama), che ora anche in Python accetta la chiave nell'URL
+  (Basic auth);
+- `sigillo-run`, che collega un agente già compilato senza toccarne il codice.
+
+La pagina di upload della console accetta `main.rs` + `Cargo.toml`: inietta le righe di `init`,
+la dipendenza e le chiavi come per Python, e nella scheda «Rust» di «collega un agente» ci sono i
+comandi. I test del server compilano con `cargo check` il codice prodotto contro il crate vero; i
+test end-to-end del crate usano signer, server e verificatore veri. CI: nuovo job `rust`.
+Dipendenze Rust (`ureq`, `ring`, `unicode-normalization`; dev `serde_json`) in attesa di conferma
+del titolare. Il verificatore e il formato delle ricevute sono invariati. Limite noto: in Rust non
+c'è una cattura automatica di ogni chiamata come OpenInference in Python; Ctrl-C viene scritto come
+`lost`.

@@ -1,0 +1,32 @@
+[package]
+name = "sigillo"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Send an AI agent's actions to a sigillo server: digests only, never content."
+license = "Apache-2.0"
+repository = "https://github.com/giovanniemilionoventa-byte/sigillo"
+readme = "README.md"
+keywords = ["audit", "ai-agents", "receipts", "opentelemetry"]
+categories = ["development-tools::debugging", "cryptography"]
+
+# Three dependencies, each for one thing the standard library does not do:
+# HTTPS (ureq, over rustls), SHA-256, HMAC and secure random bytes (ring, the
+# same library rustls itself runs on, so no second implementation of either),
+# and Unicode NFC for the sigillo-text/1 rule (unicode-normalization).
+[dependencies]
+ureq = { version = "3.1", default-features = false, features = ["rustls"] }
+ring = "0.17"
+unicode-normalization = "0.1.24"
+
+[dev-dependencies]
+# Reads the shared test vectors (packages/core/test/*.json) in the tests only.
+serde_json = "1"
+
+[[bin]]
+name = "sigillo-run"
+path = "src/bin/sigillo-run.rs"
+
+[[bin]]
+name = "sigillo-door"
+path = "src/bin/sigillo-door.rs"

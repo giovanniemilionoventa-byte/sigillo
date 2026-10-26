@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import base64
 import http.server
 import json
 import threading
@@ -104,6 +105,21 @@ class DoorTest(unittest.TestCase):
         self.assertEqual([s["name"] for s in spans], ["llm qwen2.5:1.5b"])
         self.assertEqual(spans[0]["llm.system"], "ollama")
         self.assertNotIn(b"SEGRETO", b"".join(_Capture.bodies))
+
+    def test_the_key_in_the_address_is_taken_as_basic_authentication(self) -> None:
+        # What a Rust client such as ollama-rs sends for http://sigillo:<key>@127.0.0.1:11434.
+        body = json.dumps({"model": "qwen2.5:1.5b", "messages": []}).encode()
+        for password, allowed in ((KEY, True), ("not-the-key", False)):
+            basic = base64.b64encode(f"sigillo:{password}".encode()).decode()
+            headers = {"Content-Type": "application/json", "Authorization": f"Basic {basic}"}
+            request = urllib.request.Request(self.base + "/api/chat", body, headers)
+            if allowed:
+                with urllib.request.urlopen(request) as answer:
+                    self.assertEqual(answer.status, 200)
+            else:
+                with self.assertRaises(urllib.error.HTTPError) as refused:
+                    urllib.request.urlopen(request)
+                self.assertEqual(refused.exception.code, 401)
 
     def test_another_local_server_is_named_in_its_receipts_and_is_not_started_by_the_door(self) -> None:
         from sigillo import _stdlib

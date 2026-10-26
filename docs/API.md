@@ -16,7 +16,11 @@ whichever fits what the agent already does:
    an agent already built on LangChain, CrewAI, or a direct OpenAI-compatible
    client. It is a client of the OTLP endpoint below, not a protocol of its
    own: it turns on the matching OpenInference instrumentation and points its
-   OTLP exporter here. See `sdk-python/README.md`.
+   OTLP exporter here. See `sdk-python/README.md`. **The Rust crate**
+   (`sdk-rust/`, `sigillo::init(...)`) does the same for an agent written in
+   Rust, with the same digests, heartbeat and strict mode, and its
+   `sigillo-run` launcher gives an already compiled agent the heartbeat and
+   the gateway without changing its code. See `sdk-rust/README.md`.
 2. **`POST /v1/traces` directly** — for anything already emitting OpenTelemetry
    traces, in any language: point its OTLP/HTTP exporter at this URL with the
    API key as a bearer header. No sigillo-specific library needed.
@@ -280,7 +284,8 @@ different system than the key writes to.
 
 ## `POST /api/v1/heartbeat` — the SDK's heartbeat
 
-The Python SDK sends one when `init` runs, one a minute while the process runs
+The Python SDK and the Rust crate (and `sigillo-run`, for the program it
+started) send one when `init` runs, one a minute while the process runs
 (whether the agent is working or idle), and one when it closes normally:
 
 ```json

@@ -59,6 +59,29 @@ jobs:
       # Its English edition: every translated CV must score as its Italian original.
       - run: python -m unittest discover -s demo/cv-screening/tests -t demo/cv-screening -v
 
+  rust:
+    name: rust sdk, including the end-to-end path
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # The runner image ships cargo. The end-to-end tests run the built
+      # signer, server and verifier for real; the vector test re-derives
+      # 3000 random digests with Python's standard library.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: cargo build --locked --bins --examples
+        working-directory: sdk-rust
+      - run: cargo test --locked
+        working-directory: sdk-rust
+
   vectors:
     name: independent cross-check of the test vectors
     runs-on: ubuntu-latest

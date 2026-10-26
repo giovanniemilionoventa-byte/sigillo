@@ -398,8 +398,14 @@ const ui: Strings = {
     newKey: (name: string): string => `New key for ${name}`,
     heading: "Connect your agent",
     title: (name: string): string => `Connect ${name}`,
-    ways: { python: "Python SDK" },
+    ways: { python: "Python SDK", rust: "Rust SDK" },
     pasteAtTop: "Paste this at the top of your agent's Python file:",
+    rust: {
+      atStart: "at the start of fn main(), before anything else:",
+      compiled: "an agent that is already compiled, without touching its code:",
+      compiledNote:
+        "A program that is already compiled cannot be changed: sigillo-run starts it, sends the heartbeat for it, checks the program's fingerprint and stops it if it changes (--strict). Its model calls are recorded through the gateway.",
+    },
     keyPlaceholder: "<the-system-key>",
     customerKeyComment: "your own key: sigillo never receives it. Keep a copy.",
     customerKeyPlaceholder: "<your-own-key>",
@@ -408,12 +414,17 @@ const ui: Strings = {
     arrived: (when: string): string => `First receipt arrived: ${when}`,
     goToSystem: "Go to the system",
     upload: {
-      drop: "Upload your agent's .py file",
+      drop: "Upload your agent's file: .py, or main.rs and Cargo.toml",
       done: "{file} downloaded, with sigillo already in it. Run your agent as usual: the first time, it installs what it needs by itself. The file also holds your own key (customer_key), made in this browser: sigillo never receives it, so it cannot read or guess your content. Keep a copy of the file.",
       doneNoFramework:
         "{file} downloaded, with sigillo already in it, which installs itself the first time. It uses neither LangChain, CrewAI nor OpenAI: sigillo records when it is connected and the actions you record yourself. The file also holds your own key (customer_key), made in this browser: sigillo never receives it. Keep a copy of the file.",
+      doneRust:
+        "{file} downloaded, with sigillo already in them. Replace your files with these and build as usual (cargo run or cargo build): the first time, Cargo fetches and compiles sigillo by itself. main.rs also holds your own key (customer_key), made in this browser: sigillo never receives it. Keep a copy.",
+      doneRustNoCargo:
+        "{file} downloaded, with sigillo already in it. Add sigillo to the project with {install}, then build as usual: Cargo fetches and compiles it by itself. The file also holds your own key (customer_key), made in this browser: sigillo never receives it. Keep a copy.",
       already: "{file} already uses sigillo: there is nothing to add.",
-      notPython: "Choose the agent's Python file (.py, up to 1 MB).",
+      notPython: "Choose the agent's Python file (.py) or its Rust files (main.rs and Cargo.toml), up to 1 MB each.",
+      noMain: "No fn main() in the Rust files chosen: upload the file that has it (usually src/main.rs), with Cargo.toml.",
       choose: "Click here to choose the file.",
       another: "Loaded. Click here to choose another file.",
       or: "or",
