@@ -4322,3 +4322,16 @@ lei; nei prezzi i pulsanti allineati in basso; nella pagina privacy il riquadro 
 rompe più (la sua classe `sign` coincideva con quella della console, ora `pv-sign`); la pagina di
 accesso ha una freccia «← sigillo» in alto a sinistra per tornare al sito (prima era un link in fondo, tolto su richiesta del titolare). Una delle sue immagini («fill this out») arrivava vuota:
 da chiarire con lei. Test: `site.test.ts`, intera suite verde.
+
+## Human approvals (2026-10-27)
+
+Requested by the project owner after the single-product-or-ecosystem evaluation. The format does
+not change (rule 3): an approval is a `decision` receipt named `approval.requested|granted|denied
+<action>`. New `Tracing.approval(action, status, approver=, key=, shown=, reason=, agent=)` in the
+Python SDK sends an OpenInference `GUARDRAIL` span; `shown` and `reason` go as digests like any
+content, and the approver goes as `pseudonym(approver, key)` in `on_behalf_of`, so decisions name a
+real, erasable person without Sigillo keeping a user directory. A granted or denied approval
+without an approver and key is refused. Records that the approval happened, not that the
+application enforced it. Not done yet: console view pairing requests with answers, flagging
+unanswered requests, and an SDK version bump. Tests: `sdk-python/tests/test_init.py`,
+`apps/server/test/ingest.test.ts`. Verifier unchanged.

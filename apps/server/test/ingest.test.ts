@@ -270,6 +270,7 @@ describe("the OpenInference dialect", () => {
 });
 
 function jsonSpan(options: {
+  name?: string;
   attributes?: Record<string, string>;
   events?: { name: string; attributes: Record<string, string> }[];
 }): OtlpSpan {
@@ -285,7 +286,7 @@ function jsonSpan(options: {
               {
                 traceId: "4bf92f3577b34da6a3ce929d0e0e0001",
                 spanId: "00f067aa0ba90001",
-                name: "x",
+                name: options.name ?? "x",
                 startTimeUnixNano: "1789971053648178106",
                 endTimeUnixNano: "1789971053648204813",
                 attributes: asAttributes(options.attributes ?? {}),
@@ -859,5 +860,21 @@ describe("text fields: length and well-formed Unicode", () => {
       }),
       { numRuns: 300 },
     );
+  });
+});
+
+describe("human approvals sent by the Python SDK", () => {
+  it("reads an approval span as a decision, with the approver's pseudonym as on_behalf_of", () => {
+    const span = jsonSpan({
+      name: "approval.granted refund",
+      attributes: {
+        "openinference.span.kind": "GUARDRAIL",
+        "llm.system": "refund-bot",
+        "user.id": "p:0123456789abcdef0123456789abcdef",
+      },
+    });
+    const [action] = adaptSpans([span]).actions;
+    expect(action?.action).toEqual({ kind: "decision", name: "approval.granted refund" });
+    expect(action?.actor).toEqual({ agent: "refund-bot", on_behalf_of: "p:0123456789abcdef0123456789abcdef" });
   });
 });

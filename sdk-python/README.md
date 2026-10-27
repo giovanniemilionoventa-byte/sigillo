@@ -187,6 +187,32 @@ An exception is sent as its class only (`ValueError`): its message and
 traceback, which can quote the content, stay in the process, and so does the
 description OpenTelemetry writes into the status of a span an exception ended.
 
+## Human approvals
+
+`tracing.approval(action, status, ...)` records that a person was asked to approve an
+action, and what they decided. `status` is `requested`, `granted` or `denied`.
+
+```python
+tracing.approval("refund", "requested", shown=summary)
+tracing.approval(
+    "refund", "granted",
+    approver="maria.rossi@acme.example",
+    key=os.environ["SIGILLO_PSEUDONYM_KEY"],
+    shown=summary,
+    reason="Double charge confirmed",
+)
+```
+
+- A `granted` or `denied` receipt always names who decided. The `approver` (an email
+  address or employee number from your own system) leaves your computer only as a
+  pseudonym made with your `key` (see "Pseudonymous identities"). The same person always
+  gives the same pseudonym, and only you, with the key, can show who it was.
+- `shown` (what the approver saw) and `reason` are sent as digests only.
+- The receipts are `decision` receipts named `approval.requested <action>`,
+  `approval.granted <action>` and `approval.denied <action>`. Call them inside the same
+  parent span if you want them to share a trace.
+- This records that an approval happened. It does not make your application wait for it.
+
 ## Pseudonymous identities
 
 `actor.on_behalf_of` — who an action was for — is the one receipt field an

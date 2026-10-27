@@ -347,6 +347,62 @@ class Tracing:
                 raise
             span.set_status(_StatusCode.OK)
 
+    def approval(
+        self,
+        action: str,
+        status: str,
+        *,
+        approver: str | None = None,
+        key: bytes | str | None = None,
+        shown: str | None = None,
+        reason: str | None = None,
+        agent: str | None = None,
+    ) -> None:
+        """Records that a person was asked to approve an action, or that they decided.
+
+            tracing.approval("refund", "requested", shown=summary)
+            tracing.approval(
+                "refund", "granted",
+                approver="maria.rossi@acme.example",
+                key=os.environ["SIGILLO_PSEUDONYM_KEY"],
+                shown=summary, reason="Double charge confirmed",
+            )
+
+        `status` is `requested`, `granted` or `denied`. The receipt is a
+        `decision` named `approval.<status> <action>`. A `granted` or `denied`
+        receipt must say who decided: `approver` (an email address or employee
+        number, whatever your own system uses) goes out as a pseudonym made
+        with `key`, exactly like `pseudonym`, and never in the clear. The same
+        person gives the same pseudonym every time, and the person who holds
+        `key` can show who it was. `shown` is what the approver saw and
+        `reason` what they gave as the reason; only their digests are sent.
+
+        This records that the approval happened. It does not make the
+        application wait for it: the blocking is the application's job.
+        """
+        if not action:
+            raise ValueError("action must not be empty")
+        if status not in ("requested", "granted", "denied"):
+            raise ValueError("status must be requested, granted or denied")
+        # OpenInference's GUARDRAIL is the kind the server reads as a decision.
+        # No gen_ai.* attribute here: the server would read the span as GenAI.
+        attributes = {"openinference.span.kind": "GUARDRAIL"}
+        if agent:
+            attributes["llm.system"] = agent
+        if status != "requested" or approver:
+            if not approver or not key:
+                raise ValueError("a granted or denied approval needs an approver and a key")
+            attributes["user.id"] = pseudonym(approver, key)
+        if shown:
+            attributes["input.value"] = shown
+        if reason:
+            attributes["output.value"] = reason
+        tracer = self.provider.get_tracer("sigillo")
+        with tracer.start_as_current_span(
+            f"approval.{status} {action}", attributes=attributes
+        ) as span:
+            span.set_status(_StatusCode.OK)
+
     def __repr__(self) -> str:
         return (
             f"Tracing(system_id={self.system_id!r}, endpoint={self.endpoint!r}, "
