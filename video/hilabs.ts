@@ -61,7 +61,7 @@ const ARROW_SCRIPT = `(() => {
 
 /** The same actor with a hand's habits: curved, uneven paths that sometimes overshoot, short pauses, a cursor that never freezes, typing at a human pace. */
 class HumanActor extends Actor {
-  async moveTo(x: number, y: number, ms?: number): Promise<void> {
+  override async moveTo(x: number, y: number, ms?: number): Promise<void> {
     const fromX = this.x;
     const fromY = this.y;
     const distance = Math.hypot(x - fromX, y - fromY);
@@ -104,7 +104,7 @@ class HumanActor extends Actor {
     }
   }
 
-  async aim(locator: Locator, fromLeft?: number): Promise<{ x: number; y: number }> {
+  override async aim(locator: Locator, fromLeft?: number): Promise<{ x: number; y: number }> {
     const point = await super.aim(locator, fromLeft);
     const box = await locator.boundingBox();
     if (box === null || fromLeft !== undefined) return point;
@@ -112,7 +112,7 @@ class HumanActor extends Actor {
     return { x: point.x + rand(-0.22, 0.22) * Math.min(box.width, 400), y: point.y + rand(-0.2, 0.2) * Math.min(box.height, 60) };
   }
 
-  async click(locator: Locator, options: { fromLeft?: number; before?: number; after?: number; navigates?: boolean } = {}): Promise<void> {
+  override async click(locator: Locator, options: { fromLeft?: number; before?: number; after?: number; navigates?: boolean } = {}): Promise<void> {
     await this.hover(locator, options.fromLeft);
     await sleep(rand(160, 380));
     const press = async (): Promise<void> => {
