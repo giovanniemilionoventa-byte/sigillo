@@ -734,6 +734,64 @@ class SigilloInitTest(unittest.TestCase):
         self.assertEqual(attributes["error.type"], "PermissionError")
         self.assertNotIn("mario.rossi", span.SerializeToString().decode("utf-8", "replace"))
 
+    def test_approval_records_who_decided_as_a_pseudonym_and_what_they_saw_as_a_digest(self) -> None:
+        tracing = sigillo.init(
+            endpoint=self.base, api_key="sigillo_key", system_id="acme-support-bot", instrument=[]
+        )
+        self.addCleanup(tracing.shutdown)
+        tracing.approval(
+            "refund",
+            "granted",
+            approver="maria.rossi@acme.example",
+            key="a-secret-the-customer-holds",
+            shown="Refund 120 EUR to order 8841",
+            reason="Customer was double charged",
+            agent="refund-bot",
+        )
+        tracing.flush()
+
+        [span] = self._sent_spans()
+        attributes = {kv.key: kv.value.string_value for kv in span.attributes}
+        self.assertEqual(span.name, "approval.granted refund")
+        self.assertEqual(attributes["openinference.span.kind"], "GUARDRAIL")
+        self.assertEqual(attributes["llm.system"], "refund-bot")
+        self.assertEqual(
+            attributes["user.id"],
+            sigillo.pseudonym("maria.rossi@acme.example", "a-secret-the-customer-holds"),
+        )
+        self.assertIn("sigillo.input.sha256", attributes)
+        self.assertIn("sigillo.output.sha256", attributes)
+        sent = span.SerializeToString().decode("utf-8", "replace")
+        for plaintext in ("maria.rossi", "120 EUR", "double charged"):
+            self.assertNotIn(plaintext, sent)
+
+    def test_approval_can_record_a_request_without_naming_anyone(self) -> None:
+        tracing = sigillo.init(
+            endpoint=self.base, api_key="sigillo_key", system_id="acme-support-bot", instrument=[]
+        )
+        self.addCleanup(tracing.shutdown)
+        tracing.approval("refund", "requested", shown="Refund 120 EUR to order 8841")
+        tracing.flush()
+
+        [span] = self._sent_spans()
+        attributes = {kv.key: kv.value.string_value for kv in span.attributes}
+        self.assertEqual(span.name, "approval.requested refund")
+        self.assertNotIn("user.id", attributes)
+
+    def test_approval_refuses_a_decision_nobody_signed_and_an_unknown_status(self) -> None:
+        tracing = sigillo.init(
+            endpoint=self.base, api_key="sigillo_key", system_id="acme-support-bot", instrument=[]
+        )
+        self.addCleanup(tracing.shutdown)
+        with self.assertRaises(ValueError):
+            tracing.approval("refund", "granted")
+        with self.assertRaises(ValueError):
+            tracing.approval("refund", "denied", approver="maria", key="")
+        with self.assertRaises(ValueError):
+            tracing.approval("refund", "maybe", approver="maria", key="k")
+        with self.assertRaises(ValueError):
+            tracing.approval("", "requested")
+
     def test_tool_refuses_an_empty_name(self) -> None:
         tracing = sigillo.init(
             endpoint=self.base, api_key="sigillo_key", system_id="acme-support-bot", instrument=[]
