@@ -16,7 +16,15 @@ import { CONNECTION_PREFIX } from "./names.js";
  *                                was removed, the process killed, the machine
  *                                switched off, or the network cut. ts_event is
  *                                its last beat: the silence started there.
+ *   sigillo.connection.ended     the agent's process ended without closing
+ *                                while the computer stayed on: the SDK's guard
+ *                                process (sdk-python _watchdog.py) saw it go and
+ *                                said so. The agent is dead, the machine is not.
  *   sigillo.connection.restored  the same session beats again after a loss
+ *
+ * `lost` and `ended` together tell a computer switched off or cut off (only
+ * `lost`: nobody was left to say anything) from an agent that died on a
+ * computer that kept running (`ended`, at once).
  *
  * Those names are refused from every client (store.ts, CONNECTION_PREFIX), so
  * a receipt by one of them was written here. They are ordinary receipts:
@@ -47,11 +55,12 @@ export const CONNECTION = {
   start: `${CONNECTION_PREFIX}start`,
   stop: `${CONNECTION_PREFIX}stop`,
   lost: `${CONNECTION_PREFIX}lost`,
+  ended: `${CONNECTION_PREFIX}ended`,
   restored: `${CONNECTION_PREFIX}restored`,
   scriptChanged: `${CONNECTION_PREFIX}script_changed`,
 } as const;
 
-export type HeartbeatEvent = "start" | "beat" | "stop";
+export type HeartbeatEvent = "start" | "beat" | "stop" | "ended";
 
 /** The SDK beats every 60 seconds; three missed beats are a loss. */
 export const DEFAULT_LOST_AFTER_MS = 3 * 60_000;
@@ -121,6 +130,16 @@ export class ConnectionWatch {
     return this.serially(async () => {
       const at = this.now().toISOString();
       const known = this.store.connection(systemId, sessionId);
+      if (event === "ended") {
+        // Said by the guard process once the agent is gone. Only an open
+        // session is ended: a normal stop came first, a lost one already says
+        // more (or less), and an unknown one was never ours to end.
+        if (known?.state !== "open") return null;
+        return this.store.recordConnection(
+          { ...known, state: "lost" },
+          receiptOf(systemId, CONNECTION.ended, at, at, "error", "sdk"),
+        );
+      }
       if (known === null) this.admitNewSession(systemId, Date.parse(at));
       // The script guard (see the head of this file) looks at a start or a
       // beat that carried a hash; a stop never does.

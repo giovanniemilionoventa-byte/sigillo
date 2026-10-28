@@ -85,7 +85,7 @@ from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
 from . import _gateway, _text, _watchdog
 
 __all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "nonce_for", "Tracing"]
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 _LOG = _logging.getLogger("sigillo")
 _TRACES_PATH = "/v1/traces"
@@ -187,11 +187,12 @@ class _Heartbeat:
         self._thread = _threading.Thread(target=self._run, name="sigillo-heartbeat", daemon=True)
 
     def start(self) -> None:
-        # Strict mode that ends the process by itself also starts the guard
-        # process (_watchdog.py); an `on_halt` of the caller's own replaces how
-        # the agent is stopped, so there is nothing for a guard to kill.
-        if self._strict and self._on_halt is _halt_process:
-            self._start_guard()
+        # The guard process (_watchdog.py) always runs beside the agent, to say
+        # when the agent's process ends while the computer stays on. It also
+        # ends the agent on a change of script, in strict mode only; an
+        # `on_halt` of the caller's own replaces how the agent is stopped, so
+        # there is nothing for it to kill.
+        self._start_guard()
         self._thread.start()
         # A process that ends without calling shutdown() still says it closed.
         _atexit.register(self.close)
@@ -206,6 +207,7 @@ class _Heartbeat:
             "script_hash": _hash_of_file(self._script) if self._script is not None else None,
             "sdk_hash": _watchdog.package_hash(directory),
             "parent": _os.getpid(),
+            "strict": self._strict and self._on_halt is _halt_process,
             "period": self._guard_period,
             # Where the local model is expected (the door, see door.py); the
             # guard says so if it answers without the key.
@@ -237,7 +239,11 @@ class _Heartbeat:
         self._thread.join(timeout=self._interval + 15)
         self._send("stop")
         if self._guard is not None and self._guard.stdin is not None:
-            self._guard.stdin.close()
+            try:
+                self._guard.stdin.write("closed\n")  # a normal close: the guard must not report an ended agent
+                self._guard.stdin.close()
+            except OSError:
+                pass
         _atexit.unregister(self.close)
 
     def _run(self) -> None:

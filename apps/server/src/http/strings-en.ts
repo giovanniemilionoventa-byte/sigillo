@@ -716,6 +716,12 @@ const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
       "The agent stopped sending its heartbeat without closing: sigillo's code removed, the program stopped, " +
       "the computer switched off or the network down. The event time is that of the last heartbeat received.",
   },
+  "sigillo.connection.ended": {
+    title: "Agent stopped, computer still on",
+    sentence:
+      "The agent's program ended without closing normally (stopped, crashed or killed), while the computer was still running. " +
+      "Sigillo's guard process saw it go. This is not a power cut or a lost network.",
+  },
   "sigillo.connection.restored": { title: "Connection restored", sentence: "The agent sends its heartbeat again after an interruption." },
   "sigillo.connection.script_changed": {
     title: "Agent script changed",

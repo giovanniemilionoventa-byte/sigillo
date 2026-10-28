@@ -278,7 +278,7 @@ class DoorTest(unittest.TestCase):
             "script": None, "script_hash": None, "sdk_hash": _watchdog.package_hash(
                 __import__("os").path.dirname(_watchdog.__file__)),
             "parent": agent.pid, "receipts": f"http://127.0.0.1:{self.sigillo.server_address[1]}/api/v1/receipts",
-            "api_key": KEY,
+            "api_key": KEY, "strict": True,
         }
         guard = subprocess.Popen([sys.executable, "-I", _watchdog.__file__], stdin=subprocess.PIPE)
         self.addCleanup(guard.kill)
@@ -301,7 +301,7 @@ class DoorTest(unittest.TestCase):
             "script": None, "script_hash": None, "sdk_hash": _watchdog.package_hash(
                 __import__("os").path.dirname(_watchdog.__file__)),
             "parent": agent.pid, "receipts": f"http://127.0.0.1:{self.sigillo.server_address[1]}/api/v1/receipts",
-            "api_key": KEY,
+            "api_key": KEY, "strict": True,
         }
         guard = subprocess.Popen([sys.executable, "-I", _watchdog.__file__], stdin=subprocess.PIPE)
         self.addCleanup(guard.kill)

@@ -158,7 +158,7 @@ const guardHash = (script: string | null | undefined, sdk: string | null): strin
 const heartbeatRequestSchema = z
   .object({
     session: z.string().regex(/^[0-9a-f]{32}$/, "must be 32 lowercase hex characters"),
-    event: z.enum(["start", "beat", "stop"]),
+    event: z.enum(["start", "beat", "stop", "ended"]),
     // The script guard (connection/watch.ts): the SHA-256 of the agent's main
     // script, or null when it can no longer be read. Absent: no guard.
     script_hash: hex64.nullable().optional(),

@@ -288,7 +288,7 @@ The Python SDK sends one when `init` runs, one a minute while the process runs
 ```
 
 `session` is 32 lowercase hex characters, new for every process; `event` is
-`start`, `beat` or `stop`. Same bearer key as the ingest endpoints.
+`start`, `beat`, `stop` or `ended` (sent only by the SDK's guard process, see below). Same bearer key as the ingest endpoints.
 
 The server writes a receipt on the key's chain at every change of a session's
 state, and only then: an ordinary beat writes nothing. Each is an `agent_step`
@@ -299,8 +299,19 @@ by the agent `sigillo`, named
 | `sigillo.connection.start` | a session is first heard from | when it was |
 | `sigillo.connection.stop` | it closed normally | when it did |
 | `sigillo.connection.lost` | no beat for 3 minutes, without a stop | its last beat |
+| `sigillo.connection.ended` | the guard process saw the agent's process end without a stop, the computer still running | when it did |
 | `sigillo.connection.restored` | a lost session beats again | when it did |
 | `sigillo.connection.script_changed` | the script guard (below) saw a different script | when it did |
+
+**The guard process.** `sigillo.init` also starts a tiny second process beside
+the agent, from the same package (nothing extra to install). If the agent's
+process ends without closing (stopped, crashed, killed) while the computer is
+on, the guard sends `"event": "ended"` and the server writes `ended` at once. If
+the computer is switched off or loses the network, nobody is left to say
+anything and the server writes `lost` after the silence. So `ended` means a dead
+agent on a running computer, and `lost` alone means the computer (or its
+network) is gone, or the agent and its guard were both stopped together (a
+whole machine, or a process group killed at once).
 
 **Script guard.** A start or beat may also carry `"script_hash"`: the SHA-256
 (64 lowercase hex characters) of the agent's main script file, read again at

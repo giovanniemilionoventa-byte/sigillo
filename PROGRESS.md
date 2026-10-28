@@ -4322,3 +4322,12 @@ lei; nei prezzi i pulsanti allineati in basso; nella pagina privacy il riquadro 
 rompe più (la sua classe `sign` coincideva con quella della console, ora `pv-sign`); la pagina di
 accesso ha una freccia «← sigillo» in alto a sinistra per tornare al sito (prima era un link in fondo, tolto su richiesta del titolare). Una delle sue immagini («fill this out») arrivava vuota:
 da chiarire con lei. Test: `site.test.ts`, intera suite verde.
+
+## Guardiano: computer spento o agente morto (2026-10-28)
+
+L'heartbeat ora distingue un agente morto su un computer acceso da un computer spento. Il processo
+guardiano (`_watchdog.py`) parte sempre con `sigillo.init` (SDK 0.11.0, stesso pacchetto, niente da
+installare); se l'agente termina senza chiudersi, dice al server `ended` e il server scrive la
+ricevuta `sigillo.connection.ended` subito. Se si spegne il computer non parla nessuno e resta
+`lost` dopo 3 minuti. Fuori da strict il guardiano non ferma mai l'agente. Nessuna dipendenza, nessun
+cambio di schema delle ricevute (solo un nome nuovo). Test: `connection.test.ts`, `test_init.py`.
