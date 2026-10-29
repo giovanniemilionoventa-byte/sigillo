@@ -8,7 +8,7 @@
  * output is video/out/hilabs/hilabs-demo.mp4 (1920x1080, right third blank).
  */
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Locator } from "playwright-core";
 import {
@@ -161,6 +161,28 @@ class HumanActor extends Actor {
   }
 }
 
+/** Windows Terminal's look, laid over the library's terminal page: tab strip, window buttons, Campbell colours. */
+const WINDOWS_PROMPT = "PS C:\\Users\\Polina\\Documents\\pharmacy-assistant>";
+const WINDOWS_TERMINAL = `(() => {
+  const style = document.createElement("style");
+  style.textContent = [
+    "html, body { background: #e9e9ee; }",
+    ".window { inset: 14px; border-radius: 8px; background: #0c0c0c; box-shadow: 0 8px 30px rgba(0,0,0,0.3); border: 1px solid #3a3a3a; }",
+    ".bar { height: 40px; background: #202020; padding: 0 0 0 8px; gap: 0; color: #fff; font: 400 13px 'Segoe UI', Arial, sans-serif; align-items: flex-end; }",
+    ".bar .tab { height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: #0c0c0c; border-radius: 6px 6px 0 0; min-width: 220px; }",
+    ".bar .tab b { font-weight: 400; } .bar .tab .x { margin-left: auto; color: #aaa; }",
+    ".bar .plus { height: 32px; display: flex; align-items: center; padding: 0 12px; color: #ccc; font-size: 16px; }",
+    ".bar .ctl { margin-left: auto; height: 40px; display: flex; align-self: flex-start; }",
+    ".bar .ctl span { width: 46px; height: 32px; display: flex; align-items: center; justify-content: center; color: #ddd; font-size: 14px; margin: 0; }",
+    "pre { background: #0c0c0c; color: #cccccc; font-family: Consolas, 'Cascadia Mono', Plex, monospace; }",
+    ".prompt { color: #cccccc; } .cmd { color: #f2f2f2; font-weight: 400; } .dim { color: #cccccc; }",
+    ".caret { background: #cccccc; height: 0.2em; vertical-align: baseline; }",
+  ].join("\\n");
+  document.head.appendChild(style);
+  const bar = document.querySelector(".bar");
+  bar.innerHTML = '<div class="tab"><svg width="16" height="16" viewBox="0 0 16 16"><rect width="16" height="16" rx="2" fill="#012456"/><path d="M3 4l5 4-5 4" stroke="#fff" stroke-width="1.6" fill="none"/><path d="M8 12h5" stroke="#fff" stroke-width="1.6"/></svg><b>Windows PowerShell</b><span class="x">&#x2715;</span></div><div class="plus">+</div><div class="plus">&#x2304;</div><div class="ctl"><span>&#x2014;</span><span>&#x2610;</span><span>&#x2715;</span></div>';
+})()`;
+
 /** Terminal typing at the same human pace. */
 async function typeLikeAHuman(terminal: Terminal, command: string): Promise<void> {
   for (const char of command) {
@@ -220,6 +242,11 @@ async function main(): Promise<void> {
   const page = actor.page;
   const python = process.env["SIGILLO_VIDEO_PYTHON"] ?? "python3";
   const env = { PATH: `${join(python, "..")}:${process.env["PATH"] ?? ""}` };
+  // On Windows the interpreter is called "python": a shim gives the same name here.
+  const shim = join(DIR, "bin");
+  mkdirSync(shim, { recursive: true });
+  rmSync(join(shim, "python"), { force: true });
+  symlinkSync(python === "python3" ? execFileSync("bash", ["-c", "command -v python3"], { encoding: "utf8" }).trim() : python, join(shim, "python"));
   let n = 0;
   const segment = async (name: string, body: (r: Recorder) => Promise<void>, on: { page: typeof page } = actor): Promise<void> => {
     const recorder = new Recorder(on.page, join(DIR, "frames", name), LEFT);
@@ -291,17 +318,23 @@ async function main(): Promise<void> {
 
     // 3. The agent works on the documents folder, in a terminal.
     const termContext = await browser.newContext({ viewport: LEFT, locale: "en-GB" });
-    const terminal = await Terminal.open(termContext, { fontSize: 18, cwdLabel: "pharmacy-assistant", title: "Terminal — pharmacy-assistant" });
+    const terminal = await Terminal.open(termContext, { fontSize: 18, cwdLabel: "pharmacy-assistant", title: "" });
+    // Polina is on Windows: Windows Terminal running PowerShell, not the library's macOS-style window.
+    await terminal.page.evaluate(WINDOWS_TERMINAL);
+    terminal.showPrompt = async (): Promise<void> => {
+      await terminal.page.evaluate(`window.term.add(${JSON.stringify(`${WINDOWS_PROMPT} `)}, "prompt")`);
+    };
+    await terminal.page.evaluate("window.term.clear()");
+    await terminal.page.evaluate(`window.term.add(${JSON.stringify("Windows PowerShell\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n")}, "dim")`);
+    await terminal.showPrompt();
     terminal.type = (command: string): Promise<void> => typeLikeAHuman(terminal, command);
     await segment(
       "agent",
       async () => {
-        await sleep(1000);
-        await terminal.run("ls documents", folder, env);
-        await sleep(1500);
-        const code = await terminal.run("python3 agent.py", folder, env);
+        await sleep(2200);
+        const code = await terminal.run("python agent.py", folder, { PATH: `${shim}:${env.PATH}` });
         if (code !== 0) throw new Error(`the agent exited with ${code}`);
-        await sleep(2000);
+        await sleep(3000);
       },
       terminal,
     );
@@ -361,5 +394,11 @@ async function main(): Promise<void> {
   ]);
   process.stdout.write(`written ${output}\n`);
 }
+
+// A screencast frame acknowledged just as a page goes away rejects before the recorder awaits it: harmless, not fatal.
+process.on("unhandledRejection", (reason) => {
+  if (String(reason).includes("Target page, context or browser has been closed")) return;
+  throw reason;
+});
 
 await main();
