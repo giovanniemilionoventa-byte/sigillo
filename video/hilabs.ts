@@ -50,6 +50,11 @@ const CUTS: Record<string, { target: Record<string, number>; scale: Record<strin
     agentWait: [1000, 1500],
   },
 };
+CUTS["third"] = {
+  target: { connect: 10.5, agent: 5.5, receipts: 13.8, verify: 17.4 },
+  scale: { login: 0.3, connect: 0.05, receipts: 0.75, verify: 0.3 },
+  agentWait: [500, 700],
+};
 const CUT_NAME = process.env["SIGILLO_HILABS_CUT"] ?? "hilabs";
 const CUT = ((): (typeof CUTS)[string] => {
   const cut = CUTS[CUT_NAME];
