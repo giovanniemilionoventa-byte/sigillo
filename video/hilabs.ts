@@ -32,8 +32,8 @@ const HERE = join(ROOT, "video", "hilabs");
 const POLICY = "pharmacy-dispensing-policy.txt";
 const COPY = "pharmacy-dispensing-policy-copy.txt";
 const parts: string[] = [];
-/** Lengths, in seconds, of the segments of the first cut the script's timings were written against. */
-const TARGET: Record<string, number> = { login: 10.2, connect: 39.8, agent: 9.53, receipts: 15.73, verify: 35.53 };
+/** Lengths, in seconds, of the segments: the stretches of Polina's recorded narration each one plays under. */
+const TARGET: Record<string, number> = { login: 6.4, connect: 15.8, agent: 9.5, receipts: 9.1, verify: 18.1 };
 
 const rand = (a: number, b: number): number => a + Math.random() * (b - a);
 
@@ -78,7 +78,7 @@ class HumanActor extends Actor {
   /** One cubic-Bezier stroke with a minimum-jerk speed profile and a little tremor. */
   private async glide(fromX: number, fromY: number, toX: number, toY: number, ms?: number): Promise<void> {
     const distance = Math.hypot(toX - fromX, toY - fromY);
-    const duration = ms ?? Math.min(1300, 320 + 150 * Math.log2(distance / 24 + 1) + rand(0, 160));
+    const duration = ms ?? Math.min(1000, 240 + 110 * Math.log2(distance / 24 + 1) + rand(0, 140));
     const nx = -(toY - fromY) / (distance || 1);
     const ny = (toX - fromX) / (distance || 1);
     const bend1 = rand(-0.12, 0.12) * distance;
@@ -246,7 +246,7 @@ async function main(): Promise<void> {
   try {
     // 1. Sign in.
     await actor.goto(`${ADDRESS}/ui/login`);
-    actor.scale = 0.75;
+    actor.scale = 0.3;
     await segment("login", async () => {
       await actor.idle(1500);
       await actor.click(page.locator('input[name="password"]'), { after: 400 });
@@ -256,7 +256,7 @@ async function main(): Promise<void> {
     });
 
     // 2. New system, then upload the customer's plain agent and download it back with Sigillo added.
-    actor.scale = 0.8;
+    actor.scale = 0.12;
     await segment("connect", async () => {
       await actor.goto(`${ADDRESS}/ui/sistemi`);
       await actor.idle(1500);
@@ -265,8 +265,6 @@ async function main(): Promise<void> {
       await actor.write(page.locator('input[name="display_name"]'), "Pharmacy review assistant");
       await actor.idle(900);
       await actor.click(page.locator('form[action="/ui/sistemi"] button[type="submit"]'), { navigates: true, after: 1800 });
-      await actor.hover(page.locator("pre.code.install").first(), 300);
-      await actor.idle(1500);
       const chooserPromise = page.waitForEvent("filechooser");
       await actor.click(page.locator("label.drop"), { after: 300 });
       const chooser = await chooserPromise;
@@ -284,12 +282,10 @@ async function main(): Promise<void> {
       await chooser.setFiles(original);
       await page.locator("#sigillo-agent-choice").waitFor({ state: "visible" });
       await actor.idle(1500);
-      await actor.hover(page.locator("#sigillo-agent-analysis"), 300);
       await actor.idle(2400);
       const [download] = await Promise.all([page.waitForEvent("download"), actor.click(page.locator("#sigillo-agent-download"), { after: 600 })]);
       await download.saveAs(join(folder, "agent.py"));
       await actor.idle(2000);
-      await actor.hover(page.locator("#sigillo-agent-done"), 300);
       await actor.idle(2200);
     });
 
@@ -311,7 +307,7 @@ async function main(): Promise<void> {
     );
 
     // 4. The console: the receipts the run left.
-    actor.scale = 0.95;
+    actor.scale = 0.45;
     await segment("receipts", async () => {
       await actor.idle(1000);
       await actor.click(page.locator(".wait-line a.end"), { navigates: true, after: 1800 });
@@ -323,7 +319,7 @@ async function main(): Promise<void> {
 
     // 5. Verify a document: the original, then the copy with one word changed.
     await actor.goto(`${ADDRESS}/ui/verify-document`);
-    actor.scale = 0.92;
+    actor.scale = 0.3;
     await segment("verify", async () => {
       await actor.idle(1500);
       for (const file of [POLICY, COPY]) {
