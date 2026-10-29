@@ -1,0 +1,18 @@
+FICTIONAL SAMPLE - Services Agreement
+
+This agreement is made on 1 October 2026 between Riverside Hospital (the "Hospital") and Northwind Health AI GmbH (the "Provider").
+
+1. Services
+The Provider supplies an AI assistant that summarises prescription records for the Hospital pharmacy.
+
+2. Fees and payment
+The Hospital pays EUR 3,900 per month. Invoices are payable within 30 days of the invoice date.
+
+3. Data protection
+The Provider processes personal data only on the Hospital's written instructions and only inside the European Union.
+
+4. Term
+The agreement lasts 12 months and renews for 12 months unless either party gives 60 days' notice.
+
+5. Governing law
+German law applies. The courts of Berlin have jurisdiction.

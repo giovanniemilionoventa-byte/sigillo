@@ -1,0 +1,19 @@
+FICTIONAL SAMPLE - Riverside Hospital Pharmacy
+Medication Dispensing Policy, version 3.2, effective 1 November 2026
+
+1. Purpose
+This policy sets out how the hospital pharmacy dispenses medication to wards and outpatients.
+
+2. Verification
+Every prescription for a controlled substance must be verified by two pharmacists before dispensing.
+
+3. Records
+Each dispensing event is logged with the time, the pharmacist and the prescription reference. Logs are kept for 10 years.
+
+4. Errors and near misses
+Any dispensing error or near miss is reported to the Chief Pharmacist within 24 hours.
+
+5. AI assistants
+An AI assistant may draft summaries and check prescriptions against this policy. It never dispenses and never overrides a pharmacist. Every action of the assistant is recorded.
+
+Approved by: Chief Pharmacist (fictional)
