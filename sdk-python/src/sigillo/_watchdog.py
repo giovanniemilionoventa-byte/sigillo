@@ -1,8 +1,16 @@
-"""The guard process that strict mode starts beside the agent.
+"""The guard process that `init` starts beside the agent.
 
 It runs in its own interpreter, so code inside the agent cannot stop it by
 stopping a thread; it can only kill the process, and then the agent's beats
-end and the server writes `lost`. Every few seconds it takes the hashes of the
+end and the server writes `lost`.
+
+Its first job, in every mode, is to tell a dead agent from a dead computer.
+When the agent's process ends without closing (stopped, crashed, killed) the
+guard, still running on the same computer, tells the server so (`ended`) and
+exits. When the computer itself goes off the guard goes with it, nobody says
+anything, and the server's silence check writes `lost`: that is the difference.
+
+In strict mode only, it also does the rest. Every few seconds it takes the hashes of the
 agent's main script and of this package again. If either differs from what the
 agent started with, it tells the server at once (a beat carrying the new
 hashes, which the server writes as `script_changed`) and ends the agent.
@@ -91,6 +99,22 @@ def _say_open(config: dict) -> None:
         pass
 
 
+def _tell_ended(config: dict) -> None:
+    """The agent's process is gone and this one is not: one last word to the server."""
+    if "url" not in config:
+        return
+    request = urllib.request.Request(
+        config["url"],
+        data=json.dumps({"session": config["session"], "event": "ended"}).encode("utf-8"),
+        headers={"Authorization": f"Bearer {config['api_key']}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(request, timeout=10).read()
+    except Exception:  # noqa: BLE001 - the server's silence check says `lost` instead
+        pass
+
+
 def _end(pid: int) -> None:
     try:
         os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
@@ -103,10 +127,15 @@ def main() -> None:
     directory = os.path.dirname(os.path.abspath(__file__))
 
     def parent_gone() -> None:
-        sys.stdin.read()
+        # A normal close says "closed" before it hangs up; a hang-up without it
+        # means the process was ended from outside.
+        if sys.stdin.read().strip() != "closed":
+            _tell_ended(config)
         os._exit(0)
 
     threading.Thread(target=parent_gone, daemon=True).start()
+    if not config.get("strict"):
+        threading.Event().wait()  # only the first job above: wait for the agent to end
     was = "none"
     while True:
         time.sleep(config["period"])

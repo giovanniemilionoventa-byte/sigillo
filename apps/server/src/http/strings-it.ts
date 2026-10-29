@@ -764,6 +764,12 @@ const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
       "L'agente ha smesso di mandare il segnale di vita senza chiudersi: codice di sigillo rimosso, programma interrotto, " +
       "computer spento o rete assente. L'ora dell'evento è quella dell'ultimo segnale ricevuto.",
   },
+  "sigillo.connection.ended": {
+    title: "Agente fermato, computer acceso",
+    sentence:
+      "Il programma dell'agente è terminato senza chiudersi normalmente (fermato, andato in errore o interrotto), mentre il " +
+      "computer era acceso. Lo ha visto il guardiano di sigillo. Non è uno spegnimento né una rete caduta.",
+  },
   "sigillo.connection.restored": { title: "Collegamento ripreso", sentence: "L'agente ha ripreso a mandare il segnale di vita dopo un'interruzione." },
   "sigillo.connection.script_changed": {
     title: "Script dell'agente modificato",

@@ -54,7 +54,7 @@ afterEach(async () => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-const beat = (event: "start" | "beat" | "stop", session = SESSION, key = token, script_hash?: string | null) =>
+const beat = (event: "start" | "beat" | "stop" | "ended", session = SESSION, key = token, script_hash?: string | null) =>
   app.inject({
     method: "POST",
     url: "/api/v1/heartbeat",
@@ -95,6 +95,42 @@ describe("the heartbeat endpoint", () => {
     expect((await beat("start", SESSION, "sigillo_0000000000000000_" + "0".repeat(64))).statusCode).toBe(401);
     expect((await beat("start", "not-a-session")).statusCode).toBe(400);
     expect(names()).toEqual([SYSTEM]);
+  });
+});
+
+describe("the guard process: a dead agent on a computer that is on", () => {
+  it("writes `ended` at once when the guard says the agent's process is gone, and `lost` is then not written on top of it", async () => {
+    await beat("start");
+    clock += MINUTE;
+    expect((await beat("ended")).json()).toMatchObject({ recorded: { name: CONNECTION.ended } });
+    expect(connectionStatus(store, SYSTEM)?.state).toBe("lost");
+    clock += 10 * MINUTE;
+    expect(await watch.sweep()).toBe(0);
+    expect(names()).toEqual([SYSTEM, CONNECTION.start, CONNECTION.ended]);
+    const ended = store.readChain(SYSTEM).at(-1)!;
+    expect(ended.outcome).toBe("error");
+    expect(verifyReceiptSignature(ended, signer.publicKey)).toBe(true);
+    // The agent started again: the same session id is not reused, but a beat of it would restore it.
+    expect((await beat("beat")).json()).toMatchObject({ recorded: { name: CONNECTION.restored } });
+  });
+
+  it("writes nothing for an `ended` after a normal stop, from a session never heard of, or twice", async () => {
+    await beat("start");
+    await beat("stop");
+    expect((await beat("ended")).json()).toEqual({ recorded: null });
+    expect((await beat("ended", OTHER)).json()).toEqual({ recorded: null });
+    expect(store.connection(SYSTEM, OTHER)).toBeNull();
+    await beat("start", SESSION.replace("0", "1"));
+    await beat("ended", SESSION.replace("0", "1"));
+    expect((await beat("ended", SESSION.replace("0", "1"))).json()).toEqual({ recorded: null });
+    expect(names().filter((n) => n === CONNECTION.ended)).toHaveLength(1);
+  });
+
+  it("a computer that went off says nothing: only `lost`, written by the silence check", async () => {
+    await beat("start");
+    clock += watch.lostAfterMs + 1;
+    expect(await watch.sweep()).toBe(1);
+    expect(names()).toEqual([SYSTEM, CONNECTION.start, CONNECTION.lost]);
   });
 });
 

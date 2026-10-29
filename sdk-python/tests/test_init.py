@@ -1085,6 +1085,46 @@ class ScriptGuardTest(unittest.TestCase):
         self.assertEqual(process.wait(timeout=15), 0)
         self.assertEqual([b["event"] for b, _ in _Capture.heartbeats if b["event"] == "beat"], [])
 
+    def _run_plain_agent(self, lines: str) -> subprocess.Popen:
+        """The agent as a real process, not strict: only the guard's first job."""
+        self.script.write_text(
+            "import time, sigillo\n"
+            f"beat = sigillo._Heartbeat('{self.base}/api/v1/heartbeat', 'k', 60)\n"
+            "beat.start()\n"
+            "print('up', flush=True)\n"
+            f"{lines}\n"
+        )
+        env = {**__import__("os").environ, "PYTHONPATH": str(Path(sigillo.__file__).parent.parent)}
+        process = subprocess.Popen([sys.executable, str(self.script)], stdout=subprocess.PIPE, text=True, env=env)
+        self.addCleanup(process.kill)
+        assert process.stdout is not None
+        self.assertEqual(process.stdout.readline().strip(), "up")
+        return process
+
+    def _events(self) -> list[str]:
+        return [b["event"] for b, _ in _Capture.heartbeats]
+
+    def test_the_guard_tells_the_server_the_agent_ended_when_it_is_killed_and_the_computer_stays_on(self) -> None:
+        process = self._run_plain_agent("time.sleep(60)")
+        self._wait_for(lambda: "start" in self._events())
+        process.kill()
+        self._wait_for(lambda: "ended" in self._events())
+        ended = [b for b, _ in _Capture.heartbeats if b["event"] == "ended"]
+        started = [b for b, _ in _Capture.heartbeats if b["event"] == "start"]
+        self.assertEqual(ended[0]["session"], started[0]["session"])
+
+    def test_the_guard_says_nothing_when_the_agent_closes_normally_or_just_ends(self) -> None:
+        process = self._run_plain_agent("beat.close()")
+        process.wait(timeout=15)
+        time.sleep(0.5)
+        self.assertIn("stop", self._events())
+        self.assertNotIn("ended", self._events())
+
+    def test_a_plain_agent_is_not_ended_when_its_script_changes(self) -> None:
+        process = self._run_plain_agent("time.sleep(1.5)")
+        self.script.write_text(self.script.read_text() + "# edited\n")
+        self.assertEqual(process.wait(timeout=15), 0)
+
     def test_a_beat_that_finds_the_guard_gone_halts_a_strict_agent(self) -> None:
         halted: list[str] = []
         with self._main(self.script):
