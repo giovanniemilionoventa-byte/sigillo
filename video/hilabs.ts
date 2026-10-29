@@ -32,8 +32,31 @@ const HERE = join(ROOT, "video", "hilabs");
 const POLICY = "pharmacy-dispensing-policy.txt";
 const COPY = "pharmacy-dispensing-policy-copy.txt";
 const parts: string[] = [];
-/** Lengths, in seconds, of the segments: the stretches of Polina's recorded narration each one plays under. */
-const TARGET: Record<string, number> = { login: 6.4, connect: 15.8, agent: 9.5, receipts: 9.1, verify: 18.1 };
+/**
+ * One cut per recorded narration (SIGILLO_HILABS_CUT): the length in seconds of
+ * the stretch of narration each segment plays under (a segment left out is
+ * done off camera), how much of each segment's waiting to keep, and the
+ * terminal's pauses before and after the run.
+ */
+const CUTS: Record<string, { target: Record<string, number>; scale: Record<string, number>; agentWait: [number, number] }> = {
+  hilabs: {
+    target: { login: 6.4, connect: 15.8, agent: 9.5, receipts: 9.1, verify: 18.1 },
+    scale: { login: 0.3, connect: 0.12, receipts: 0.45, verify: 0.3 },
+    agentWait: [2200, 3000],
+  },
+  second: {
+    target: { connect: 14.7, agent: 6.4, receipts: 13.6, verify: 17.1 },
+    scale: { login: 0.3, connect: 0.12, receipts: 0.9, verify: 0.3 },
+    agentWait: [1000, 1500],
+  },
+};
+const CUT_NAME = process.env["SIGILLO_HILABS_CUT"] ?? "hilabs";
+const CUT = ((): (typeof CUTS)[string] => {
+  const cut = CUTS[CUT_NAME];
+  if (cut === undefined) throw new Error(`SIGILLO_HILABS_CUT must be one of ${Object.keys(CUTS).join(", ")}`);
+  return cut;
+})();
+const TARGET = CUT.target;
 
 const rand = (a: number, b: number): number => a + Math.random() * (b - a);
 
@@ -249,6 +272,10 @@ async function main(): Promise<void> {
   symlinkSync(python === "python3" ? execFileSync("bash", ["-c", "command -v python3"], { encoding: "utf8" }).trim() : python, join(shim, "python"));
   let n = 0;
   const segment = async (name: string, body: (r: Recorder) => Promise<void>, on: { page: typeof page } = actor): Promise<void> => {
+    if (TARGET[name] === undefined) {
+      await body(null as unknown as Recorder);
+      return;
+    }
     const recorder = new Recorder(on.page, join(DIR, "frames", name), LEFT);
     await recorder.start();
     try {
@@ -273,7 +300,7 @@ async function main(): Promise<void> {
   try {
     // 1. Sign in.
     await actor.goto(`${ADDRESS}/ui/login`);
-    actor.scale = 0.3;
+    actor.scale = CUT.scale["login"] ?? 1;
     await segment("login", async () => {
       await actor.idle(1500);
       await actor.click(page.locator('input[name="password"]'), { after: 400 });
@@ -283,7 +310,7 @@ async function main(): Promise<void> {
     });
 
     // 2. New system, then upload the customer's plain agent and download it back with Sigillo added.
-    actor.scale = 0.12;
+    actor.scale = CUT.scale["connect"] ?? 1;
     await segment("connect", async () => {
       await actor.goto(`${ADDRESS}/ui/sistemi`);
       await actor.idle(1500);
@@ -331,16 +358,16 @@ async function main(): Promise<void> {
     await segment(
       "agent",
       async () => {
-        await sleep(2200);
+        await sleep(CUT.agentWait[0]);
         const code = await terminal.run("python agent.py", folder, { PATH: `${shim}:${env.PATH}` });
         if (code !== 0) throw new Error(`the agent exited with ${code}`);
-        await sleep(3000);
+        await sleep(CUT.agentWait[1]);
       },
       terminal,
     );
 
     // 4. The console: the receipts the run left.
-    actor.scale = 0.45;
+    actor.scale = CUT.scale["receipts"] ?? 1;
     await segment("receipts", async () => {
       await actor.idle(1000);
       await actor.click(page.locator(".wait-line a.end"), { navigates: true, after: 1800 });
@@ -352,7 +379,7 @@ async function main(): Promise<void> {
 
     // 5. Verify a document: the original, then the copy with one word changed.
     await actor.goto(`${ADDRESS}/ui/verify-document`);
-    actor.scale = 0.3;
+    actor.scale = CUT.scale["verify"] ?? 1;
     await segment("verify", async () => {
       await actor.idle(1500);
       for (const file of [POLICY, COPY]) {
