@@ -55,6 +55,11 @@ CUTS["third"] = {
   scale: { login: 0.3, connect: 0.05, receipts: 0.75, verify: 0.3 },
   agentWait: [500, 700],
 };
+CUTS["fourth"] = {
+  target: { connect: 10.3, agent: 7.7, receipts: 13.2, verify: 18.0 },
+  scale: { login: 0.3, connect: 0.05, receipts: 0.75, verify: 0.3 },
+  agentWait: [1800, 3000],
+};
 const CUT_NAME = process.env["SIGILLO_HILABS_CUT"] ?? "hilabs";
 const CUT = ((): (typeof CUTS)[string] => {
   const cut = CUTS[CUT_NAME];
