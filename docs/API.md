@@ -288,7 +288,7 @@ The Python SDK sends one when `init` runs, one a minute while the process runs
 ```
 
 `session` is 32 lowercase hex characters, new for every process; `event` is
-`start`, `beat`, `stop` or `ended` (sent only by the SDK's guard process, see below). Same bearer key as the ingest endpoints.
+`start`, `beat`, `stop`, `ended`, `ping` or `gap` (the last three are sent only by the SDK's guard process, see below). Same bearer key as the ingest endpoints.
 
 The server writes a receipt on the key's chain at every change of a session's
 state, and only then: an ordinary beat writes nothing. Each is an `agent_step`
@@ -300,6 +300,9 @@ by the agent `sigillo`, named
 | `sigillo.connection.stop` | it closed normally | when it did |
 | `sigillo.connection.lost` | no beat for 3 minutes, without a stop | its last beat |
 | `sigillo.connection.ended` | the guard process saw the agent's process end without a stop, the computer still running | when it did |
+| `sigillo.connection.sleep` | the guard reports the computer was asleep | when the sleep began (ok) |
+| `sigillo.connection.offline` | the guard reports the network was down while the computer was awake | when it went down (error) |
+| `sigillo.connection.power_off` | a new session starts on a computer with a newer boot time than the previous one's | the previous session's last beat (ok) |
 | `sigillo.connection.restored` | a lost session beats again | when it did |
 | `sigillo.connection.script_changed` | the script guard (below) saw a different script | when it did |
 
@@ -312,6 +315,14 @@ anything and the server writes `lost` after the silence. So `ended` means a dead
 agent on a running computer, and `lost` alone means the computer (or its
 network) is gone, or the agent and its guard were both stopped together (a
 whole machine, or a process group killed at once).
+
+The guard also sends `ping` (nothing written, it shows the network is up) and,
+after the fact, `gap` with `"gap": {"kind": "sleep" | "offline", "from": <ISO time>}`
+once it sees a sleep (a jump of the clock) or a network cut longer than two
+minutes end. A session may report 24 gaps an hour. A `start` may carry
+`"boot": <ISO time the computer was switched on>`: when the previous session of
+the system, not closed normally, has a boot time more than two minutes
+different, the server writes `power_off` after the `start`.
 
 **Script guard.** A start or beat may also carry `"script_hash"`: the SHA-256
 (64 lowercase hex characters) of the agent's main script file, read again at

@@ -885,7 +885,7 @@ class HeartbeatTest(unittest.TestCase):
         self.assertEqual(len(sessions), 1)
         self.assertRegex(sessions.pop(), r"^[0-9a-f]{32}$")
         for body, headers in _Capture.heartbeats:
-            self.assertLessEqual(set(body), {"session", "event", "script_hash", "sdk_hash"})
+            self.assertLessEqual(set(body), {"session", "event", "script_hash", "sdk_hash", "boot"})
             self.assertEqual(headers["authorization"], "Bearer sigillo_secret")
 
     def test_a_second_shutdown_sends_nothing_more(self) -> None:
@@ -1135,6 +1135,69 @@ class ScriptGuardTest(unittest.TestCase):
             beat._send("beat")
         self.assertEqual(len(halted), 1)
         self.assertIn("guard", halted[0])
+
+
+class GuardGapsTest(unittest.TestCase):
+    """What the guard tells about the computer: sleeps, network cuts, boot time."""
+
+    def setUp(self) -> None:
+        from sigillo import _watchdog
+
+        self.w = _watchdog
+        self.gaps = _watchdog.Gaps(1000.0, 5.0)
+
+    def test_a_loop_that_ran_on_time_reports_nothing(self) -> None:
+        for now in (1005.0, 1010.0, 1031.0):  # 21s late is still within 3 periods + 15s
+            self.gaps.tick(now)
+        self.assertEqual(self.gaps.pending, [])
+
+    def test_a_clock_that_jumped_is_a_sleep_from_the_last_look(self) -> None:
+        self.gaps.tick(1005.0)
+        self.gaps.tick(1005.0 + 3600)
+        self.assertEqual(self.gaps.pending, [{"kind": "sleep", "from": self.w.iso(1005.0)}])
+
+    def test_a_network_cut_is_reported_when_it_ends_from_the_last_time_the_server_answered(self) -> None:
+        self.gaps.reached(1060.0, True)
+        self.gaps.reached(1120.0, False)
+        self.gaps.reached(1180.0, False)
+        self.assertEqual(self.gaps.pending, [])  # not over yet
+        self.gaps.reached(1240.0, True)
+        self.assertEqual(self.gaps.pending, [{"kind": "offline", "from": self.w.iso(1060.0)}])
+        self.gaps.reached(1300.0, True)
+        self.assertEqual(len(self.gaps.pending), 1)
+
+    def test_a_short_cut_is_not_worth_a_receipt(self) -> None:
+        self.gaps.reached(1060.0, True)
+        self.gaps.reached(1120.0, False)
+        self.gaps.reached(1130.0, True)
+        self.assertEqual(self.gaps.pending, [])
+
+    def test_a_failed_attempt_during_sleep_is_not_a_network_cut(self) -> None:
+        self.gaps.reached(1060.0, True)
+        self.gaps.reached(1120.0, False)
+        self.gaps.tick(1120.0 + 3600)  # the computer slept through it
+        self.gaps.reached(1120.0 + 3600, True)
+        self.assertEqual([g["kind"] for g in self.gaps.pending], ["sleep"])
+
+    def test_boot_time_is_in_the_past_where_the_computer_can_say(self) -> None:
+        boot = self.w.boot_time()
+        if boot is not None:
+            self.assertLess(boot, time.time())
+            self.assertGreater(boot, 1_500_000_000)
+
+    def test_every_start_carries_the_boot_time_when_known(self) -> None:
+        _Capture.heartbeats = []
+        server = http.server.HTTPServer(("127.0.0.1", 0), _Capture)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        beat = sigillo._Heartbeat(f"http://127.0.0.1:{server.server_address[1]}/api/v1/heartbeat", "k", 60)
+        beat._send("start")
+        beat._send("stop")
+        start, stop = (b for b, _ in _Capture.heartbeats)
+        if self.w.boot_time() is not None:
+            self.assertRegex(start["boot"], r"^\d{4}-\d\d-\d\dT[\d:.]+Z$")
+        self.assertNotIn("boot", stop)
 
 
 class ContentFilterTest(unittest.TestCase):

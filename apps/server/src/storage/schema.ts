@@ -185,6 +185,10 @@ CREATE TABLE IF NOT EXISTS connections (
   -- connection/watch.ts). Null: the SDK sent none.
   script_hash  TEXT,
   script_changed INTEGER NOT NULL DEFAULT 0,
+  -- When the computer this session ran on was switched on (the SDK's guard
+  -- reads it): a later session with another boot time says the computer was
+  -- off in between. Null: the SDK sent none.
+  boot_at      TEXT,
   PRIMARY KEY (system_id, session_id)
 ) STRICT;
 
@@ -408,7 +412,8 @@ function ensureColumn(db: Database.Database, table: string, column: string, type
 // 7: the register of evidence packs handed out (export_register), and the index of a run's receipts.
 // 8: the vaults of accounts, and the vault_owner column of provider_keys (null: still sealed under the server's own key).
 // 9: the sealed-hours schedule of an account's vault (vault_schedule).
-export const SCHEMA_VERSION = 9;
+// 10: the boot time a heartbeat session ran under (connections.boot_at).
+export const SCHEMA_VERSION = 10;
 
 export class NewerSchemaError extends Error {
   constructor(readonly found: number) {
@@ -507,6 +512,7 @@ export function applySchema(db: Database.Database): void {
   ensureColumn(db, "artifacts", "text_canon", "TEXT");
   ensureColumn(db, "connections", "script_hash", "TEXT");
   ensureColumn(db, "connections", "script_changed", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "connections", "boot_at", "TEXT");
   ensureColumn(db, "artifacts", "text_sha256", "TEXT");
   ensureColumn(db, "provider_keys", "vault_owner", "TEXT");
   // Databases written before empty systems could be deleted carry the

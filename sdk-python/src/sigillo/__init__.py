@@ -85,7 +85,7 @@ from opentelemetry.sdk.trace.export import SpanExportResult as _SpanExportResult
 from . import _gateway, _text, _watchdog
 
 __all__ = ["init", "artifact", "current_span_from_callbacks", "pseudonym", "nonce_for", "Tracing"]
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 _LOG = _logging.getLogger("sigillo")
 _TRACES_PATH = "/v1/traces"
@@ -207,6 +207,7 @@ class _Heartbeat:
             "script_hash": _hash_of_file(self._script) if self._script is not None else None,
             "sdk_hash": _watchdog.package_hash(directory),
             "parent": _os.getpid(),
+            "beat_every": self._interval,
             "strict": self._strict and self._on_halt is _halt_process,
             "period": self._guard_period,
             # Where the local model is expected (the door, see door.py); the
@@ -253,6 +254,10 @@ class _Heartbeat:
 
     def _send(self, event: str) -> None:
         payload: dict[str, object] = {"session": self.session, "event": event}
+        if event != "stop":
+            boot = _watchdog.boot_time()
+            if boot is not None:
+                payload["boot"] = _watchdog.iso(boot)
         if self._script is not None and event != "stop":
             payload["script_hash"] = _hash_of_file(self._script)
         if event != "stop":

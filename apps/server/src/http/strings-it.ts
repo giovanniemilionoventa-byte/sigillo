@@ -770,6 +770,24 @@ const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
       "Il programma dell'agente è terminato senza chiudersi normalmente (fermato, andato in errore o interrotto), mentre il " +
       "computer era acceso. Lo ha visto il guardiano di sigillo. Non è uno spegnimento né una rete caduta.",
   },
+  "sigillo.connection.sleep": {
+    title: "Computer in sospensione",
+    sentence:
+      "Il computer è andato in sospensione e si è risvegliato. Durante la sospensione l'agente non poteva agire. " +
+      "L'ora dell'evento è l'inizio della sospensione; la ricevuta è stata scritta al risveglio.",
+  },
+  "sigillo.connection.offline": {
+    title: "Rete assente, agente attivo",
+    sentence:
+      "Il computer è rimasto acceso ma non riusciva a raggiungere sigillo. In quel periodo l'agente può aver agito senza essere osservato. " +
+      "L'ora dell'evento è quando è caduta la rete; la ricevuta è stata scritta al suo ritorno.",
+  },
+  "sigillo.connection.power_off": {
+    title: "Computer spento",
+    sentence:
+      "Il computer è stato spento o riavviato prima dell'inizio di questa sessione: il silenzio precedente era uno spegnimento, " +
+      "non l'agente isolato. Con il computer spento l'agente non poteva agire. Uno spegnimento regolare e un blackout sembrano uguali.",
+  },
   "sigillo.connection.restored": { title: "Collegamento ripreso", sentence: "L'agente ha ripreso a mandare il segnale di vita dopo un'interruzione." },
   "sigillo.connection.script_changed": {
     title: "Script dell'agente modificato",
