@@ -722,6 +722,25 @@ const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
       "The agent's program ended without closing normally (stopped, crashed or killed), while the computer was still running. " +
       "Sigillo's guard process saw it go. This is not a power cut or a lost network.",
   },
+  "sigillo.connection.sleep": {
+    title: "Computer asleep",
+    sentence:
+      "The computer went to sleep and woke up again. While it slept the agent could not act. " +
+      "The event time is when the sleep began; the receipt was written when the computer woke.",
+  },
+  "sigillo.connection.offline": {
+    title: "Network down, agent running",
+    sentence:
+      "The computer stayed on but could not reach sigillo. The agent may have acted in that time without being observed. " +
+      "The event time is when the network went down; the receipt was written when it came back.",
+  },
+  "sigillo.connection.power_off": {
+    title: "Computer was switched off",
+    sentence:
+      "The computer was switched off or restarted before this session began, so the silence before it was a power-off, " +
+      "not the agent being cut off. The agent could not act while the computer was off. " +
+      "A clean shutdown and a cut of power look the same.",
+  },
   "sigillo.connection.restored": { title: "Connection restored", sentence: "The agent sends its heartbeat again after an interruption." },
   "sigillo.connection.script_changed": {
     title: "Agent script changed",

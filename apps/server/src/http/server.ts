@@ -158,7 +158,12 @@ const guardHash = (script: string | null | undefined, sdk: string | null): strin
 const heartbeatRequestSchema = z
   .object({
     session: z.string().regex(/^[0-9a-f]{32}$/, "must be 32 lowercase hex characters"),
-    event: z.enum(["start", "beat", "stop", "ended"]),
+    // `ended`, `ping` and `gap` come from the SDK's guard process (connection/watch.ts).
+    event: z.enum(["start", "beat", "stop", "ended", "ping", "gap"]),
+    // When the computer was switched on, to tell a session after a restart from one on the same boot.
+    boot: z.string().datetime().nullable().optional(),
+    // What a `gap` event reports: a sleep or a network cut that began at `from`.
+    gap: z.object({ kind: z.enum(["sleep", "offline"]), from: z.string().datetime() }).strict().optional(),
     // The script guard (connection/watch.ts): the SHA-256 of the agent's main
     // script, or null when it can no longer be read. Absent: no guard.
     script_hash: hex64.nullable().optional(),
@@ -520,6 +525,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         error: parsed.error.issues.map((issue) => `${issue.path.join(".") || "<body>"}: ${issue.message}`).join("; "),
       });
     }
+    if (parsed.data.event === "gap" && parsed.data.gap === undefined) {
+      return reply.code(400).send({ error: "gap: a gap event carries the gap" });
+    }
     if (store.connection(systemId, parsed.data.session) === null && overQuota(systemId, reply)) return reply;
     let written;
     try {
@@ -533,6 +541,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         parsed.data.session,
         parsed.data.event,
         watched ? { hash: sdkHash === undefined ? (scriptHash ?? null) : guardHash(scriptHash, sdkHash) } : undefined,
+        { boot: parsed.data.boot, gap: parsed.data.gap },
       );
       if (watched && parsed.data.event !== "stop") {
         return reply.code(200).send({

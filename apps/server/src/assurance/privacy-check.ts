@@ -211,6 +211,7 @@ export const STORAGE_INVENTORY: Record<string, TableEntry> = {
       last_beat_at: ["time", ""],
       script_hash: ["content-digest", "SHA-256 of the agent's script; the script is never sent"],
       script_changed: ["operational", ""],
+      boot_at: ["time", "when the agent's computer was switched on"],
     },
   },
   provider_keys: {

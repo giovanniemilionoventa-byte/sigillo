@@ -22,6 +22,21 @@ import { CONNECTION_PREFIX } from "./names.js";
  *                                said so. The agent is dead, the machine is not.
  *   sigillo.connection.restored  the same session beats again after a loss
  *
+ * What the guard saw on the computer itself (it keeps running through a
+ * network cut or a sleep, so it can tell the agent afterwards):
+ *
+ *   sigillo.connection.sleep     the computer was asleep from..to: the agent
+ *                                could not act (outcome ok)
+ *   sigillo.connection.offline   the network was down from..to while the
+ *                                computer was awake: the agent may have acted
+ *                                unobserved (outcome error)
+ *   sigillo.connection.power_off a new session started on a computer with a
+ *                                newer boot time than the previous session's:
+ *                                the computer was switched off or restarted in
+ *                                between, so the silence before it was that
+ *                                (outcome ok; a clean shutdown and a cut of
+ *                                power look the same)
+ *
  * `lost` and `ended` together tell a computer switched off or cut off (only
  * `lost`: nobody was left to say anything) from an agent that died on a
  * computer that kept running (`ended`, at once).
@@ -58,9 +73,30 @@ export const CONNECTION = {
   ended: `${CONNECTION_PREFIX}ended`,
   restored: `${CONNECTION_PREFIX}restored`,
   scriptChanged: `${CONNECTION_PREFIX}script_changed`,
+  sleep: `${CONNECTION_PREFIX}sleep`,
+  offline: `${CONNECTION_PREFIX}offline`,
+  powerOff: `${CONNECTION_PREFIX}power_off`,
 } as const;
 
-export type HeartbeatEvent = "start" | "beat" | "stop" | "ended";
+export type HeartbeatEvent = "start" | "beat" | "stop" | "ended" | "ping" | "gap";
+
+/** A stretch of time the guard reports after the fact: it began at `from` and ends when this is received. */
+export interface Gap {
+  kind: "sleep" | "offline";
+  from: string;
+}
+
+/** What else a heartbeat may carry besides the script hash. */
+export interface HeartbeatExtras {
+  /** When the computer was switched on (ISO time). */
+  boot?: string | null | undefined;
+  gap?: Gap | undefined;
+}
+
+/** Two boot times closer than this are the same boot: clocks drift and are adjusted. */
+const SAME_BOOT_MS = 120_000;
+/** How many gaps one session may report an hour. */
+export const MAX_GAPS_PER_HOUR = 24;
 
 /** The SDK beats every 60 seconds; three missed beats are a loss. */
 export const DEFAULT_LOST_AFTER_MS = 3 * 60_000;
@@ -103,6 +139,8 @@ export class ConnectionWatch {
    * allowance to reach this process: the silence may have been ours.
    */
   private readonly since: number;
+  /** When each session reported its gaps of the last hour. In memory, like `opened`. */
+  private readonly gaps = new Map<string, number[]>();
   /** One change at a time: two beats of one session never both write a receipt. */
   private queue: Promise<unknown> = Promise.resolve();
   private timer: NodeJS.Timeout | undefined;
@@ -126,10 +164,14 @@ export class ConnectionWatch {
     sessionId: string,
     event: HeartbeatEvent,
     script?: { hash: string | null },
+    extras: HeartbeatExtras = {},
   ): Promise<Receipt | null> {
     return this.serially(async () => {
       const at = this.now().toISOString();
       const known = this.store.connection(systemId, sessionId);
+      // A ping only shows the network is up: nothing is written or changed.
+      if (event === "ping") return null;
+      if (event === "gap") return this.gap(systemId, known, at, extras.gap);
       if (event === "ended") {
         // Said by the guard process once the agent is gone. Only an open
         // session is ended: a normal stop came first, a lost one already says
@@ -152,6 +194,7 @@ export class ConnectionWatch {
         last_beat_at: at,
         script_hash: known === null ? (guard?.hash ?? null) : known.script_hash,
         script_changed: changed,
+        boot_at: known === null ? (extras.boot ?? null) : known.boot_at,
       });
 
       if (event === "stop") {
@@ -163,7 +206,15 @@ export class ConnectionWatch {
       if (known === null) {
         // What the last session that sent a hash ran, read before this one is saved.
         const before = guard === undefined ? undefined : this.store.connectionsOf(systemId).find((s) => s.script_hash !== null);
+        // The latest session before this one, to see whether the computer was
+        // switched off in between (read before this one is saved).
+        const previous = extras.boot == null ? undefined : this.store.connectionsOf(systemId).find((s) => s.boot_at !== null);
         const started = await this.store.recordConnection(row("open"), receiptOf(systemId, CONNECTION.start, at, at, "ok", "sdk"));
+        if (previous !== undefined && previous.state !== "closed" && extras.boot != null && previous.boot_at !== null) {
+          if (Math.abs(Date.parse(extras.boot) - Date.parse(previous.boot_at)) > SAME_BOOT_MS) {
+            await this.store.recordConnection(row("open"), receiptOf(systemId, CONNECTION.powerOff, previous.last_beat_at, at, "ok", "sdk"));
+          }
+        }
         if (before === undefined || guard === undefined || before.script_hash === guard.hash) return started;
         return this.store.recordConnection(row("open"), receiptOf(systemId, CONNECTION.scriptChanged, at, at, "error", "sdk"));
       }
@@ -176,6 +227,20 @@ export class ConnectionWatch {
       }
       return written ?? (await this.store.recordConnection(row("open"), null));
     });
+  }
+
+  /** A gap the guard reports: written for an open or lost session, at most MAX_GAPS_PER_HOUR an hour. */
+  private async gap(systemId: string, known: ConnectionRow | null, at: string, gap: Gap | undefined): Promise<Receipt | null> {
+    if (known === null || known.state === "closed" || gap === undefined) return null;
+    const now = Date.parse(at);
+    const recent = (this.gaps.get(known.session_id) ?? []).filter((time) => now - time < HOUR_MS);
+    if (recent.length >= MAX_GAPS_PER_HOUR) return null;
+    recent.push(now);
+    this.gaps.set(known.session_id, recent);
+    // Never earlier than the session began, never later than now.
+    const from = new Date(Math.min(now, Math.max(Date.parse(gap.from), Date.parse(known.started_at)))).toISOString();
+    const name = gap.kind === "sleep" ? CONNECTION.sleep : CONNECTION.offline;
+    return this.store.recordConnection(known, receiptOf(systemId, name, from, at, gap.kind === "sleep" ? "ok" : "error", "sdk"));
   }
 
   /** Whether this session's script is no longer the one it started with. */

@@ -134,6 +134,77 @@ describe("the guard process: a dead agent on a computer that is on", () => {
   });
 });
 
+const send = (payload: Record<string, unknown>) =>
+  app.inject({ method: "POST", url: "/api/v1/heartbeat", headers: { authorization: `Bearer ${token}` }, payload });
+
+describe("what the guard saw on the computer", () => {
+  const iso = (ms: number): string => new Date(ms).toISOString();
+
+  it("writes `sleep` (ok) and `offline` (error) dated at their start, and a ping writes nothing", async () => {
+    await beat("start");
+    clock += 10 * MINUTE;
+    expect((await send({ session: SESSION, event: "ping" })).json()).toEqual({ recorded: null });
+    const slept = (await send({ session: SESSION, event: "gap", gap: { kind: "sleep", from: iso(START + MINUTE) } })).json();
+    expect(slept).toMatchObject({ recorded: { name: CONNECTION.sleep } });
+    await send({ session: SESSION, event: "gap", gap: { kind: "offline", from: iso(START + 5 * MINUTE) } });
+    const [sleep, offline] = store.readChain(SYSTEM).slice(-2);
+    expect([sleep!.outcome, offline!.outcome]).toEqual(["ok", "error"]);
+    expect(sleep!.ts_event).toBe(iso(START + MINUTE));
+    expect(sleep!.ts_received).toBe(iso(clock));
+    expect(verifyReceiptSignature(offline!, signer.publicKey)).toBe(true);
+    expect(connectionStatus(store, SYSTEM)?.state).toBe("open");
+  });
+
+  it("does not let a gap start before the session or after now, nor write one for a stranger or a closed session, nor without the gap", async () => {
+    await beat("start");
+    clock += MINUTE;
+    await send({ session: SESSION, event: "gap", gap: { kind: "offline", from: iso(START - 99 * MINUTE) } });
+    expect(store.readChain(SYSTEM).at(-1)!.ts_event).toBe(iso(START));
+    await send({ session: SESSION, event: "gap", gap: { kind: "offline", from: iso(clock + 99 * MINUTE) } });
+    expect(store.readChain(SYSTEM).at(-1)!.ts_event).toBe(iso(clock));
+    const before = names().length;
+    expect((await send({ session: OTHER, event: "gap", gap: { kind: "sleep", from: iso(START) } })).json()).toEqual({ recorded: null });
+    expect((await send({ session: SESSION, event: "gap" })).statusCode).toBe(400);
+    await beat("stop");
+    await send({ session: SESSION, event: "gap", gap: { kind: "sleep", from: iso(START) } });
+    expect(names()).toHaveLength(before + 1); // only the stop
+  });
+
+  it("stops a session from writing more than its allowance of gaps an hour", async () => {
+    await beat("start");
+    for (let i = 0; i < 30; i += 1) await send({ session: SESSION, event: "gap", gap: { kind: "sleep", from: iso(START) } });
+    expect(names().filter((n) => n === CONNECTION.sleep)).toHaveLength(24);
+  });
+
+  it("writes `power_off` when a new session starts on a newer boot than the last one's, and not on the same boot", async () => {
+    await send({ session: SESSION, event: "start", boot: iso(START - 5 * MINUTE) });
+    const lastBeat = iso(clock);
+    clock += 3 * MINUTE + 1;
+    await watch.sweep();
+    clock += 10 * MINUTE;
+    // Same boot (drift of a few seconds): the program was only started again.
+    await send({ session: OTHER, event: "start", boot: iso(START - 5 * MINUTE + 4000) });
+    expect(names()).toEqual([SYSTEM, CONNECTION.start, CONNECTION.lost, CONNECTION.start]);
+    // The computer restarted.
+    const third = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    clock += MINUTE;
+    await send({ session: third, event: "start", boot: iso(clock - 30_000) });
+    const chain = store.readChain(SYSTEM);
+    expect(chain.slice(-2).map((r) => r.action.name)).toEqual([CONNECTION.start, CONNECTION.powerOff]);
+    expect(chain.at(-1)!.outcome).toBe("ok");
+    expect(chain.at(-1)!.ts_event).not.toBe(lastBeat); // the previous session's last beat is the OTHER one's
+  });
+
+  it("writes no `power_off` after a normal stop, or when either session sent no boot time", async () => {
+    await send({ session: SESSION, event: "start", boot: iso(START - MINUTE) });
+    await beat("stop");
+    clock += MINUTE;
+    await send({ session: OTHER, event: "start", boot: iso(clock) });
+    await beat("start", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"); // no boot
+    expect(names()).not.toContain(CONNECTION.powerOff);
+  });
+});
+
 describe("silence", () => {
   it("writes `lost` once an open session misses its beats, dated at its last beat, and `restored` when it beats again", async () => {
     await beat("start");
