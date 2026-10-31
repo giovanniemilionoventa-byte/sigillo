@@ -35,6 +35,9 @@ importers:
       '@sigillo/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@sigillo/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk-typescript
       '@sigillo/verifier':
         specifier: workspace:*
         version: link:../../packages/verifier
@@ -97,6 +100,12 @@ importers:
       zod:
         specifier: ^3.24.1
         version: 3.25.76
+
+  packages/sdk-typescript:
+    devDependencies:
+      '@sigillo/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/verifier:
     dependencies:

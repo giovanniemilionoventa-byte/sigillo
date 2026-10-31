@@ -415,6 +415,7 @@ details.tech .facts { margin-top: 10px; }
 #way-python:checked ~ .code.python { display: block; }
 .agent-upload { display: none; }
 #way-python:checked ~ .agent-upload.ready { display: block; }
+.agent-upload .connect-settings .code { display: block; margin-top: 12px; user-select: all; -webkit-user-select: all; }
 .agent-upload .notice { margin: 12px 0 0; }
 .agent-upload .drop { position: relative; cursor: pointer; }
 .agent-upload .drop small { font-size: 13px; color: var(--secondary); }

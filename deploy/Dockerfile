@@ -26,6 +26,7 @@ RUN apt-get update \
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.json ./
 COPY packages/core/package.json packages/core/
 COPY packages/verifier/package.json packages/verifier/
+COPY packages/sdk-typescript/package.json packages/sdk-typescript/
 COPY apps/server/package.json apps/server/
 COPY apps/signer/package.json apps/signer/
 RUN pnpm install --frozen-lockfile

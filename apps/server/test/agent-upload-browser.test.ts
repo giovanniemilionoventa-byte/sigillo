@@ -183,4 +183,52 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     const file = await downloaded(page);
     expect(file).not.toContain("_BASE_URL");
   });
+
+  /** Files that arrive without a click on a button: the page hands them over as soon as the file is read. */
+  async function handedOver(page: Page, name: string, text: string): Promise<string> {
+    const [download] = await Promise.all([page.waitForEvent("download"), upload(page, name, text)]);
+    return readFileSync(await download.path(), "utf8");
+  }
+
+  it("recognises a TypeScript agent and gives the file back with the SDK lines, no model choice", async () => {
+    const { page, problems } = await keyPage();
+    const file = await handedOver(page, "agent.mts", 'import { generateText } from "ai";\nconsole.log("hi");\n');
+    expect(await page.locator("#sigillo-agent-detected").textContent()).toContain("TypeScript / JavaScript · Vercel AI SDK");
+    expect(await page.locator("#sigillo-agent-choice").isVisible()).toBe(false);
+    expect(file).toContain("@sigillo/sdk");
+    expect(file).toContain("/sigillo-sdk.tgz");
+    expect(file).toContain("registerTelemetry");
+    expect(file).toMatch(/customerKey: "[0-9a-f]{64}"/);
+    expect(file.endsWith('console.log("hi");\n')).toBe(true);
+    expect(await page.locator("#sigillo-agent-done").textContent()).toContain("AI SDK 7");
+    expect(problems).toEqual([]);
+  });
+
+  it("recognises Java and .NET but does not offer them yet: only Python and TypeScript have the same control", async () => {
+    const { page, problems } = await keyPage();
+    await upload(page, "Agent.java", "import dev.langchain4j.model.openai.OpenAiChatModel;\nclass Agent {}\n");
+    await page.locator("#sigillo-agent-problem").waitFor({ state: "visible" });
+    expect(await page.locator("#sigillo-agent-detected").textContent()).toContain("Java · LangChain4j");
+    expect(await page.locator("#sigillo-agent-problem").textContent()).toContain("not offered yet");
+    expect(await page.locator("#sigillo-agent-connect").isVisible()).toBe(false);
+    expect(await page.locator("#sigillo-agent-done").isVisible()).toBe(false);
+    await upload(page, "Agent.cs", "using Microsoft.SemanticKernel;\n");
+    expect(await page.locator("#sigillo-agent-problem").textContent()).toContain(".NET is recognised");
+    expect(problems).toEqual([]);
+  });
+
+  it("recognises a Python LangChain agent and still shows the usual Python flow", async () => {
+    const { page } = await keyPage();
+    await upload(page, "agent.py", "from langchain_openai import ChatOpenAI\n");
+    await page.locator("#sigillo-agent-choice").waitFor({ state: "visible" });
+    expect(await page.locator("#sigillo-agent-detected").textContent()).toContain("Python · LangChain");
+    expect(await page.locator("#sigillo-agent-connect").isVisible()).toBe(false);
+  });
+
+  it("refuses a file that is none of these", async () => {
+    const { page } = await keyPage();
+    await upload(page, "notes.txt", "hello");
+    await page.locator("#sigillo-agent-problem").waitFor({ state: "visible" });
+    expect(await page.locator("#sigillo-agent-problem").textContent()).toContain(".ts or .js");
+  });
 });

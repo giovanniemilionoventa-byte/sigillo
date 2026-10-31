@@ -418,12 +418,21 @@ const ui = {
     arrived: (when: string): string => `Prima ricevuta arrivata: ${when}`,
     goToSystem: "Vai al sistema",
     upload: {
-      drop: "Carica il file .py del tuo agente",
+      drop: "Carica il file del tuo agente (Python o TypeScript)",
       done: "{file} scaricato, con sigillo già dentro. Avvia l'agente come sempre: la prima volta installa da solo quello che serve. Il file contiene anche la tua chiave (customer_key), creata in questo browser: sigillo non la riceve mai, quindi non può leggere né indovinare i tuoi contenuti. Tienine una copia.",
       doneNoFramework:
         "{file} scaricato, con sigillo già dentro, che la prima volta si installa da solo. Non usa LangChain, CrewAI né OpenAI: sigillo registra quando è collegato e le azioni che registri tu. Il file contiene anche la tua chiave (customer_key), creata in questo browser: sigillo non la riceve mai. Tienine una copia.",
       already: "{file} usa già sigillo: non c'è niente da aggiungere.",
-      notPython: "Scegli il file Python dell'agente (.py, fino a 1 MB).",
+      notPython: "Scegli il file dell'agente (.py, .ts o .js, fino a 1 MB).",
+      soon: "{language} è riconosciuto, ma non ancora offerto: sigillo non gli dà lo stesso controllo di Python e TypeScript (impronte del contenuto fatte sul tuo computer, battito, guardiano). Arriverà con un SDK suo.",
+      detected: "Riconosciuto: {language} · {framework}.",
+      noFramework: "nessun framework",
+      doneNode:
+        "{file} scaricato, con sigillo già dentro. Avvia l'agente come sempre: la prima volta installa da solo l'SDK (oppure esegui {install}). Il file contiene anche la tua chiave (customerKey), creata in questo browser: sigillo non la riceve mai, quindi non può leggere né indovinare i tuoi contenuti. Tienine una copia.",
+      doneNodeVercel:
+        "{file} scaricato, con sigillo già dentro. Avvia l'agente come sempre: la prima volta installa da solo l'SDK (oppure esegui {install}). Con AI SDK 7 non serve altro; con un AI SDK più vecchio aggiungi experimental_telemetry: { isEnabled: true } a ogni chiamata. Il file contiene anche la tua chiave (customerKey), creata in questo browser: sigillo non la riceve mai. Tienine una copia.",
+      doneOtel:
+        "Impostazioni di collegamento scaricate e mostrate qui sotto. Java e .NET non hanno ancora un SDK sigillo: si collegano con OpenTelemetry, con la cattura del contenuto dei messaggi spenta, quindi nessun contenuto esce dal tuo computer, ma sigillo non ne ha nemmeno l'impronta, e non c'è il battito. Metti le impostazioni nell'ambiente del tuo agente e segui i passi.",
       choose: "Clicca qui per scegliere il file.",
       another: "Caricato. Clicca qui per sceglierne un altro.",
       or: "oppure",

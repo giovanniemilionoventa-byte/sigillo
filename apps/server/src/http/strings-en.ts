@@ -409,12 +409,21 @@ const ui: Strings = {
     arrived: (when: string): string => `First receipt arrived: ${when}`,
     goToSystem: "Go to the system",
     upload: {
-      drop: "Upload your agent's .py file",
+      drop: "Upload your agent's file (Python or TypeScript)",
       done: "{file} downloaded, with sigillo already in it. Run your agent as usual: the first time, it installs what it needs by itself. The file also holds your own key (customer_key), made in this browser: sigillo never receives it, so it cannot read or guess your content. Keep a copy of the file.",
       doneNoFramework:
         "{file} downloaded, with sigillo already in it, which installs itself the first time. It uses neither LangChain, CrewAI nor OpenAI: sigillo records when it is connected and the actions you record yourself. The file also holds your own key (customer_key), made in this browser: sigillo never receives it. Keep a copy of the file.",
       already: "{file} already uses sigillo: there is nothing to add.",
-      notPython: "Choose the agent's Python file (.py, up to 1 MB).",
+      notPython: "Choose the agent's file (.py, .ts or .js, up to 1 MB).",
+      soon: "{language} is recognised, but not offered yet: sigillo does not give it the same control as Python and TypeScript (digests of content made on your computer, heartbeat, guard). It will come with its own SDK.",
+      detected: "Recognised: {language} · {framework}.",
+      noFramework: "no framework",
+      doneNode:
+        "{file} downloaded, with sigillo already in it. Run your agent as usual: the first time, it installs the SDK by itself (or run {install}). The file also holds your own key (customerKey), made in this browser: sigillo never receives it, so it cannot read or guess your content. Keep a copy of the file.",
+      doneNodeVercel:
+        "{file} downloaded, with sigillo already in it. Run your agent as usual: the first time, it installs the SDK by itself (or run {install}). With AI SDK 7 nothing else is needed; with an older AI SDK, add experimental_telemetry: { isEnabled: true } to each call. The file also holds your own key (customerKey), made in this browser: sigillo never receives it. Keep a copy of the file.",
+      doneOtel:
+        "Connection settings downloaded and shown below. Java and .NET have no sigillo SDK yet: they connect through OpenTelemetry, with the capture of message content switched off, so no content leaves your computer, but sigillo also has no digest of it, and no heartbeat. Put the settings in your agent's environment and follow the steps.",
       choose: "Click here to choose the file.",
       another: "Loaded. Click here to choose another file.",
       or: "or",

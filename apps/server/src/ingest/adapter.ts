@@ -242,6 +242,13 @@ const GENAI_OPERATIONS = new Map<string, Action["kind"]>([
   ["execute_tool", "tool_call"],
   ["invoke_agent", "agent_step"],
   ["create_agent", "agent_step"],
+  // Added in the 1.41 conventions and by the Vercel AI SDK's own OpenTelemetry
+  // integration (@ai-sdk/otel): known, so that they are not reported as unknown.
+  ["invoke_workflow", "agent_step"],
+  ["agent_step", "agent_step"],
+  ["retrieval", "agent_step"],
+  ["rerank", "agent_step"],
+  ["decide", "decision"],
 ]);
 
 /** OpenInference: openinference.span.kind does. */
