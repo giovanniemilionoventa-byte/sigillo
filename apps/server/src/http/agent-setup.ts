@@ -377,6 +377,14 @@ ${AGENT_DETECT_SOURCE}
       return;
     }
     if (kind.language === "java" || kind.language === "dotnet") {
+      // Suspended (draft): no SDK of ours gives them the control Python has.
+      // The settings below are kept, off, until one does.
+      if (box.dataset.otherLanguages !== "1") {
+        input.value = "";
+        if (choice !== null) choice.hidden = true;
+        show(problem, box.dataset.soon.replace("{language}", names[kind.language]));
+        return;
+      }
       var other = sigilloConnectOtel(kind.language, kind.framework, base);
       input.value = "";
       if (choice !== null) choice.hidden = true;

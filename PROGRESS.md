@@ -4361,7 +4361,7 @@ server. **Python**: invariato. **TypeScript/JavaScript**: il file torna con le r
 telemetria dell'AI SDK 7); l'SDK si scarica dal server stesso, `/sigillo-sdk.tgz` (`sdk-bundle.ts`,
 creato al momento dal pacchetto installato, niente registro npm). **Java e .NET**: nessun SDK
 nostro; la pagina dà le impostazioni OpenTelemetry (endpoint, chiave, cattura del contenuto spenta)
-e i passi. Per loro non ci sono impronte del contenuto né battito: il testo lo dice. Nessuna
+e i passi. **Sospeso il 2026-10-31 su richiesta del titolare**: resta in bozza (codice e test, spento da `data-other-languages`), perché si tiene solo ciò che dà lo stesso controllo di Python; la pagina li riconosce e dice che arriveranno con un SDK proprio. Per loro non ci sono impronte del contenuto né battito: il testo lo dice. Nessuna
 dipendenza nuova (`@sigillo/sdk` è un pacchetto del workspace). Test: `agent-upload-languages.test.ts`
 (riconoscimento; un agente vero, ESM e CommonJS, che installa l'SDK dal server e si collega) e
 `agent-upload-browser.test.ts` (Chromium, produzione CSP). Non provato: LangChain.js.

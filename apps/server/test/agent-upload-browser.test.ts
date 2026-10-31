@@ -204,20 +204,16 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     expect(problems).toEqual([]);
   });
 
-  it("recognises Java and .NET and shows the OpenTelemetry settings instead of rewriting the file", async () => {
+  it("recognises Java and .NET but does not offer them yet: only Python and TypeScript have the same control", async () => {
     const { page, problems } = await keyPage();
-    const java = await handedOver(page, "Agent.java", "import dev.langchain4j.model.openai.OpenAiChatModel;\nclass Agent {}\n");
+    await upload(page, "Agent.java", "import dev.langchain4j.model.openai.OpenAiChatModel;\nclass Agent {}\n");
+    await page.locator("#sigillo-agent-problem").waitFor({ state: "visible" });
     expect(await page.locator("#sigillo-agent-detected").textContent()).toContain("Java · LangChain4j");
-    expect(java).toContain("-javaagent");
-    expect(java).toContain("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false");
-    expect(java).toMatch(/OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http:\/\/127\.0\.0\.1:\d+\/v1\/traces/);
-    expect(await page.locator("#sigillo-agent-connect").isVisible()).toBe(true);
-    expect(await page.locator("#sigillo-agent-connect pre").textContent()).toContain("-javaagent");
-    expect(await page.locator("#sigillo-agent-done").textContent()).toContain("no heartbeat");
-
-    const dotnet = await handedOver(page, "Agent.cs", "using Microsoft.SemanticKernel;\n");
-    expect(await page.locator("#sigillo-agent-detected").textContent()).toContain(".NET · Semantic Kernel");
-    expect(dotnet).toContain("AddOtlpExporter");
+    expect(await page.locator("#sigillo-agent-problem").textContent()).toContain("not offered yet");
+    expect(await page.locator("#sigillo-agent-connect").isVisible()).toBe(false);
+    expect(await page.locator("#sigillo-agent-done").isVisible()).toBe(false);
+    await upload(page, "Agent.cs", "using Microsoft.SemanticKernel;\n");
+    expect(await page.locator("#sigillo-agent-problem").textContent()).toContain(".NET is recognised");
     expect(problems).toEqual([]);
   });
 
@@ -233,6 +229,6 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     const { page } = await keyPage();
     await upload(page, "notes.txt", "hello");
     await page.locator("#sigillo-agent-problem").waitFor({ state: "visible" });
-    expect(await page.locator("#sigillo-agent-problem").textContent()).toContain(".java");
+    expect(await page.locator("#sigillo-agent-problem").textContent()).toContain(".ts or .js");
   });
 });

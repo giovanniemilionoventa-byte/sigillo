@@ -418,12 +418,13 @@ const ui = {
     arrived: (when: string): string => `Prima ricevuta arrivata: ${when}`,
     goToSystem: "Vai al sistema",
     upload: {
-      drop: "Carica il file del tuo agente (Python, TypeScript, Java o .NET)",
+      drop: "Carica il file del tuo agente (Python o TypeScript)",
       done: "{file} scaricato, con sigillo già dentro. Avvia l'agente come sempre: la prima volta installa da solo quello che serve. Il file contiene anche la tua chiave (customer_key), creata in questo browser: sigillo non la riceve mai, quindi non può leggere né indovinare i tuoi contenuti. Tienine una copia.",
       doneNoFramework:
         "{file} scaricato, con sigillo già dentro, che la prima volta si installa da solo. Non usa LangChain, CrewAI né OpenAI: sigillo registra quando è collegato e le azioni che registri tu. Il file contiene anche la tua chiave (customer_key), creata in questo browser: sigillo non la riceve mai. Tienine una copia.",
       already: "{file} usa già sigillo: non c'è niente da aggiungere.",
-      notPython: "Scegli il file dell'agente (.py, .ts, .js, .java o .cs, fino a 1 MB).",
+      notPython: "Scegli il file dell'agente (.py, .ts o .js, fino a 1 MB).",
+      soon: "{language} è riconosciuto, ma non ancora offerto: sigillo non gli dà lo stesso controllo di Python e TypeScript (impronte del contenuto fatte sul tuo computer, battito, guardiano). Arriverà con un SDK suo.",
       detected: "Riconosciuto: {language} · {framework}.",
       noFramework: "nessun framework",
       doneNode:

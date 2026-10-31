@@ -409,12 +409,13 @@ const ui: Strings = {
     arrived: (when: string): string => `First receipt arrived: ${when}`,
     goToSystem: "Go to the system",
     upload: {
-      drop: "Upload your agent's file (Python, TypeScript, Java or .NET)",
+      drop: "Upload your agent's file (Python or TypeScript)",
       done: "{file} downloaded, with sigillo already in it. Run your agent as usual: the first time, it installs what it needs by itself. The file also holds your own key (customer_key), made in this browser: sigillo never receives it, so it cannot read or guess your content. Keep a copy of the file.",
       doneNoFramework:
         "{file} downloaded, with sigillo already in it, which installs itself the first time. It uses neither LangChain, CrewAI nor OpenAI: sigillo records when it is connected and the actions you record yourself. The file also holds your own key (customer_key), made in this browser: sigillo never receives it. Keep a copy of the file.",
       already: "{file} already uses sigillo: there is nothing to add.",
-      notPython: "Choose the agent's file (.py, .ts, .js, .java or .cs, up to 1 MB).",
+      notPython: "Choose the agent's file (.py, .ts or .js, up to 1 MB).",
+      soon: "{language} is recognised, but not offered yet: sigillo does not give it the same control as Python and TypeScript (digests of content made on your computer, heartbeat, guard). It will come with its own SDK.",
       detected: "Recognised: {language} · {framework}.",
       noFramework: "no framework",
       doneNode:
