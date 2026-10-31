@@ -215,6 +215,23 @@ describe("the OpenTelemetry GenAI dialect", () => {
     expect(batch.actions.some((action) => action.action.name === "support-agent")).toBe(true);
   });
 
+  it("knows the operations the Vercel AI SDK's OpenTelemetry integration and the 1.41 conventions add", () => {
+    const span = (operation: string): OtlpSpan => ({
+      traceId: "0af7651916cd43dd8448eb211c80319c",
+      spanId: "00f067aa0ba902b7",
+      name: operation,
+      startUnixNano: 1n,
+      endUnixNano: 2n,
+      status: "unset",
+      attributes: new Map([["gen_ai.operation.name", operation]]),
+      resource: new Map([["service.name", "agente-ts"]]),
+      events: [],
+    });
+    const adapted = adaptSpans(["invoke_workflow", "agent_step", "retrieval", "rerank", "decide"].map(span));
+    expect(adapted.unknown).toEqual([]);
+    expect(adapted.actions.map((action) => action.action.kind).sort()).toEqual(["agent_step", "agent_step", "agent_step", "agent_step", "decision"]);
+  });
+
   it("tolerates the older convention that has no operation name at all", () => {
     expect(batch.unknown).toContain("gen_ai.operation.name=<absent>");
     expect(byName(batch.actions, "gpt-4o").action.kind).toBe("llm_call");

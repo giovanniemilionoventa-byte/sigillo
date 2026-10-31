@@ -1,0 +1,20 @@
+{
+  "name": "@sigillo/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript/Node SDK: sends an AI agent's actions to a sigillo server, as digests only. No dependencies.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "devDependencies": {
+    "@sigillo/core": "workspace:*"
+  }
+}

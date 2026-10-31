@@ -98,6 +98,12 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
 
+  packages/sdk-typescript:
+    devDependencies:
+      '@sigillo/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/verifier:
     dependencies:
       '@sigillo/core':

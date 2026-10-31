@@ -43,6 +43,7 @@ packages/verifier    open-source CLI, depends only on core (+ system openssl for
 apps/signer          separate process holding the private key and its own record of every chain
 apps/server          ingest, storage, checkpoints, timestamps, export, minimal UI
 sdk-python/          thin Python package (separate folder, not a pnpm workspace member)
+packages/sdk-typescript  TypeScript/Node SDK, no dependencies (same promises as sdk-python)
 deploy/              Dockerfile, docker-compose.yml, Caddyfile
 docs/                FORMAT.md, SECURITY.md, API.md
 ```
