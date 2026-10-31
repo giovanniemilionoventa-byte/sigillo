@@ -4351,3 +4351,18 @@ un'implementazione Python indipendente, guardiano con processi veri) e
 `apps/server/test/sdk-typescript-e2e.test.ts` (SDK contro il server vero: il cliente riapre il
 digest con la propria chiave). Provato anche con `ai` 7 e `@ai-sdk/otel` veri (fuori dal repository).
 
+## Console: l'agente caricato viene riconosciuto (2026-10-31)
+
+«Carica il file del tuo agente» ora accetta `.py`, `.ts/.js/.mjs/.cjs`, `.java`, `.cs` e dice che cosa
+ha riconosciuto (linguaggio e framework: LangChain, CrewAI, Vercel AI SDK, LangChain4j, Spring AI,
+Semantic Kernel, OpenTelemetry...). Tutto resta nel browser (`agent-detect.ts`): il file non va al
+server. **Python**: invariato. **TypeScript/JavaScript**: il file torna con le righe di sigillo
+(ESM con installazione automatica alla prima esecuzione, CommonJS in background; registra anche la
+telemetria dell'AI SDK 7); l'SDK si scarica dal server stesso, `/sigillo-sdk.tgz` (`sdk-bundle.ts`,
+creato al momento dal pacchetto installato, niente registro npm). **Java e .NET**: nessun SDK
+nostro; la pagina dà le impostazioni OpenTelemetry (endpoint, chiave, cattura del contenuto spenta)
+e i passi. Per loro non ci sono impronte del contenuto né battito: il testo lo dice. Nessuna
+dipendenza nuova (`@sigillo/sdk` è un pacchetto del workspace). Test: `agent-upload-languages.test.ts`
+(riconoscimento; un agente vero, ESM e CommonJS, che installa l'SDK dal server e si collega) e
+`agent-upload-browser.test.ts` (Chromium, produzione CSP). Non provato: LangChain.js.
+

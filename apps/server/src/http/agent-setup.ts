@@ -15,6 +15,7 @@
  */
 
 import { fileCatalog } from "../gateway/catalog.js";
+import { AGENT_DETECT_SOURCE } from "./agent-detect.js";
 
 export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) {
   var eol = source.indexOf("\\r\\n") >= 0 ? "\\r\\n" : "\\n";
@@ -282,6 +283,7 @@ export const AGENT_SETUP_SOURCE = `function sigilloAgentSetup(source, settings) 
 
 export const AGENT_SETUP_SCRIPT = `(function () {
 ${AGENT_SETUP_SOURCE}
+${AGENT_DETECT_SOURCE}
 
   var box = document.getElementById("sigillo-agent");
   if (box === null) return;
@@ -311,6 +313,7 @@ ${AGENT_SETUP_SOURCE}
     key: box.dataset.key,
     system: box.dataset.system,
     url: box.dataset.url,
+    sdkUrl: box.dataset.sdkUrl,
     protection: box.dataset.protection === "true",
     stdlib: box.dataset.stdlib === "1",
     // Made here, in the browser, and written only into the file it gives back:
@@ -336,12 +339,58 @@ ${AGENT_SETUP_SOURCE}
     var file = input.files[0];
     if (file === undefined) return;
     if (choice !== null) choice.hidden = true;
-    if (!/\\.py$/i.test(file.name) || file.size > 1048576) {
+    var text = file.size > 1048576 ? "" : await file.text();
+    var kind = sigilloDetectAgent(file.name, text);
+    if (kind.language === null || file.size > 1048576) {
       show(problem, box.dataset.notPython);
       return;
     }
     picked(file.name);
-    var text = await file.text();
+    var names = { python: "Python", node: "TypeScript / JavaScript", java: "Java", dotnet: ".NET" };
+    var frameworks = {
+      langchain: "LangChain", crewai: "CrewAI", openai: "OpenAI", opentelemetry: "OpenTelemetry",
+      "vercel-ai": "Vercel AI SDK", langchain4j: "LangChain4j", "spring-ai": "Spring AI",
+      "semantic-kernel": "Semantic Kernel", "extensions-ai": "Microsoft.Extensions.AI",
+    };
+    var detected = document.getElementById("sigillo-agent-detected");
+    detected.querySelector("span").textContent = box.dataset.detected
+      .replace("{language}", names[kind.language])
+      .replace("{framework}", frameworks[kind.framework] || box.dataset.noFramework);
+    detected.hidden = false;
+    var plainText = document.getElementById("sigillo-agent-connect");
+    plainText.hidden = true;
+    if (kind.language === "node") {
+      var node = sigilloAgentSetupNode(file.name, text, base);
+      input.value = "";
+      if (choice !== null) choice.hidden = true;
+      if (node.status === "already") {
+        show(problem, box.dataset.already.replace("{file}", file.name));
+        return;
+      }
+      var nodeLink = document.createElement("a");
+      nodeLink.href = URL.createObjectURL(new Blob([node.text], { type: "text/javascript" }));
+      nodeLink.download = file.name;
+      document.body.appendChild(nodeLink);
+      nodeLink.click();
+      nodeLink.remove();
+      show(done, (node.framework === "vercel-ai" ? box.dataset.doneNodeVercel : box.dataset.doneNode).replace("{file}", file.name).replace("{install}", node.install));
+      return;
+    }
+    if (kind.language === "java" || kind.language === "dotnet") {
+      var other = sigilloConnectOtel(kind.language, kind.framework, base);
+      input.value = "";
+      if (choice !== null) choice.hidden = true;
+      plainText.querySelector("pre").textContent = other.text;
+      plainText.hidden = false;
+      var otherLink = document.createElement("a");
+      otherLink.href = URL.createObjectURL(new Blob([other.text], { type: "text/plain" }));
+      otherLink.download = "sigillo-connection.txt";
+      document.body.appendChild(otherLink);
+      otherLink.click();
+      otherLink.remove();
+      show(done, box.dataset.doneOtel);
+      return;
+    }
     var plain = sigilloAgentSetup(text, base);
     if (plain.status === "already") {
       show(problem, box.dataset.already.replace("{file}", file.name));
@@ -356,7 +405,7 @@ ${AGENT_SETUP_SOURCE}
     // before anything is downloaded. Only an agent that calls a cloud model
     // is offered the choice; the file keeps its own key unless it is ticked.
     var routed = sigilloAgentSetup(text, Object.assign({ gateway: box.dataset.gateway }, base));
-    var names = Object.keys(routed.providers);
+    var providerNames = Object.keys(routed.providers);
     var tick = document.getElementById("sigillo-agent-secure");
     var label = document.getElementById("sigillo-agent-secure-label");
     var save = document.getElementById("sigillo-agent-model");
@@ -364,10 +413,10 @@ ${AGENT_SETUP_SOURCE}
     done.hidden = true;
     problem.hidden = true;
     tick.checked = false;
-    label.hidden = names.length === 0;
+    label.hidden = providerNames.length === 0;
     var servers = { 11434: "Ollama", 1234: "LM Studio", 8080: "llama.cpp", 8000: "vLLM", 1337: "Jan" };
-    document.getElementById("sigillo-agent-analysis").textContent = names.length > 0
-      ? box.dataset.analysisCloud.replace("{providers}", names.map(function (name) { return routed.labels[name]; }).join(", "))
+    document.getElementById("sigillo-agent-analysis").textContent = providerNames.length > 0
+      ? box.dataset.analysisCloud.replace("{providers}", providerNames.map(function (name) { return routed.labels[name]; }).join(", "))
       : routed.localPort > 0
         ? (plain.guarded ? box.dataset.analysisLocalGuarded : box.dataset.analysisLocal).replace("{server}", servers[routed.localPort])
         : box.dataset.analysisOther;
@@ -379,7 +428,7 @@ ${AGENT_SETUP_SOURCE}
       if (tick.checked) {
         // The key found in the file (or none) goes into a form the person
         // submits, since this page may not make requests of its own.
-        var pick = names.filter(function (name) { return routed.providers[name] !== ""; })[0] || names[0];
+        var pick = providerNames.filter(function (name) { return routed.providers[name] !== ""; })[0] || providerNames[0];
         save.elements.provider.value = pick;
         save.elements.key.value = routed.providers[pick];
         save.hidden = false;

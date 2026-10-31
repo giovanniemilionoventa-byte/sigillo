@@ -16,6 +16,7 @@ import { isProvider, ProviderKeyError, VaultError, VaultLockedError, VaultSealed
 import { ScheduleError } from "../gateway/vault-schedule.js";
 import { vaultPage, type VaultView } from "./vault-page.js";
 import { AGENT_SETUP_SCRIPT } from "./agent-setup.js";
+import { SDK_TGZ_NAME, sdkTarball } from "./sdk-bundle.js";
 import {
   normaliseDisplayName,
   StorageError,
@@ -681,6 +682,15 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   // it is secret, so it is served without a session.
   app.get("/ui/agent-setup.js", async (_request, reply) =>
     reply.type("text/javascript; charset=utf-8").header("cache-control", "no-cache").send(AGENT_SETUP_SCRIPT),
+  );
+
+  // The TypeScript SDK, for `npm install <this address>` (sdk-bundle.ts): public code, no secret in it.
+  app.get(`/${SDK_TGZ_NAME}`, async (_request, reply) =>
+    reply
+      .type("application/gzip")
+      .header("content-disposition", `attachment; filename="${SDK_TGZ_NAME}"`)
+      .header("cache-control", "no-cache")
+      .send(sdkTarball().tgz),
   );
 
   /** Where agents send their actions, as the snippets of the connect page write it. */
