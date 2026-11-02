@@ -774,12 +774,18 @@ export const SITE_SCRIPT = `"use strict";
     nodes = [];
     const n = w < 700 ? 16 : 34;
     for (let i = 0; i < (chain ? n : 0); i++) {
-      const b = crypto.getRandomValues(new Uint8Array(3));
       nodes.push({ x: Math.random() * w, y: Math.random() * h, vx: (Math.random() - 0.5) * 0.16, vy: (Math.random() - 0.5) * 0.16,
-        hash: Array.from(b, (v) => v.toString(16).padStart(2, "0")).join("") });
+        });
     }
   }
+  // Fades to nothing by the time the reader has scrolled 70% of a screen, so it
+  // never sits behind the pricing, the FAQ or the footer; softer still on phones.
+  function fade() {
+    const cap = w < 700 ? 0.4 : 0.8;
+    canvas.style.opacity = String(Math.max(0, 1 - scrollY / (h * 0.7)) * cap);
+  }
   function frame() {
+    fade();
     ctx.clearRect(0, 0, w, h);
     const gx = chain ? w * 0.75 : mx * w, gy = chain ? h * 0.3 : my * h;
     const glow = ctx.createRadialGradient(gx, gy, 0, gx, gy, Math.max(w, h) * 0.5);
@@ -801,13 +807,10 @@ export const SITE_SCRIPT = `"use strict";
           ctx.beginPath(); ctx.arc(a.x + (b.x - a.x) * p, a.y + (b.y - a.y) * p, 2, 0, 7); ctx.fill();
         }
       }
-      ctx.font = "10px ui-monospace, monospace";
       for (const a of nodes) {
         ctx.fillStyle = dark ? "rgba(10,30,61,0.85)" : "rgba(232,241,255,0.9)";
         ctx.strokeStyle = "rgba(" + rgb + "," + 0.5 * k + ")";
-        ctx.fillRect(a.x - 9, a.y - 9, 18, 18); ctx.strokeRect(a.x - 9, a.y - 9, 18, 18);
-        ctx.fillStyle = "rgba(" + rgb + "," + 0.4 * k + ")";
-        ctx.fillText(a.hash, a.x + 14, a.y + 3);
+        ctx.fillRect(a.x - 7, a.y - 7, 14, 14); ctx.strokeRect(a.x - 7, a.y - 7, 14, 14);
       }
     } else {
       for (let x = 0; x <= w; x += 32) for (let y = 0; y <= h; y += 32) {
@@ -821,6 +824,7 @@ export const SITE_SCRIPT = `"use strict";
   }
   size(); frame();
   addEventListener("resize", () => { size(); if (still) frame(); });
+  addEventListener("scroll", fade, { passive: true });
   if (!chain && !still) addEventListener("pointermove", (e) => { mx = e.clientX / w; my = e.clientY / h; });
 })();
 for (const button of document.querySelectorAll("button.copy")) {
