@@ -271,6 +271,8 @@ const REPOSITORY = "https://github.com/giovanniemilionoventa-byte/sigillo";
 
 const SITE_RULES = `
 body { background: var(--canvas); }
+#backdrop { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+main, footer { position: relative; z-index: 1; }
 .s-wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 .s-top { position: sticky; top: 0; z-index: 5; background: var(--canvas); border-bottom: 1px solid var(--separator); }
 .s-top .s-wrap { display: flex; align-items: center; gap: 28px; min-height: 64px; }
@@ -487,6 +489,7 @@ ${page.head ?? ""}
 <link rel="icon" href="/favicon.ico" type="image/svg+xml">
 <style>${STYLE_V2}${SITE_RULES}${INNER_RULES}</style>
 </head><body>
+<canvas id="backdrop" data-mode="dots" aria-hidden="true"></canvas>
 ${header}
 <main>
 ${page.body}
@@ -581,6 +584,7 @@ ${footer}`;
 <title>${escape(c.title)}</title><meta name="description" content="${escape(c.description)}">
 <style>${STYLE_V2}${SITE_RULES}</style>
 </head><body>
+<canvas id="backdrop" data-mode="chain" aria-hidden="true"></canvas>
 ${body}
 <script src="/site.js" defer></script>
 </body></html>`;

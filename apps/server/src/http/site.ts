@@ -754,6 +754,75 @@ const BODIES: Record<SitePath, { title: (t: SiteTexts) => string; body: (context
  * site works without it.
  */
 export const SITE_SCRIPT = `"use strict";
+// Animated backdrop: drifting receipt blocks (home) or a quiet dot grid with a
+// soft glow (other pages). Decoration only: still frame under reduced motion.
+(function () {
+  const canvas = document.getElementById("backdrop");
+  const ctx = canvas && canvas.getContext("2d");
+  if (!ctx) return;
+  const chain = canvas.dataset.mode === "chain";
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const dark = (getComputedStyle(document.body).getPropertyValue("--canvas").trim().toLowerCase() || "#070809") < "#808080";
+  const k = dark ? 1 : 0.6;
+  const rgb = dark ? "75,155,255" : "0,98,224";
+  let w = 0, h = 0, nodes = [], t = 0, mx = 0.75, my = 0.3;
+  function size() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    w = innerWidth; h = innerHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    nodes = [];
+    const n = w < 700 ? 16 : 34;
+    for (let i = 0; i < (chain ? n : 0); i++) {
+      const b = crypto.getRandomValues(new Uint8Array(3));
+      nodes.push({ x: Math.random() * w, y: Math.random() * h, vx: (Math.random() - 0.5) * 0.16, vy: (Math.random() - 0.5) * 0.16,
+        hash: Array.from(b, (v) => v.toString(16).padStart(2, "0")).join("") });
+    }
+  }
+  function frame() {
+    ctx.clearRect(0, 0, w, h);
+    const gx = chain ? w * 0.75 : mx * w, gy = chain ? h * 0.3 : my * h;
+    const glow = ctx.createRadialGradient(gx, gy, 0, gx, gy, Math.max(w, h) * 0.5);
+    glow.addColorStop(0, "rgba(0,109,249," + 0.16 * k + ")");
+    glow.addColorStop(1, "rgba(0,109,249,0)");
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+    if (chain) {
+      for (const a of nodes) {
+        if (!still) { a.x += a.vx; a.y += a.vy; if (a.x < 0 || a.x > w) a.vx *= -1; if (a.y < 0 || a.y > h) a.vy *= -1; }
+      }
+      for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d >= 190) continue;
+        ctx.strokeStyle = "rgba(" + rgb + "," + 0.26 * k * (1 - d / 190) + ")";
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        if (d < 150 && (i + j) % 5 === 0) {
+          const p = (t * 0.004 + i * 0.13) % 1;
+          ctx.fillStyle = "rgba(63,191,110," + 0.85 * k + ")";
+          ctx.beginPath(); ctx.arc(a.x + (b.x - a.x) * p, a.y + (b.y - a.y) * p, 2, 0, 7); ctx.fill();
+        }
+      }
+      ctx.font = "10px ui-monospace, monospace";
+      for (const a of nodes) {
+        ctx.fillStyle = dark ? "rgba(10,30,61,0.85)" : "rgba(232,241,255,0.9)";
+        ctx.strokeStyle = "rgba(" + rgb + "," + 0.5 * k + ")";
+        ctx.fillRect(a.x - 9, a.y - 9, 18, 18); ctx.strokeRect(a.x - 9, a.y - 9, 18, 18);
+        ctx.fillStyle = "rgba(" + rgb + "," + 0.4 * k + ")";
+        ctx.fillText(a.hash, a.x + 14, a.y + 3);
+      }
+    } else {
+      for (let x = 0; x <= w; x += 32) for (let y = 0; y <= h; y += 32) {
+        const near = Math.max(0, 1 - Math.hypot(x - gx, y - gy) / 300);
+        ctx.fillStyle = "rgba(" + rgb + "," + (0.07 + 0.35 * near * near) * k + ")";
+        ctx.fillRect(x, y, 1.5, 1.5);
+      }
+    }
+    t += 1;
+    if (!still) requestAnimationFrame(frame);
+  }
+  size(); frame();
+  addEventListener("resize", () => { size(); if (still) frame(); });
+  if (!chain && !still) addEventListener("pointermove", (e) => { mx = e.clientX / w; my = e.clientY / h; });
+})();
 for (const button of document.querySelectorAll("button.copy")) {
   if (!navigator.clipboard) continue;
   const label = button.textContent;
