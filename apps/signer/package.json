@@ -17,9 +17,9 @@
   },
   "dependencies": {
     "@sigillo/core": "workspace:*",
+    "better-sqlite3": "^11.7.0",
     "commander": "^12.1.0",
-    "zod": "^3.24.1",
-    "better-sqlite3": "^11.7.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12"
