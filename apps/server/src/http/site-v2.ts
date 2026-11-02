@@ -302,7 +302,9 @@ body { background: var(--canvas); }
 .s-split h2 { max-width: 22ch; }
 .s-video { border-radius: 12px; overflow: hidden; background: #000; border: 1px solid var(--separator); aspect-ratio: 16 / 9; }
 .s-video video { display: block; width: 100%; height: 100%; object-fit: cover; }
-.s-dispute { padding: 48px; max-width: 820px; }
+.s-dispute { padding: 48px; max-width: 820px; margin: 0 auto; text-align: center; }
+.s-center { max-width: 820px; margin: 40px auto 0; text-align: center; }
+.s-dispute h2, .s-dispute .s-lead, .s-center p { margin-left: auto; margin-right: auto; }
 .s-dispute h2 { max-width: 24ch; }
 .s-fit { margin-top: 32px; align-items: stretch; }
 .s-fit ul { list-style: none; margin: 20px 0 0; padding: 0; display: grid; gap: 16px; }
@@ -542,8 +544,9 @@ export function siteV2Page(view: SiteV2View): string {
 <div class="s-two"><div><ol class="steps-v2">${c.deliver.story.map((line, i) => `<li><span class="num">${i + 1}</span><span>${escape(line)}</span></li>`).join("")}</ol>
 <ul class="s-yes" style="list-style:none;padding:0;display:grid;gap:6px">${c.deliver.contents.map((line) => `<li>${escape(line)}</li>`).join("")}</ul>
 <p><a class="btn" href="/verify">${escape(c.deliver.verify)} ›</a></p>
-<div class="s-card" style="margin-top:24px"><h3 class="t-sec">${escape(c.deliver.privacyTitle)}</h3><p>${escape(c.deliver.privacyText)}</p><a class="btn inv" href="/privacy">${escape(c.deliver.privacyLink)} ›</a></div></div>
-<div class="s-paper" aria-hidden="true"><p style="margin:0;font-weight:700">${escape(c.deliver.sample)}</p><p class="mono" style="margin:8px 0">${escape(c.card.title)} · ${escape(c.deliver.date)}</p><p style="margin:0"><b>${escape(c.card.verdict)}</b> · 9685 533e aa64 29c4</p><hr style="border:0;border-top:1px solid #dce0e6"><ul style="list-style:none;padding:0;margin:0;display:grid;gap:4px;font-size:13px">${c.deliver.actions.map((a, i) => `<li>${["16:58", "16:58", "16:58", "16:59"][i]} · ${escape(a)}</li>`).join("")}</ul></div></div></div></section>
+</div>
+<div class="s-paper" aria-hidden="true"><p style="margin:0;font-weight:700">${escape(c.deliver.sample)}</p><p class="mono" style="margin:8px 0">${escape(c.card.title)} · ${escape(c.deliver.date)}</p><p style="margin:0"><b>${escape(c.card.verdict)}</b> · 9685 533e aa64 29c4</p><hr style="border:0;border-top:1px solid #dce0e6"><ul style="list-style:none;padding:0;margin:0;display:grid;gap:4px;font-size:13px">${c.deliver.actions.map((a, i) => `<li>${["16:58", "16:58", "16:58", "16:59"][i]} · ${escape(a)}</li>`).join("")}</ul></div></div>
+<div class="s-card s-center"><h3 class="t-sec">${escape(c.deliver.privacyTitle)}</h3><p>${escape(c.deliver.privacyText)}</p><a class="btn inv" href="/privacy">${escape(c.deliver.privacyLink)} ›</a></div></div></section>
 
 <section class="s-sec" id="cosa-prova"><div class="s-wrap"><h2>${escape(c.proves.h2)}</h2>
 <div class="s-two s-eq"><div class="s-card"><h3 class="t-sec">${escape(c.proves.yes)}</h3><ul class="s-yes" style="list-style:none;padding:0;display:grid;gap:8px">${c.proves.yesLines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul></div>
