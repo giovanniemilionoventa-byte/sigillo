@@ -220,8 +220,8 @@ const EN: SiteTexts = {
     perMonth: "/ month",
     plans: [
       { name: "Pilot phase", price: "Free", features: ["10,000 receipts a month", "Evidence pack and verifier", "Timestamps", "Direct support"], action: "Start free" },
-      { name: "Standard", price: "190 €", features: ["100,000 receipts a month", "Unlimited systems", "Unlimited people", "Off-site backup"], action: "Notify me" },
-      { name: "Custom", price: "On request", features: ["High volumes", "Dedicated server", "eIDAS qualified timestamps", "Contract and SLA"], action: "Contact us" },
+      { name: "Standard", price: "190 €", features: ["100,000 receipts a month", "Unlimited systems", "Unlimited people", "Encrypted off-site backup, 30 days kept"], action: "Notify me" },
+      { name: "Custom", price: "On request", features: ["High volumes", "Dedicated server", "Timestamp provider of your choice", "Contract and SLA"], action: "Contact us" },
     ],
     questions: "Questions",
     faq: [
@@ -440,8 +440,8 @@ const IT: SiteTexts = {
     perMonth: "/ mese",
     plans: [
       { name: "Fase pilota", price: "Gratis", features: ["10.000 ricevute al mese", "Fascicolo e verificatore", "Marca temporale", "Supporto diretto"], action: "Inizia gratis" },
-      { name: "Standard", price: "190 €", features: ["100.000 ricevute al mese", "Sistemi illimitati", "Persone illimitate", "Copia di sicurezza esterna"], action: "Avvisami" },
-      { name: "Su misura", price: "Su richiesta", features: ["Volumi alti", "Server dedicato", "Marca temporale qualificata eIDAS", "Contratto e SLA"], action: "Contattaci" },
+      { name: "Standard", price: "190 €", features: ["100.000 ricevute al mese", "Sistemi illimitati", "Persone illimitate", "Copia di sicurezza esterna cifrata, 30 giorni"], action: "Avvisami" },
+      { name: "Su misura", price: "Su richiesta", features: ["Volumi alti", "Server dedicato", "Fornitore di marca temporale a scelta", "Contratto e SLA"], action: "Contattaci" },
     ],
     questions: "Domande",
     faq: [

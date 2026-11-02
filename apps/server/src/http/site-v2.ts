@@ -13,8 +13,8 @@ import { BLOG_STYLE } from "./site-blog.js";
  * does not, and offers one invitation. Everything is server-rendered: the only
  * script is the copy button's (/site.js), as on the site as it was.
  *
- * Facts the owner has not given (company name, VAT number, address, the
- * server's country) are bracketed placeholders, never invented.
+ * Facts the owner has not given (company name, VAT number, address) are
+ * left out, never invented, and never shown as bracketed placeholders.
  */
 
 interface Copy {
@@ -112,7 +112,7 @@ const IT: Copy = {
     noLines: ["Che l'agente abbia registrato tutto", "Che le decisioni siano giuste", "Cosa c'era scritto"],
     see: "Cosa vediamo, cosa no",
     seeText: "Vediamo il nome dello strumento o del modello, l'ora, l'esito e le impronte. Non vediamo prompt, risposte, documenti né nomi: restano da te.",
-    facts: [["Server", "[fornitore, paese]"], ["Marca temporale", "freetsa.org, non qualificata eIDAS"], ["Verificatore", "open source"]],
+    facts: [["Server", "Aruba, Italia"], ["Marca temporale", "freetsa.org, non qualificata eIDAS"], ["Verificatore", "open source"]],
   },
   aiAct: {
     h2: "Cosa chiede l'AI Act, e cosa fa sigillo",
@@ -135,9 +135,9 @@ const IT: Copy = {
   pricing: {
     h2: "Prezzi",
     plans: [
-      { name: "Pilota", price: "Gratis", lines: ["Sistemi per provare", "10.000 ricevute al mese", "Fascicolo e verifica", "Marca temporale", "Supporto diretto"], cta: "Richiedi l'accesso", note: "Attivazione entro [un giorno lavorativo]" },
-      { name: "Standard", price: "190 € al mese + IVA", lines: ["Tutto del Pilota, più:", "100.000 ricevute al mese", "Sistemi illimitati", "Fascicoli automatici", "Copia di sicurezza esterna"], cta: "Contattaci" },
-      { name: "Su misura", price: "Su richiesta", lines: ["Server dedicato", "Marca temporale qualificata eIDAS", "Contratto e SLA"], cta: "Contattaci" },
+      { name: "Pilota", price: "Gratis", lines: ["Sistemi per provare", "10.000 ricevute al mese", "Fascicolo e verifica", "Marca temporale", "Supporto diretto"], cta: "Richiedi l'accesso" },
+      { name: "Standard", price: "190 € al mese + IVA", lines: ["Tutto del Pilota, più:", "100.000 ricevute al mese", "Sistemi illimitati", "Fascicoli automatici", "Copia di sicurezza esterna cifrata, 30 giorni"], cta: "Contattaci" },
+      { name: "Su misura", price: "Su richiesta", lines: ["Server dedicato", "Fornitore di marca temporale a scelta", "Contratto e SLA"], cta: "Contattaci" },
     ],
     unit: "1 ricevuta = 1 azione registrata",
     faq: [
@@ -149,7 +149,7 @@ const IT: Copy = {
   },
   faq: { h2: "Prima di scriverci", lead: "Le risposte brevi. Per il resto, scrivici." },
   contact: { h2: "Domande, un pilota, una demo per il tuo team?", button: "Contattaci", address: "scrivi a" },
-  footer: { product: "Prodotto", receivers: "Per chi riceve un fascicolo", company: "Azienda", format: "Formato delle ricevute", privacy: "Privacy", about: "Chi siamo", legal: "© 2026 [Ragione sociale] · P.IVA [P.IVA] · [Sede]" },
+  footer: { product: "Prodotto", receivers: "Per chi riceve un fascicolo", company: "Azienda", format: "Formato delle ricevute", privacy: "Privacy", about: "Chi siamo", legal: "© 2026 Sigillo" },
 };
 
 const EN: Copy = {
@@ -226,7 +226,7 @@ const EN: Copy = {
     noLines: ["That the agent recorded everything", "That the decisions were right", "What was written"],
     see: "What we see, what we do not",
     seeText: "We see the name of the tool or model, the time, the outcome and the fingerprints. We do not see prompts, answers, documents or names: they stay with you.",
-    facts: [["Server", "[provider, country]"], ["Timestamp", "freetsa.org, not eIDAS qualified"], ["Verifier", "open source"]],
+    facts: [["Server", "Aruba, Italy"], ["Timestamp", "freetsa.org, not eIDAS qualified"], ["Verifier", "open source"]],
   },
   aiAct: {
     h2: "What the AI Act asks, and what sigillo does",
@@ -249,9 +249,9 @@ const EN: Copy = {
   pricing: {
     h2: "Pricing",
     plans: [
-      { name: "Pilot", price: "Free", lines: ["Systems to try", "10,000 receipts a month", "Evidence pack and verification", "Timestamp", "Direct support"], cta: "Request access", note: "Activation within [one working day]" },
-      { name: "Standard", price: "€190 a month + VAT", lines: ["Everything in Pilot, plus:", "100,000 receipts a month", "Unlimited systems", "Daily evidence packs", "Off-site backup"], cta: "Contact us" },
-      { name: "Custom", price: "On request", lines: ["Dedicated server", "eIDAS-qualified timestamp", "Contract and SLA"], cta: "Contact us" },
+      { name: "Pilot", price: "Free", lines: ["Systems to try", "10,000 receipts a month", "Evidence pack and verification", "Timestamp", "Direct support"], cta: "Request access" },
+      { name: "Standard", price: "€190 a month + VAT", lines: ["Everything in Pilot, plus:", "100,000 receipts a month", "Unlimited systems", "Daily evidence packs", "Encrypted off-site backup, 30 days kept"], cta: "Contact us" },
+      { name: "Custom", price: "On request", lines: ["Dedicated server", "Timestamp provider of your choice", "Contract and SLA"], cta: "Contact us" },
     ],
     unit: "1 receipt = 1 recorded action",
     faq: [
@@ -263,7 +263,7 @@ const EN: Copy = {
   },
   faq: { h2: "Before you write to us", lead: "The short answers. For the rest, write to us." },
   contact: { h2: "Questions, a pilot, a demo for your team?", button: "Contact us", address: "write to" },
-  footer: { product: "Product", receivers: "For whoever receives a pack", company: "Company", format: "Receipt format", privacy: "Privacy", about: "About", legal: "© 2026 [Company name] · VAT [VAT no.] · [Address]" },
+  footer: { product: "Product", receivers: "For whoever receives a pack", company: "Company", format: "Receipt format", privacy: "Privacy", about: "About", legal: "© 2026 Sigillo" },
 };
 
 const COPY: Record<Language, Copy> = { it: IT, en: EN };
@@ -464,7 +464,7 @@ function chrome(view: SiteV2View, home: boolean, current: "blog" | "verify" | "p
   const footer = `<footer class="s-foot"><div class="s-wrap"><div>
 <section><h4>${escape(c.footer.product)}</h4><ul><li><a href="${to("come-funziona")}">${escape(c.nav.how)}</a></li><li><a href="${to("cosa-consegni")}">${escape(c.nav.deliver)}</a></li><li><a href="${to("prezzi")}">${escape(c.nav.pricing)}</a></li></ul></section>
 <section><h4>${escape(c.footer.receivers)}</h4><ul><li><a href="/verify">${escape(c.nav.verify)}</a></li><li><a href="${REPOSITORY}/tree/main/packages/verifier" target="_blank" rel="noopener">Open source</a></li><li><a href="${REPOSITORY}/blob/main/docs/FORMAT.md" target="_blank" rel="noopener">${escape(c.footer.format)}</a></li></ul></section>
-<section><h4>${escape(c.footer.company)}</h4><ul><li><a href="/privacy">${escape(c.footer.privacy)}</a></li>${blog === "" ? "" : `<li><a href="/blog">${escape(c.nav.blog)}</a></li>`}<li><a href="/ui/login">${escape(c.nav.signIn)}</a></li></ul></section></div>
+<section><h4>${escape(c.footer.company)}</h4><ul><li><a href="/privacy">${escape(c.footer.privacy)}</a></li><li><a href="/terms">Terms</a></li><li><a href="/dpa">DPA</a></li>${blog === "" ? "" : `<li><a href="/blog">${escape(c.nav.blog)}</a></li>`}<li><a href="/ui/login">${escape(c.nav.signIn)}</a></li></ul></section></div>
 <p>${escape(c.footer.legal)}</p></div></footer>`;
   return { header, band, footer, start, mail };
 }

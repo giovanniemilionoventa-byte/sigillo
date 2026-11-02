@@ -33,8 +33,9 @@ import { BLOG_STYLE, blogIndexBody, postBody, postJsonLd } from "./site-blog.js"
  */
 import { siteV2Inner, siteV2Page } from "./site-v2.js";
 import { privacyPage } from "./site-privacy.js";
+import { DPA, TERMS, legalPage } from "./site-legal.js";
 
-export const SITE_PATHS = ["/", "/verify", "/privacy"] as const;
+export const SITE_PATHS = ["/", "/verify", "/privacy", "/terms", "/dpa"] as const;
 type SitePath = (typeof SITE_PATHS)[number];
 
 /** The blog's pages, which the language switch may return to as well. */
@@ -57,7 +58,7 @@ const SIGN_UP = "/ui/registrati";
 const REPOSITORY = "https://github.com/giovanniemilionoventa-byte/sigillo";
 
 /** The address the site's "Contact" links write to; with none, no link is shown. */
-export const SITE_CONTACT_EMAIL: string | undefined = "giovanniemilio.noventa@gmail.com";
+export const SITE_CONTACT_EMAIL: string | undefined = "team@get-sigillo.eu";
 
 export interface SiteOptions {
   languageOf: (request: FastifyRequest) => Language;
@@ -553,7 +554,7 @@ ${body}
 <div><a class="brand" href="/">${SEAL_SVG}<span>sigillo</span></a><p>${escape(t.footer.europe)}</p></div>
 <div><h4>${escape(t.footer.product)}</h4><ul><li>${section("why", t.nav.why)}</li><li>${section("how", t.nav.how)}</li><li>${section("ai-act", t.nav.aiAct)}</li><li>${section("pricing", t.nav.pricing)}</li></ul></div>
 <div><h4>${escape(t.footer.developers)}</h4><ul><li>${section("connect", t.nav.connect)}</li><li><a href="/verify">${escape(t.nav.verify)}</a></li>${context.hasBlog ? `<li><a href="/blog">${escape(t.blog.nav)}</a></li>` : ""}<li>${external(`${REPOSITORY}/tree/main/packages/verifier`, t.footer.verifier)}</li></ul></div>
-<div><h4>${escape(t.footer.company)}</h4><ul>${contactHref === undefined ? "" : `<li>${external(contactHref, t.footer.contact)}</li>`}<li><a href="/privacy">${escape(t.footer.privacy)}</a></li><li><a href="${SIGN_IN}">${escape(t.signIn)}</a></li></ul></div>
+<div><h4>${escape(t.footer.company)}</h4><ul>${contactHref === undefined ? "" : `<li>${external(contactHref, t.footer.contact)}</li>`}<li><a href="/privacy">${escape(t.footer.privacy)}</a></li><li><a href="/terms">Terms</a></li><li><a href="/dpa">DPA</a></li><li><a href="${SIGN_IN}">${escape(t.signIn)}</a></li></ul></div>
 </div>
 <p class="legal">© 2026 Sigillo</p>
 </div></footer>
@@ -731,10 +732,20 @@ function privacyBody(context: PageContext): string {
   });
 }
 
+function termsBody(context: PageContext): string {
+  return legalPage(TERMS, { href: "/dpa", label: "Data Processing Agreement" }, context.contactEmail === undefined ? undefined : mailLink(context.contactEmail, "Sigillo"));
+}
+
+function dpaBody(context: PageContext): string {
+  return legalPage(DPA, { href: "/terms", label: "Terms of Service" }, context.contactEmail === undefined ? undefined : mailLink(context.contactEmail, "Sigillo"));
+}
+
 const BODIES: Record<SitePath, { title: (t: SiteTexts) => string; body: (context: PageContext) => string }> = {
   "/": { title: (t) => t.home.title, body: homeBody },
   "/verify": { title: (t) => `${t.verify.title} · Sigillo`, body: verifyBody },
   "/privacy": { title: (t) => `${t.privacy.title} · Sigillo`, body: privacyBody },
+  "/terms": { title: () => `${TERMS.title} · Sigillo`, body: termsBody },
+  "/dpa": { title: () => `${DPA.title} · Sigillo`, body: dpaBody },
 };
 
 /**
@@ -977,7 +988,7 @@ export function registerSite(app: FastifyInstance, options: SiteOptions): void {
   });
 
   app.get("/sitemap.xml", async (_request, reply) => {
-    const urls: { loc: string; lastmod?: string | undefined }[] = [{ loc: `${origin}/` }, { loc: `${origin}/verify` }, { loc: `${origin}/privacy` }];
+    const urls: { loc: string; lastmod?: string | undefined }[] = [{ loc: `${origin}/` }, { loc: `${origin}/verify` }, { loc: `${origin}/privacy` }, { loc: `${origin}/terms` }, { loc: `${origin}/dpa` }];
     if (posts.length > 0) urls.push({ loc: `${origin}/blog`, lastmod: posts[0]?.date }, ...posts.map((post: Post) => ({ loc: `${origin}/blog/${post.slug}`, lastmod: post.date })));
     const entries = urls.map((url) => `<url><loc>${escape(url.loc)}</loc>${url.lastmod === undefined ? "" : `<lastmod>${url.lastmod}</lastmod>`}</url>`);
     return reply

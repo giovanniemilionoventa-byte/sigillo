@@ -126,6 +126,27 @@ describe("the public site, redesigned (SIGILLO_SITE_V2=all)", () => {
     for (const page of [en, it]) expect(page).toMatch(/id="cosa-consegni"[\s\S]*href="\/privacy"/);
   });
 
+  it("shows no template placeholder, names the server's provider, and offers the terms and the DPA", async () => {
+    for (const cookie of ["sigillo_lang=en", "sigillo_lang=it"]) {
+      for (const path of SITE_PATHS) {
+        const body = (await get(path, { cookie })).body;
+        expect(body, `${path} ${cookie}`).not.toMatch(/\[(?:Company name|VAT no\.|Address|provider, country|one working day|Ragione sociale|fornitore, paese|un giorno lavorativo)[^\]]*\]/);
+        expect(body).not.toContain("giovanniemilio.noventa");
+        expect(body).not.toMatch(/eIDAS[- ]qualified timestamp/i);
+      }
+    }
+    const redesignedHome = (await getNew("/")).body;
+    expect(redesignedHome).toContain("Aruba");
+    expect(redesignedHome).toContain('href="/terms"');
+    for (const [path, title] of [["/terms", "Terms of Service"], ["/dpa", "Data Processing Agreement"]] as const) {
+      const body = (await get(path)).body;
+      expect(body).toContain(`<h1>${title}</h1>`);
+      expect(body).toContain("provisional");
+    }
+    expect((await get("/")).body).toContain('href="/terms"');
+    expect((await get("/sitemap.xml")).body).toContain("/dpa");
+  });
+
   it("keeps the home's buttons clear of the console's status-dot class", async () => {
     const home = (await getNew("/")).body;
     expect(home).not.toMatch(/class="btn light"/);
@@ -233,7 +254,7 @@ describe("the public site", () => {
   it("sends the two plans that cannot be started yet to Gmail's compose window, and shows the contact on the home page", async () => {
     const pricing = (await get("/")).body;
     expect(pricing).toContain('href="/ui/registrati"');
-    expect(pricing).toContain('href="https://mail.google.com/mail/?view=cm&amp;fs=1&amp;to=giovanniemilio.noventa%40gmail.com&amp;su=Sigillo%3A%20Standard"');
+    expect(pricing).toContain('href="https://mail.google.com/mail/?view=cm&amp;fs=1&amp;to=team%40get-sigillo.eu&amp;su=Sigillo%3A%20Standard"');
     expect(pricing).toContain('&amp;su=Sigillo%3A%20Custom"');
     expect(pricing).not.toContain("mailto:");
     expect(pricing).not.toContain('class="btn plain" href="/ui/login"');
@@ -245,7 +266,7 @@ describe("the public site", () => {
       expect(home).toContain(`>${button}</a>`);
       expect(home).toContain(heading);
       expect(home).toContain('<section id="contact" class="cta">');
-      expect(home).toContain("to=giovanniemilio.noventa%40gmail.com");
+      expect(home).toContain("to=team%40get-sigillo.eu");
       expect(home).not.toContain("mailto:");
     }
   });
