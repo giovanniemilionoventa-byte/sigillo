@@ -754,78 +754,55 @@ const BODIES: Record<SitePath, { title: (t: SiteTexts) => string; body: (context
  * site works without it.
  */
 export const SITE_SCRIPT = `"use strict";
-// Animated backdrop: drifting receipt blocks (home) or a quiet dot grid with a
-// soft glow (other pages). Decoration only: still frame under reduced motion.
+// Animated backdrop on every page: a quiet dot grid with a soft blue glow that
+// follows the pointer and a faint line sweeping down. Decoration only: still
+// frame under reduced motion.
 (function () {
   const canvas = document.getElementById("backdrop");
   const ctx = canvas && canvas.getContext("2d");
   if (!ctx) return;
-  const chain = canvas.dataset.mode === "chain";
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const dark = (getComputedStyle(document.body).getPropertyValue("--canvas").trim().toLowerCase() || "#070809") < "#808080";
   const k = dark ? 1 : 0.6;
   const rgb = dark ? "75,155,255" : "0,98,224";
-  let w = 0, h = 0, nodes = [], t = 0, mx = 0.75, my = 0.3;
+  let w = 0, h = 0, t = 0, mx = 0.75, my = 0.3;
   function size() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     w = innerWidth; h = innerHeight;
     canvas.width = w * dpr; canvas.height = h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    nodes = [];
-    const n = w < 700 ? 16 : 34;
-    for (let i = 0; i < (chain ? n : 0); i++) {
-      nodes.push({ x: Math.random() * w, y: Math.random() * h, vx: (Math.random() - 0.5) * 0.16, vy: (Math.random() - 0.5) * 0.16,
-        });
-    }
   }
   // Fades to nothing by the time the reader has scrolled 70% of a screen, so it
   // never sits behind the pricing, the FAQ or the footer; softer still on phones.
   function fade() {
-    const cap = w < 700 ? 0.4 : 0.8;
+    const cap = w < 700 ? 0.7 : 1;
     canvas.style.opacity = String(Math.max(0, 1 - scrollY / (h * 0.7)) * cap);
   }
   function frame() {
     fade();
     ctx.clearRect(0, 0, w, h);
-    const gx = chain ? w * 0.75 : mx * w, gy = chain ? h * 0.3 : my * h;
+    const gx = mx * w, gy = my * h;
     const glow = ctx.createRadialGradient(gx, gy, 0, gx, gy, Math.max(w, h) * 0.5);
     glow.addColorStop(0, "rgba(0,109,249," + 0.16 * k + ")");
     glow.addColorStop(1, "rgba(0,109,249,0)");
     ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
-    if (chain) {
-      for (const a of nodes) {
-        if (!still) { a.x += a.vx; a.y += a.vy; if (a.x < 0 || a.x > w) a.vx *= -1; if (a.y < 0 || a.y > h) a.vy *= -1; }
-      }
-      for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
-        const a = nodes[i], b = nodes[j], d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (d >= 190) continue;
-        ctx.strokeStyle = "rgba(" + rgb + "," + 0.26 * k * (1 - d / 190) + ")";
-        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-        if (d < 150 && (i + j) % 5 === 0) {
-          const p = (t * 0.004 + i * 0.13) % 1;
-          ctx.fillStyle = "rgba(63,191,110," + 0.85 * k + ")";
-          ctx.beginPath(); ctx.arc(a.x + (b.x - a.x) * p, a.y + (b.y - a.y) * p, 2, 0, 7); ctx.fill();
-        }
-      }
-      for (const a of nodes) {
-        ctx.fillStyle = dark ? "rgba(10,30,61,0.85)" : "rgba(232,241,255,0.9)";
-        ctx.strokeStyle = "rgba(" + rgb + "," + 0.5 * k + ")";
-        ctx.fillRect(a.x - 7, a.y - 7, 14, 14); ctx.strokeRect(a.x - 7, a.y - 7, 14, 14);
-      }
-    } else {
-      for (let x = 0; x <= w; x += 32) for (let y = 0; y <= h; y += 32) {
-        const near = Math.max(0, 1 - Math.hypot(x - gx, y - gy) / 300);
-        ctx.fillStyle = "rgba(" + rgb + "," + (0.07 + 0.35 * near * near) * k + ")";
-        ctx.fillRect(x, y, 1.5, 1.5);
-      }
+    for (let x = 0; x <= w; x += 32) for (let y = 0; y <= h; y += 32) {
+      const near = Math.max(0, 1 - Math.hypot(x - gx, y - gy) / 300);
+      ctx.fillStyle = "rgba(" + rgb + "," + (0.16 + 0.5 * near * near) * k + ")";
+      ctx.fillRect(x, y, 1.5, 1.5);
     }
+    const sy = (t * 0.6) % (h + 200) - 100;
+    const line = ctx.createLinearGradient(0, sy - 60, 0, sy);
+    line.addColorStop(0, "rgba(" + rgb + ",0)");
+    line.addColorStop(1, "rgba(" + rgb + "," + 0.1 * k + ")");
+    ctx.fillStyle = line; ctx.fillRect(0, sy - 60, w, 60);
     t += 1;
     if (!still) requestAnimationFrame(frame);
   }
   size(); frame();
   addEventListener("resize", () => { size(); if (still) frame(); });
   addEventListener("scroll", fade, { passive: true });
-  if (!chain && !still) addEventListener("pointermove", (e) => { mx = e.clientX / w; my = e.clientY / h; });
+  if (!still) addEventListener("pointermove", (e) => { mx = e.clientX / w; my = e.clientY / h; });
 })();
 for (const button of document.querySelectorAll("button.copy")) {
   if (!navigator.clipboard) continue;
