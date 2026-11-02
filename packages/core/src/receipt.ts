@@ -238,7 +238,7 @@ function schemesMatchDigests(
   for (const role of ["input", "output"] as const) {
     if ((receipt[`${role}_hash`] === null) !== (receipt[`${role}_hash_scheme`] === null)) {
       context.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: [`${role}_hash_scheme`],
         message: `must be null exactly when ${role}_hash is null`,
       });
