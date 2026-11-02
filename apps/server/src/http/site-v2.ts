@@ -272,6 +272,8 @@ const REPOSITORY = "https://github.com/giovanniemilionoventa-byte/sigillo";
 const SITE_RULES = `
 body { background: var(--canvas); }
 #backdrop { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+#backdrop[data-mode="chain"] { -webkit-mask-image: linear-gradient(to right, transparent 30%, #000 70%); mask-image: linear-gradient(to right, transparent 30%, #000 70%); }
+@media (max-width: 800px) { #backdrop[data-mode="chain"] { -webkit-mask-image: none; mask-image: none; } }
 main, footer { position: relative; z-index: 1; }
 .s-wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 .s-top { position: sticky; top: 0; z-index: 5; background: var(--canvas); border-bottom: 1px solid var(--separator); }
