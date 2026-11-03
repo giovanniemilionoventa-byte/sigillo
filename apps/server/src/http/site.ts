@@ -754,9 +754,11 @@ const BODIES: Record<SitePath, { title: (t: SiteTexts) => string; body: (context
  * site works without it.
  */
 export const SITE_SCRIPT = `"use strict";
-// Animated backdrop on every page: a quiet dot grid with a soft blue glow that
-// follows the pointer and a faint line sweeping down. Decoration only: still
-// frame under reduced motion.
+// Animated backdrop on every page: a dot grid that breathes. Light waves
+// travel across it (a new one every few seconds, and one where you click), a
+// soft glow follows the pointer or drifts by itself, and the colour moves from
+// blue to teal as the page scrolls. Decoration only: one still frame under
+// reduced motion, and it never sits strongly behind text (the dots are tiny).
 (function () {
   const canvas = document.getElementById("backdrop");
   const ctx = canvas && canvas.getContext("2d");
@@ -764,45 +766,74 @@ export const SITE_SCRIPT = `"use strict";
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const dark = (getComputedStyle(document.body).getPropertyValue("--canvas").trim().toLowerCase() || "#070809") < "#808080";
   const k = dark ? 1 : 0.6;
-  const rgb = dark ? "75,155,255" : "0,98,224";
-  let w = 0, h = 0, t = 0, mx = 0.75, my = 0.3;
+  const STEP = 30;
+  let w = 0, h = 0, t = 0, tx = 0.75, ty = 0.3, gx = 0, gy = 0, moved = -9999, waves = [];
   function size() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     w = innerWidth; h = innerHeight;
     canvas.width = w * dpr; canvas.height = h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    gx = tx * w; gy = ty * h;
   }
-  // Fades to nothing by the time the reader has scrolled 70% of a screen, so it
-  // never sits behind the pricing, the FAQ or the footer; softer still on phones.
+  // Blue at the top of the page, teal towards the bottom.
+  function colour() {
+    const room = Math.max(1, document.documentElement.scrollHeight - h);
+    const p = Math.min(1, scrollY / room);
+    const mix = (a, b) => Math.round(a + (b - a) * p);
+    return dark ? [mix(75, 56), mix(155, 214), mix(255, 200)] : [mix(0, 0), mix(98, 140), mix(224, 150)];
+  }
+  function wave(x, y) { waves.push({ x, y, born: t }); if (waves.length > 5) waves.shift(); }
+  // The picture fades as the reader scrolls but keeps a trace, so the page
+  // never goes flat; softer still on phones.
   function fade() {
     const cap = w < 700 ? 0.7 : 1;
-    canvas.style.opacity = String(Math.max(0, 1 - scrollY / (h * 0.7)) * cap);
+    canvas.style.opacity = String((0.25 + 0.75 * Math.max(0, 1 - scrollY / (h * 1.2))) * cap);
   }
   function frame() {
     fade();
     ctx.clearRect(0, 0, w, h);
-    const gx = mx * w, gy = my * h;
+    const c = colour(), rgb = c.join(",");
+    // Pointer glow, or a slow wander when nobody is pointing.
+    const idle = t - moved > 240;
+    const wantX = idle ? w * (0.5 + 0.35 * Math.sin(t * 0.004)) : tx * w;
+    const wantY = idle ? h * (0.35 + 0.25 * Math.sin(t * 0.0063 + 1)) : ty * h;
+    gx += (wantX - gx) * 0.06; gy += (wantY - gy) * 0.06;
+    if (t % 260 === 0) wave(Math.random() * w, Math.random() * h);
     const glow = ctx.createRadialGradient(gx, gy, 0, gx, gy, Math.max(w, h) * 0.5);
-    glow.addColorStop(0, "rgba(0,109,249," + 0.16 * k + ")");
-    glow.addColorStop(1, "rgba(0,109,249,0)");
+    glow.addColorStop(0, "rgba(" + rgb + "," + 0.2 * k + ")");
+    glow.addColorStop(1, "rgba(" + rgb + ",0)");
     ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
-    for (let x = 0; x <= w; x += 32) for (let y = 0; y <= h; y += 32) {
-      const near = Math.max(0, 1 - Math.hypot(x - gx, y - gy) / 300);
-      ctx.fillStyle = "rgba(" + rgb + "," + (0.16 + 0.5 * near * near) * k + ")";
-      ctx.fillRect(x, y, 1.5, 1.5);
+    waves = waves.filter((v) => t - v.born < 220);
+    for (let x = 0; x <= w + STEP; x += STEP) for (let y = 0; y <= h + STEP; y += STEP) {
+      let lit = Math.max(0, 1 - Math.hypot(x - gx, y - gy) / 320);
+      let lift = 0;
+      for (const v of waves) {
+        const age = t - v.born, ring = age * 5.5;
+        const edge = Math.abs(Math.hypot(x - v.x, y - v.y) - ring);
+        if (edge < 70) { const q = (1 - edge / 70) * (1 - age / 220); lit = Math.max(lit, q); lift -= q * 4; }
+      }
+      const breathe = 0.5 + 0.5 * Math.sin(t * 0.02 + x * 0.015 + y * 0.011);
+      const size = 1.4 + 2.2 * lit * lit;
+      ctx.fillStyle = "rgba(" + rgb + "," + (0.1 + 0.08 * breathe + 0.7 * lit * lit) * k + ")";
+      ctx.fillRect(x - size / 2, y - size / 2 + lift, size, size);
     }
     const sy = (t * 0.6) % (h + 200) - 100;
-    const line = ctx.createLinearGradient(0, sy - 60, 0, sy);
+    const line = ctx.createLinearGradient(0, sy - 80, 0, sy);
     line.addColorStop(0, "rgba(" + rgb + ",0)");
-    line.addColorStop(1, "rgba(" + rgb + "," + 0.1 * k + ")");
-    ctx.fillStyle = line; ctx.fillRect(0, sy - 60, w, 60);
+    line.addColorStop(1, "rgba(" + rgb + "," + 0.12 * k + ")");
+    ctx.fillStyle = line; ctx.fillRect(0, sy - 80, w, 80);
     t += 1;
     if (!still) requestAnimationFrame(frame);
   }
-  size(); frame();
+  size();
+  if (!still) { wave(w * 0.7, h * 0.3); t = 30; }
+  frame();
   addEventListener("resize", () => { size(); if (still) frame(); });
-  addEventListener("scroll", fade, { passive: true });
-  if (!still) addEventListener("pointermove", (e) => { mx = e.clientX / w; my = e.clientY / h; });
+  addEventListener("scroll", () => { fade(); if (still) frame(); }, { passive: true });
+  if (!still) {
+    addEventListener("pointermove", (e) => { tx = e.clientX / w; ty = e.clientY / h; moved = t; });
+    addEventListener("pointerdown", (e) => { wave(e.clientX, e.clientY); });
+  }
 })();
 for (const button of document.querySelectorAll("button.copy")) {
   if (!navigator.clipboard) continue;
