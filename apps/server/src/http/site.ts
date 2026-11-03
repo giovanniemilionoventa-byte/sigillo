@@ -783,11 +783,11 @@ export const SITE_SCRIPT = `"use strict";
     return dark ? [mix(75, 56), mix(155, 214), mix(255, 200)] : [mix(0, 0), mix(98, 140), mix(224, 150)];
   }
   function wave(x, y) { waves.push({ x, y, born: t }); if (waves.length > 5) waves.shift(); }
-  // The picture fades as the reader scrolls but keeps a trace, so the page
-  // never goes flat; softer still on phones.
+  // The picture dims a little as the reader scrolls but never goes away, so the
+  // page never goes flat; softer still on phones.
   function fade() {
     const cap = w < 700 ? 0.7 : 1;
-    canvas.style.opacity = String((0.25 + 0.75 * Math.max(0, 1 - scrollY / (h * 1.2))) * cap);
+    canvas.style.opacity = String((0.7 + 0.3 * Math.max(0, 1 - scrollY / (h * 1.2))) * cap);
   }
   function frame() {
     fade();
@@ -817,11 +817,6 @@ export const SITE_SCRIPT = `"use strict";
       ctx.fillStyle = "rgba(" + rgb + "," + (0.1 + 0.08 * breathe + 0.7 * lit * lit) * k + ")";
       ctx.fillRect(x - size / 2, y - size / 2 + lift, size, size);
     }
-    const sy = (t * 0.6) % (h + 200) - 100;
-    const line = ctx.createLinearGradient(0, sy - 80, 0, sy);
-    line.addColorStop(0, "rgba(" + rgb + ",0)");
-    line.addColorStop(1, "rgba(" + rgb + "," + 0.12 * k + ")");
-    ctx.fillStyle = line; ctx.fillRect(0, sy - 80, w, 80);
     t += 1;
     if (!still) requestAnimationFrame(frame);
   }
