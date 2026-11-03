@@ -754,80 +754,55 @@ const BODIES: Record<SitePath, { title: (t: SiteTexts) => string; body: (context
  * site works without it.
  */
 export const SITE_SCRIPT = `"use strict";
-// Animated backdrop on every page: a dot grid that breathes. Light waves
-// travel across it (a new one every few seconds, and one where you click), a
-// soft glow follows the pointer or drifts by itself, and the colour moves from
-// blue to teal as the page scrolls. Decoration only: one still frame under
-// reduced motion, and it never sits strongly behind text (the dots are tiny).
+// Backdrop on every page: soft blue and teal lights that drift and change
+// place as the page scrolls, with a little grain. Cards get a border that
+// glows where the pointer is, and those below the first screen rise into place
+// as they come in. Decoration only: lights stay put and cards show at once
+// under reduced motion, and everything works without this script.
 (function () {
-  const canvas = document.getElementById("backdrop");
-  const ctx = canvas && canvas.getContext("2d");
-  if (!ctx) return;
+  const lights = document.querySelectorAll("#backdrop i");
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const dark = (getComputedStyle(document.body).getPropertyValue("--canvas").trim().toLowerCase() || "#070809") < "#808080";
-  const k = dark ? 1 : 0.6;
-  const STEP = 30;
-  let w = 0, h = 0, t = 0, tx = 0.75, ty = 0.3, gx = 0, gy = 0, moved = -9999, waves = [];
-  function size() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    w = innerWidth; h = innerHeight;
-    canvas.width = w * dpr; canvas.height = h * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    gx = tx * w; gy = ty * h;
+  const box = document.getElementById("backdrop");
+  if (box && !dark) box.classList.add("light");
+  let t = 0, p = 0;
+  function place() {
+    const room = Math.max(1, document.documentElement.scrollHeight - innerHeight);
+    const goal = Math.min(1, scrollY / room);
+    p += (goal - p) * (still ? 1 : 0.06);
+    const w = innerWidth, h = innerHeight;
+    const spot = [
+      [0.1 + 0.7 * p, 0.05 + 0.6 * p],
+      [0.7 - 0.5 * p, 0.1 + 0.4 * p],
+      [0.3 + 0.4 * Math.sin(p * 3), 0.7 - 0.5 * p],
+    ];
+    lights.forEach((el, i) => {
+      const x = (spot[i][0] + 0.08 * Math.sin(t * (i + 1))) * w - el.offsetWidth / 2;
+      const y = (spot[i][1] + 0.06 * Math.cos(t * (i + 2))) * h - el.offsetHeight / 2;
+      el.style.transform = "translate(" + x + "px," + y + "px)";
+    });
+    t += 0.004;
+    if (!still) requestAnimationFrame(place);
   }
-  // Blue at the top of the page, teal towards the bottom.
-  function colour() {
-    const room = Math.max(1, document.documentElement.scrollHeight - h);
-    const p = Math.min(1, scrollY / room);
-    const mix = (a, b) => Math.round(a + (b - a) * p);
-    return dark ? [mix(75, 56), mix(155, 214), mix(255, 200)] : [mix(0, 0), mix(98, 140), mix(224, 150)];
+  place();
+  if (still) addEventListener("scroll", place, { passive: true });
+  const cards = document.querySelectorAll(".s-card");
+  for (const card of cards) {
+    card.addEventListener("pointermove", (e) => {
+      const r = card.getBoundingClientRect();
+      card.style.setProperty("--cx", e.clientX - r.left + "px");
+      card.style.setProperty("--cy", e.clientY - r.top + "px");
+    });
   }
-  function wave(x, y) { waves.push({ x, y, born: t }); if (waves.length > 5) waves.shift(); }
-  // The picture dims a little as the reader scrolls but never goes away, so the
-  // page never goes flat; softer still on phones.
-  function fade() {
-    const cap = w < 700 ? 0.7 : 1;
-    canvas.style.opacity = String((0.7 + 0.3 * Math.max(0, 1 - scrollY / (h * 1.2))) * cap);
-  }
-  function frame() {
-    fade();
-    ctx.clearRect(0, 0, w, h);
-    const c = colour(), rgb = c.join(",");
-    // Pointer glow, or a slow wander when nobody is pointing.
-    const idle = t - moved > 240;
-    const wantX = idle ? w * (0.5 + 0.35 * Math.sin(t * 0.004)) : tx * w;
-    const wantY = idle ? h * (0.35 + 0.25 * Math.sin(t * 0.0063 + 1)) : ty * h;
-    gx += (wantX - gx) * 0.06; gy += (wantY - gy) * 0.06;
-    if (t % 260 === 0) wave(Math.random() * w, Math.random() * h);
-    const glow = ctx.createRadialGradient(gx, gy, 0, gx, gy, Math.max(w, h) * 0.5);
-    glow.addColorStop(0, "rgba(" + rgb + "," + 0.2 * k + ")");
-    glow.addColorStop(1, "rgba(" + rgb + ",0)");
-    ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
-    waves = waves.filter((v) => t - v.born < 220);
-    for (let x = 0; x <= w + STEP; x += STEP) for (let y = 0; y <= h + STEP; y += STEP) {
-      let lit = Math.max(0, 1 - Math.hypot(x - gx, y - gy) / 320);
-      let lift = 0;
-      for (const v of waves) {
-        const age = t - v.born, ring = age * 5.5;
-        const edge = Math.abs(Math.hypot(x - v.x, y - v.y) - ring);
-        if (edge < 70) { const q = (1 - edge / 70) * (1 - age / 220); lit = Math.max(lit, q); lift -= q * 4; }
-      }
-      const breathe = 0.5 + 0.5 * Math.sin(t * 0.02 + x * 0.015 + y * 0.011);
-      const size = 1.4 + 2.2 * lit * lit;
-      ctx.fillStyle = "rgba(" + rgb + "," + (0.1 + 0.08 * breathe + 0.7 * lit * lit) * k + ")";
-      ctx.fillRect(x - size / 2, y - size / 2 + lift, size, size);
+  if (!still && "IntersectionObserver" in window) {
+    const seen = new IntersectionObserver((entries) => {
+      for (const entry of entries) if (entry.isIntersecting) { entry.target.classList.add("in"); seen.unobserve(entry.target); }
+    }, { threshold: 0.15 });
+    for (const card of cards) {
+      if (card.getBoundingClientRect().top < innerHeight) continue;
+      card.classList.add("js-rv");
+      seen.observe(card);
     }
-    t += 1;
-    if (!still) requestAnimationFrame(frame);
-  }
-  size();
-  if (!still) { wave(w * 0.7, h * 0.3); t = 30; }
-  frame();
-  addEventListener("resize", () => { size(); if (still) frame(); });
-  addEventListener("scroll", () => { fade(); if (still) frame(); }, { passive: true });
-  if (!still) {
-    addEventListener("pointermove", (e) => { tx = e.clientX / w; ty = e.clientY / h; moved = t; });
-    addEventListener("pointerdown", (e) => { wave(e.clientX, e.clientY); });
   }
 })();
 for (const button of document.querySelectorAll("button.copy")) {
