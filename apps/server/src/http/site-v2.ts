@@ -273,9 +273,25 @@ const REPOSITORY = "https://github.com/giovanniemilionoventa-byte/sigillo";
 
 const SITE_RULES = `
 body { background: var(--canvas); }
-#backdrop { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
-#backdrop[data-mode="dots"] { -webkit-mask-image: linear-gradient(to right, transparent 30%, #000 70%); mask-image: linear-gradient(to right, transparent 30%, #000 70%); }
-@media (max-width: 800px) { #backdrop[data-mode="dots"] { -webkit-mask-image: none; mask-image: none; } }
+#backdrop { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+#backdrop i { position: absolute; left: 0; top: 0; border-radius: 50%; filter: blur(90px); opacity: 0.26; will-change: transform; }
+#backdrop i:nth-child(1) { width: 60vmax; height: 60vmax; background: #006df9; }
+#backdrop i:nth-child(2) { width: 45vmax; height: 45vmax; background: #0a3d91; }
+#backdrop i:nth-child(3) { width: 40vmax; height: 40vmax; background: #12b3a0; opacity: 0.2; }
+#backdrop.light i { opacity: 0.14; }
+#backdrop::after { content: ""; position: absolute; inset: 0; opacity: 0.06; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+#backdrop b { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 1.5px solid rgba(75,155,255,0.8); box-shadow: 0 0 24px rgba(75,155,255,0.45); animation: ripple 1.1s ease-out forwards; }
+@keyframes ripple { to { transform: scale(9); opacity: 0; } }
+/* Blue links and a blue button disappear on the blue lights: links are light text, the main button is white. */
+a:not(.btn) { color: var(--text); text-underline-offset: 3px; }
+a:not(.btn):hover { text-decoration: underline; }
+.s-card { position: relative; }
+.s-card::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  background: radial-gradient(220px 220px at var(--cx, 50%) var(--cy, 50%), rgba(75,155,255,0.95), transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+.s-card:hover::before { opacity: 1; }
+.js-rv { opacity: 0; transform: translateY(22px); transition: opacity 0.7s, transform 0.7s; }
+.js-rv.in { opacity: 1; transform: none; }
 main, footer { position: relative; z-index: 1; }
 .s-wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 .s-top { position: sticky; top: 0; z-index: 5; background: var(--canvas); border-bottom: 1px solid var(--separator); }
@@ -294,8 +310,8 @@ main, footer { position: relative; z-index: 1; }
 .s-hero .s-console { margin-top: 28px; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 20px; border-radius: 6px; border: 1px solid var(--control); background: transparent; color: var(--text); font-weight: 600; text-decoration: none; }
 .btn:hover { background: var(--fill); text-decoration: none; }
-.btn.pri { background: var(--action); border-color: var(--action); color: var(--on-action); }
-.btn.pri:hover { background: var(--action); filter: brightness(0.92); }
+.btn.pri { background: var(--text); border-color: var(--text); color: var(--canvas); }
+.btn.pri:hover { background: var(--text); filter: brightness(0.9); }
 .btn.inv { background: var(--text); border-color: var(--text); color: var(--canvas); }
 .btn.inv:hover { background: var(--text); filter: brightness(0.9); }
 .btn.sm { min-height: 34px; padding: 0 12px; font-size: 13px; }
@@ -493,7 +509,7 @@ ${page.head ?? ""}
 <link rel="icon" href="/favicon.ico" type="image/svg+xml">
 <style>${STYLE_V2}${SITE_RULES}${INNER_RULES}</style>
 </head><body>
-<canvas id="backdrop" data-mode="dots" aria-hidden="true"></canvas>
+<div id="backdrop" aria-hidden="true"><i></i><i></i><i></i></div>
 ${header}
 <main>
 ${page.body}
@@ -590,7 +606,7 @@ ${footer}`;
 <title>${escape(c.title)}</title><meta name="description" content="${escape(c.description)}">
 <style>${STYLE_V2}${SITE_RULES}${DEMO_STYLE}</style>
 </head><body>
-<canvas id="backdrop" data-mode="dots" aria-hidden="true"></canvas>
+<div id="backdrop" aria-hidden="true"><i></i><i></i><i></i></div>
 ${body}
 <script src="/site.js" defer></script>
 <script src="/demo.js" defer></script>
