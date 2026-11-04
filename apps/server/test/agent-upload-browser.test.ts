@@ -213,7 +213,8 @@ describe.skipIf(BROWSER_PATH === undefined)("upload your agent, with the model g
     expect(await page.locator("#sigillo-agent-connect").isVisible()).toBe(false);
     expect(await page.locator("#sigillo-agent-done").isVisible()).toBe(false);
     await upload(page, "Agent.cs", "using Microsoft.SemanticKernel;\n");
-    expect(await page.locator("#sigillo-agent-problem").textContent()).toContain(".NET is recognised");
+    // The page reads the file asynchronously: wait for the Java message to be replaced.
+    await expect.poll(() => page.locator("#sigillo-agent-problem").textContent()).toContain(".NET is recognised");
     expect(problems).toEqual([]);
   });
 
