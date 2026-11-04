@@ -42,6 +42,7 @@ interface DemoAgent {
 }
 
 interface DemoCopy {
+  label: string;
   h2: string;
   lead: string;
   choose: string;
@@ -73,6 +74,7 @@ interface DemoCopy {
 }
 
 const EN: DemoCopy = {
+  label: "Live demo · sample data",
   h2: "Watch an AI agent leave a record it can't rewrite",
   lead: "This is the sigillo console, running on sample data in your browser. Pick an agent, let it work, then try to change what happened.",
   choose: "Choose a sample agent",
@@ -149,6 +151,7 @@ const EN: DemoCopy = {
 };
 
 const IT: DemoCopy = {
+  label: "Demo dal vivo · dati d'esempio",
   h2: "Guarda un agente AI lasciare un registro che non può riscrivere",
   lead: "Questa è la console di sigillo, con dati d'esempio, nel tuo browser. Scegli un agente, lascialo lavorare, poi prova a cambiare quello che è successo.",
   choose: "Scegli un agente d'esempio",
@@ -272,8 +275,8 @@ export function demoSection(language: Language): string {
   // The copy and the sample agents for /demo.js. "<" is written as < so
   // nothing in the data can close the script element.
   const data = JSON.stringify({ copy: c, icons: ICON, chipIcons: CHIP_ICON }).replace(/</g, "\\u003c");
-  return `<section class="s-sec dm" id="demo" aria-labelledby="dm-title"><div class="s-wrap">
-<header class="dm-intro"><h2 id="dm-title">${escape(c.h2)}</h2><p class="s-lead">${escape(c.lead)}</p></header>
+  return `<section class="s-sec dm" id="demo" aria-labelledby="dm-title"><div class="s-wrap"><div class="dm-panel">
+<header class="dm-intro"><span class="dm-pill">${escape(c.label)}</span><h2 id="dm-title">${escape(c.h2)}</h2><p class="s-lead">${escape(c.lead)}</p></header>
 <div class="dm-chips" role="group" aria-label="${escape(c.choose)}" id="dm-chips">${chips}</div>
 <div class="dm-stage">
 <div class="dm-window" role="region" aria-label="${escape(c.window)}">
@@ -297,14 +300,20 @@ export function demoSection(language: Language): string {
 <ol class="dm-steps" id="dm-steps">${c.steps.map(([t, d], i) => `<li class="dm-step"><b><i>${i + 1}</i>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ol>
 <p class="dm-foot">${escape(c.foot)}</p>
 <script type="application/json" id="dm-data">${data}</script>
-</div></section>`;
+</div></div></section>`;
 }
 
 /** The section's rules, on the site's own tokens (style-v2.ts). Every class starts with dm-, so none of the site's rules reach in. */
 export const DEMO_STYLE = `
 :where(.dm) button { justify-content: flex-start; box-shadow: none; min-height: 0; white-space: normal; }
 :where(.dm) button:disabled, :where(.dm) button:disabled:hover { cursor: default; }
-.dm .s-wrap { display: grid; gap: 28px; }
+/* The whole demo in a box of its own, a shade lighter than the page, so it reads as a thing apart. */
+.s-sec.dm { padding: 56px 0; }
+.dm-panel { display: grid; gap: 28px; background: var(--surface); border: 1px solid var(--separator); border-radius: 24px; padding: 48px 40px 36px; }
+.dm-panel .dm-window { box-shadow: 0 30px 80px rgba(0,0,0,0.35), 0 0 0 1px var(--separator); }
+
+.dm-pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--link); background: var(--selected); margin: 0 auto 14px; }
+.dm-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-fill); }
 .dm-intro { display: grid; justify-items: center; text-align: center; }
 .dm-intro h2 { max-width: 22ch; margin: 0 auto 14px; text-wrap: balance; }
 .dm-intro .s-lead { margin: 0 auto; text-wrap: balance; }
@@ -436,6 +445,7 @@ export const DEMO_STYLE = `
 @media (prefers-reduced-motion: reduce) { .dm *, .dm *::before { animation: none !important; transition: none !important; } }
 @media (max-width: 1020px) { .dm-app { grid-template-columns: minmax(0, 1fr) 280px; } .dm-side { display: none; } }
 @media (max-width: 760px) {
+  .dm-panel { padding: 28px 14px 22px; border-radius: 16px; gap: 22px; }
   .dm-app { grid-template-columns: minmax(0, 1fr); height: auto; }
   .dm-main { border-right: 0; border-bottom: 1px solid var(--separator); }
   .dm-list { max-height: 360px; }
