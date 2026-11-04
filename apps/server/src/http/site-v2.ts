@@ -4,14 +4,16 @@ import { ICONS, SEAL_SVG, STATE_ICONS } from "./style.js";
 import { PROOF_ICONS } from "./style-v2.js";
 import type { Language } from "./locale.js";
 import { BLOG_STYLE } from "./site-blog.js";
+import { DEMO_STYLE, demoSection } from "./site-demo.js";
 
 /**
  * The redesigned public home (SIGILLO_SITE_V2): one page with anchors, drawn
  * with the console's own tokens, marks and signs, so that whoever signs in
  * stays in the same product. It shows what is bought (the evidence pack as the
  * inspector sees it) before the mechanism, says what it proves and what it
- * does not, and offers one invitation. Everything is server-rendered: the only
- * script is the copy button's (/site.js), as on the site as it was.
+ * does not, and offers one invitation. Everything is server-rendered; the
+ * scripts are the site's own (/site.js: copy buttons, backdrop) and the live
+ * demo's (/demo.js, site-demo.ts), which only brings the server-drawn window to life.
  *
  * Facts the owner has not given (company name, VAT number, address) are
  * left out, never invented, and never shown as bracketed placeholders.
@@ -528,6 +530,8 @@ export function siteV2Page(view: SiteV2View): string {
 <div class="s-sealrow"><span class="s-stamp">${SEAL_SVG}</span><div><b>${escape(c.card.matches)}</b><small class="mono">9685 533e aa64 29c4</small><small>${escape(c.card.sealed)}</small></div></div></div>
 </section>
 
+${demoSection(view.language)}
+
 <section class="s-sec" id="problema"><div class="s-wrap${demo === "" ? " s-narrow" : " s-split"}"><div><h2>${escape(c.problem.h2)}</h2><p class="s-lead">${escape(c.problem.body)}</p><a class="btn inv" href="#cosa-prova">${escape(c.problem.more)}</a></div>${demo}</div></section>
 
 <section class="s-sec alt" id="contestazioni"><div class="s-wrap"><div class="s-card s-dispute"><h2>${escape(c.disputes.h2)}</h2><p class="s-lead">${escape(c.disputes.body)}</p><a class="btn inv" href="#cosa-consegni">${escape(c.disputes.more)}</a></div></div></section>
@@ -584,11 +588,12 @@ ${footer}`;
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>${escape(c.title)}</title><meta name="description" content="${escape(c.description)}">
-<style>${STYLE_V2}${SITE_RULES}</style>
+<style>${STYLE_V2}${SITE_RULES}${DEMO_STYLE}</style>
 </head><body>
 <canvas id="backdrop" data-mode="dots" aria-hidden="true"></canvas>
 ${body}
 <script src="/site.js" defer></script>
+<script src="/demo.js" defer></script>
 </body></html>`;
 }
 

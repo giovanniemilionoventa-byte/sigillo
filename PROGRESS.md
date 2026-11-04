@@ -4366,3 +4366,17 @@ dipendenza nuova (`@sigillo/sdk` è un pacchetto del workspace). Test: `agent-up
 (riconoscimento; un agente vero, ESM e CommonJS, che installa l'SDK dal server e si collega) e
 `agent-upload-browser.test.ts` (Chromium, produzione CSP). Non provato: LangChain.js.
 
+
+## Sito: demo interattiva nella home (2026-11-04)
+
+Sotto l'apertura della home c'è una finestra della console che funziona davvero, con dati
+d'esempio, nel browser del visitatore (come la demo di LM Studio). Tre agenti d'esempio
+(assistenza clienti, approvazione fatture, selezione CV); l'agente lavora e ogni azione viene
+sigillata; il visitatore apre una ricevuta, la "riscrive" come potrebbe fare chi ha accesso al
+database, preme Verifica e vede dove la catena smette di tornare. Le impronte sono SHA-256 vere,
+calcolate nella pagina; la ricevuta è una versione semplificata del formato (stessa idea, non gli
+stessi byte). Niente va in rete. La pagina disegna la finestra a riposo (si legge anche senza
+script); `/demo.js` la anima, servito dal server stesso come chiede la CSP (`script-src 'self'`).
+Testi in inglese e italiano. Codice: `apps/server/src/http/site-demo.ts`; test:
+`apps/server/test/site-demo.test.ts` (Chromium sotto la CSP del Caddyfile, la modifica viene
+trovata, nessuna richiesta di rete). Nessuna dipendenza nuova, verificatore invariato.
