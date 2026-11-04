@@ -786,6 +786,20 @@ export const SITE_SCRIPT = `"use strict";
   }
   place();
   if (still) addEventListener("scroll", place, { passive: true });
+  // A ring of light spreads from wherever the page is touched or clicked, on
+  // the whole width.
+  if (box && !still) {
+    addEventListener("pointerdown", (e) => {
+      for (const delay of [0, 140]) {
+        const ring = document.createElement("b");
+        ring.style.left = e.clientX + "px";
+        ring.style.top = e.clientY + "px";
+        ring.style.animationDelay = delay + "ms";
+        ring.addEventListener("animationend", () => ring.remove());
+        box.appendChild(ring);
+      }
+    }, { passive: true });
+  }
   const cards = document.querySelectorAll(".s-card");
   for (const card of cards) {
     card.addEventListener("pointermove", (e) => {
