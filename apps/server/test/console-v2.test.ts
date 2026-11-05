@@ -379,6 +379,7 @@ describe("the redesigned public home (SIGILLO_SITE_V2)", () => {
     const page = siteV2Page({ ...view, theme: "system" });
     expect(page).toContain('<source src="/media/demo-en.mp4" type="video/mp4">');
     expect(page).toContain('src="/media/demo-en.vtt"');
+    expect(page).toContain('href="https://youtu.be/O9z1J_Xdlzo"');
     expect(siteV2Page({ ...view, theme: "system", media: new Set() })).not.toContain("<video");
   });
 
