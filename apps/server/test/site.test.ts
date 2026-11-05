@@ -121,7 +121,7 @@ describe("the public site, redesigned (SIGILLO_SITE_V2=all)", () => {
     const en = (await redesigned.inject({ method: "GET", url: "/", headers: { "accept-language": "en" } })).body;
     const it = (await redesigned.inject({ method: "GET", url: "/", headers: { "accept-language": "it" } })).body;
     expect(en).not.toMatch(/leggi_curriculum|valuta_candidato|invia_email|scarta_candidato|Selezione CV|in Italian/);
-    for (const word of ["read_cv", "evaluate_candidate", "send_email", "reject_candidate", "CV screening", "report.pdf, in English"]) expect(en, word).toContain(word);
+    for (const word of ["read_cv", "evaluate_candidate", "send_email", "CV screening", "report.pdf, in English"]) expect(en, word).toContain(word);
     expect(it).toContain("leggi_curriculum");
     for (const page of [en, it]) expect(page).toMatch(/id="cosa-consegni"[\s\S]*href="\/privacy"/);
   });

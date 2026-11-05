@@ -32,6 +32,7 @@ import { BLOG_STYLE, blogIndexBody, postBody, postJsonLd } from "./site-blog.js"
  * connecting are sections of the home page; their old addresses lead there.
  */
 import { siteV2Inner, siteV2Page } from "./site-v2.js";
+import { DEMO_SCRIPT } from "./site-demo.js";
 import { privacyPage } from "./site-privacy.js";
 import { DPA, TERMS, legalPage } from "./site-legal.js";
 
@@ -919,6 +920,10 @@ export function registerSite(app: FastifyInstance, options: SiteOptions): void {
 
   app.get("/site.js", async (_request, reply) =>
     reply.type("text/javascript; charset=utf-8").header("cache-control", "public, max-age=3600").send(SITE_SCRIPT),
+  );
+
+  app.get("/demo.js", async (_request, reply) =>
+    reply.type("text/javascript; charset=utf-8").header("cache-control", "public, max-age=3600").send(DEMO_SCRIPT),
   );
 
   const posts = loadPosts(options.blogDirectory ?? BLOG_DIRECTORY);
