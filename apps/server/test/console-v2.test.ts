@@ -385,7 +385,7 @@ describe("the redesigned public home (SIGILLO_SITE_V2)", () => {
     expect(siteV2Page({ ...view, language: "it", theme: "system", media: new Set() })).not.toContain("<video");
     // English plays YouTube's own embedded player, from the cookie-free host the CSP allows.
     const page = siteV2Page({ ...view, theme: "system" });
-    expect(page).toContain('<iframe src="https://www.youtube-nocookie.com/embed/O9z1J_Xdlzo"');
+    expect(page).toContain('<iframe src="https://www.youtube-nocookie.com/embed/lTTV6yQlZd8"');
     expect(page).not.toContain("<video");
     expect(readFileSync(join(REPOSITORY_ROOT, "deploy", "Caddyfile"), "utf8")).toContain("frame-src https://www.youtube-nocookie.com;");
   });
