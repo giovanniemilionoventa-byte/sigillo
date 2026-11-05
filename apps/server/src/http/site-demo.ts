@@ -275,6 +275,7 @@ export function demoSection(language: Language): string {
   return `<section class="s-sec dm" id="demo" aria-labelledby="dm-title"><div class="s-wrap">
 <header class="dm-intro"><span class="dm-pill">${escape(c.label)}</span><h2 id="dm-title">${escape(c.h2)}</h2><p class="s-lead">${escape(c.lead)}</p></header>
 <div class="dm-chips" role="group" aria-label="${escape(c.choose)}" id="dm-chips">${chips}</div>
+<ol class="dm-steps" id="dm-steps">${c.steps.map(([t, d], i) => `<li class="dm-step"><b><i>${i + 1}</i>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ol>
 <div class="dm-stage">
 <div class="dm-window" role="region" aria-label="${escape(c.window)}">
 <div class="dm-bar"><div class="dm-lights" aria-hidden="true"><i></i><i></i><i></i></div><div class="dm-address">${icon("lock")}get-sigillo.eu/console</div><button class="dm-replay" id="dm-replay" type="button" hidden>${icon("replay")}${escape(c.replay)}</button></div>
@@ -294,7 +295,6 @@ export function demoSection(language: Language): string {
 </div></div>
 <div class="dm-scrim" id="dm-scrim" hidden></div>
 </div>
-<ol class="dm-steps" id="dm-steps">${c.steps.map(([t, d], i) => `<li class="dm-step"><b><i>${i + 1}</i>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ol>
 <script type="application/json" id="dm-data">${data}</script>
 </div></section>`;
 }
