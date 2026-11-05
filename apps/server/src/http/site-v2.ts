@@ -298,8 +298,7 @@ main, footer { position: relative; z-index: 1; }
 .s-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); }
 .s-brand svg { width: 24px; height: 24px; }
 .s-sec { padding: 80px 0; }
-.s-sec.alt { background: transparent; border-top: 1px solid var(--separator); }
-.s-sec + .s-sec { border-top: 1px solid var(--separator); }
+.s-sec.alt { background: transparent; }
 .s-sec h2 { font-size: 34px; line-height: 40px; font-weight: 600; letter-spacing: -0.02em; max-width: 28ch; margin: 0 0 20px; }
 .s-hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 56px; align-items: start; padding: 64px 24px 40px; }
 .s-hero .s-console { margin-top: 28px; }
@@ -310,7 +309,7 @@ main, footer { position: relative; z-index: 1; }
 .btn.inv { background: var(--text); border-color: var(--text); color: var(--canvas); }
 .btn.inv:hover { background: var(--text); filter: brightness(0.9); }
 .btn.sm { min-height: 34px; padding: 0 12px; font-size: 13px; }
-.s-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 28px; list-style: none; margin: 36px 0 0; padding: 24px 0 0; border-top: 1px solid var(--separator); }
+.s-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 28px; list-style: none; margin: 36px 0 0; padding: 24px 0 0; }
 .s-facts li { display: grid; gap: 2px; align-content: start; }
 .s-facts b { font-size: 14px; }
 .s-facts span { font-size: 13px; color: var(--secondary); }
