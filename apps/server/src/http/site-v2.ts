@@ -274,14 +274,11 @@ const REPOSITORY = "https://github.com/giovanniemilionoventa-byte/sigillo";
 const SITE_RULES = `
 body { background: var(--canvas); }
 #backdrop { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-#backdrop i { position: absolute; left: 0; top: 0; border-radius: 50%; filter: blur(90px); opacity: 0.26; will-change: transform; }
-#backdrop i:nth-child(1) { width: 60vmax; height: 60vmax; background: #006df9; }
-#backdrop i:nth-child(2) { width: 45vmax; height: 45vmax; background: #0a3d91; }
-#backdrop i:nth-child(3) { width: 40vmax; height: 40vmax; background: #12b3a0; opacity: 0.2; }
-#backdrop.light i { opacity: 0.14; }
-#backdrop::after { content: ""; position: absolute; inset: 0; opacity: 0.06; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
-#backdrop b { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 1.5px solid rgba(75,155,255,0.8); box-shadow: 0 0 24px rgba(75,155,255,0.45); animation: ripple 1.1s ease-out forwards; }
-@keyframes ripple { to { transform: scale(9); opacity: 0; } }
+#backdrop i { position: absolute; left: 0; top: 0; border-radius: 50%; opacity: 0.4; will-change: transform; }
+#backdrop i:nth-child(1) { width: 60vmax; height: 60vmax; background: radial-gradient(circle closest-side, #006df9, transparent); }
+#backdrop i:nth-child(2) { width: 45vmax; height: 45vmax; background: radial-gradient(circle closest-side, #0a3d91, transparent); }
+#backdrop i:nth-child(3) { width: 40vmax; height: 40vmax; background: radial-gradient(circle closest-side, #12b3a0, transparent); opacity: 0.28; }
+#backdrop.light i { opacity: 0.2; }
 /* Blue links and a blue button disappear on the blue lights: links are light text, the main button is white. */
 a:not(.btn) { color: var(--text); text-underline-offset: 3px; }
 a:not(.btn):hover { text-decoration: underline; }
@@ -303,8 +300,7 @@ main, footer { position: relative; z-index: 1; }
 .s-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); }
 .s-brand svg { width: 24px; height: 24px; }
 .s-sec { padding: 80px 0; }
-.s-sec.alt { background: transparent; border-top: 1px solid var(--separator); }
-.s-sec + .s-sec { border-top: 1px solid var(--separator); }
+.s-sec.alt { background: transparent; }
 .s-sec h2 { font-size: 34px; line-height: 40px; font-weight: 600; letter-spacing: -0.02em; max-width: 28ch; margin: 0 0 20px; }
 .s-hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 56px; align-items: start; padding: 64px 24px 40px; }
 .s-hero .s-console { margin-top: 28px; }
@@ -315,7 +311,7 @@ main, footer { position: relative; z-index: 1; }
 .btn.inv { background: var(--text); border-color: var(--text); color: var(--canvas); }
 .btn.inv:hover { background: var(--text); filter: brightness(0.9); }
 .btn.sm { min-height: 34px; padding: 0 12px; font-size: 13px; }
-.s-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 28px; list-style: none; margin: 36px 0 0; padding: 24px 0 0; border-top: 1px solid var(--separator); }
+.s-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 28px; list-style: none; margin: 36px 0 0; padding: 24px 0 0; }
 .s-facts li { display: grid; gap: 2px; align-content: start; }
 .s-facts b { font-size: 14px; }
 .s-facts span { font-size: 13px; color: var(--secondary); }
