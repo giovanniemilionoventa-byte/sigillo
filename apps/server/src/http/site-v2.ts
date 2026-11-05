@@ -19,6 +19,9 @@ import { DEMO_STYLE, demoSection } from "./site-demo.js";
  * left out, never invented, and never shown as bracketed placeholders.
  */
 
+/** The English demo, played by YouTube's own embedded player (no cookies until played). */
+const YOUTUBE_DEMO_EMBED = "https://www.youtube-nocookie.com/embed/O9z1J_Xdlzo";
+
 interface Copy {
   nav: { how: string; deliver: string; aiAct: string; pricing: string; blog: string; verify: string; verifyShort: string; signIn: string; start: string };
   title: string;
@@ -323,6 +326,7 @@ main, footer { position: relative; z-index: 1; }
 .s-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 56px; align-items: center; }
 .s-split h2 { max-width: 22ch; }
 .s-video { border-radius: 12px; overflow: hidden; background: #000; border: 1px solid var(--separator); aspect-ratio: 16 / 9; }
+.s-video iframe { display: block; width: 100%; height: 100%; border: 0; }
 .s-video video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .s-dispute { padding: 48px; max-width: 820px; margin: 0 auto; text-align: center; }
 .s-center { max-width: 820px; margin: 40px auto 0; text-align: center; }
@@ -520,11 +524,13 @@ export function siteV2Page(view: SiteV2View): string {
         : `<span>${escape(answer)}</span>`;
   const code = (text: string): string => `<div class="s-code"><pre class="mono">${escape(text)}</pre><button type="button" class="copy button sm" hidden data-copied="${escape(c.connect.copied)}">${escape(c.connect.copy)}</button></div>`;
   const demo =
-    view.media?.has(`demo-${view.language}.mp4`) === true
-      ? `<div class="s-video"><video controls preload="none" poster="/media/poster-${view.language}.jpg" aria-label="${escape(c.problem.video)}"><source src="/media/demo-${view.language}.mp4" type="video/mp4">${
-          view.media.has(`demo-${view.language}.vtt`) ? `<track kind="subtitles" src="/media/demo-${view.language}.vtt" srclang="${view.language}" label="${escape(c.problem.subtitles)}">` : ""
-        }</video></div>`
-      : "";
+    view.language === "en"
+      ? `<div class="s-video"><iframe src="${YOUTUBE_DEMO_EMBED}" title="${escape(c.problem.video)}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe></div>`
+      : view.media?.has(`demo-${view.language}.mp4`) === true
+        ? `<div class="s-video"><video controls preload="none" poster="/media/poster-${view.language}.jpg" aria-label="${escape(c.problem.video)}"><source src="/media/demo-${view.language}.mp4" type="video/mp4">${
+            view.media.has(`demo-${view.language}.vtt`) ? `<track kind="subtitles" src="/media/demo-${view.language}.vtt" srclang="${view.language}" label="${escape(c.problem.subtitles)}">` : ""
+          }</video></div>`
+        : "";
   const body = `${header}
 <main>
 <section class="s-wrap s-hero" id="inizio"><div>

@@ -55,7 +55,7 @@
 		# demo video and its still (/media/) and one script file, /site.js,
 		# for its "Copy" buttons. The one script file a console page loads is
 		# /ui/agent-setup.js, on the connect page (http/agent-setup.ts).
-		Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; media-src 'self'; script-src 'self' 'sha256-9cCyXgmnD9QCiwTYG/QZN+GEMElkaS71OJol3qmCcqg='; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; media-src 'self'; frame-src https://www.youtube-nocookie.com; script-src 'self' 'sha256-9cCyXgmnD9QCiwTYG/QZN+GEMElkaS71OJol3qmCcqg='; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 		-Server
 	}
 

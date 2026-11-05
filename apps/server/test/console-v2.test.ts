@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readZip } from "@sigillo/core";
@@ -92,6 +93,8 @@ const get = (viewer: Viewer, url: string, language = "it") =>
     url,
     headers: { cookie: `sigillo_session=${sessions.issue(viewer, new Date(NOW).getTime()).value}; sigillo_lang=${language}` },
   });
+
+const REPOSITORY_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 
 describe("the redesigned console is the operator's first (CLAUDE.md rule 11)", () => {
   beforeEach(() => undefined);
@@ -376,10 +379,15 @@ describe("the redesigned public home (SIGILLO_SITE_V2)", () => {
     const view = { language: "en" as const, back: "/", hasBlog: false, endpoint: "https://example.test", media: new Set(["demo-en.mp4", "demo-en.vtt"]) };
     expect(siteV2Page({ ...view, theme: "system" })).toContain('data-theme="dark"');
     expect(siteV2Page({ ...view, theme: "light" })).toContain('data-theme="light"');
+    const it = siteV2Page({ ...view, language: "it", theme: "system", media: new Set(["demo-it.mp4", "demo-it.vtt"]) });
+    expect(it).toContain('<source src="/media/demo-it.mp4" type="video/mp4">');
+    expect(it).toContain('src="/media/demo-it.vtt"');
+    expect(siteV2Page({ ...view, language: "it", theme: "system", media: new Set() })).not.toContain("<video");
+    // English plays YouTube's own embedded player, from the cookie-free host the CSP allows.
     const page = siteV2Page({ ...view, theme: "system" });
-    expect(page).toContain('<source src="/media/demo-en.mp4" type="video/mp4">');
-    expect(page).toContain('src="/media/demo-en.vtt"');
-    expect(siteV2Page({ ...view, theme: "system", media: new Set() })).not.toContain("<video");
+    expect(page).toContain('<iframe src="https://www.youtube-nocookie.com/embed/O9z1J_Xdlzo"');
+    expect(page).not.toContain("<video");
+    expect(readFileSync(join(REPOSITORY_ROOT, "deploy", "Caddyfile"), "utf8")).toContain("frame-src https://www.youtube-nocookie.com;");
   });
 
   it("is previewed for the operator alone, in both languages, with the same marks as the console", async () => {
