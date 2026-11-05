@@ -106,6 +106,14 @@ describe("the live demo on the home", () => {
       expect(await page.locator(".dm-seal.ok").count()).toBe(3);
       expect(await page.locator(".dm-seal.broken").count()).toBe(2);
 
+      // Another agent, from the window's own menu (the one a phone shows).
+      await page.setViewportSize({ width: 390, height: 844 });
+      expect(await page.locator(".dm-side").isVisible()).toBe(false);
+      await page.locator("#dm-pick").selectOption("invoice");
+      await expect.poll(() => page.locator("#dm-name").textContent()).toBe("Invoice approvals");
+      await expect.poll(() => page.locator(".dm-row").count()).toBe(6);
+      expect(await page.locator(".dm-step.now").textContent()).toContain("Open a receipt");
+
       // The site's backdrop grain (site-v2.ts, #backdrop::after) is a data: image
       // that img-src 'self' refuses; it is not the demo's, and it is followed up
       // on its own. Every other error counts.
