@@ -19,8 +19,8 @@ import { DEMO_STYLE, demoSection } from "./site-demo.js";
  * left out, never invented, and never shown as bracketed placeholders.
  */
 
-/** The English demo on YouTube, linked under the video on the English page. */
-const YOUTUBE_DEMO_URL = "https://youtu.be/O9z1J_Xdlzo";
+/** The English demo, played by YouTube's own embedded player (no cookies until played). */
+const YOUTUBE_DEMO_EMBED = "https://www.youtube-nocookie.com/embed/O9z1J_Xdlzo";
 
 interface Copy {
   nav: { how: string; deliver: string; aiAct: string; pricing: string; blog: string; verify: string; verifyShort: string; signIn: string; start: string };
@@ -28,7 +28,7 @@ interface Copy {
   description: string;
   hero: { h1: string; lead: string; primary: string; secondary: string; facts: [string, string][] };
   card: { verdict: string; line: string; key: string; matches: string; title: string; rows: [string, string][]; sealed: string };
-  problem: { h2: string; body: string; more: string; video: string; subtitles: string; watch: string };
+  problem: { h2: string; body: string; more: string; video: string; subtitles: string };
   disputes: { h2: string; body: string; more: string };
   fit: { h2: string; lead: string; forTitle: string; forLead: string; forItems: [string, string][]; notTitle: string; notLead: string; notItems: [string, string][] };
   steps: { h2: string; items: [string, string][] };
@@ -69,7 +69,6 @@ const IT: Copy = {
     more: "Cosa prova",
     video: "Demo di sigillo, 3 minuti",
     subtitles: "Italiano",
-    watch: "Guarda su YouTube",
   },
   disputes: {
     h2: "Quando nasce una contestazione, non basta la tua parola.",
@@ -184,7 +183,6 @@ const EN: Copy = {
     more: "What it proves",
     video: "sigillo demo, 3 minutes",
     subtitles: "English",
-    watch: "Watch on YouTube",
   },
   disputes: {
     h2: "When disputes arise, don't rely on your word alone.",
@@ -328,7 +326,7 @@ main, footer { position: relative; z-index: 1; }
 .s-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 56px; align-items: center; }
 .s-split h2 { max-width: 22ch; }
 .s-video { border-radius: 12px; overflow: hidden; background: #000; border: 1px solid var(--separator); aspect-ratio: 16 / 9; }
-.s-video-link { margin: 10px 0 0; font-size: 14px; }
+.s-video iframe { display: block; width: 100%; height: 100%; border: 0; }
 .s-video video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .s-dispute { padding: 48px; max-width: 820px; margin: 0 auto; text-align: center; }
 .s-center { max-width: 820px; margin: 40px auto 0; text-align: center; }
@@ -526,13 +524,13 @@ export function siteV2Page(view: SiteV2View): string {
         : `<span>${escape(answer)}</span>`;
   const code = (text: string): string => `<div class="s-code"><pre class="mono">${escape(text)}</pre><button type="button" class="copy button sm" hidden data-copied="${escape(c.connect.copied)}">${escape(c.connect.copy)}</button></div>`;
   const demo =
-    view.media?.has(`demo-${view.language}.mp4`) === true
-      ? `<div class="s-video"><video controls preload="none" poster="/media/poster-${view.language}.jpg" aria-label="${escape(c.problem.video)}"><source src="/media/demo-${view.language}.mp4" type="video/mp4">${
-          view.media.has(`demo-${view.language}.vtt`) ? `<track kind="subtitles" src="/media/demo-${view.language}.vtt" srclang="${view.language}" label="${escape(c.problem.subtitles)}">` : ""
-        }</video></div>${
-          view.language === "en" ? `<p class="s-video-link"><a href="${YOUTUBE_DEMO_URL}" target="_blank" rel="noopener">${escape(c.problem.watch)} ↗</a></p>` : ""
-        }`
-      : "";
+    view.language === "en"
+      ? `<div class="s-video"><iframe src="${YOUTUBE_DEMO_EMBED}" title="${escape(c.problem.video)}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe></div>`
+      : view.media?.has(`demo-${view.language}.mp4`) === true
+        ? `<div class="s-video"><video controls preload="none" poster="/media/poster-${view.language}.jpg" aria-label="${escape(c.problem.video)}"><source src="/media/demo-${view.language}.mp4" type="video/mp4">${
+            view.media.has(`demo-${view.language}.vtt`) ? `<track kind="subtitles" src="/media/demo-${view.language}.vtt" srclang="${view.language}" label="${escape(c.problem.subtitles)}">` : ""
+          }</video></div>`
+        : "";
   const body = `${header}
 <main>
 <section class="s-wrap s-hero" id="inizio"><div>
