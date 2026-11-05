@@ -35,7 +35,7 @@ interface Copy {
   how: { h2: string; questions: { q: string; a: string; kind: "ok" | "action" | "proof" }[] };
   deliver: { h2: string; story: string[]; contents: string[]; sample: string; verify: string; date: string; actions: string[]; privacyTitle: string; privacyText: string; privacyLink: string };
   proves: { h2: string; yes: string; no: string; yesLines: string[]; noLines: string[]; see: string; seeText: string; facts: [string, string][] };
-  aiAct: { h2: string; rows: { art: string; what: string; how: string }[]; honest: string };
+  aiAct: { h2: string; cols: [string, string, string]; rows: { art: string; what: string; how: string }[]; honest: string };
   connect: { h2: string; lead: string; steps: [string, string][]; or: string; where: string; copy: string; copied: string };
   faq: { h2: string; lead: string };
   pricing: { h2: string; plans: { name: string; price: string; lines: string[]; cta: string; note?: string }[]; unit: string; faq: { q: string; a: string }[] };
@@ -120,6 +120,7 @@ const IT: Copy = {
     facts: [["Server", "Aruba, Italia"], ["Marca temporale", "freetsa.org, non qualificata eIDAS"], ["Verificatore", "open source"]],
   },
   aiAct: {
+    cols: ["Articolo", "Cosa chiede", "Cosa fa sigillo"],
     h2: "Cosa chiede l'AI Act, e cosa fa sigillo",
     rows: [
       { art: "Art. 12", what: "Registrazione degli eventi", how: "Ricevute firmate e sigillate." },
@@ -234,6 +235,7 @@ const EN: Copy = {
     facts: [["Server", "Aruba, Italy"], ["Timestamp", "freetsa.org, not eIDAS qualified"], ["Verifier", "open source"]],
   },
   aiAct: {
+    cols: ["Article", "What it asks", "What sigillo does"],
     h2: "What the AI Act asks, and what sigillo does",
     rows: [
       { art: "Art. 12", what: "Record-keeping", how: "Signed and sealed receipts." },
@@ -364,6 +366,20 @@ main, footer { position: relative; z-index: 1; }
 .s-eq { align-items: stretch !important; }
 #ai-act h2 { max-width: none; }
 #ai-act .notice { width: fit-content; max-width: 100%; margin: 20px auto 0; }
+/* The AI Act table: a header row, then article, what it asks (bold) and what sigillo does (secondary). On a phone each row stacks. */
+.s-act { border: 1px solid var(--separator); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.s-act-head, .s-act-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1.5fr); gap: 20px; align-items: center; padding: 14px 20px; }
+.s-act-head { background: var(--fill); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--secondary); padding-block: 10px; }
+.s-act-row { border-top: 1px solid var(--separator); }
+.s-act-row b { font-size: 16px; }
+.s-act-row .chip { margin: 0; }
+.s-act-row > span:last-child { color: var(--secondary); }
+@media (max-width: 700px) {
+  .s-act-head { display: none; }
+  .s-act-row { grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; padding: 16px; }
+  .s-act-head + .s-act-row { border-top: 0; }
+  .s-act-row > span:last-child { grid-column: 1 / -1; }
+}
 @media (min-width: 1000px) { #ai-act .notice { white-space: nowrap; } }
 .s-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; align-items: start; }
 .s-paper { background: #fff; color: #16191f; border: 1px solid var(--separator); border-radius: 4px; padding: 24px; box-shadow: 0 12px 32px rgba(16,19,24,.12); }
@@ -546,8 +562,8 @@ ${demoSection(view.language)}
 <section class="s-sec alt" id="contestazioni"><div class="s-wrap"><div class="s-card s-dispute"><h2>${escape(c.disputes.h2)}</h2><p class="s-lead">${escape(c.disputes.body)}</p><a class="btn inv" href="#cosa-consegni">${escape(c.disputes.more)}</a></div></div></section>
 
 <section class="s-sec" id="ai-act"><div class="s-wrap"><h2>${escape(c.aiAct.h2)}</h2>
-<div class="vlines">${c.aiAct.rows.map((r) => `<div class="vline"><span><span class="chip">${escape(r.art)}</span></span><span><b>${escape(r.what)}</b></span><span>${escape(r.how)}</span></div>`).join("")}</div>
-<p class="notice" style="margin-top:20px">${STATE_ICONS.warn}<span>${escape(c.aiAct.honest)}</span></p></div></section>
+<div class="s-act" role="table"><div class="s-act-head" role="row">${c.aiAct.cols.map((col) => `<span role="columnheader">${escape(col)}</span>`).join("")}</div>${c.aiAct.rows.map((r) => `<div class="s-act-row" role="row"><span role="cell"><span class="chip">${escape(r.art)}</span></span><b role="cell">${escape(r.what)}</b><span role="cell">${escape(r.how)}</span></div>`).join("")}</div>
+<p class="notice">${STATE_ICONS.warn}<span>${escape(c.aiAct.honest)}</span></p></div></section>
 
 <section class="s-sec alt" id="per-chi"><div class="s-wrap"><h2>${escape(c.fit.h2)}</h2><p class="s-lead">${escape(c.fit.lead)}</p>
 <div class="s-two s-fit"><div class="s-card"><h3 class="s-fith s-yes-h">${escape(c.fit.forTitle)}</h3><p class="t-sec">${escape(c.fit.forLead)}</p><ul>${c.fit.forItems.map(([t, d]) => `<li><b>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ul></div>

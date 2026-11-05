@@ -33,6 +33,7 @@ interface DemoStep {
 
 interface DemoAgent {
   key: string;
+  chip: string;
   name: string;
   id: string;
   agent: string;
@@ -99,7 +100,7 @@ const EN: DemoCopy = {
   bad: { title: "Receipt #{seq} was changed after it was sealed.", body: "Its content no longer matches the hash that was signed at {at}. sigillo can't stop someone with database access from editing a row, but it makes the edit impossible to hide." },
   steps: [
     ["The agent works", "Each action gets a sealed receipt, linked to the one before."],
-    ["Open a receipt", "Tap an action to see what was sealed."],
+    ["Open a receipt", "Click any action to see what was sealed."],
     ["Rewrite the past", "Change an action, the way someone with database access could."],
     ["Verify", "sigillo recomputes every hash and finds the change."],
   ],
@@ -112,7 +113,7 @@ const EN: DemoCopy = {
   },
   agents: [
     {
-      key: "support", name: "Customer support", id: "acme-support-bot", agent: "support-agent", from: "Python SDK",
+      key: "support", chip: "Customer support agent", name: "Customer support", id: "acme-support-bot", agent: "support-agent", from: "Python SDK",
       steps: [
         { kind: "open", name: "Ledger opened", at: "14:20" },
         { kind: "tool", name: "Used «find_order»", args: '{"order":"A-20931"}', at: "14:40" },
@@ -123,7 +124,7 @@ const EN: DemoCopy = {
       ],
     },
     {
-      key: "invoice", name: "Invoice approvals", id: "ap-invoice-agent", agent: "finance-agent", from: "OpenTelemetry",
+      key: "invoice", chip: "Invoice approval agent", name: "Invoice approvals", id: "ap-invoice-agent", agent: "finance-agent", from: "OpenTelemetry",
       steps: [
         { kind: "open", name: "Ledger opened", at: "09:02" },
         { kind: "tool", name: "Used «read_invoice»", args: '{"invoice":"INV-2026-1042"}', at: "09:14" },
@@ -134,7 +135,7 @@ const EN: DemoCopy = {
       ],
     },
     {
-      key: "cv", name: "CV screening", id: "hr-cv-screening", agent: "hr-agent", from: "Python SDK",
+      key: "cv", chip: "CV screening agent", name: "CV screening", id: "hr-cv-screening", agent: "hr-agent", from: "Python SDK",
       steps: [
         { kind: "open", name: "Ledger opened", at: "11:05" },
         { kind: "tool", name: "Used «parse_cv»", args: '{"file":"candidate-0187.pdf"}', at: "11:31" },
@@ -175,7 +176,7 @@ const IT: DemoCopy = {
   bad: { title: "La ricevuta n. {seq} è stata cambiata dopo il sigillo.", body: "Il contenuto non corrisponde più all'impronta firmata alle {at}. sigillo non può impedire a chi ha accesso al database di modificare una riga, ma rende la modifica impossibile da nascondere." },
   steps: [
     ["L'agente lavora", "Ogni azione riceve una ricevuta sigillata, legata alla precedente."],
-    ["Apri una ricevuta", "Tocca un'azione per vedere cosa è stato sigillato."],
+    ["Apri una ricevuta", "Clicca un'azione per vedere cosa è stato sigillato."],
     ["Riscrivi il passato", "Cambia un'azione, come potrebbe fare chi ha accesso al database."],
     ["Verifica", "sigillo ricalcola ogni impronta e trova la modifica."],
   ],
@@ -188,7 +189,7 @@ const IT: DemoCopy = {
   },
   agents: [
     {
-      key: "support", name: "Assistenza clienti", id: "acme-support-bot", agent: "support-agent", from: "SDK Python",
+      key: "support", chip: "Agente assistenza clienti", name: "Assistenza clienti", id: "acme-support-bot", agent: "support-agent", from: "SDK Python",
       steps: [
         { kind: "open", name: "Registro aperto", at: "14:20" },
         { kind: "tool", name: "Ha usato «cerca_ordine»", args: '{"ordine":"A-20931"}', at: "14:40" },
@@ -199,7 +200,7 @@ const IT: DemoCopy = {
       ],
     },
     {
-      key: "invoice", name: "Approvazione fatture", id: "ap-invoice-agent", agent: "finance-agent", from: "OpenTelemetry",
+      key: "invoice", chip: "Agente approvazione fatture", name: "Approvazione fatture", id: "ap-invoice-agent", agent: "finance-agent", from: "OpenTelemetry",
       steps: [
         { kind: "open", name: "Registro aperto", at: "09:02" },
         { kind: "tool", name: "Ha usato «leggi_fattura»", args: '{"fattura":"INV-2026-1042"}', at: "09:14" },
@@ -210,7 +211,7 @@ const IT: DemoCopy = {
       ],
     },
     {
-      key: "cv", name: "Selezione CV", id: "hr-cv-screening", agent: "hr-agent", from: "SDK Python",
+      key: "cv", chip: "Agente selezione CV", name: "Selezione CV", id: "hr-cv-screening", agent: "hr-agent", from: "SDK Python",
       steps: [
         { kind: "open", name: "Registro aperto", at: "11:05" },
         { kind: "tool", name: "Ha usato «leggi_curriculum»", args: '{"file":"candidato-0187.pdf"}', at: "11:31" },
@@ -247,12 +248,17 @@ const ICON: Record<string, string> = {
   evidence: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 1.5h5.5L13 5v9.5H4z"/><circle cx="8.5" cy="9.5" r="2"/></svg>',
 };
 
+const CHIP_ICON: Record<string, string> = { support: "model", invoice: "tool", cv: "decision" };
+
 /** The section, at rest: the first agent's actions, all sealed, nothing selected. /demo.js brings it to life. */
 export function demoSection(language: Language): string {
   const c = COPY[language];
   const first = c.agents[0];
   if (first === undefined) return "";
   const icon = (name: string): string => ICON[name] ?? "";
+  const chips = c.agents
+    .map((a, i) => `<button class="dm-chip" type="button" data-sc="${escape(a.key)}" aria-pressed="${i === 0}">${icon(CHIP_ICON[a.key] ?? "tool")}${escape(a.chip)}</button>`)
+    .join("");
   const systems = c.agents
     .map((a, i) => `<button class="dm-nav dm-sys${i === 0 ? " on" : ""}" type="button" data-sc="${escape(a.key)}"><span class="dm-dot ok"></span><span>${escape(a.name)}</span></button>`)
     .join("");
@@ -265,13 +271,14 @@ export function demoSection(language: Language): string {
     .join("");
   // The copy and the sample agents for /demo.js. "<" is written as < so
   // nothing in the data can close the script element.
-  const data = JSON.stringify({ copy: c, icons: ICON }).replace(/</g, "\\u003c");
+  const data = JSON.stringify({ copy: c, icons: ICON, chipIcons: CHIP_ICON }).replace(/</g, "\\u003c");
   return `<section class="s-sec dm" id="demo" aria-labelledby="dm-title"><div class="s-wrap">
 <header class="dm-intro"><span class="dm-pill">${escape(c.label)}</span><h2 id="dm-title">${escape(c.h2)}</h2><p class="s-lead">${escape(c.lead)}</p></header>
-<ol class="dm-steps" id="dm-steps">${c.steps.map(([t, d], i) => `<li class="dm-step${i === 0 ? " now" : ""}"><b><i>${i + 1}</i>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ol>
+<div class="dm-chips" role="group" aria-label="${escape(c.choose)}" id="dm-chips">${chips}</div>
+<ol class="dm-steps" id="dm-steps">${c.steps.map(([t, d], i) => `<li class="dm-step"><b><i>${i + 1}</i>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ol>
 <div class="dm-stage">
 <div class="dm-window" role="region" aria-label="${escape(c.window)}">
-<div class="dm-bar"><div class="dm-lights" aria-hidden="true"><i></i><i></i><i></i></div><div class="dm-address">${icon("lock")}get-sigillo.eu/console</div><select class="dm-pick" id="dm-pick" aria-label="${escape(c.choose)}">${c.agents.map((a, i) => `<option value="${escape(a.key)}"${i === 0 ? " selected" : ""}>${escape(a.name)}</option>`).join("")}</select><button class="dm-replay" id="dm-replay" type="button" hidden>${icon("replay")}${escape(c.replay)}</button></div>
+<div class="dm-bar"><div class="dm-lights" aria-hidden="true"><i></i><i></i><i></i></div><div class="dm-address">${icon("lock")}get-sigillo.eu/console</div><button class="dm-replay" id="dm-replay" type="button" hidden>${icon("replay")}${escape(c.replay)}</button></div>
 <div class="dm-app">
 <nav class="dm-side" aria-label="${escape(c.window)}">
 <div class="dm-brand">${SEAL_SVG}<span>sigillo</span></div>
@@ -304,6 +311,11 @@ export const DEMO_STYLE = `
 .dm-intro { display: grid; justify-items: center; text-align: center; }
 .dm-intro h2 { max-width: 22ch; margin: 0 auto 14px; text-wrap: balance; }
 .dm-intro .s-lead { margin: 0 auto; text-wrap: balance; }
+.dm-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.dm-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--separator); background: var(--surface); color: var(--label); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+.dm-chip:hover { background: var(--hover); }
+.dm-chip[aria-pressed="true"] { background: var(--selected); border-color: var(--action); color: var(--text); }
+.dm-chip svg { width: 15px; height: 15px; }
 .dm-stage { position: relative; }
 .dm-window { border-radius: 14px; background: var(--canvas); box-shadow: var(--shadow-sheet); overflow: hidden; }
 .dm-bar { display: grid; grid-template-columns: 80px minmax(0, 1fr) 80px; align-items: center; height: 40px; padding: 0 14px; border-bottom: 1px solid var(--separator); background: var(--sidebar); }
@@ -402,17 +414,14 @@ export const DEMO_STYLE = `
 .dm-edit-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .dm-link { border: 0; background: none; color: var(--link); padding: 0; font: inherit; font-size: 14px; font-weight: 600; display: inline-flex; gap: 6px; align-items: center; cursor: pointer; text-align: left; }
 .dm-link svg { width: 14px; height: 14px; flex: none; }
-/* The four steps, one thin line above the window: the current one lit, its hint shown only on a phone. */
-.dm-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 4px; }
-.dm-step { display: flex; align-items: center; gap: 4px; color: var(--secondary); font-size: 14px; }
-.dm-step + .dm-step::before { content: "›"; margin: 0 8px 0 4px; color: var(--secondary); opacity: 0.6; }
-.dm-step b { display: inline-flex; gap: 8px; align-items: center; font-weight: 500; padding: 4px 12px 4px 4px; border-radius: 999px; transition: background .3s, color .3s; }
-.dm-step b i { font-style: normal; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--fill); color: var(--secondary); flex: none; }
-.dm-step span { display: none; }
-.dm-step.now b { background: var(--selected); color: var(--text); font-weight: 600; }
+.dm-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.dm-step { padding: 14px 16px; border-radius: 10px; border: 1px solid var(--separator); display: grid; gap: 4px; align-content: start; transition: border-color .3s, background .3s; }
+.dm-step b { font-size: 14px; display: flex; gap: 8px; align-items: center; }
+.dm-step b i { font-style: normal; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; background: var(--fill); color: var(--secondary); flex: none; }
+.dm-step span { font-size: 13.5px; color: var(--secondary); }
+.dm-step.now { border-color: var(--action); background: var(--selected); }
 .dm-step.now b i { background: var(--action); color: var(--on-action); }
 .dm-step.done b i { background: var(--ok-fill); color: var(--ok); }
-.dm-pick { display: none; justify-self: center; max-width: 100%; min-height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--separator); background: var(--fill); color: var(--text); font: inherit; font-size: 13px; font-weight: 600; }
 .dm-scrim { position: absolute; inset: 0; background: var(--scrim); display: grid; place-items: center; padding: 16px; z-index: 2; border-radius: 14px; }
 .dm-scrim[hidden] { display: none; }
 .dm-sheet { width: min(440px, 100%); background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-sheet); padding: 20px; display: grid; gap: 12px; animation: dm-in .25s ease-out both; }
@@ -427,16 +436,13 @@ export const DEMO_STYLE = `
 @keyframes dm-pulse { 50% { opacity: 0.3; } }
 @keyframes dm-nudge { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 5px var(--selected); } }
 @media (prefers-reduced-motion: reduce) { .dm *, .dm *::before { animation: none !important; transition: none !important; } }
-@media (max-width: 1020px) { .dm-app { grid-template-columns: minmax(0, 1fr) 280px; } .dm-side { display: none; } .dm-address { display: none; } .dm-pick { display: block; } }
+@media (max-width: 1020px) { .dm-app { grid-template-columns: minmax(0, 1fr) 280px; } .dm-side { display: none; } }
 @media (max-width: 760px) {
   .dm-app { grid-template-columns: minmax(0, 1fr); height: auto; }
   .dm-main { border-right: 0; border-bottom: 1px solid var(--separator); }
   .dm-list { max-height: 360px; }
   .dm-bar { grid-template-columns: 50px minmax(0, 1fr) 70px; }
-  .dm-step:not(.now) { display: none; }
-  .dm-step.now { flex-direction: column; gap: 6px; text-align: center; }
-  .dm-step + .dm-step::before { content: none; }
-  .dm-step.now span { display: block; font-size: 14px; }
+  .dm-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dm-row { grid-template-columns: 40px 28px minmax(0, 1fr) 22px; }
   .dm-row .dm-tag { display: none; }
 }
@@ -537,8 +543,10 @@ export const DEMO_SCRIPT = String.raw`"use strict";
     } else add(0);
   }
 
-  function renderAll() { renderPick(); renderSystems(); renderHead(); renderList(); renderDetail(); renderSteps(); }
-  function renderPick() { $("dm-pick").value = S.sc.key; }
+  function renderAll() { renderChips(); renderSystems(); renderHead(); renderList(); renderDetail(); renderSteps(); }
+  function renderChips() {
+    Array.prototype.forEach.call($("dm-chips").children, function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-sc") === S.sc.key)); });
+  }
   function renderSystems() {
     $("dm-systems").innerHTML = C.agents.map(function (a) {
       var on = a.key === S.sc.key;
@@ -629,6 +637,8 @@ export const DEMO_SCRIPT = String.raw`"use strict";
     var t = e.target;
     var sc = t.closest("[data-sc]");
     if (sc) { start(sc.getAttribute("data-sc")); return; }
+    // A tap on the window before the agent has started starts it (and that tap does nothing else).
+    if (!S) { if (t.closest(".dm-window")) start(C.agents[0].key); return; }
     var row = t.closest(".dm-row");
     if (row && S && S.phase !== "verifying") {
       S.selected = Number(row.getAttribute("data-seq")); S.editing = false;
@@ -653,7 +663,6 @@ export const DEMO_SCRIPT = String.raw`"use strict";
     S.rows.forEach(function (x) { if (x.mark !== "sealing") x.mark = "sealed"; });
     S.step = 4; renderAll();
   });
-  $("dm-pick").addEventListener("change", function (e) { start(e.target.value); });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") $("dm-scrim").hidden = true; });
 
   function verify() {
@@ -695,7 +704,7 @@ export const DEMO_SCRIPT = String.raw`"use strict";
   if ("IntersectionObserver" in window) {
     var seen = new IntersectionObserver(function (entries) {
       if (entries.some(function (x) { return x.isIntersecting; })) { seen.disconnect(); if (!S) start(first); }
-    }, { threshold: 0.35 });
+    }, { threshold: 0, rootMargin: "0px 0px -30% 0px" });
     seen.observe(root.querySelector(".dm-window"));
   } else start(first);
 })();

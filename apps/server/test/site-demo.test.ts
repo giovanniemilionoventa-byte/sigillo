@@ -106,20 +106,40 @@ describe("the live demo on the home", () => {
       expect(await page.locator(".dm-seal.ok").count()).toBe(3);
       expect(await page.locator(".dm-seal.broken").count()).toBe(2);
 
-      // Another agent, from the window's own menu (the one a phone shows).
-      await page.setViewportSize({ width: 390, height: 844 });
-      expect(await page.locator(".dm-side").isVisible()).toBe(false);
-      await page.locator("#dm-pick").selectOption("invoice");
-      await expect.poll(() => page.locator("#dm-name").textContent()).toBe("Invoice approvals");
-      await expect.poll(() => page.locator(".dm-row").count()).toBe(6);
-      expect(await page.locator(".dm-step.now").textContent()).toContain("Open a receipt");
-
       // The site's backdrop grain (site-v2.ts, #backdrop::after) is a data: image
       // that img-src 'self' refuses; it is not the demo's, and it is followed up
       // on its own. Every other error counts.
       expect(problems.filter((p) => !p.includes("data:image/svg+xml"))).toEqual([]);
       // Nothing the visitor does in the demo reaches the network.
       expect([...loaded]).toEqual([]);
+    } finally {
+      await browser.close();
+      await live.close();
+    }
+  }, 60_000);
+
+  it.skipIf(BROWSER_PATH === undefined)("on a phone, an action can be tapped as soon as the window is in view", async () => {
+    const live = make("sigillo-phone.db");
+    await live.listen({ host: "127.0.0.1", port: 0 });
+    const address = live.server.address();
+    const base = `http://localhost:${typeof address === "object" && address !== null ? address.port : 0}`;
+    const browser = await chromium.launch({ ...(BROWSER_PATH === undefined ? {} : { executablePath: BROWSER_PATH }), args: ["--no-proxy-server"] });
+    try {
+      const page = await browser.newPage({
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        isMobile: true,
+        reducedMotion: "reduce",
+        extraHTTPHeaders: { "accept-language": "en" },
+      });
+      await page.goto(`${base}/`);
+      // Only the top of the (tall) window is on screen, as when a visitor scrolls to it.
+      await page.evaluate(`(() => { const w = document.querySelector("#demo .dm-window"); window.scrollTo(0, w.getBoundingClientRect().top + window.scrollY - 300); })()`);
+      await expect.poll(() => page.locator("#dm-verify").isEnabled()).toBe(true);
+      const row = page.locator('.dm-row[data-seq="4"]');
+      await row.scrollIntoViewIfNeeded();
+      await row.tap();
+      await expect.poll(() => page.locator(".dm-d-title").first().textContent()).toContain("refund_payment");
     } finally {
       await browser.close();
       await live.close();
