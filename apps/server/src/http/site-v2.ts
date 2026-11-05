@@ -20,7 +20,7 @@ import { DEMO_STYLE, demoSection } from "./site-demo.js";
  */
 
 /** The English demo, played by YouTube's own embedded player (no cookies until played). */
-const YOUTUBE_DEMO_EMBED = "https://www.youtube-nocookie.com/embed/O9z1J_Xdlzo";
+const YOUTUBE_DEMO_EMBED = "https://www.youtube-nocookie.com/embed/lTTV6yQlZd8";
 
 interface Copy {
   nav: { how: string; deliver: string; aiAct: string; pricing: string; blog: string; verify: string; verifyShort: string; signIn: string; start: string };
