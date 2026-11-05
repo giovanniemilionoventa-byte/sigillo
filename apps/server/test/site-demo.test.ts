@@ -117,6 +117,34 @@ describe("the live demo on the home", () => {
       await live.close();
     }
   }, 60_000);
+
+  it.skipIf(BROWSER_PATH === undefined)("on a phone, an action can be tapped as soon as the window is in view", async () => {
+    const live = make("sigillo-phone.db");
+    await live.listen({ host: "127.0.0.1", port: 0 });
+    const address = live.server.address();
+    const base = `http://localhost:${typeof address === "object" && address !== null ? address.port : 0}`;
+    const browser = await chromium.launch({ ...(BROWSER_PATH === undefined ? {} : { executablePath: BROWSER_PATH }), args: ["--no-proxy-server"] });
+    try {
+      const page = await browser.newPage({
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        isMobile: true,
+        reducedMotion: "reduce",
+        extraHTTPHeaders: { "accept-language": "en" },
+      });
+      await page.goto(`${base}/`);
+      // Only the top of the (tall) window is on screen, as when a visitor scrolls to it.
+      await page.evaluate(`(() => { const w = document.querySelector("#demo .dm-window"); window.scrollTo(0, w.getBoundingClientRect().top + window.scrollY - 300); })()`);
+      await expect.poll(() => page.locator("#dm-verify").isEnabled()).toBe(true);
+      const row = page.locator('.dm-row[data-seq="4"]');
+      await row.scrollIntoViewIfNeeded();
+      await row.tap();
+      await expect.poll(() => page.locator(".dm-d-title").first().textContent()).toContain("refund_payment");
+    } finally {
+      await browser.close();
+      await live.close();
+    }
+  }, 60_000);
 });
 
 /** A server with the redesigned site, as production runs it (SIGILLO_SITE_V2=all, with accounts). */

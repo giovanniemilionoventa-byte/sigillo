@@ -68,7 +68,6 @@ interface DemoCopy {
   ok: { title: string; body: string };
   bad: { title: string; body: string };
   steps: [string, string][];
-  foot: string;
   packSheet: { title: string; body: string; files: [string, string][]; note: string; close: string };
   agents: DemoAgent[];
 }
@@ -105,7 +104,6 @@ const EN: DemoCopy = {
     ["Rewrite the past", "Change an action, the way someone with database access could."],
     ["Verify", "sigillo recomputes every hash and finds the change."],
   ],
-  foot: "Sample data. Nothing leaves your browser. The hashes are real SHA-256, computed on this page.",
   packSheet: {
     title: "Evidence pack for {name}",
     body: "One file you can hand to an auditor, a regulator or a court. It can be checked offline with the open-source verifier, without trusting sigillo.",
@@ -182,7 +180,6 @@ const IT: DemoCopy = {
     ["Riscrivi il passato", "Cambia un'azione, come potrebbe fare chi ha accesso al database."],
     ["Verifica", "sigillo ricalcola ogni impronta e trova la modifica."],
   ],
-  foot: "Dati d'esempio. Niente esce dal tuo browser. Le impronte sono SHA-256 vere, calcolate in questa pagina.",
   packSheet: {
     title: "Fascicolo di {name}",
     body: "Un unico file da consegnare a un revisore, a un'autorità o a un giudice. Si controlla senza rete con il verificatore open source, senza fidarsi di sigillo.",
@@ -298,7 +295,6 @@ export function demoSection(language: Language): string {
 <div class="dm-scrim" id="dm-scrim" hidden></div>
 </div>
 <ol class="dm-steps" id="dm-steps">${c.steps.map(([t, d], i) => `<li class="dm-step"><b><i>${i + 1}</i>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ol>
-<p class="dm-foot">${escape(c.foot)}</p>
 <script type="application/json" id="dm-data">${data}</script>
 </div></section>`;
 }
@@ -426,7 +422,6 @@ export const DEMO_STYLE = `
 .dm-step.now { border-color: var(--action); background: var(--selected); }
 .dm-step.now b i { background: var(--action); color: var(--on-action); }
 .dm-step.done b i { background: var(--ok-fill); color: var(--ok); }
-.dm-foot { text-align: center; color: var(--secondary); font-size: 13px; margin: 0; }
 .dm-scrim { position: absolute; inset: 0; background: var(--scrim); display: grid; place-items: center; padding: 16px; z-index: 2; border-radius: 14px; }
 .dm-scrim[hidden] { display: none; }
 .dm-sheet { width: min(440px, 100%); background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-sheet); padding: 20px; display: grid; gap: 12px; animation: dm-in .25s ease-out both; }
@@ -642,6 +637,8 @@ export const DEMO_SCRIPT = String.raw`"use strict";
     var t = e.target;
     var sc = t.closest("[data-sc]");
     if (sc) { start(sc.getAttribute("data-sc")); return; }
+    // A tap on the window before the agent has started starts it (and that tap does nothing else).
+    if (!S) { if (t.closest(".dm-window")) start(C.agents[0].key); return; }
     var row = t.closest(".dm-row");
     if (row && S && S.phase !== "verifying") {
       S.selected = Number(row.getAttribute("data-seq")); S.editing = false;
@@ -707,7 +704,7 @@ export const DEMO_SCRIPT = String.raw`"use strict";
   if ("IntersectionObserver" in window) {
     var seen = new IntersectionObserver(function (entries) {
       if (entries.some(function (x) { return x.isIntersecting; })) { seen.disconnect(); if (!S) start(first); }
-    }, { threshold: 0.35 });
+    }, { threshold: 0, rootMargin: "0px 0px -30% 0px" });
     seen.observe(root.querySelector(".dm-window"));
   } else start(first);
 })();
