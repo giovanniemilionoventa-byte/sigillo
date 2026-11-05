@@ -146,6 +146,7 @@ The default, FreeTSA, is fine for a trial and is **not** qualified.
   Python script in `scripts/` re-derives the test vectors from that document
   alone, and it runs in CI.
 - [docs/API.md](docs/API.md) — the endpoints and the commands.
+- [docs/PROJECT-KNOWLEDGE.md](docs/PROJECT-KNOWLEDGE.md) — business, legal and product decisions made outside the code, server facts, open items.
 - [docs/SECURITY.md](docs/SECURITY.md) — where the key is, what an attacker can
   and cannot do, and what sigillo does not prove.
 - [docs/DATA-INVENTORY.md](docs/DATA-INVENTORY.md) — every member a receipt
