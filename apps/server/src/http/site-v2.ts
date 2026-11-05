@@ -302,8 +302,12 @@ main, footer { position: relative; z-index: 1; }
 .s-sec { padding: 80px 0; }
 .s-sec.alt { background: transparent; }
 .s-sec h2 { font-size: 34px; line-height: 40px; font-weight: 600; letter-spacing: -0.02em; max-width: 28ch; margin: 0 0 20px; }
-.s-hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 56px; align-items: start; padding: 64px 24px 40px; }
-.s-hero .s-console { margin-top: 28px; }
+/* The opening, centred over the live demo that follows it (site-demo.ts). */
+.s-hero { padding: 72px 24px 8px; text-align: center; }
+.s-hero > div { max-width: 860px; margin: 0 auto; }
+.s-hero h1, .s-hero .s-lead { margin-left: auto; margin-right: auto; text-wrap: balance; }
+.s-hero .s-btns { justify-content: center; }
+.s-hero .s-facts { text-align: center; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 20px; border-radius: 6px; border: 1px solid var(--control); background: transparent; color: var(--text); font-weight: 600; text-decoration: none; }
 .btn:hover { background: var(--fill); text-decoration: none; }
 .btn.pri { background: var(--text); border-color: var(--text); color: var(--canvas); }
@@ -343,17 +347,7 @@ main, footer { position: relative; z-index: 1; }
 .s-steps li { display: grid; gap: 8px; align-content: start; }
 .s-steps span:not(.num) { color: var(--secondary); }
 .s-steps b { font-size: 18px; }
-.s-console { padding: 0; overflow: hidden; }
-.s-chead { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--separator); flex-wrap: wrap; }
-.s-chain { list-style: none; margin: 0; padding: 8px 12px; }
-.s-chain li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; padding: 9px 8px; border-radius: 6px; }
-.s-chain li.on { background: var(--selection); }
-.s-chain time { color: var(--secondary); }
-.s-sealrow { display: flex; gap: 14px; align-items: center; margin: 4px 16px 16px; padding: 12px 14px; border: 1px solid var(--separator); border-radius: 8px; background: var(--canvas); }
-.s-sealrow small { display: block; color: var(--secondary); font-size: 12px; }
-.s-stamp { flex: none; width: 36px; height: 36px; }
-.s-stamp svg { width: 36px; height: 36px; }
-.s-hero h1 { font-size: 56px; line-height: 60px; font-weight: 700; letter-spacing: -0.025em; margin: 0 0 20px; max-width: 15ch; }
+.s-hero h1 { font-size: 56px; line-height: 60px; font-weight: 700; letter-spacing: -0.025em; margin: 0 auto 20px; max-width: 18ch; }
 .s-lead { font-size: 20px; line-height: 32px; max-width: 58ch; margin: 0 0 24px; }
 .s-btns { display: flex; gap: 12px; flex-wrap: wrap; }
 .s-facts { margin-top: 20px; font-size: 13px; color: var(--secondary); font-weight: 500; }
@@ -537,9 +531,6 @@ export function siteV2Page(view: SiteV2View): string {
 <h1>${escape(c.hero.h1)}</h1><p class="s-lead">${escape(c.hero.lead)}</p>
 <div class="s-btns">${start}<a class="btn" href="/verify">${escape(c.hero.secondary)}</a></div>
 <ul class="s-facts">${c.hero.facts.map(([title, line]) => `<li><b>${escape(title)}</b><span>${escape(line)}</span></li>`).join("")}</ul></div>
-<div class="s-card s-console" aria-hidden="true"><div class="s-chead"><b>${escape(c.card.title)}</b><span class="sign green">${STATE_ICONS.ok}<span>${escape(c.card.verdict)}</span></span></div>
-<ul class="s-chain">${c.card.rows.map(([time, what], i) => `<li${i === 0 ? ' class="on"' : ""}><time class="mono">${escape(time)}</time><span>${escape(what)}</span></li>`).join("")}</ul>
-<div class="s-sealrow"><span class="s-stamp">${SEAL_SVG}</span><div><b>${escape(c.card.matches)}</b><small class="mono">9685 533e aa64 29c4</small><small>${escape(c.card.sealed)}</small></div></div></div>
 </section>
 
 ${demoSection(view.language)}
