@@ -312,7 +312,7 @@ function home(){
 function intro(){
  app.innerHTML='<p><button id="bk">← All calls</button></p><h1>'+esc(call.n)+'</h1><div class="card"><div class="who"><div class="av">'+esc(call.who.charAt(0))+'</div><div><b>'+esc(call.who)+'</b><div class="mut">'+esc(call.role)+'</div></div></div>'+
  '<p>'+esc(call.d)+'</p>'+
- '<p><b>1.</b> Read the question.<br><b>2.</b> Answer <b>out loud</b>, in your own words.<br><b>3.</b> Tap <b>Show the answer</b> and check what you said.'+(call.hard?'<br><b>4.</b> Sometimes the client pushes back. Answer that too.':'')+'</p>'+
+ '<p><b>1.</b> Read the question.<br><b>2.</b> Answer <b>out loud</b>, in your own words.<br><b>3.</b> Tap <b>Show the answer</b>, then tap Yes or Not really.'+(call.hard?'<br><b>4.</b> Sometimes the client pushes back. Answer that too.':'')+'</p>'+
  '<button class="pri big" id="go" style="text-align:center;font-size:19px">▶ Start the call</button></div>';
  document.getElementById("bk").onclick=home;
  document.getElementById("go").onclick=function(){ids=call.ids.slice();i=0;got=[];ask()};
@@ -330,12 +330,11 @@ function ask(){
 }
 
 function reveal(q){
+ var more=(q.avoid?'<p><b>Do not say:</b></p>'+list(q.avoid):'')+(q.tip?'<p style="margin-top:10px"><b>Note:</b> '+esc(q.tip)+'</p>':'');
  app.innerHTML=head()+'<div class="card"><div class="q">“'+esc(q.q)+'”</div>'+
- '<div class="box say"><h3>A good answer</h3>'+esc(q.say)+'</div>'+
- '<div class="box" style="background:var(--acc2)"><h3>Key points</h3>'+list(q.pts)+'</div>'+
- (q.avoid?'<div class="box avoid"><h3>Do not say</h3>'+list(q.avoid)+'</div>':'')+
- (q.tip?'<div class="box tip"><h3>Note</h3>'+esc(q.tip)+'</div>':'')+
- '<p><b>How did you do?</b></p><div class="row"><button class="pri sp" id="ok">✓ I said it</button><button class="sp" id="no">✗ I missed it</button></div></div>';
+ '<div class="box say"><h3>A good answer</h3>'+esc(q.say)+'<h3 style="margin-top:14px">Remember</h3>'+list(q.pts)+'</div>'+
+ (more?'<details style="margin-bottom:14px"><summary class="mut" style="cursor:pointer">More tips</summary><div style="padding-top:8px">'+more+'</div></details>':'')+
+ '<p><b>Did you say the main points?</b></p><div class="row"><button class="pri sp" id="ok">✓ Yes</button><button class="sp" id="no">✗ Not really</button></div></div>';
  window.scrollTo(0,0);
  document.getElementById("ok").onclick=function(){rated(q,true)};
  document.getElementById("no").onclick=function(){rated(q,false)};
