@@ -277,183 +277,65 @@ var Q=[
  avoid:["Asking to talk to the boss directly right away"]}
 ];
 
-/* Full-call scenarios: fixed order, one persona for the whole call. */
-var SCEN=[
- {id:"s1",n:"Skeptical CTO (fintech)",d:"Technical, short on time, tests whether you bluff. 9 questions.",persona:"marco",
-  ids:["what","logs","fake","connect","perf","down","audit","price","send-info"]},
- {id:"s2",n:"Compliance head (insurance)",d:"Careful and legal. Wants honesty about limits. 9 questions.",persona:"elena",
-  ids:["who-needs","content","where","aiact","audit","verify","firebase","no-customers","boss"]},
- {id:"s3",n:"Founder of an AI agency",d:"Fast, practical, will ask about code and price. 9 questions.",persona:"tom",
-  ids:["what","diy","connect","frameworks","opensource","api","price","pilot","not-now"]},
- {id:"s4",n:"Legal counsel (tough)",d:"Every answer must be careful. 8 questions.",persona:"sofia",
-  ids:["aiact","court","gdpr-dpa","erasure","hacked","training","company","boss"]}
-];
+/* One call: the same client asks these questions in order. */
+var CALL=["what","who-needs","logs","content","fake","aiact","connect","price","down","audit","no-customers","send-info"];
+var CLIENT={n:"Alex",r:"CTO of a software company that builds AI agents"};
 
-/* ------------------------- app logic ------------------------- */
-var $=function(s){return document.querySelector(s)};
 var app=document.getElementById("app");
-var store={get:function(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
-           set:function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-var voiceOn=store.get("sigillo-sim-voice",false);
-var S=null;  // session state
-var timerH=null;
-
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
 function byId(id){for(var i=0;i<Q.length;i++)if(Q[i].id===id)return Q[i]}
-function shuffle(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t}return a}
-function initials(n){return n.slice(0,1)}
+function list(a){return '<ul style="margin:0;padding-left:20px">'+a.map(function(x){return'<li>'+esc(x)+'</li>'}).join("")+'</ul>'}
+var ids,i,got;
 
 function home(){
- clearInterval(timerH);S=null;stopSpeak();
- var h='<h1>Sigillo call simulator</h1><p class="mut">Practise the call with a client. A client asks a question, you answer out loud, then you see the model answer. Works offline, nothing is sent anywhere.</p>';
- h+='<h2 style="margin-top:22px">👇 Tap one to start</h2>';
- h+='<button class="big pri" data-a="scen"><b>▶ Practise a full call</b><span>A client asks 8 or 9 questions in a row, like a real call.</span></button>';
- h+='<button class="big" data-a="quick"><b>▶ 10 random questions</b><span>A quick mix of everything.</span></button>';
- h+='<button class="big" data-a="topic"><b>▶ Pick a topic</b><span>Data, security, legal, price, closing…</span></button>';
- h+='<button class="big" data-a="all"><b>📖 Just read the answers</b><span>All questions with their model answers.</span></button>';
- h+='<p class="mut"><label><input type="checkbox" id="vo"'+(voiceOn?' checked':'')+'> Read the questions aloud</label></p>';
- app.innerHTML=h;
- app.querySelectorAll("[data-a]").forEach(function(b){b.onclick=function(){menu(b.dataset.a)}});
- $("#vo").onchange=function(e){voiceOn=e.target.checked;store.set("sigillo-sim-voice",voiceOn)};
-}
-
-function menu(a){
- if(a==="quick")return start({title:"Quick random",ids:shuffle(Q.map(function(q){return q.id})).slice(0,10)});
- if(a==="all")return study();
- var h='<p><button id="bk">← Back</button></p>';
- if(a==="scen"){
-  h+='<h1>Full call simulation</h1><p class="mut">Pick who is on the other side of the table.</p>';
-  SCEN.forEach(function(s){var p=PERSONAS[s.persona];h+='<button class="big" data-s="'+s.id+'"><b>'+esc(s.n)+'</b><span>'+esc(s.d)+'</span></button>'});
- } else {
-  h+='<h1>By topic</h1>';
-  Object.keys(CATS).forEach(function(k){var n=Q.filter(function(q){return q.c===k}).length;h+='<button class="big" data-t="'+k+'"><b>'+esc(CATS[k])+'</b><span>'+n+' questions</span></button>'});
- }
- app.innerHTML=h;
- $("#bk").onclick=home;
- app.querySelectorAll("[data-s]").forEach(function(b){b.onclick=function(){var s=SCEN.filter(function(x){return x.id===b.dataset.s})[0];start({title:s.n,ids:s.ids,persona:s.persona,scen:true})}});
- app.querySelectorAll("[data-t]").forEach(function(b){b.onclick=function(){var k=b.dataset.t;start({title:CATS[k],ids:shuffle(Q.filter(function(q){return q.c===k}).map(function(q){return q.id}))})}});
-}
-
-function start(cfg){
- S={cfg:cfg,i:0,res:[],t0:0,revealed:false};
- if(cfg.scen){
-  var p=PERSONAS[cfg.persona];
-  app.innerHTML='<p><button id="bk">← Back</button></p><h1>'+esc(cfg.title)+'</h1><div class="card"><div class="who"><div class="av">'+initials(p.n)+'</div><div><b>'+esc(p.n)+'</b><div class="mut">'+esc(p.r)+'</div></div></div><p>You are on a video call. Say hello in one sentence, say you will keep it to 30 minutes, and say that you will show a short demo. Then the questions start. Answer as you would in the real call.</p><p class="mut">Remember: you talk about 30%, they talk about 70%.</p><button class="pri" id="go">Start the call</button></div>';
-  $("#bk").onclick=home;$("#go").onclick=function(){ask()};
- } else ask();
+ app.innerHTML='<h1>Sigillo call practice</h1>'+
+ '<div class="card"><p>You are on a call with <b>Alex</b>, a CTO who builds AI agents. Alex will ask you '+CALL.length+' questions, one at a time.</p>'+
+ '<p><b>1.</b> Read the question.<br><b>2.</b> Answer <b>out loud</b>, in your own words.<br><b>3.</b> Tap <b>Show the answer</b> and check what you said.</p>'+
+ '<button class="pri big" id="go" style="text-align:center;font-size:19px">▶ Start the call</button></div>';
+ document.getElementById("go").onclick=function(){ids=CALL.slice();i=0;got=[];ask()};
 }
 
 function ask(){
- var cfg=S.cfg,q=byId(cfg.ids[S.i]);S.q=q;S.revealed=false;S.push=false;S.t0=Date.now();
- var pk=cfg.persona||q.p,p=PERSONAS[pk];
- var h='<div class="row"><button id="bk">✕ Quit</button><span class="sp"></span><span class="mut">'+esc(cfg.title)+' · '+(S.i+1)+' / '+cfg.ids.length+'</span></div><div class="bar"><i style="width:'+(S.i/cfg.ids.length*100)+'%"></i></div>';
- h+='<div class="card"><div class="who"><div class="av">'+initials(p.n)+'</div><div><b>'+esc(p.n)+'</b> <span class="mut">· '+esc(p.r)+'</span><br><span class="tag">'+esc(CATS[q.c])+'</span></div><span class="sp"></span></div>';
- h+='<div class="q">“'+esc(q.q)+'”</div>';
- h+='<div class="row" style="margin-bottom:10px"><button id="hear">🔊 Hear it</button><button id="mic" class="hide">🎤 Speak</button><span class="sp"></span><span class="timer" id="tm">0:00</span></div>';
- h+='<textarea id="ans" placeholder="Answer out loud, or type your answer here (optional)…"></textarea>';
- h+='<div class="row" style="margin-top:12px"><button class="pri" id="rev">Show model answer</button><button id="skip">Skip</button></div><div id="res"></div></div>';
- app.innerHTML=h;
+ var q=byId(ids[i]);
+ app.innerHTML='<div class="mut">Question '+(i+1)+' of '+ids.length+'</div><div class="bar"><i style="width:'+(i/ids.length*100)+'%"></i></div>'+
+ '<div class="card"><div class="who"><div class="av">A</div><div><b>'+CLIENT.n+'</b><div class="mut">Client</div></div></div>'+
+ '<div class="q">“'+esc(q.q)+'”</div>'+
+ '<p class="mut">Now answer out loud. Take your time.</p>'+
+ '<button class="pri" id="rev" style="width:100%">Show the answer</button></div>';
  window.scrollTo(0,0);
- $("#bk").onclick=function(){if(S.res.length&&!confirm("Quit this session?"))return;home()};
- $("#hear").onclick=function(){speak(q.q)};
- $("#rev").onclick=reveal;
- $("#skip").onclick=function(){S.res.push({id:q.id,sc:0,skipped:true});next()};
- clearInterval(timerH);timerH=setInterval(function(){var s=Math.floor((Date.now()-S.t0)/1000);var el=$("#tm");if(el)el.textContent=Math.floor(s/60)+":"+("0"+s%60).slice(-2)},500);
- setupMic();
- if(voiceOn)speak(q.q);
+ document.getElementById("rev").onclick=function(){reveal(q)};
 }
 
-function reveal(){
- var q=S.q;S.revealed=true;clearInterval(timerH);stopSpeak();stopMic();
- $("#rev").classList.add("hide");$("#skip").classList.add("hide");
- var h='<div class="box say"><h3>Model answer</h3>'+esc(q.say)+'</div>';
- h+='<div class="box" style="background:var(--acc2)"><h3>Tick what you covered</h3>';
- q.pts.forEach(function(p,i){h+='<label class="pt"><input type="checkbox" class="pc" data-i="'+i+'"><span>'+esc(p)+'</span></label>'});
- h+='</div>';
- if(q.avoid&&q.avoid.length){h+='<div class="box avoid"><h3>Do not say</h3><ul style="margin:0;padding-left:20px">'+q.avoid.map(function(a){return'<li>'+esc(a)+'</li>'}).join("")+'</ul><label class="pt" style="border:0;margin-top:6px"><input type="checkbox" id="slip"><span>I said one of these (honest check)</span></label></div>'}
- if(q.tip)h+='<div class="box tip"><h3>Coach note</h3>'+esc(q.tip)+'</div>';
- if(q.push)h+='<div id="pushwrap"><button id="pushb">😬 Client pushes back…</button></div>';
- h+='<div class="row" style="margin-top:14px"><span class="sp"></span><button class="pri" id="nx">'+(S.i+1<S.cfg.ids.length?'Next question →':'Finish')+'</button></div>';
- $("#res").innerHTML=h;
- var pb=$("#pushb");
- if(pb)pb.onclick=function(){
-  S.push=true;var pk=S.cfg.persona||q.p;
-  $("#pushwrap").innerHTML='<div class="box" style="background:var(--warnbg)"><h3>'+esc(PERSONAS[pk].n)+' says</h3><b>“'+esc(q.push.q)+'”</b><p class="mut" style="margin-top:8px">Answer it out loud first, then open the suggestion.</p><button id="pushr">Show suggestion</button><div id="pushans"></div></div>';
-  if(voiceOn)speak(q.push.q);
-  $("#pushr").onclick=function(){$("#pushans").innerHTML='<div class="box say" style="margin-bottom:0"><h3>Suggested reply</h3>'+esc(q.push.say)+'</div>';$("#pushr").classList.add("hide")};
- };
- $("#nx").onclick=function(){
-  var tot=q.pts.length,got=document.querySelectorAll(".pc:checked").length,slip=$("#slip")&&$("#slip").checked;
-  var sc=Math.max(0,got/tot-(slip?0.25:0));
-  S.res.push({id:q.id,sc:sc,slip:slip,secs:Math.round((Date.now()-S.t0)/1000)});
-  next();
- };
- $("#res").scrollIntoView({behavior:"smooth",block:"start"});
-}
-
-function next(){
- S.i++;
- if(S.i>=S.cfg.ids.length)return summary();
- ask();
-}
-
-function summary(){
- clearInterval(timerH);stopSpeak();
- var r=S.res.filter(function(x){return!x.skipped}),avg=r.length?r.reduce(function(a,x){return a+x.sc},0)/r.length:0;
- var pct=Math.round(avg*100);
- var verdict=pct>=85?"Excellent. You sound ready.":pct>=70?"Good. Review the red lines below and run it once more.":pct>=50?"Getting there. Repeat the weak questions out loud.":"Keep practising. Read the model answers in study mode, then try again.";
- var h='<h1>Result</h1><div class="card"><div class="score">'+pct+'%</div><p>'+verdict+'</p><div class="bar"><i style="width:'+pct+'%"></i></div>';
- h+='<table><tr><th>Question</th><th>Score</th></tr>';
- S.res.forEach(function(x){var q=byId(x.id);h+='<tr><td>'+esc(q.q)+(x.slip?' <span class="tag" style="background:var(--badbg);color:var(--bad)">said a “do not say”</span>':'')+'</td><td>'+(x.skipped?'skipped':Math.round(x.sc*100)+'%')+'</td></tr>'});
- h+='</table></div>';
- var weak=S.res.filter(function(x){return x.skipped||x.sc<0.7}).map(function(x){return x.id});
- h+='<div class="row">'+(weak.length?'<button class="pri" id="rw">Repeat the '+weak.length+' weak ones</button>':'')+'<button id="again">Again, same set</button><button id="hm">Home</button></div>';
- h+='<p class="mut" style="margin-top:16px">After a real call: write down the questions you could not answer and send them to Giovanni the same day.</p>';
+function reveal(q){
+ var h='<div class="mut">Question '+(i+1)+' of '+ids.length+'</div><div class="bar"><i style="width:'+(i/ids.length*100)+'%"></i></div>'+
+ '<div class="card"><div class="q">“'+esc(q.q)+'”</div>'+
+ '<div class="box say"><h3>A good answer</h3>'+esc(q.say)+'</div>'+
+ '<div class="box" style="background:var(--acc2)"><h3>Key points</h3>'+list(q.pts)+'</div>'+
+ (q.avoid?'<div class="box avoid"><h3>Do not say</h3>'+list(q.avoid)+'</div>':'')+
+ (q.tip?'<div class="box tip"><h3>Note</h3>'+esc(q.tip)+'</div>':'')+
+ (q.push?'<div class="box tip"><h3>If the client pushes: “'+esc(q.push.q)+'”</h3>'+esc(q.push.say)+'</div>':'')+
+ '<p><b>How did you do?</b></p><div class="row"><button class="pri sp" id="ok">✓ I said it</button><button class="sp" id="no">✗ I missed it</button></div></div>';
  app.innerHTML=h;window.scrollTo(0,0);
- var cfg=S.cfg;
- if(weak.length)$("#rw").onclick=function(){start({title:"Weak ones",ids:shuffle(weak)})};
- $("#again").onclick=function(){start({title:cfg.title,ids:cfg.scen?cfg.ids:shuffle(cfg.ids),persona:cfg.persona,scen:cfg.scen})};
- $("#hm").onclick=home;
+ document.getElementById("ok").onclick=function(){next(q,true)};
+ document.getElementById("no").onclick=function(){next(q,false)};
 }
 
-function study(){
- var h='<p><button id="bk">← Back</button></p><h1>Study mode</h1><p class="mut">All questions with model answers. Tap a question to open it.</p>';
- Object.keys(CATS).forEach(function(k){
-  h+='<h2 style="margin-top:20px">'+esc(CATS[k])+'</h2>';
-  Q.filter(function(q){return q.c===k}).forEach(function(q){
-   h+='<details class="card" style="padding:12px 16px"><summary style="cursor:pointer;font-weight:600">'+esc(q.q)+'</summary><div class="box say"><h3>Model answer</h3>'+esc(q.say)+'</div><div class="box" style="background:var(--acc2)"><h3>Key points</h3><ul style="margin:0;padding-left:20px">'+q.pts.map(function(p){return'<li>'+esc(p)+'</li>'}).join("")+'</ul></div>'+
-   (q.avoid?'<div class="box avoid"><h3>Do not say</h3><ul style="margin:0;padding-left:20px">'+q.avoid.map(function(a){return'<li>'+esc(a)+'</li>'}).join("")+'</ul></div>':'')+
-   (q.push?'<div class="box tip"><h3>If pushed: “'+esc(q.push.q)+'”</h3>'+esc(q.push.say)+'</div>':'')+
-   (q.tip?'<div class="box tip"><h3>Coach note</h3>'+esc(q.tip)+'</div>':'')+'</details>';
-  });
- });
- app.innerHTML=h;$("#bk").onclick=home;
+function next(q,ok){
+ got.push({q:q,ok:ok});i++;
+ if(i<ids.length)ask();else end();
 }
 
-/* ---- voice: browser text-to-speech and speech recognition, both optional ---- */
-function speak(t){
- try{stopSpeak();var u=new SpeechSynthesisUtterance(t);u.lang="en-GB";u.rate=0.95;speechSynthesis.speak(u)}catch(e){}
+function end(){
+ var miss=got.filter(function(x){return!x.ok}).map(function(x){return x.q.id});
+ var n=got.length-miss.length;
+ var h='<h1>Call finished</h1><div class="card"><div class="score">'+n+' / '+got.length+'</div><p>'+
+ (miss.length?'Practise the ones you missed, then try again.':'Great. Try the whole call once more tomorrow.')+'</p>';
+ if(miss.length){h+='<p><b>To practise again:</b></p>'+list(got.filter(function(x){return!x.ok}).map(function(x){return x.q.q}))}
+ h+='</div>'+(miss.length?'<button class="pri big" id="rp" style="text-align:center">Practise the missed ones</button>':'')+'<button class="big" id="again" style="text-align:center">Start the call again</button>';
+ app.innerHTML=h;window.scrollTo(0,0);
+ if(miss.length)document.getElementById("rp").onclick=function(){ids=miss;i=0;got=[];ask()};
+ document.getElementById("again").onclick=home;
 }
-function stopSpeak(){try{speechSynthesis.cancel()}catch(e){}}
-var rec=null;
-function setupMic(){
- var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
- if(!SR)return;
- var b=$("#mic");if(!b)return;b.classList.remove("hide");
- var on=false;
- b.onclick=function(){
-  if(on){stopMic();return}
-  try{
-   rec=new SR();rec.lang="en-GB";rec.continuous=true;rec.interimResults=false;
-   var base=$("#ans").value;
-   rec.onresult=function(e){var t="";for(var i=0;i<e.results.length;i++)t+=e.results[i][0].transcript+" ";$("#ans").value=(base?base+" ":"")+t.trim()};
-   rec.onend=function(){on=false;b.textContent="🎤 Speak"};
-   rec.onerror=function(){on=false;b.textContent="🎤 Speak"};
-   rec.start();on=true;b.textContent="⏹ Stop";
-  }catch(e){}
- };
-}
-function stopMic(){try{if(rec)rec.stop()}catch(e){}rec=null}
 
 home();
 </script>
