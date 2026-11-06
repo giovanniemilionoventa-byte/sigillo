@@ -294,8 +294,6 @@ var $=function(s){return document.querySelector(s)};
 var app=document.getElementById("app");
 var store={get:function(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
            set:function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-var prog=store.get("sigillo-sim-progress",{});   // id -> {last:0..1, best:0..1, n:count}
-var marked=store.get("sigillo-sim-marked",{});    // id -> true
 var voiceOn=store.get("sigillo-sim-voice",false);
 var S=null;  // session state
 var timerH=null;
@@ -303,32 +301,25 @@ var timerH=null;
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
 function byId(id){for(var i=0;i<Q.length;i++)if(Q[i].id===id)return Q[i]}
 function shuffle(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t}return a}
-function save(){store.set("sigillo-sim-progress",prog);store.set("sigillo-sim-marked",marked)}
 function initials(n){return n.slice(0,1)}
 
 function home(){
  clearInterval(timerH);S=null;stopSpeak();
- var done=Object.keys(prog).length, weak=Q.filter(function(q){return prog[q.id]&&prog[q.id].last<0.7}).length, mk=Object.keys(marked).filter(function(k){return marked[k]}).length;
- var h='<h1>Sigillo call simulator</h1><p class="mut">Practice the first call with a company that uses AI agents. A client asks, you answer out loud or in writing, then you see the model answer and check yourself. No account, no internet needed, nothing is sent anywhere.</p>';
- h+='<div class="card"><h2>How it works</h2><p>1. Read (or listen to) the client question. 2. Answer in your own words, out loud or typed. 3. Press <b>Show model answer</b>, tick the key points you covered. 4. Repeat until it feels natural.</p><p class="mut">Tip: practise out loud. Answer in 20 to 40 seconds, like in a real call. If you do not know, use the saving phrase: <i>“Good question. I\'ll check with the team and come back to you today.”</i></p></div>';
- h+='<h2 style="margin-top:22px">Choose a practice mode</h2>';
- h+='<button class="big" data-a="scen"><b>Full call simulation</b><span>A client persona asks 8 or 9 questions in a row, like a real call. Score at the end.</span></button>';
- h+='<button class="big" data-a="quick"><b>Quick random, 10 questions</b><span>Mixed questions from every topic, in random order.</span></button>';
- h+='<button class="big" data-a="topic"><b>By topic</b><span>Drill one area: data and privacy, security, legal, price, closing.</span></button>';
- h+='<button class="big" data-a="weak"'+(weak+mk?'':' disabled')+'><b>Review: marked and weak</b><span>'+(weak+mk?(mk+' marked, '+weak+' scored under 70%'):'Nothing yet. Mark questions with the star or score low and they appear here.')+'</span></button>';
- h+='<button class="big" data-a="all"><b>Study mode: read all answers</b><span>Browse every question with its model answer, no scoring.</span></button>';
- h+='<div class="card"><div class="row"><span class="mut">'+done+' of '+Q.length+' questions practised</span><span class="sp"></span><label class="mut"><input type="checkbox" id="vo"'+(voiceOn?' checked':'')+'> Read questions aloud</label><button id="rs">Reset progress</button></div></div>';
- h+='<div class="card mut"><b>Golden rules</b><br>Never guess, never invent a number, never promise a feature or a date. Say “tamper-evident” and “independently verifiable”, not “tamper-proof”, “compliant” or “AI Act ready”. End every call with ONE next step and a date.</div>';
+ var h='<h1>Sigillo call simulator</h1><p class="mut">Practise the call with a client. A client asks a question, you answer out loud, then you see the model answer. Works offline, nothing is sent anywhere.</p>';
+ h+='<h2 style="margin-top:22px">👇 Tap one to start</h2>';
+ h+='<button class="big pri" data-a="scen"><b>▶ Practise a full call</b><span>A client asks 8 or 9 questions in a row, like a real call.</span></button>';
+ h+='<button class="big" data-a="quick"><b>▶ 10 random questions</b><span>A quick mix of everything.</span></button>';
+ h+='<button class="big" data-a="topic"><b>▶ Pick a topic</b><span>Data, security, legal, price, closing…</span></button>';
+ h+='<button class="big" data-a="all"><b>📖 Just read the answers</b><span>All questions with their model answers.</span></button>';
+ h+='<p class="mut"><label><input type="checkbox" id="vo"'+(voiceOn?' checked':'')+'> Read the questions aloud</label></p>';
  app.innerHTML=h;
  app.querySelectorAll("[data-a]").forEach(function(b){b.onclick=function(){menu(b.dataset.a)}});
  $("#vo").onchange=function(e){voiceOn=e.target.checked;store.set("sigillo-sim-voice",voiceOn)};
- $("#rs").onclick=function(){if(confirm("Delete all saved progress and marks?")){prog={};marked={};save();home()}};
 }
 
 function menu(a){
  if(a==="quick")return start({title:"Quick random",ids:shuffle(Q.map(function(q){return q.id})).slice(0,10)});
  if(a==="all")return study();
- if(a==="weak"){var ids=Q.filter(function(q){return marked[q.id]||(prog[q.id]&&prog[q.id].last<0.7)}).map(function(q){return q.id});return start({title:"Review",ids:shuffle(ids)})}
  var h='<p><button id="bk">← Back</button></p>';
  if(a==="scen"){
   h+='<h1>Full call simulation</h1><p class="mut">Pick who is on the other side of the table.</p>';
@@ -356,7 +347,7 @@ function ask(){
  var cfg=S.cfg,q=byId(cfg.ids[S.i]);S.q=q;S.revealed=false;S.push=false;S.t0=Date.now();
  var pk=cfg.persona||q.p,p=PERSONAS[pk];
  var h='<div class="row"><button id="bk">✕ Quit</button><span class="sp"></span><span class="mut">'+esc(cfg.title)+' · '+(S.i+1)+' / '+cfg.ids.length+'</span></div><div class="bar"><i style="width:'+(S.i/cfg.ids.length*100)+'%"></i></div>';
- h+='<div class="card"><div class="who"><div class="av">'+initials(p.n)+'</div><div><b>'+esc(p.n)+'</b> <span class="mut">· '+esc(p.r)+'</span><br><span class="tag">'+esc(CATS[q.c])+'</span></div><span class="sp"></span><button class="star'+(marked[q.id]?' on':'')+'" id="st" title="Mark for review">★</button></div>';
+ h+='<div class="card"><div class="who"><div class="av">'+initials(p.n)+'</div><div><b>'+esc(p.n)+'</b> <span class="mut">· '+esc(p.r)+'</span><br><span class="tag">'+esc(CATS[q.c])+'</span></div><span class="sp"></span></div>';
  h+='<div class="q">“'+esc(q.q)+'”</div>';
  h+='<div class="row" style="margin-bottom:10px"><button id="hear">🔊 Hear it</button><button id="mic" class="hide">🎤 Speak</button><span class="sp"></span><span class="timer" id="tm">0:00</span></div>';
  h+='<textarea id="ans" placeholder="Answer out loud, or type your answer here (optional)…"></textarea>';
@@ -364,7 +355,6 @@ function ask(){
  app.innerHTML=h;
  window.scrollTo(0,0);
  $("#bk").onclick=function(){if(S.res.length&&!confirm("Quit this session?"))return;home()};
- $("#st").onclick=function(e){marked[q.id]=!marked[q.id];e.target.classList.toggle("on",marked[q.id]);save()};
  $("#hear").onclick=function(){speak(q.q)};
  $("#rev").onclick=reveal;
  $("#skip").onclick=function(){S.res.push({id:q.id,sc:0,skipped:true});next()};
@@ -396,9 +386,7 @@ function reveal(){
   var tot=q.pts.length,got=document.querySelectorAll(".pc:checked").length,slip=$("#slip")&&$("#slip").checked;
   var sc=Math.max(0,got/tot-(slip?0.25:0));
   S.res.push({id:q.id,sc:sc,slip:slip,secs:Math.round((Date.now()-S.t0)/1000)});
-  var pr=prog[q.id]||{best:0,n:0};prog[q.id]={last:sc,best:Math.max(pr.best,sc),n:pr.n+1};
-  if(sc<0.5)marked[q.id]=true;
-  save();next();
+  next();
  };
  $("#res").scrollIntoView({behavior:"smooth",block:"start"});
 }
