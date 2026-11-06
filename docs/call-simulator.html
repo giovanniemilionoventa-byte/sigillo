@@ -277,64 +277,98 @@ var Q=[
  avoid:["Asking to talk to the boss directly right away"]}
 ];
 
-/* One call: the same client asks these questions in order. */
-var CALL=["what","who-needs","logs","content","fake","aiact","connect","price","down","audit","no-customers","send-info"];
-var CLIENT={n:"Alex",r:"CTO of a software company that builds AI agents"};
+/* The calls. hard = the client also pushes back after your answer (when the question has a follow-up). */
+var CALLS=[
+ {n:"First friendly call",who:"Alex",role:"CTO of a software company that builds AI agents",d:"Curious and polite. The best place to start.",hard:false,
+  ids:["what","who-needs","logs","content","fake","aiact","connect","price","down","audit","no-customers","send-info"]},
+ {n:"The skeptical CTO",who:"Marco",role:"CTO of a fintech scale-up",d:"Technical, short on time, tests whether you bluff. Pushes back.",hard:true,
+  ids:["what","logs","fake","connect","perf","down","audit","price","send-info"]},
+ {n:"The compliance head",who:"Elena",role:"Head of Compliance at an insurance company",d:"Careful. Wants honesty about limits. Pushes back.",hard:true,
+  ids:["who-needs","content","where","aiact","audit","verify","firebase","no-customers","boss"]},
+ {n:"The lawyer",who:"Sofia",role:"Legal counsel",d:"Every word counts. Pushes back on legal answers.",hard:true,
+  ids:["aiact","court","gdpr-dpa","erasure","hacked","training","company","boss"]},
+ {n:"The busy agency founder",who:"Tom",role:"Founder of an AI agency",d:"Fast and practical. Asks about code, price and why not build it himself.",hard:true,
+  ids:["what","diy","connect","frameworks","opensource","api","price","pilot","not-now"]},
+ {n:"The client who will not decide",who:"Jan",role:"Head of HR tech",d:"Likes it but never commits. Practise closing with ONE next step.",hard:true,
+  ids:["who-needs","pilot","price","roadmap","send-info","boss","not-now"]},
+ {n:"Hard questions only",who:"Marco",role:"A tough client",d:"The trickiest questions: audit, hacked, court, no customers, unknown details.",hard:true,
+  ids:["fake","audit","court","aiact","hacked","no-customers","saving","company","roadmap","down"]}
+];
 
 var app=document.getElementById("app");
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
-function byId(id){for(var i=0;i<Q.length;i++)if(Q[i].id===id)return Q[i]}
+function byId(id){for(var k=0;k<Q.length;k++)if(Q[k].id===id)return Q[k]}
 function list(a){return '<ul style="margin:0;padding-left:20px">'+a.map(function(x){return'<li>'+esc(x)+'</li>'}).join("")+'</ul>'}
-var ids,i,got;
+var call,ids,i,got;
 
 function home(){
- app.innerHTML='<h1>Sigillo call practice</h1>'+
- '<div class="card"><p>You are on a call with <b>Alex</b>, a CTO who builds AI agents. Alex will ask you '+CALL.length+' questions, one at a time.</p>'+
- '<p><b>1.</b> Read the question.<br><b>2.</b> Answer <b>out loud</b>, in your own words.<br><b>3.</b> Tap <b>Show the answer</b> and check what you said.</p>'+
- '<button class="pri big" id="go" style="text-align:center;font-size:19px">▶ Start the call</button></div>';
- document.getElementById("go").onclick=function(){ids=CALL.slice();i=0;got=[];ask()};
+ var h='<h1>Sigillo call practice</h1><p>Pick a call. A client asks you questions one at a time. Answer <b>out loud</b>, then tap to see a good answer.</p><h2 style="margin-top:20px">👇 Tap a call to start</h2>';
+ CALLS.forEach(function(c,k){h+='<button class="big" data-k="'+k+'"><b>▶ '+esc(c.n)+'</b><span>'+esc(c.d)+' ('+c.ids.length+' questions)</span></button>'});
+ app.innerHTML=h;
+ app.querySelectorAll("[data-k]").forEach(function(b){b.onclick=function(){call=CALLS[+b.dataset.k];intro()}});
+ window.scrollTo(0,0);
 }
+
+function intro(){
+ app.innerHTML='<p><button id="bk">← All calls</button></p><h1>'+esc(call.n)+'</h1><div class="card"><div class="who"><div class="av">'+esc(call.who.charAt(0))+'</div><div><b>'+esc(call.who)+'</b><div class="mut">'+esc(call.role)+'</div></div></div>'+
+ '<p>'+esc(call.d)+'</p>'+
+ '<p><b>1.</b> Read the question.<br><b>2.</b> Answer <b>out loud</b>, in your own words.<br><b>3.</b> Tap <b>Show the answer</b> and check what you said.'+(call.hard?'<br><b>4.</b> Sometimes the client pushes back. Answer that too.':'')+'</p>'+
+ '<button class="pri big" id="go" style="text-align:center;font-size:19px">▶ Start the call</button></div>';
+ document.getElementById("bk").onclick=home;
+ document.getElementById("go").onclick=function(){ids=call.ids.slice();i=0;got=[];ask()};
+}
+
+function head(){return '<div class="mut">'+esc(call.n)+' · question '+(i+1)+' of '+ids.length+'</div><div class="bar"><i style="width:'+(i/ids.length*100)+'%"></i></div>'}
+function who(){return '<div class="who"><div class="av">'+esc(call.who.charAt(0))+'</div><div><b>'+esc(call.who)+'</b><div class="mut">'+esc(call.role)+'</div></div></div>'}
 
 function ask(){
  var q=byId(ids[i]);
- app.innerHTML='<div class="mut">Question '+(i+1)+' of '+ids.length+'</div><div class="bar"><i style="width:'+(i/ids.length*100)+'%"></i></div>'+
- '<div class="card"><div class="who"><div class="av">A</div><div><b>'+CLIENT.n+'</b><div class="mut">Client</div></div></div>'+
- '<div class="q">“'+esc(q.q)+'”</div>'+
- '<p class="mut">Now answer out loud. Take your time.</p>'+
- '<button class="pri" id="rev" style="width:100%">Show the answer</button></div>';
+ app.innerHTML=head()+'<div class="card">'+who()+'<div class="q">“'+esc(q.q)+'”</div>'+
+ '<p class="mut">Now answer out loud. Take your time.</p><button class="pri" id="rev" style="width:100%">Show the answer</button></div>';
  window.scrollTo(0,0);
  document.getElementById("rev").onclick=function(){reveal(q)};
 }
 
 function reveal(q){
- var h='<div class="mut">Question '+(i+1)+' of '+ids.length+'</div><div class="bar"><i style="width:'+(i/ids.length*100)+'%"></i></div>'+
- '<div class="card"><div class="q">“'+esc(q.q)+'”</div>'+
+ app.innerHTML=head()+'<div class="card"><div class="q">“'+esc(q.q)+'”</div>'+
  '<div class="box say"><h3>A good answer</h3>'+esc(q.say)+'</div>'+
  '<div class="box" style="background:var(--acc2)"><h3>Key points</h3>'+list(q.pts)+'</div>'+
  (q.avoid?'<div class="box avoid"><h3>Do not say</h3>'+list(q.avoid)+'</div>':'')+
  (q.tip?'<div class="box tip"><h3>Note</h3>'+esc(q.tip)+'</div>':'')+
- (q.push?'<div class="box tip"><h3>If the client pushes: “'+esc(q.push.q)+'”</h3>'+esc(q.push.say)+'</div>':'')+
  '<p><b>How did you do?</b></p><div class="row"><button class="pri sp" id="ok">✓ I said it</button><button class="sp" id="no">✗ I missed it</button></div></div>';
- app.innerHTML=h;window.scrollTo(0,0);
- document.getElementById("ok").onclick=function(){next(q,true)};
- document.getElementById("no").onclick=function(){next(q,false)};
+ window.scrollTo(0,0);
+ document.getElementById("ok").onclick=function(){rated(q,true)};
+ document.getElementById("no").onclick=function(){rated(q,false)};
 }
 
-function next(q,ok){
- got.push({q:q,ok:ok});i++;
- if(i<ids.length)ask();else end();
+function rated(q,ok){
+ got.push({q:q,ok:ok});
+ if(call.hard&&q.push)pushback(q);else next();
 }
+
+function pushback(q){
+ app.innerHTML=head()+'<div class="card">'+who()+'<p class="mut">The client is not convinced and says:</p><div class="q">“'+esc(q.push.q)+'”</div>'+
+ '<p class="mut">Answer out loud.</p><div id="pa"><button class="pri" id="pr" style="width:100%">Show the answer</button></div></div>';
+ window.scrollTo(0,0);
+ document.getElementById("pr").onclick=function(){
+  document.getElementById("pa").innerHTML='<div class="box say"><h3>A good answer</h3>'+esc(q.push.say)+'</div><button class="pri" id="nx" style="width:100%">Next →</button>';
+  document.getElementById("nx").onclick=next;
+ };
+}
+
+function next(){i++;if(i<ids.length)ask();else end()}
 
 function end(){
  var miss=got.filter(function(x){return!x.ok}).map(function(x){return x.q.id});
  var n=got.length-miss.length;
  var h='<h1>Call finished</h1><div class="card"><div class="score">'+n+' / '+got.length+'</div><p>'+
- (miss.length?'Practise the ones you missed, then try again.':'Great. Try the whole call once more tomorrow.')+'</p>';
- if(miss.length){h+='<p><b>To practise again:</b></p>'+list(got.filter(function(x){return!x.ok}).map(function(x){return x.q.q}))}
- h+='</div>'+(miss.length?'<button class="pri big" id="rp" style="text-align:center">Practise the missed ones</button>':'')+'<button class="big" id="again" style="text-align:center">Start the call again</button>';
+ (miss.length?'Practise the ones you missed, then try again.':'Great. Try another call.')+'</p>';
+ if(miss.length)h+='<p><b>To practise again:</b></p>'+list(got.filter(function(x){return!x.ok}).map(function(x){return x.q.q}));
+ h+='</div>'+(miss.length?'<button class="pri big" id="rp" style="text-align:center">Practise the missed ones</button>':'')+'<button class="big" id="again" style="text-align:center">Try this call again</button><button class="big" id="hm" style="text-align:center">Choose another call</button>';
  app.innerHTML=h;window.scrollTo(0,0);
  if(miss.length)document.getElementById("rp").onclick=function(){ids=miss;i=0;got=[];ask()};
- document.getElementById("again").onclick=home;
+ document.getElementById("again").onclick=intro;
+ document.getElementById("hm").onclick=home;
 }
 
 home();
