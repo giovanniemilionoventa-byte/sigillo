@@ -101,7 +101,9 @@ describe("what the database holds", () => {
       .prepare("SELECT salt, secret_hash FROM api_keys WHERE key_id IN (?, ?)")
       .all(first.keyId, second.keyId) as { salt: string; secret_hash: string }[];
     raw.close();
-    expect(rows[0]?.salt).not.toBe(rows[1]?.salt);
+    // Since 2026-11-07 the secret (32 random bytes) is stored as a SHA-256,
+    // marked in the salt column: the hashes differ because the secrets do.
+    expect(rows[0]?.salt).toBe("sha256");
     expect(rows[0]?.secret_hash).not.toBe(rows[1]?.secret_hash);
   });
 });
@@ -145,9 +147,16 @@ describe("rejecting a token", () => {
 describe("the cost of a guess", () => {
   // Review point 10: a wrong secret under a real key id costs one scrypt, and
   // done synchronously that stalled the whole process for about 55 ms a guess.
-  it("runs scrypt off the event loop", async () => {
-    const issued = keys.issue(SYSTEM, AT);
-    const wrong = `${issued.token.slice(0, -1)}${issued.token.endsWith("a") ? "b" : "a"}`;
+  // Since 2026-11-07 only keys issued before are under scrypt.
+  it("runs scrypt off the event loop, for a key stored under scrypt", async () => {
+    const { scryptSync } = await import("node:crypto");
+    const raw = new Database(databasePath);
+    const salt = "c2FsdHNhbHRzYWx0c2FsdA==";
+    raw
+      .prepare("INSERT INTO api_keys (key_id, system_id, salt, secret_hash, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, NULL)")
+      .run("aabbccddeeff0011", SYSTEM, salt, scryptSync("x".repeat(64), salt, 32, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }).toString("base64"), AT);
+    raw.close();
+    const wrong = `sigillo_aabbccddeeff0011_${"a".repeat(64)}`;
 
     let turns = 0;
     let done = false;
@@ -162,6 +171,14 @@ describe("the cost of a guess", () => {
     done = true;
     // Synchronous scrypt resolves before a single turn of the loop can run.
     expect(turns).toBeGreaterThan(0);
+  });
+
+  it("costs almost nothing for a key issued now", async () => {
+    const issued = keys.issue(SYSTEM, AT);
+    const wrong = `${issued.token.slice(0, -1)}${issued.token.endsWith("a") ? "b" : "a"}`;
+    const started = performance.now();
+    for (let i = 0; i < 100; i++) expect(await keys.verify(wrong)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(500);
   });
 
   it("without hashing, accepts only a token already checked", async () => {
@@ -310,5 +327,46 @@ describe("listing keys", () => {
     keys.issue(OTHER, AT);
     expect(keys.list(SYSTEM)).toHaveLength(1);
     expect(keys.list()).toHaveLength(2);
+  });
+});
+
+describe("hashing of the secret (security audit 2026-11-07)", () => {
+  it("stores new keys as SHA-256, and moves an scrypt key to it once it verifies", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { scryptSync, randomBytes } = await import("node:crypto");
+    const Database = (await import("better-sqlite3")).default;
+    const { ReceiptStore } = await import("../src/storage/store.js");
+    const { createTestSigner } = await import("./helpers/signer.js");
+    const dir = mkdtempSync(join(tmpdir(), "sigillo-keyhash-"));
+    try {
+      const path = join(dir, "sigillo.db");
+      const store = ReceiptStore.open(path, createTestSigner());
+      await store.createSystem("s", "2026-11-07T00:00:00.000Z");
+      const keys = ApiKeyStore.open(path);
+      const fresh = keys.issue("s", "2026-11-07T00:00:01.000Z");
+      const db = new Database(path);
+      expect((db.prepare("SELECT salt FROM api_keys WHERE key_id = ?").get(fresh.keyId) as { salt: string }).salt).toBe("sha256");
+      expect(await keys.verify(fresh.token)).toBe("s");
+      expect(await keys.verify(fresh.token.slice(0, -1) + (fresh.token.endsWith("0") ? "1" : "0"))).toBeNull();
+
+      // A key from before: scrypt with a random salt.
+      const secret = randomBytes(32).toString("hex");
+      const salt = randomBytes(16).toString("base64");
+      const hash = scryptSync(secret, salt, 32, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }).toString("base64");
+      db.prepare("INSERT INTO api_keys (key_id, system_id, salt, secret_hash, created_at, revoked_at) VALUES (?, 's', ?, ?, '2026-01-01T00:00:00.000Z', NULL)").run("00112233aabbccdd", salt, hash);
+      const old = `sigillo_00112233aabbccdd_${secret}`;
+      expect(await keys.verify(old)).toBe("s");
+      expect((db.prepare("SELECT salt FROM api_keys WHERE key_id = ?").get("00112233aabbccdd") as { salt: string }).salt).toBe("sha256");
+      const reopened = ApiKeyStore.open(path);
+      expect(await reopened.verify(old)).toBe("s");
+      reopened.close();
+      db.close();
+      keys.close();
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

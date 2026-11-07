@@ -455,8 +455,13 @@ fingerprint still matches as before.
 Ingest is authenticated by an API key, one per system, sent as a bearer token.
 A key belongs to exactly one system and writes to that chain and no other.
 
-Only an scrypt hash of the secret is stored, with a per-key salt, so a copy of
-the database does not let anyone speak for a system. A test reads the raw bytes
+Only a hash of the secret is stored, so a copy of the database does not let
+anyone speak for a system. Since 2026-11-07 it is a SHA-256: the secret is 32
+random bytes, which no amount of guessing finds, so the slowness of scrypt
+(built for passwords people choose) protected nothing and made every wrong
+token cost the server about 55 ms of CPU, a way to stall it from many
+addresses at once. Keys issued before are stored under scrypt with a per-key
+salt, still verify, and are moved to SHA-256 the first time they do. A test reads the raw bytes
 of the database file and its write-ahead log and requires the secret to appear
 in neither. The token is shown once when it is issued and is not recoverable.
 
@@ -464,7 +469,7 @@ The key identifier inside a token is stored in the clear. It is a lookup handle,
 not a credential: it tells the server which row to check, so verifying costs one
 scrypt rather than one per key in the database.
 
-Checking a token runs scrypt off the event loop, and whether the key is still
+Checking a token still under scrypt runs it off the event loop, and whether the key is still
 live is read from the database on every request: a key revoked with
 `sigillo-server key revoke`, from another process, stops working on the next
 request of the server that is already running. An address that sends too many
