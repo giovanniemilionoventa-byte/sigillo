@@ -77,6 +77,34 @@ def _tell_server(config: dict, script_hash: str | None, sdk_hash: str | None) ->
         pass
 
 
+def libraries_hash(directories: list[str]) -> str | None:
+    """SHA-256 over the .py files under each directory, recursively, in path order:
+    the recording libraries the agent loaded (opentelemetry, openinference). A
+    change to one of them could drop actions from the record without touching
+    the agent's script or this package."""
+    digest = hashlib.sha256()
+    try:
+        for directory in sorted(set(directories)):
+            root = pathlib.Path(directory)
+            for path in sorted(root.rglob("*.py")):
+                digest.update(str(path.relative_to(root)).encode("utf-8") + b"\0" + path.read_bytes() + b"\0")
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
+def watched_hash(directory: str, libraries: list[str] | None) -> str | None:
+    """What the guard and the heartbeat send as `sdk_hash`: this package, and
+    with `libraries` the recording libraries too, in one digest."""
+    own = package_hash(directory)
+    if not libraries or own is None:
+        return own
+    libs = libraries_hash(libraries)
+    if libs is None:
+        return None
+    return hashlib.sha256(f"{own}:{libs}".encode("ascii")).hexdigest()
+
+
 def model_state(base: str) -> str:
     """"open" if the local model answers a request that carries no key, "closed"
     if it asks for one, "none" if nothing answers there."""
@@ -259,7 +287,7 @@ def main() -> None:
                 os._exit(0)
             was = now
         script = file_hash(config["script"]) if config["script"] is not None else None
-        sdk = package_hash(directory)
+        sdk = watched_hash(directory, config.get("libraries"))
         if script != config["script_hash"] or sdk != config["sdk_hash"]:
             _tell_server(config, script, sdk)
             sys.stderr.write("sigillo: the agent's script or the sigillo package changed: ending the agent\n")

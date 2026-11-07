@@ -124,6 +124,20 @@ def _main_script() -> str | None:
     return str(path) if path else None
 
 
+def _recording_libraries() -> list[str]:
+    """Where the libraries that record the agent's actions live: OpenTelemetry
+    and OpenInference, as loaded in this process. Their files are hashed with
+    this package's, so that editing one of them on disk to drop actions from
+    the record is seen like editing sigillo itself."""
+    found: set[str] = set()
+    for name in ("opentelemetry", "openinference"):
+        module = _sys.modules.get(name)
+        for entry in getattr(module, "__path__", []) or []:
+            if _os.path.isdir(entry):
+                found.add(_os.path.abspath(entry))
+    return sorted(found)
+
+
 def _hash_of_file(path: str) -> str | None:
     """SHA-256 of a file's bytes, or None when it can no longer be read."""
     try:
@@ -175,6 +189,8 @@ class _Heartbeat:
         self._missed = 0
         # The main script is found once, here; its bytes are read at every beat.
         self._script = _main_script()
+        # The recording libraries, watched with this package (see _recording_libraries).
+        self._libraries = _recording_libraries()
         self._api_key = api_key
         self._guard: _subprocess.Popen | None = None
         self._guard_period = guard_seconds
@@ -205,7 +221,8 @@ class _Heartbeat:
             "session": self.session,
             "script": self._script,
             "script_hash": _hash_of_file(self._script) if self._script is not None else None,
-            "sdk_hash": _watchdog.package_hash(directory),
+            "sdk_hash": _watchdog.watched_hash(directory, self._libraries),
+            "libraries": self._libraries,
             "parent": _os.getpid(),
             "beat_every": self._interval,
             "strict": self._strict and self._on_halt is _halt_process,
@@ -261,7 +278,9 @@ class _Heartbeat:
         if self._script is not None and event != "stop":
             payload["script_hash"] = _hash_of_file(self._script)
         if event != "stop":
-            payload["sdk_hash"] = _watchdog.package_hash(_os.path.dirname(_os.path.abspath(_watchdog.__file__)))
+            payload["sdk_hash"] = _watchdog.watched_hash(
+                _os.path.dirname(_os.path.abspath(_watchdog.__file__)), self._libraries
+            )
             if self._guard is not None and self._guard.poll() is not None:
                 self._halt("the sigillo guard process is no longer running")
         body = _json.dumps(payload).encode("utf-8")
