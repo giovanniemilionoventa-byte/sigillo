@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import Database from "better-sqlite3";
@@ -9,12 +9,16 @@ import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw, receiptHash
 import { ApiKeyStore } from "./auth/api-keys.js";
 import { databaseFiles, describeDatabase, inventoryMarkdown, MIN_MARKER_LENGTH, scanDatabase, scanFiles, unclassifiedColumns, type ColumnHit } from "./assurance/privacy-check.js";
 import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
+import { base32Decode, base32Encode } from "./auth/totp.js";
 import { DailyExporter } from "./backup/daily-export.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
+import { ToolReconciler } from "./check/tool-reconcile.js";
 import { ConnectionWatch } from "./connection/watch.js";
 import { agentProtection, agentUpload, consoleFeatures, consoleV2, cookieSecure, firebaseAccounts, ingestPause, keyVault, llmGateway, llmToolRequests, plainAgents, port, positiveInteger, readSecret, scriptGuard, transfer, trustProxy } from "./config.js";
 import { FirebaseAuth } from "./auth/firebase.js";
 import { archiveFromStore, positionsIn, tokensIn } from "./export/from-store.js";
+import { boxPublicKey } from "./gateway/key-box.js";
+import { KeyholderClient } from "./gateway/keyholder-client.js";
 import { loadOrCreateSealingKey, ProviderKeyStore } from "./gateway/provider-keys.js";
 import { ChainHealthMonitor } from "./health/chain-health.js";
 import { buildServer } from "./http/server.js";
@@ -194,12 +198,20 @@ program
       process.env["SIGILLO_ORG_MONTHLY_RECEIPTS"],
       10_000,
     );
+    const systemReceiptsPerMinute = positiveInteger(
+      "SIGILLO_SYSTEM_RECEIPTS_PER_MINUTE",
+      process.env["SIGILLO_SYSTEM_RECEIPTS_PER_MINUTE"],
+      3000,
+    );
     const organizationMaxSystems = positiveInteger(
       "SIGILLO_ORG_MAX_SYSTEMS",
       process.env["SIGILLO_ORG_MAX_SYSTEMS"],
       100,
     );
     const tsa = tsaFromOptions(options.tsaUrl);
+    // A second, independent authority over the same roots (TSA_URL_2), unauthenticated.
+    const secondTsaUrl = process.env["TSA_URL_2"];
+    const extraTsas = secondTsaUrl !== undefined && secondTsaUrl.length > 0 && secondTsaUrl !== options.tsaUrl ? [{ url: secondTsaUrl }] : [];
 
     // The operator's view is mounted only when a password is set. An audit log
     // behind no password is worse than an audit log behind no web page.
@@ -210,20 +222,42 @@ program
       throw new Error("SIGILLO_ADMIN_PASSWORD must be at least 12 characters");
     }
 
+    // The administrator's optional second factor (admin-code), a file beside the database.
+    const totpSecret = existsSync(adminCodeFile(options.db))
+      ? base32Decode(readFileSync(adminCodeFile(options.db), "utf8"))
+      : undefined;
+
     const signer = await SignerClient.connect(options.signerSocket);
     const store = ReceiptStore.open(options.db, signer);
     const keys = ApiKeyStore.open(options.db);
-    // The customers' own model keys, sealed under a key kept in a file beside
-    // the database and never in it: a backup carries the sealed keys only.
-    const providerKeys =
-      gatewayAccess === "off"
-        ? undefined
-        : ProviderKeyStore.open(
-            options.db,
-            loadOrCreateSealingKey(process.env["SIGILLO_LLM_GATEWAY_KEY_FILE"] || join(dirname(options.db), "llm-gateway.key")),
-            (systemId) => store.systemRecord(systemId)?.organization_id ?? "operator",
-            keyVault(process.env),
-          );
+    // The customers' own model keys. With a keyholder (SIGILLO_KEYHOLDER_SOCKET,
+    // apps/keyholder), sealed to its public key and opened only there;
+    // the older key file beside the database is handed to it and deleted here.
+    // Without one, sealed under that file's key, as before.
+    const keyholderSocket = process.env["SIGILLO_KEYHOLDER_SOCKET"] || undefined;
+    const legacyKeyFile = process.env["SIGILLO_LLM_GATEWAY_KEY_FILE"] || join(dirname(options.db), "llm-gateway.key");
+    const ownerOfSystem = (systemId: string): string => store.systemRecord(systemId)?.organization_id ?? "operator";
+    let keyholder: KeyholderClient | undefined;
+    let providerKeys: ProviderKeyStore | undefined;
+    // The key vault opens keys in this process, so it and the keyholder do not go together: the vault wins, and says so.
+    if (gatewayAccess !== "off" && keyholderSocket !== undefined && keyVault(process.env)) {
+      process.stderr.write("SIGILLO_KEY_VAULT=on keeps the model keys in this process: the keyholder is not used\n");
+    }
+    if (gatewayAccess !== "off" && keyholderSocket !== undefined && !keyVault(process.env)) {
+      keyholder = new KeyholderClient(keyholderSocket);
+      const publicKey = await waitForKeyholder(keyholder);
+      if (existsSync(legacyKeyFile)) {
+        const legacy = loadOrCreateSealingKey(legacyKeyFile);
+        if (!(await keyholder.adopt(legacy))) {
+          throw new Error("the keyholder holds a different older key than this server's llm-gateway.key: a person must look at it");
+        }
+        rmSync(legacyKeyFile);
+        process.stdout.write("the older model-key file was handed to the keyholder and deleted here\n");
+      }
+      providerKeys = ProviderKeyStore.open(options.db, null, ownerOfSystem, false, boxPublicKey(publicKey));
+    } else if (gatewayAccess !== "off") {
+      providerKeys = ProviderKeyStore.open(options.db, loadOrCreateSealingKey(legacyKeyFile), ownerOfSystem, keyVault(process.env));
+    }
 
     // Every chain's tip against the signer's head, before any request is
     // served: a receipt signed and lost to a crash is written now; any other
@@ -255,6 +289,7 @@ program
       store,
       now: () => new Date(),
       ...(tsa === undefined ? {} : { tsa }),
+      extraTsas,
       intervalMinutes: checkpointMinutes,
       retryMinutes: tsaRetryMinutes,
       onError: (message) => process.stderr.write(`${message}\n`),
@@ -271,7 +306,7 @@ program
       scriptGuard: scriptGuard(process.env),
       transfer: transfer(process.env),
       plainAgents: plainAgents(process.env),
-      ...(providerKeys === undefined || gatewayAccess === "off" ? {} : { gateway: { keys: providerKeys, access: gatewayAccess, toolRequests } }),
+      ...(providerKeys === undefined || gatewayAccess === "off" ? {} : { gateway: { keys: providerKeys, access: gatewayAccess, toolRequests, ...(keyholder === undefined ? {} : { keyholder }) } }),
       logger: true,
       trustProxy: proxies,
       ingestLimits,
@@ -279,6 +314,7 @@ program
       chainsIntact: () => store.divergentSystems().length === 0 && (healthMonitor?.failedSystems().length ?? 0) === 0,
       ...(pause === null ? {} : { ingestPause: pause }),
       organizationMonthlyReceipts,
+      systemReceiptsPerMinute,
       organizationMaxSystems,
       ...(!uiMounted || healthMonitor === undefined
         ? {}
@@ -292,6 +328,7 @@ program
               healthMonitor,
               checkpointer,
               loginLimits,
+              ...(totpSecret === undefined ? {} : { totpSecret }),
               cookieSecure: secureCookie,
               agentUpload: agentUploadAccess,
               consoleV2: consoleV2Access,
@@ -323,6 +360,10 @@ program
     checkpointer.start();
     dailyExporter?.start();
     if (pause === null) connections.start();
+    // The tools the model asked for, against the tools the agent recorded (check/tool-reconcile.ts).
+    const toolReconciler =
+      providerKeys === undefined || gatewayAccess === "off" || toolRequests === "off" ? undefined : new ToolReconciler({ store });
+    toolReconciler?.start();
     // A vault's sealed hours close it even when no request comes: the data key
     // leaves memory when the window starts.
     const vaultSweep =
@@ -332,6 +373,7 @@ program
     const shutdown = (): void => {
       if (vaultSweep !== undefined) clearInterval(vaultSweep);
       connections.stop();
+      toolReconciler?.stop();
       checkpointer.stop();
       dailyExporter?.stop();
       healthMonitor?.stop();
@@ -577,6 +619,31 @@ org
       );
       process.stdout.write("the erasure is in the administrative log (sigillo-server admin-log); backups keep it until they rotate out\n");
     });
+  });
+
+program
+  .command("admin-code")
+  .description(
+    "Turn on (or off with --off) the six-digit code the administrator's sign-in asks for besides the password. " +
+      "Prints the secret and a link to add to an authenticator app; takes effect when the server restarts",
+  )
+  .option("--off", "remove the code: the password alone again")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action((options: DatabaseOption & { off?: boolean }) => {
+    const path = adminCodeFile(options.db);
+    if (options.off === true) {
+      rmSync(path, { force: true });
+      process.stdout.write("the six-digit code is off; restart the server\n");
+      return;
+    }
+    const secret = base32Encode(randomBytes(20));
+    writeFileSync(path, `${secret}\n`, { mode: 0o600 });
+    process.stdout.write(
+      `secret: ${secret}\n` +
+        `link:   otpauth://totp/sigillo:admin?secret=${secret}&issuer=sigillo&algorithm=SHA1&digits=6&period=30\n` +
+        "Add it to an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password...) by typing the secret,\n" +
+        "then restart the server: the administrator's sign-in will ask for the app's six-digit code.\n",
+    );
   });
 
 program
@@ -983,4 +1050,21 @@ try {
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exit(1);
+}
+
+/** Where the administrator's six-digit code secret is kept: beside the database, outside its backups. */
+function adminCodeFile(db: string): string {
+  return process.env["SIGILLO_ADMIN_CODE_FILE"] || join(dirname(db), "admin-code.key");
+}
+
+/** The keyholder's public key, waiting up to a minute for it to start (the two containers start together). */
+async function waitForKeyholder(client: KeyholderClient): Promise<Buffer> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await client.publicKey();
+    } catch (error) {
+      if (attempt >= 60) throw new Error(`the keyholder does not answer at ${client.socketPath}: ${error instanceof Error ? error.message : String(error)}`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
 }

@@ -1,17 +1,19 @@
-# Two images from one build: the server and the signer.
+# Three images from one build: the server, the signer and the keyholder.
 #
 # They are separate images because they are separate trust domains. The signer
-# holds the key; the server must not be able to reach it. Building them from one
+# holds the signing key; the keyholder holds what opens the customers' model
+# keys; the server must be able to reach neither. Building them from one
 # source tree keeps them on the same version of the receipt format.
 #
 #   docker build -f deploy/Dockerfile --target server -t sigillo-server .
 #   docker build -f deploy/Dockerfile --target signer -t sigillo-signer .
+#   docker build -f deploy/Dockerfile --target keyholder -t sigillo-keyholder .
 #
 # The base image is pinned by digest, so that two builds of the same commit
 # start from the same bytes. To take a newer Node 22 (security updates do
 # arrive this way), look up the digest of node:22-bookworm-slim, for example
 # with `docker buildx imagetools inspect node:22-bookworm-slim`, and replace it
-# in the three FROM lines together.
+# in the four FROM lines together.
 
 FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS build
 WORKDIR /src
@@ -29,6 +31,7 @@ COPY packages/verifier/package.json packages/verifier/
 COPY packages/sdk-typescript/package.json packages/sdk-typescript/
 COPY apps/server/package.json apps/server/
 COPY apps/signer/package.json apps/signer/
+COPY apps/keyholder/package.json apps/keyholder/
 RUN pnpm install --frozen-lockfile
 
 COPY packages packages
@@ -46,6 +49,7 @@ RUN pnpm build
 # the deployed tree.
 RUN pnpm --filter @sigillo/server --prod --legacy deploy /out/server \
  && pnpm --filter @sigillo/signer --prod --legacy deploy /out/signer \
+ && pnpm --filter @sigillo/keyholder --prod --legacy deploy /out/keyholder \
  && pnpm --filter @sigillo/verifier --prod --legacy deploy /out/verifier
 
 
@@ -74,7 +78,7 @@ COPY deploy/backup.sh ./backup.sh
 # fresh named volume takes the ownership of the directory it is mounted on: a
 # directory the image does not have would come up owned by root, and the
 # server, which runs as node, could not write to it.
-RUN install -d -o node -g node /var/lib/sigillo /var/lib/sigillo-backups /run/sigillo
+RUN install -d -o node -g node /var/lib/sigillo /var/lib/sigillo-backups /run/sigillo /run/sigillo-keyholder
 USER node
 ENV SIGILLO_DB=/var/lib/sigillo/sigillo.db \
     SIGILLO_SIGNER_SOCKET=/run/sigillo/signer.sock \
@@ -101,3 +105,21 @@ ENV SIGILLO_KEY=/var/lib/sigillo-key/signer.key \
     SIGILLO_SIGNER_SOCKET=/run/sigillo/signer.sock
 ENTRYPOINT ["node", "dist/cli.js"]
 CMD ["serve", "--key", "/var/lib/sigillo-key/signer.key", "--socket", "/run/sigillo/signer.sock", "--state", "/var/lib/sigillo-key/state"]
+
+
+FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS keyholder
+# It calls the model providers over HTTPS.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /out/keyholder ./
+
+# Its key (made on first start) and the older model-key file the server hands
+# it live on a volume mounted only here; the socket is shared with the server.
+RUN install -d -o node -g node /var/lib/sigillo-keyholder /run/sigillo-keyholder
+USER node
+ENV SIGILLO_KEYHOLDER_DIR=/var/lib/sigillo-keyholder \
+    SIGILLO_KEYHOLDER_SOCKET=/run/sigillo-keyholder/keyholder.sock
+ENTRYPOINT ["node", "dist/cli.js"]
+CMD ["serve"]

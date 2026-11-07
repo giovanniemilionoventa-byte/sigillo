@@ -1,0 +1,53 @@
+name: verifier release
+
+# Publishes the offline verifier, the same zip a sigillo server serves at
+# /sigillo-verify.zip, with its SHA-256, as the GitHub release "verifier".
+# The verify page of every server shows the fingerprint of the file it
+# serves and links here: a reader compares the two, and a server that hands
+# out a verifier altered to say OK is caught by a fingerprint it cannot
+# change on GitHub (security audit, 2026-11-07).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/verifier/**"
+      - "packages/core/**"
+      - "apps/server/src/http/verifier-bundle.ts"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/verifier-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: verifier-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - id: zip
+        run: echo "sha256=$(pnpm -s tsx scripts/verifier-zip.ts out/sigillo-verify.zip)" >> "$GITHUB_OUTPUT"
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.zip.outputs.sha256 }}
+        run: |
+          notes="The offline verifier, as every sigillo server serves it at /sigillo-verify.zip.
+
+          SHA-256: \`$SHA\`
+
+          Built from commit ${GITHUB_SHA} by this repository's own workflow. Compare it with the fingerprint shown on the verify page of the server you downloaded from: they must be the same."
+          gh release delete verifier --yes --cleanup-tag || true
+          gh release create verifier out/sigillo-verify.zip out/sigillo-verify.zip.sha256 \
+            --title "Offline verifier" --notes "$notes" --target "$GITHUB_SHA"

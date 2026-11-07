@@ -14,6 +14,9 @@ import { createZip, type ZipEntry } from "@sigillo/core";
 
 export const VERIFIER_ZIP_NAME = "sigillo-verify.zip";
 
+/** Where the same zip and its fingerprint are published, built by GitHub, not by this server (.github/workflows/verifier-release.yml). */
+export const VERIFIER_RELEASE_URL = "https://github.com/giovanniemilionoventa-byte/sigillo/releases/tag/verifier";
+
 const ROOT = "sigillo-verify";
 
 const README = `Sigillo offline verifier
@@ -33,7 +36,8 @@ https://github.com/giovanniemilionoventa-byte/sigillo/tree/main/packages/verifie
 /** Runtime files of a package: no type declarations, source maps or tests. */
 function runtimeFiles(directory: string): string[] {
   const found: string[] = [];
-  for (const name of readdirSync(directory)) {
+  // In name order, so that the zip, and its SHA-256, are the same wherever it is built.
+  for (const name of readdirSync(directory).sort()) {
     const path = join(directory, name);
     if (statSync(path).isDirectory()) {
       if (name !== "node_modules" && name !== "test" && name !== "__tests__") found.push(...runtimeFiles(path));
@@ -82,4 +86,13 @@ export function verifierZip(): { zip: Buffer; sha256: string } {
   const zip = Buffer.from(createZip(entries));
   cached = { zip, sha256: createHash("sha256").update(zip).digest("hex") };
   return cached;
+}
+
+/** The zip's SHA-256 for a page to show, or null where the verifier is not built (a development checkout). */
+export function verifierFingerprint(): string | null {
+  try {
+    return verifierZip().sha256;
+  } catch {
+    return null;
+  }
 }

@@ -7,7 +7,7 @@ import {
   type Outcome,
   type Source,
 } from "@sigillo/core";
-import { CONNECTION_PREFIX } from "../connection/names.js";
+import { serverOnlyName } from "../connection/names.js";
 import type { AttributeValue, OtlpSpan } from "./otlp.js";
 
 /**
@@ -384,9 +384,10 @@ export function adaptSpans(spans: OtlpSpan[]): AdaptedBatch {
         ? adaptGenAi(span, unknown, rawContent)
         : null;
 
-    // A span may not pass itself off as one of the server's own connection
-    // receipts (connection/watch.ts): dropped like any span that is no action.
-    if (adapted === null || adapted.action.name.startsWith(CONNECTION_PREFIX)) {
+    // A span may not pass itself off as one of the server's own receipts
+    // (connection/watch.ts, the gateway's model_requested.*): dropped like
+    // any span that is no action.
+    if (adapted === null || serverOnlyName(adapted.action.name)) {
       ignored += 1;
       continue;
     }

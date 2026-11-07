@@ -3,6 +3,7 @@ import type { Receipt } from "@sigillo/core";
 import type { ReceiptStore } from "../storage/store.js";
 import { CATALOG, isProvider, type Provider } from "./catalog.js";
 import { VaultError, VaultLockedError, VaultSealedError, type ProviderKeyStore } from "./provider-keys.js";
+import type { KeyholderClient } from "./keyholder-client.js";
 import { toolRequestsOf } from "./tool-requests.js";
 
 /**
@@ -47,6 +48,11 @@ export interface GatewayOptions {
   toolRequests?: "off" | GatewayAccess;
   /** The providers' addresses; tests point them at a local stand-in. */
   upstream?: Partial<Record<Provider, string>>;
+  /**
+   * The keyholder process (apps/keyholder), which alone opens the keys
+   * and calls the provider. Absent: this process opens them (`keys.get`).
+   */
+  keyholder?: KeyholderClient;
 }
 
 export interface GatewayGuards {
@@ -57,10 +63,10 @@ export interface GatewayGuards {
   overQuota: (systemId: string, reply: FastifyReply) => boolean;
 }
 
-const UPSTREAM = (provider: Provider): string => CATALOG[provider].addresses[0]!;
+export const UPSTREAM = (provider: Provider): string => CATALOG[provider].addresses[0]!;
 
 /** The request headers the providers read that are not the key: passed on as they are. */
-const FORWARDED_REQUEST_HEADERS = [
+export const FORWARDED_REQUEST_HEADERS = [
   "accept",
   "anthropic-version",
   "anthropic-beta",
@@ -71,12 +77,30 @@ const FORWARDED_REQUEST_HEADERS = [
 ];
 
 /** The response headers an SDK reads: the type, the request id, rate limits and when to retry. */
-const FORWARDED_RESPONSE_HEADER = /^(content-type|retry-after|x-request-id|request-id|openai-[a-z-]+|anthropic-[a-z-]+|x-ratelimit-[a-z-]+)$/;
+export const FORWARDED_RESPONSE_HEADER = /^(content-type|retry-after|x-request-id|request-id|openai-[a-z-]+|anthropic-[a-z-]+|x-ratelimit-[a-z-]+)$/;
 
 const MAX_NAME = 256;
 
 /** The paths that list model names (`v1/models`, `v1beta/models/<name>`, Groq's `openai/v1/models`): nothing of the customer's, so not a receipt each. */
 const MODEL_LIST = /^([A-Za-z0-9-]+\/)*models(\/[A-Za-z0-9._:-]+)?$/;
+
+/**
+ * Paths that would let the agent reach the model, or the customer's account,
+ * without passing through here again: a short-lived key for a realtime
+ * session (OpenAI's `v1/realtime/client_secrets`, its older
+ * `v1/realtime/sessions`), Gemini's ephemeral `auth_tokens`, and the
+ * endpoints that create keys, users or projects (OpenAI's `organization/*`,
+ * OpenRouter's `api/v1/keys`). A key minted through the gateway would carry
+ * the customer's model straight to the agent, one receipt for a whole
+ * session. Matched on a whole path segment, any case, anywhere in the path.
+ */
+const NO_GATEWAY_SEGMENT =
+  /(^|\/)(realtime|client_secrets|sessions|auth_tokens|ephemeral[_-]?[a-z_-]*|organization|organizations|admin_api_keys|api_keys|keys|projects|invites|users|credentials)(\/|$|:)/i;
+
+/** Whether a provider path stays out of the gateway (NO_GATEWAY_SEGMENT). */
+export function closedPath(path: string): boolean {
+  return NO_GATEWAY_SEGMENT.test(path);
+}
 
 /** The action name of a tool the model asked for: `model_requested.send_email`. */
 export const TOOL_REQUEST_PREFIX = "model_requested.";
@@ -131,6 +155,9 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
     if (!isProvider(provider) || !CATALOG[provider].path.test(rest) || rest.split("/").includes("..")) {
       return reply.code(404).send({ error: "no such model endpoint" });
     }
+    if (closedPath(rest)) {
+      return reply.code(403).send({ error: "this endpoint would hand out access around the gateway: not available through sigillo" });
+    }
     // OpenAI's SDKs send the key as a bearer token, Anthropic's as x-api-key,
     // Google's as x-goog-api-key or as `?key=`.
     const token =
@@ -142,7 +169,7 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
     }
     let providerKey: string | null;
     try {
-      providerKey = options.keys.get(systemId, provider, now());
+      providerKey = options.keyholder !== undefined ? options.keys.sealedFor(systemId, provider) : options.keys.get(systemId, provider, now());
     } catch (error) {
       if (!(error instanceof VaultLockedError)) throw error;
       const sealed = error instanceof VaultSealedError;
@@ -167,7 +194,8 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
     }
 
     const query = queryWithoutKey(request.url);
-    const headers = providerAuth(provider, rest, providerKey);
+    // With a keyholder, `providerKey` is the sealed box: the keyholder adds the key.
+    const headers: Record<string, string> = options.keyholder !== undefined ? {} : providerAuth(provider, rest, providerKey);
     for (const name of FORWARDED_REQUEST_HEADERS) {
       const value = request.headers[name];
       if (typeof value === "string") headers[name] = value;
@@ -224,12 +252,25 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
 
     let upstream: Response;
     try {
-      upstream = await fetch(`${upstreamOf(provider)}/${rest}${query}`, {
-        method: request.method,
-        headers,
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: abort.signal,
-      });
+      upstream =
+        options.keyholder !== undefined
+          ? await options.keyholder.call({
+              systemId,
+              provider,
+              rest,
+              query,
+              method: request.method,
+              sealed: providerKey,
+              headers,
+              ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+              signal: abort.signal,
+            })
+          : await fetch(`${upstreamOf(provider)}/${rest}${query}`, {
+              method: request.method,
+              headers,
+              ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+              signal: abort.signal,
+            });
     } catch (error) {
       request.log.warn({ system: systemId, provider, err: error }, "the model provider did not answer");
       // The call may have reached the provider before it failed or before the
@@ -314,7 +355,7 @@ export async function providerRefuses(provider: Provider, key: string, upstream?
 }
 
 /** How each provider takes its key. Gemini's OpenAI-compatible endpoints take it as OpenAI does. */
-function providerAuth(provider: Provider, path: string, key: string): Record<string, string> {
+export function providerAuth(provider: Provider, path: string, key: string): Record<string, string> {
   const auth = CATALOG[provider].auth;
   if (auth === "x-api-key") return { "x-api-key": key };
   if (auth === "gemini" && !/^v1(beta)?\/openai\//.test(path)) return { "x-goog-api-key": key };

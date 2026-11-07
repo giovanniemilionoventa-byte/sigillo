@@ -80,7 +80,12 @@ describe("the live demo on the home", () => {
       page.on("pageerror", (error) => problems.push(error.message));
       await page.goto(`${base}/`);
       const loaded = new Set<string>();
-      page.on("request", (request) => loaded.add(request.url()));
+      // The page's own requests: the YouTube player embedded further down the
+      // home loads its thumbnail and pings in its own frame, at its own pace,
+      // and is not the demo.
+      page.on("request", (request) => {
+        if (request.frame() === page.mainFrame()) loaded.add(request.url());
+      });
 
       // The page's SHA-256 is the real one.
       const sample = "sigillo «demo» ✓ " + "x".repeat(200);

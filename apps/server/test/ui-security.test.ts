@@ -311,3 +311,62 @@ describe("where a POST to the web view comes from", () => {
     expect(store.hasSystem("planted")).toBe(false);
   });
 });
+
+describe("the operator's password from many addresses (security audit 2026-11-07)", () => {
+  const from = (n: number): Record<string, string> => ({ "x-forwarded-for": `2001:db8::${n.toString(16)}` });
+
+  it("holds every address once 50 wrong guesses arrived from all of them together, but not one that signed in before", async () => {
+    const proxied = await start({ trustProxy: "127.0.0.1" });
+    try {
+      // The operator signs in once from their own address.
+      expect((await login(PASSWORD, from(9999), proxied)).statusCode).toBe(302);
+      // A botnet: two guesses from each of 25 addresses, under the per-address limit.
+      for (let n = 0; n < 25; n += 1) {
+        expect((await login("guess one", from(n), proxied)).statusCode).toBe(401);
+        expect((await login("guess two", from(n), proxied)).statusCode).toBe(401);
+      }
+      // A new address with the right password is now turned away like a wrong guess...
+      expect((await login(PASSWORD, from(5000), proxied)).statusCode).toBe(401);
+      // ...while the operator's own address still gets in.
+      expect((await login(PASSWORD, from(9999), proxied)).statusCode).toBe(302);
+    } finally {
+      await proxied.close();
+    }
+  });
+});
+
+describe("the operator's six-digit code", () => {
+  const SECRET = Buffer.from("12345678901234567890", "ascii");
+
+  it("is asked for and checked when a secret is set, and a code works once", async () => {
+    const { totpCode } = await import("../src/auth/totp.js");
+    const coded = await start({}, { totpSecret: SECRET });
+    try {
+      const page = await coded.inject({ method: "GET", url: "/ui/login" });
+      expect(page.body).toContain('name="code"');
+      const post = (password: string, code: string) =>
+        coded.inject({
+          method: "POST",
+          url: "/ui/login",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          payload: `password=${encodeURIComponent(password)}&code=${code}`,
+        });
+      let code = totpCode(SECRET, Math.floor(clock / 30_000));
+      expect((await login(PASSWORD, {}, coded)).statusCode).toBe(401);
+      expect((await post(PASSWORD, "000000" === code ? "111111" : "000000")).statusCode).toBe(401);
+      expect((await post("wrong password", code)).statusCode).toBe(401);
+      // Three failures: wait out this address's lockout.
+      clock += 6 * MINUTE;
+      code = totpCode(SECRET, Math.floor(clock / 30_000));
+      expect((await post(PASSWORD, code)).statusCode).toBe(302);
+      expect((await post(PASSWORD, code)).statusCode).toBe(401);
+    } finally {
+      await coded.close();
+    }
+  });
+
+  it("is not asked for without a secret", async () => {
+    const page = await app.inject({ method: "GET", url: "/ui/login" });
+    expect(page.body).not.toContain('name="code"');
+  });
+});

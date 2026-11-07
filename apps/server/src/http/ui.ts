@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { verifyTotp } from "../auth/totp.js";
 import { readFileSync } from "node:fs";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { DOCUMENT_TEXT_SOURCE, type DocumentFingerprints } from "@sigillo/core";
@@ -121,6 +122,12 @@ export interface UiOptions {
   /** Limits on wrong passwords, per client address. Defaults: see parseThrottleSettings. */
   loginLimits?: ThrottleSettings;
   /**
+   * The administrator's second factor, optional: the secret of an
+   * authenticator app (auth/totp.ts). When set, the operator's sign-in asks
+   * for its six-digit code as well as the password.
+   */
+  totpSecret?: Buffer;
+  /**
    * Whether the session cookie carries `Secure`. "auto", the default, sets it
    * whenever the browser reached the server over HTTPS, as the request (and a
    * trusted proxy's X-Forwarded-Proto) shows it.
@@ -210,6 +217,14 @@ export const DEFAULT_REQUEST_LIMITS: ThrottleSettings = {
   windowMs: 15 * 60_000,
   lockoutMs: 15 * 60_000,
   maxLockoutMs: 60 * 60_000,
+};
+
+/** Wrong operator passwords from all addresses together (see operatorThrottle). */
+export const OPERATOR_GLOBAL_LIMITS: ThrottleSettings = {
+  maxFailures: 50,
+  windowMs: 60 * 60_000,
+  lockoutMs: 15 * 60_000,
+  maxLockoutMs: 4 * 60 * 60_000,
 };
 
 export const DEFAULT_LOGIN_LIMITS: ThrottleSettings = {
@@ -364,6 +379,15 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   const { keys } = options;
   const sessions = options.sessions ?? new UiSessions();
   const loginThrottle = new AttemptThrottle(options.loginLimits ?? DEFAULT_LOGIN_LIMITS);
+  // The operator's password, from every address together: a guesser with
+  // many addresses (an IPv6 range, a botnet) is held to this, whatever the
+  // limit per address. An address that has signed in since the server
+  // started is not held by it, so a flood of guesses cannot lock the
+  // operator out of their own view.
+  const operatorThrottle = new AttemptThrottle(OPERATOR_GLOBAL_LIMITS);
+  const operatorAddresses = new Set<string>();
+  // The step of the last six-digit code accepted: a code is good once.
+  let lastTotpStep = -1;
   const cookieSecure = options.cookieSecure ?? "auto";
 
   const cookieNamed = (request: FastifyRequest, cookieName: string): string | undefined => {
@@ -552,7 +576,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   // address, /ui/admin; without them, /ui/login is the operator's password.
 
   const operatorLogin = (message?: string): string =>
-    operatorLoginPage(message, options.accounts === undefined ? UI.login.title : UI.login.adminTitle);
+    operatorLoginPage(message, options.accounts === undefined ? UI.login.title : UI.login.adminTitle, options.totpSecret !== undefined);
 
   app.get("/ui/login", async (request, reply) => {
     if (viewerOf(request) !== null) return reply.redirect("/ui", 302);
@@ -572,25 +596,33 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     // password is not even looked at: from outside, a lockout cannot be told
     // apart from a guess that was wrong, and no guess made during one can be
     // learned to be right.
-    if (loginThrottle.isLocked(client, now)) {
+    if (loginThrottle.isLocked(client, now) || (operatorThrottle.isLocked("operator", now) && !operatorAddresses.has(client))) {
       return html(reply, operatorLogin(UI.login.wrong), 401);
     }
 
-    const body = request.body as { password?: unknown } | undefined;
+    const body = request.body as { password?: unknown; code?: unknown } | undefined;
     const given = typeof body?.password === "string" ? body.password : "";
     const expected = options.password;
 
     const givenBytes = Buffer.from(given);
     const expectedBytes = Buffer.from(expected);
-    const correct =
+    const passwordRight =
       givenBytes.length === expectedBytes.length && timingSafeEqual(givenBytes, expectedBytes);
+    const step =
+      options.totpSecret === undefined
+        ? 0
+        : verifyTotp(options.totpSecret, typeof body?.code === "string" ? body.code : "", now, lastTotpStep);
+    const correct = passwordRight && step !== null;
 
     if (!correct) {
       loginThrottle.recordFailure(client, now);
+      operatorThrottle.recordFailure("operator", now);
       return html(reply, operatorLogin(UI.login.wrong), 401);
     }
 
+    if (options.totpSecret !== undefined && step !== null) lastTotpStep = step;
     loginThrottle.recordSuccess(client);
+    operatorAddresses.add(client);
     return reply.header("set-cookie", sessionCookie(request, OPERATOR)).redirect("/ui", 302);
   });
 
