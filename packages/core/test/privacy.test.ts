@@ -167,7 +167,7 @@ describe("receipt schema version 4", () => {
     const { input_hash_scheme: _i, output_hash_scheme: _o, ...rest } = validV4();
     for (const v of [1, 2, 3]) {
       expect(safeParseReceipt({ ...rest, v, actor: { agent: "a", on_behalf_of: "elena.rizzo" } }).ok, `v${v}`).toBe(true);
-      expectRejected({ ...validV4(), v }, "Unrecognized key(s)");
+      expectRejected({ ...validV4(), v }, "Unrecognized key");
     }
   });
 
