@@ -781,6 +781,14 @@ and nothing else.
   failure carries no such name, and can be recorded twice; the two receipts
   are both genuine records of what arrived.
 
+**A verifier handed out by a compromised server.** The offline verifier is
+downloaded from the server whose evidence it checks, so a server taken over
+could serve one altered to say OK. Since 2026-11-07 the verify page shows the
+SHA-256 of the zip it serves, and GitHub publishes the same zip with its
+fingerprint, built by this repository's own workflow
+(`.github/workflows/verifier-release.yml`, release `verifier`). The two must
+match; the zip is built in a fixed order so that they can.
+
 **What a compromised server can do before anyone checks.**
 - **Add false receipts, and open false chains.** At the end of every chain,
   and under any identifier the signer has never signed for. The signer cannot
