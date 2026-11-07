@@ -78,6 +78,24 @@ const MAX_NAME = 256;
 /** The paths that list model names (`v1/models`, `v1beta/models/<name>`, Groq's `openai/v1/models`): nothing of the customer's, so not a receipt each. */
 const MODEL_LIST = /^([A-Za-z0-9-]+\/)*models(\/[A-Za-z0-9._:-]+)?$/;
 
+/**
+ * Paths that would let the agent reach the model, or the customer's account,
+ * without passing through here again: a short-lived key for a realtime
+ * session (OpenAI's `v1/realtime/client_secrets`, its older
+ * `v1/realtime/sessions`), Gemini's ephemeral `auth_tokens`, and the
+ * endpoints that create keys, users or projects (OpenAI's `organization/*`,
+ * OpenRouter's `api/v1/keys`). A key minted through the gateway would carry
+ * the customer's model straight to the agent, one receipt for a whole
+ * session. Matched on a whole path segment, any case, anywhere in the path.
+ */
+const NO_GATEWAY_SEGMENT =
+  /(^|\/)(realtime|client_secrets|sessions|auth_tokens|ephemeral[_-]?[a-z_-]*|organization|organizations|admin_api_keys|api_keys|keys|projects|invites|users|credentials)(\/|$|:)/i;
+
+/** Whether a provider path stays out of the gateway (NO_GATEWAY_SEGMENT). */
+export function closedPath(path: string): boolean {
+  return NO_GATEWAY_SEGMENT.test(path);
+}
+
 /** The action name of a tool the model asked for: `model_requested.send_email`. */
 export const TOOL_REQUEST_PREFIX = "model_requested.";
 
@@ -130,6 +148,9 @@ export function registerGateway(app: FastifyInstance, options: GatewayOptions, g
     const { provider, "*": rest } = request.params as { provider: string; "*": string };
     if (!isProvider(provider) || !CATALOG[provider].path.test(rest) || rest.split("/").includes("..")) {
       return reply.code(404).send({ error: "no such model endpoint" });
+    }
+    if (closedPath(rest)) {
+      return reply.code(403).send({ error: "this endpoint would hand out access around the gateway: not available through sigillo" });
     }
     // OpenAI's SDKs send the key as a bearer token, Anthropic's as x-api-key,
     // Google's as x-goog-api-key or as `?key=`.
