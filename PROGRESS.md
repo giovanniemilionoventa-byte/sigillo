@@ -4380,3 +4380,39 @@ script); `/demo.js` la anima, servito dal server stesso come chiede la CSP (`scr
 Testi in inglese e italiano. Codice: `apps/server/src/http/site-demo.ts`; test:
 `apps/server/test/site-demo.test.ts` (Chromium sotto la CSP del Caddyfile, la modifica viene
 trovata, nessuna richiesta di rete). Nessuna dipendenza nuova, verificatore invariato.
+
+
+## Correzioni dell'audit di sicurezza (2026-11-07)
+
+Audit "da attaccante" del 7 novembre; il titolare ha chiesto di correggere tutto ciò che non cambia
+l'esperienza del cliente (SDK sempre scaricato, nessun passo tecnico in più). Fatto in codice:
+
+- **Gateway**: rifiuta i percorsi che danno accesso attorno a lui (chiavi temporanee realtime,
+  `client_secrets`, endpoint di account, chiavi, progetti, utenti).
+- **Nomi riservati**: `sigillo.*` e `model_requested.*` li scrive solo il server; gli allarmi del
+  guardiano (`model_open`, `model_foreign`) arrivano come battito e li scrive il server.
+  Limite di ricevute al minuto per sistema (`SIGILLO_SYSTEM_RECEIPTS_PER_MINUTE`, 3000).
+- **Chiavi API**: le nuove sono SHA-256 (sono 256 bit casuali, scrypt non serviva e permetteva
+  di rallentare il server); le vecchie scrypt valgono ancora e passano a SHA-256 al primo uso.
+- **Accesso operatore**: un limite di tentativi sbagliati su tutti gli indirizzi insieme, e un
+  codice a sei cifre facoltativo (`sigillo-server admin-code`, RFC 6238, `auth/totp.ts`).
+- **Strumenti non registrati**: il server confronta gli strumenti chiesti dal modello passando dal
+  gateway con quelli che l'agente registra; dopo 10 minuti scrive
+  `sigillo.check.tool_unrecorded.<strumento>` (`check/tool-reconcile.ts`).
+- **Guardiano SDK Python**: sorveglia anche le librerie che registrano (OpenTelemetry,
+  OpenInference), non solo il pacchetto sigillo.
+- **Secondo timbro temporale**: `TSA_URL_2` (DigiCert per default) sulle stesse radici; il
+  verificatore accetta una firma di TSA non verificabile se la stessa radice ha un token
+  verificato da un'altra autorità. Il verificatore cresce di circa 25 righe.
+- **Verificatore su GitHub**: lo zip è deterministico; un workflow lo pubblica nella release
+  `verifier` con lo SHA-256, e la pagina /verify mostra l'impronta da confrontare.
+- **Chiavi dei modelli dei clienti**: un nuovo container, `apps/keyholder`, le apre e chiama i
+  fornitori; il server le sigilla con la chiave pubblica (RSA-OAEP + AES-GCM) e non ha più nulla
+  che le apra. Al primo avvio il vecchio `llm-gateway.key` passa al keyholder e viene cancellato
+  dal server.
+- **zod 4.6.7** (vulnerabilità alta, la stessa modifica della PR #129).
+
+Restano al titolare: SSH solo con chiave e niente aggiornamento automatico da main come root;
+copie fuori sede su uno spazio che non permetta di cancellare; revocare la chiave sigillo finita
+in chiaro in un file d'esempio. Il punto del modello locale (porta casuale e allarme se qualcun
+altro lo usa) aspetta il suo via libera.

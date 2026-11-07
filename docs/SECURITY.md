@@ -691,6 +691,27 @@ restored on a new machine without that file has keys that no longer open, and
 each customer saves theirs again. The key is opened in memory for each call,
 never logged, never shown again after it is saved.
 
+**The keyholder** (security audit 2026-11-07). With `SIGILLO_KEYHOLDER_SOCKET`
+set, which the compose file does, the server no longer holds anything that
+opens these keys. A separate container, `apps/keyholder`, is the only one
+that can, like the signer for the signing key: it makes an RSA-3072 key on
+its first start, on a volume mounted nowhere else, and publishes the public
+half over a Unix socket shared with the server alone. The server seals each
+new key to it (`box1:`, a fresh AES-256-GCM key wrapped with RSA-OAEP-SHA256,
+the same associated data as above; `gateway/key-box.ts`); for each model call
+it hands the keyholder the sealed key, the provider and the path, and the
+keyholder opens it, calls the provider's catalogue address (it checks the
+path against the catalogue and the closed paths again on its own side) and
+streams the answer back. On the first start with a keyholder the server
+hands it `llm-gateway.key`, so that the keys sealed before keep working, and
+deletes the file on its own side. A server taken over can still make model
+calls through the socket while it holds it, but it can no longer carry a
+customer's key away. The lint rule that keeps private key material out of
+`apps/server/src` holds for this key as for the signing key. The keyholder's
+volume is not in the backups either: losing it means each customer saves
+their model key again. With `SIGILLO_KEY_VAULT=on` the keys stay in the
+server process, as before, and the keyholder is not used.
+
 The request and the answer cross the server in the clear, in memory, like any
 proxy's, and are hashed on the way to the receipt; neither is written to the
 database or the log. Whoever controls the server process could read them while

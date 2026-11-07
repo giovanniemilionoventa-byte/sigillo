@@ -71,7 +71,7 @@ describe.skipIf(!haveCompose)("deploy/docker-compose.yml, as Compose resolves it
   });
 
   it("hardens every service", () => {
-    expect(Object.keys(services).sort()).toEqual(["caddy", "server", "signer"]);
+    expect(Object.keys(services).sort()).toEqual(["caddy", "keyholder", "server", "signer"]);
     for (const [name, service] of Object.entries(services)) {
       expect(service.read_only, name).toBe(true);
       expect(service.security_opt, name).toContain("no-new-privileges:true");
@@ -182,7 +182,7 @@ describe("deploy/Dockerfile", () => {
     const created = [...dockerfile.matchAll(/install -d -o node -g node ([^\n]+)/g)].flatMap((match) =>
       (match[1] ?? "").trim().split(/\s+/),
     );
-    const mounted = [...composeFile.matchAll(/^\s+- (?:signer-key|signer-socket|sigillo-data|backups):(\S+)$/gm)].map(
+    const mounted = [...composeFile.matchAll(/^\s+- (?:signer-key|signer-socket|keyholder-key|keyholder-socket|sigillo-data|backups):(\S+)$/gm)].map(
       (match) => match[1] ?? "",
     );
     expect(mounted.length).toBeGreaterThanOrEqual(5);
@@ -191,7 +191,7 @@ describe("deploy/Dockerfile", () => {
 
   it("builds from a base image pinned by digest", () => {
     const froms = [...readFileSync(join(DEPLOY, "Dockerfile"), "utf8").matchAll(/^FROM (\S+)/gm)].map((m) => m[1] ?? "");
-    expect(froms).toHaveLength(3);
+    expect(froms).toHaveLength(4);
     for (const from of froms) expect(from).toMatch(/@sha256:[0-9a-f]{64}$/);
     expect(new Set(froms).size).toBe(1);
   });

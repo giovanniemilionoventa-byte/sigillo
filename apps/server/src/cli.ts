@@ -17,6 +17,8 @@ import { ConnectionWatch } from "./connection/watch.js";
 import { agentProtection, agentUpload, consoleFeatures, consoleV2, cookieSecure, firebaseAccounts, ingestPause, keyVault, llmGateway, llmToolRequests, plainAgents, port, positiveInteger, readSecret, scriptGuard, transfer, trustProxy } from "./config.js";
 import { FirebaseAuth } from "./auth/firebase.js";
 import { archiveFromStore, positionsIn, tokensIn } from "./export/from-store.js";
+import { boxPublicKey } from "./gateway/key-box.js";
+import { KeyholderClient } from "./gateway/keyholder-client.js";
 import { loadOrCreateSealingKey, ProviderKeyStore } from "./gateway/provider-keys.js";
 import { ChainHealthMonitor } from "./health/chain-health.js";
 import { buildServer } from "./http/server.js";
@@ -228,17 +230,34 @@ program
     const signer = await SignerClient.connect(options.signerSocket);
     const store = ReceiptStore.open(options.db, signer);
     const keys = ApiKeyStore.open(options.db);
-    // The customers' own model keys, sealed under a key kept in a file beside
-    // the database and never in it: a backup carries the sealed keys only.
-    const providerKeys =
-      gatewayAccess === "off"
-        ? undefined
-        : ProviderKeyStore.open(
-            options.db,
-            loadOrCreateSealingKey(process.env["SIGILLO_LLM_GATEWAY_KEY_FILE"] || join(dirname(options.db), "llm-gateway.key")),
-            (systemId) => store.systemRecord(systemId)?.organization_id ?? "operator",
-            keyVault(process.env),
-          );
+    // The customers' own model keys. With a keyholder (SIGILLO_KEYHOLDER_SOCKET,
+    // apps/keyholder), sealed to its public key and opened only there;
+    // the older key file beside the database is handed to it and deleted here.
+    // Without one, sealed under that file's key, as before.
+    const keyholderSocket = process.env["SIGILLO_KEYHOLDER_SOCKET"] || undefined;
+    const legacyKeyFile = process.env["SIGILLO_LLM_GATEWAY_KEY_FILE"] || join(dirname(options.db), "llm-gateway.key");
+    const ownerOfSystem = (systemId: string): string => store.systemRecord(systemId)?.organization_id ?? "operator";
+    let keyholder: KeyholderClient | undefined;
+    let providerKeys: ProviderKeyStore | undefined;
+    // The key vault opens keys in this process, so it and the keyholder do not go together: the vault wins, and says so.
+    if (gatewayAccess !== "off" && keyholderSocket !== undefined && keyVault(process.env)) {
+      process.stderr.write("SIGILLO_KEY_VAULT=on keeps the model keys in this process: the keyholder is not used\n");
+    }
+    if (gatewayAccess !== "off" && keyholderSocket !== undefined && !keyVault(process.env)) {
+      keyholder = new KeyholderClient(keyholderSocket);
+      const publicKey = await waitForKeyholder(keyholder);
+      if (existsSync(legacyKeyFile)) {
+        const legacy = loadOrCreateSealingKey(legacyKeyFile);
+        if (!(await keyholder.adopt(legacy))) {
+          throw new Error("the keyholder holds a different older key than this server's llm-gateway.key: a person must look at it");
+        }
+        rmSync(legacyKeyFile);
+        process.stdout.write("the older model-key file was handed to the keyholder and deleted here\n");
+      }
+      providerKeys = ProviderKeyStore.open(options.db, null, ownerOfSystem, false, boxPublicKey(publicKey));
+    } else if (gatewayAccess !== "off") {
+      providerKeys = ProviderKeyStore.open(options.db, loadOrCreateSealingKey(legacyKeyFile), ownerOfSystem, keyVault(process.env));
+    }
 
     // Every chain's tip against the signer's head, before any request is
     // served: a receipt signed and lost to a crash is written now; any other
@@ -287,7 +306,7 @@ program
       scriptGuard: scriptGuard(process.env),
       transfer: transfer(process.env),
       plainAgents: plainAgents(process.env),
-      ...(providerKeys === undefined || gatewayAccess === "off" ? {} : { gateway: { keys: providerKeys, access: gatewayAccess, toolRequests } }),
+      ...(providerKeys === undefined || gatewayAccess === "off" ? {} : { gateway: { keys: providerKeys, access: gatewayAccess, toolRequests, ...(keyholder === undefined ? {} : { keyholder }) } }),
       logger: true,
       trustProxy: proxies,
       ingestLimits,
@@ -1036,4 +1055,16 @@ try {
 /** Where the administrator's six-digit code secret is kept: beside the database, outside its backups. */
 function adminCodeFile(db: string): string {
   return process.env["SIGILLO_ADMIN_CODE_FILE"] || join(dirname(db), "admin-code.key");
+}
+
+/** The keyholder's public key, waiting up to a minute for it to start (the two containers start together). */
+async function waitForKeyholder(client: KeyholderClient): Promise<Buffer> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await client.publicKey();
+    } catch (error) {
+      if (attempt >= 60) throw new Error(`the keyholder does not answer at ${client.socketPath}: ${error instanceof Error ? error.message : String(error)}`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
 }

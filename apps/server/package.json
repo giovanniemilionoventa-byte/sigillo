@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./gateway": {
+      "types": "./dist/gateway/shared.d.ts",
+      "default": "./dist/gateway/shared.js"
     }
   },
   "scripts": {

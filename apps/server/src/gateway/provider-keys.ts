@@ -1,4 +1,5 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync, type KeyObject } from "node:crypto";
+import { isBoxed, sealBox } from "./key-box.js";
 import { readFileSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { applySchema } from "../storage/schema.js";
@@ -101,7 +102,7 @@ function seal(key: Buffer, plain: Buffer, aad: Buffer): Buffer {
   return Buffer.concat([iv, cipher.update(plain), cipher.final(), cipher.getAuthTag()]);
 }
 
-function open(key: Buffer, sealed: Buffer, aad: Buffer): Buffer {
+export function open(key: Buffer, sealed: Buffer, aad: Buffer): Buffer {
   const decipher = createDecipheriv("aes-256-gcm", key, sealed.subarray(0, 12));
   decipher.setAAD(aad);
   decipher.setAuthTag(sealed.subarray(sealed.length - 16));
@@ -271,8 +272,11 @@ export class ProviderKeyStore {
 
   private constructor(
     private readonly db: Database.Database,
-    /** Opens only keys sealed before vaults existed; the customer's vault takes them over when it is made. */
-    private readonly legacyKey: Buffer,
+    /**
+     * Opens only keys sealed before vaults existed; the customer's vault takes them over when it is made.
+     * Null where a keyholder process holds it instead (apps/keyholder): this store then opens nothing.
+     */
+    private readonly legacyKey: Buffer | null,
     private readonly ownerOf: (systemId: string) => string,
     /**
      * Whether keys are sealed under the customer's vault. Off (the console's
@@ -280,23 +284,37 @@ export class ProviderKeyStore {
      * key, as before vaults existed, and nothing asks for a passphrase.
      */
     readonly vaultEnabled: boolean,
+    /**
+     * The keyholder's public key (gateway/key-box.ts, RSA-OAEP): new keys are sealed to
+     * it, and only the keyholder process opens them. Undefined: the keys are
+     * sealed and opened here, with `legacyKey`.
+     */
+    private readonly boxRecipient?: KeyObject,
   ) {
     this.vaults = new Vaults(db);
+  }
+
+  /** Whether keys are opened by the keyholder process, not here (sealedFor, not get). */
+  get heldElsewhere(): boolean {
+    return this.boxRecipient !== undefined;
   }
 
   /** `ownerOf`: whose vault a system's keys belong to (its organization's id, or "operator"). */
   static open(
     location: string,
-    legacyKey: Buffer,
+    legacyKey: Buffer | null,
     ownerOf: (systemId: string) => string = () => "operator",
     vaultEnabled = true,
+    boxRecipient?: KeyObject,
   ): ProviderKeyStore {
-    if (legacyKey.length !== 32) throw new ProviderKeyError("the sealing key must be 32 bytes");
+    if (legacyKey !== null && legacyKey.length !== 32) throw new ProviderKeyError("the sealing key must be 32 bytes");
+    if (legacyKey === null && boxRecipient === undefined) throw new ProviderKeyError("a sealing key, or a keyholder's public key, is needed");
+    if (boxRecipient !== undefined && vaultEnabled) throw new ProviderKeyError("the key vault works only with the keys opened in this process, not by a keyholder");
     const db = new Database(location);
     db.pragma("journal_mode = WAL");
     db.pragma("busy_timeout = 5000");
     applySchema(db);
-    return new ProviderKeyStore(db, legacyKey, ownerOf, vaultEnabled);
+    return new ProviderKeyStore(db, legacyKey, ownerOf, vaultEnabled, boxRecipient);
   }
 
   /** Saves `key` for the system, replacing any it had for that provider. Needs the owner's vault, unlocked. */
@@ -308,8 +326,13 @@ export class ProviderKeyStore {
       );
     }
     const last4 = cleaned.slice(-4);
+    if (this.boxRecipient !== undefined) {
+      const boxed = sealBox(this.boxRecipient, Buffer.from(cleaned, "utf8"), associatedData(systemId, provider));
+      this.upsertText(systemId, provider, boxed, last4, createdAt, null);
+      return { provider, last4, createdAt };
+    }
     if (!this.vaultEnabled) {
-      const sealed = seal(this.legacyKey, Buffer.from(cleaned, "utf8"), associatedData(systemId, provider));
+      const sealed = seal(this.requireLegacy(), Buffer.from(cleaned, "utf8"), associatedData(systemId, provider));
       this.upsert(systemId, provider, sealed, last4, createdAt, null);
       return { provider, last4, createdAt };
     }
@@ -322,7 +345,16 @@ export class ProviderKeyStore {
     return { provider, last4, createdAt };
   }
 
+  private requireLegacy(): Buffer {
+    if (this.legacyKey === null) throw new ProviderKeyError("the keys are opened by the keyholder process, not here");
+    return this.legacyKey;
+  }
+
   private upsert(systemId: string, provider: Provider, sealed: Buffer, last4: string, createdAt: string, owner: string | null): void {
+    this.upsertText(systemId, provider, sealed.toString("base64"), last4, createdAt, owner);
+  }
+
+  private upsertText(systemId: string, provider: Provider, sealed: string, last4: string, createdAt: string, owner: string | null): void {
     this.db
       .prepare(
         `INSERT INTO provider_keys (system_id, provider, sealed, last4, created_at, vault_owner)
@@ -330,7 +362,20 @@ export class ProviderKeyStore {
          ON CONFLICT (system_id, provider) DO UPDATE
          SET sealed = excluded.sealed, last4 = excluded.last4, created_at = excluded.created_at, vault_owner = excluded.vault_owner`,
       )
-      .run(systemId, provider, sealed.toString("base64"), last4, createdAt, owner);
+      .run(systemId, provider, sealed, last4, createdAt, owner);
+  }
+
+  /**
+   * The sealed key as stored, for the keyholder process to open (a sealed box,
+   * or base64 under the key it took over from this server), or null if the
+   * system has none it can open: a key a suspended vault sealed reads as not set.
+   */
+  sealedFor(systemId: string, provider: Provider): string | null {
+    const row = this.db
+      .prepare("SELECT sealed, vault_owner FROM provider_keys WHERE system_id = ? AND provider = ?")
+      .get(systemId, provider) as { sealed: string; vault_owner: string | null } | undefined;
+    if (row === undefined || row.vault_owner !== null) return null;
+    return row.sealed;
   }
 
   /**
@@ -347,7 +392,10 @@ export class ProviderKeyStore {
     // A key a vault sealed before the vault was suspended cannot be opened
     // without it: it reads as not set, and the customer enters it again.
     if (row.vault_owner !== null && !this.vaultEnabled) return null;
-    if (row.vault_owner === null) return open(this.legacyKey, sealed, aadBytes).toString("utf8");
+    if (row.vault_owner === null) {
+      if (isBoxed(row.sealed)) throw new ProviderKeyError("this key is opened by the keyholder process, not here");
+      return open(this.requireLegacy(), sealed, aadBytes).toString("utf8");
+    }
     const dataKey = this.vaults.dataKey(row.vault_owner, at);
     if (dataKey === null) throw this.vaults.isSealed(row.vault_owner, at) ? new VaultSealedError(row.vault_owner) : new VaultLockedError(row.vault_owner);
     return open(dataKey, sealed, aadBytes).toString("utf8");
@@ -364,7 +412,7 @@ export class ProviderKeyStore {
     for (const row of rows) {
       if (this.ownerOf(row.system_id) !== owner) continue;
       const aadBytes = associatedData(row.system_id, row.provider);
-      const plain = open(this.legacyKey, Buffer.from(row.sealed, "base64"), aadBytes);
+      const plain = open(this.requireLegacy(), Buffer.from(row.sealed, "base64"), aadBytes);
       update.run(seal(dataKey, plain, aadBytes).toString("base64"), owner, row.system_id, row.provider);
     }
     return recovery;
@@ -387,6 +435,7 @@ export class ProviderKeyStore {
   }
 }
 
-function associatedData(systemId: string, provider: Provider): Buffer {
+/** What a key is bound to: its system and its provider. The keyholder computes the same. */
+export function associatedData(systemId: string, provider: Provider): Buffer {
   return Buffer.from(`sigillo provider key\n${systemId}\n${provider}`, "utf8");
 }

@@ -6,7 +6,8 @@
     "paths": {
       "@sigillo/core": ["packages/core/src/index.ts"],
       "@sigillo/verifier": ["packages/verifier/src/index.ts"],
-      "@sigillo/sdk": ["packages/sdk-typescript/src/index.ts"]
+      "@sigillo/sdk": ["packages/sdk-typescript/src/index.ts"],
+      "@sigillo/server/gateway": ["apps/server/src/gateway/shared.ts"]
     }
   },
   "include": [

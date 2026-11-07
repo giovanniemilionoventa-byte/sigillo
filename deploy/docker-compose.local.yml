@@ -1,6 +1,6 @@
 # A local trial on one computer. NOT a deployment.
 #
-# The real deployment is docker-compose.yml beside this file: three services,
+# The real deployment is docker-compose.yml beside this file: four services,
 # Caddy terminating TLS on a real domain. This one drops Caddy, publishes the
 # server on 127.0.0.1 only, and adds a container that runs the Python example,
 # so that trying sigillo out needs no domain, no certificate and no Python
