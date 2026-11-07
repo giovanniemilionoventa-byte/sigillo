@@ -349,12 +349,13 @@ export function languageSwitch(className: string, back: string): string {
 }
 
 /** The operator's password form, alone on its page. */
-export function operatorLoginPage(message: string | undefined, title: string): string {
+export function operatorLoginPage(message: string | undefined, title: string, withCode = false): string {
   const failed = message !== undefined;
   return authPage(
     title,
     `<form method="post" action="/ui/login">
 ${authField(UI.login.label, 'type="password" name="password" autocomplete="current-password" autofocus required', { placeholder: UI.login.placeholder, failed })}
+${withCode ? authField(UI.login.codeLabel, 'type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required', { placeholder: "123456", failed }) : ""}
 ${failed ? authMessage({ error: message }) : ""}
 <button type="submit" class="primary">${escape(UI.login.submit)}</button>
 </form>`,

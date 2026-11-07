@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import Database from "better-sqlite3";
@@ -9,6 +9,7 @@ import { DEFAULT_MAX_ANCHOR_DELAY_MS, isPseudonym, publicKeyFromRaw, receiptHash
 import { ApiKeyStore } from "./auth/api-keys.js";
 import { databaseFiles, describeDatabase, inventoryMarkdown, MIN_MARKER_LENGTH, scanDatabase, scanFiles, unclassifiedColumns, type ColumnHit } from "./assurance/privacy-check.js";
 import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throttle.js";
+import { base32Decode, base32Encode } from "./auth/totp.js";
 import { DailyExporter } from "./backup/daily-export.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
 import { ConnectionWatch } from "./connection/watch.js";
@@ -215,6 +216,11 @@ program
       throw new Error("SIGILLO_ADMIN_PASSWORD must be at least 12 characters");
     }
 
+    // The administrator's optional second factor (admin-code), a file beside the database.
+    const totpSecret = existsSync(adminCodeFile(options.db))
+      ? base32Decode(readFileSync(adminCodeFile(options.db), "utf8"))
+      : undefined;
+
     const signer = await SignerClient.connect(options.signerSocket);
     const store = ReceiptStore.open(options.db, signer);
     const keys = ApiKeyStore.open(options.db);
@@ -298,6 +304,7 @@ program
               healthMonitor,
               checkpointer,
               loginLimits,
+              ...(totpSecret === undefined ? {} : { totpSecret }),
               cookieSecure: secureCookie,
               agentUpload: agentUploadAccess,
               consoleV2: consoleV2Access,
@@ -583,6 +590,31 @@ org
       );
       process.stdout.write("the erasure is in the administrative log (sigillo-server admin-log); backups keep it until they rotate out\n");
     });
+  });
+
+program
+  .command("admin-code")
+  .description(
+    "Turn on (or off with --off) the six-digit code the administrator's sign-in asks for besides the password. " +
+      "Prints the secret and a link to add to an authenticator app; takes effect when the server restarts",
+  )
+  .option("--off", "remove the code: the password alone again")
+  .requiredOption("--db <path>", "the sigillo database", process.env["SIGILLO_DB"])
+  .action((options: DatabaseOption & { off?: boolean }) => {
+    const path = adminCodeFile(options.db);
+    if (options.off === true) {
+      rmSync(path, { force: true });
+      process.stdout.write("the six-digit code is off; restart the server\n");
+      return;
+    }
+    const secret = base32Encode(randomBytes(20));
+    writeFileSync(path, `${secret}\n`, { mode: 0o600 });
+    process.stdout.write(
+      `secret: ${secret}\n` +
+        `link:   otpauth://totp/sigillo:admin?secret=${secret}&issuer=sigillo&algorithm=SHA1&digits=6&period=30\n` +
+        "Add it to an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password...) by typing the secret,\n" +
+        "then restart the server: the administrator's sign-in will ask for the app's six-digit code.\n",
+    );
   });
 
 program
@@ -989,4 +1021,9 @@ try {
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exit(1);
+}
+
+/** Where the administrator's six-digit code secret is kept: beside the database, outside its backups. */
+function adminCodeFile(db: string): string {
+  return process.env["SIGILLO_ADMIN_CODE_FILE"] || join(dirname(db), "admin-code.key");
 }

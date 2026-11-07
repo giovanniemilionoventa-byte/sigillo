@@ -233,6 +233,7 @@ const ui = {
     adminTitle: "Accesso amministratore",
     label: "Password amministratore",
     placeholder: "Password",
+    codeLabel: "Codice a 6 cifre (app di autenticazione)",
     submit: "Accedi",
     // The same words for a wrong password and for a lockout, on purpose: see
     // the login handler in ui.ts.

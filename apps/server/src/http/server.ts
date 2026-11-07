@@ -110,6 +110,8 @@ export interface ServerOptions {
     healthMonitor: ChainHealthMonitor;
     checkpointer: Checkpointer;
     loginLimits?: ThrottleSettings;
+    /** The administrator's six-digit code secret (ui.ts, UiOptions.totpSecret). */
+    totpSecret?: Buffer;
     cookieSecure?: boolean | "auto";
     /** The web view's sessions (auth/sessions.ts); a fresh set when not given. */
     sessions?: UiSessions;
@@ -418,6 +420,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       checkpointer: options.ui.checkpointer,
       now,
       ...(options.ui.loginLimits === undefined ? {} : { loginLimits: options.ui.loginLimits }),
+      ...(options.ui.totpSecret === undefined ? {} : { totpSecret: options.ui.totpSecret }),
       ...(options.ui.cookieSecure === undefined ? {} : { cookieSecure: options.ui.cookieSecure }),
       ...(options.ui.sessions === undefined ? {} : { sessions: options.ui.sessions }),
       ...(options.ui.accounts === undefined ? {} : { accounts: options.ui.accounts }),

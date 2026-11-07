@@ -231,6 +231,7 @@ const ui: Strings = {
     adminTitle: "Administrator sign-in",
     label: "Administrator password",
     placeholder: "Password",
+    codeLabel: "6-digit code (authenticator app)",
     submit: "Sign in",
     wrong: "Wrong password. After too many attempts, signing in is paused for a few minutes.",
   },
