@@ -734,7 +734,14 @@ and nothing else.
   to send an email reaches the chain without the SDK inside it. That a tool was
   requested does not say it was run: the agent's own code runs it, out of the
   gateway's sight, and an agent that did not run it, or ran it differently,
-  looks the same. Only the SDK sees the action itself. A streamed answer is passed
+  looks the same. Only the SDK sees the action itself. Since 2026-11-07 the server
+  compares the two: for a system whose agent records its own tools, a tool
+  the model asked for through the gateway with no receipt of that tool from
+  the agent within ten minutes becomes `sigillo.check.tool_unrecorded.<tool>`,
+  outcome error (`apps/server/src/check/tool-reconcile.ts`). It catches an
+  agent whose recording was switched off from inside while its heartbeat went
+  on; it cannot tell that from a tool the agent chose not to run, and the
+  requests of the ten minutes before a server restart go unchecked. A streamed answer is passed
   on before its receipt is written: if the signer is away at that moment, the
   agent has the answer and the chain does not (the server's log says so). A
   plain answer is never handed back without its receipt.

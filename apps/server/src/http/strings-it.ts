@@ -810,12 +810,6 @@ const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
       "Il guardiano di sigillo ha visto qualcosa di diverso dalla porta di sigillo parlare con il modello locale, o un secondo server di modelli acceso accanto. " +
       "L'agente può aver usato un modello senza lasciare ricevute. Un agente in modalità rigorosa si ferma.",
   },
-  "sigillo.check.tool_unrecorded": {
-    title: "Strumento richiesto, nessuna ricevuta dall'agente",
-    sentence:
-      "Attraverso il gateway, il modello ha chiesto all'agente di usare uno strumento, e dall'agente non è arrivata nessuna ricevuta di quello strumento, " +
-      "pur registrando di solito i suoi strumenti. L'agente può averlo usato senza registrarlo, oppure non averlo usato.",
-  },
   "sigillo.connection.restored": { title: "Collegamento ripreso", sentence: "L'agente ha ripreso a mandare il segnale di vita dopo un'interruzione." },
   "sigillo.connection.script_changed": {
     title: "Script dell'agente modificato",
@@ -824,6 +818,18 @@ const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
       "con uno script diverso dall'ultima volta. Un agente in modalità rigida si ferma nel primo caso.",
   },
 };
+
+/** A receipt the server wrote itself: the heartbeat's, the guard's, or the gateway check's (check/tool-reconcile.ts). */
+function connectionText(name: string): { title: string; sentence: string } | undefined {
+  const fixed = CONNECTION_TEXTS[name];
+  if (fixed !== undefined) return fixed;
+  if (!name.startsWith("sigillo.check.tool_unrecorded.")) return undefined;
+  const tool = name.slice("sigillo.check.tool_unrecorded.".length);
+  return {
+    title: `Strumento richiesto, nessuna ricevuta dall'agente: ${tool}`,
+    sentence: `Attraverso il gateway, il modello ha chiesto all'agente di usare lo strumento «${tool}», e dall'agente non è arrivata nessuna ricevuta entro dieci minuti, pur registrando di solito i suoi strumenti. L'agente può averlo usato senza registrarlo, oppure non averlo usato.`,
+  };
+}
 
 const KIND_LABELS: Record<Receipt["action"]["kind"], string> = {
   tool_call: "strumento",
@@ -894,7 +900,7 @@ export const IT = {
     const ok = outcome === "ok";
     const onBehalfOf = onBehalfOfClause(actor.on_behalf_of);
     const model = receipt.v !== 1 ? receipt.model : undefined;
-    const connection = CONNECTION_TEXTS[action.name];
+    const connection = connectionText(action.name);
     if (connection !== undefined) return connection.sentence;
 
     if (action.kind === "genesis") {
@@ -943,7 +949,7 @@ export const IT = {
    */
   receiptTitle(receipt: Receipt): string {
     const { action } = receipt;
-    const connection = CONNECTION_TEXTS[action.name];
+    const connection = connectionText(action.name);
     if (connection !== undefined) return connection.title;
     const model = receipt.v !== 1 ? receipt.model : undefined;
     switch (action.kind) {

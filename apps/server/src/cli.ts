@@ -12,6 +12,7 @@ import { parseIngestThrottleSettings, parseThrottleSettings } from "./auth/throt
 import { base32Decode, base32Encode } from "./auth/totp.js";
 import { DailyExporter } from "./backup/daily-export.js";
 import { Checkpointer } from "./checkpoint/checkpointer.js";
+import { ToolReconciler } from "./check/tool-reconcile.js";
 import { ConnectionWatch } from "./connection/watch.js";
 import { agentProtection, agentUpload, consoleFeatures, consoleV2, cookieSecure, firebaseAccounts, ingestPause, keyVault, llmGateway, llmToolRequests, plainAgents, port, positiveInteger, readSecret, scriptGuard, transfer, trustProxy } from "./config.js";
 import { FirebaseAuth } from "./auth/firebase.js";
@@ -336,6 +337,10 @@ program
     checkpointer.start();
     dailyExporter?.start();
     if (pause === null) connections.start();
+    // The tools the model asked for, against the tools the agent recorded (check/tool-reconcile.ts).
+    const toolReconciler =
+      providerKeys === undefined || gatewayAccess === "off" || toolRequests === "off" ? undefined : new ToolReconciler({ store });
+    toolReconciler?.start();
     // A vault's sealed hours close it even when no request comes: the data key
     // leaves memory when the window starts.
     const vaultSweep =
@@ -345,6 +350,7 @@ program
     const shutdown = (): void => {
       if (vaultSweep !== undefined) clearInterval(vaultSweep);
       connections.stop();
+      toolReconciler?.stop();
       checkpointer.stop();
       dailyExporter?.stop();
       healthMonitor?.stop();
