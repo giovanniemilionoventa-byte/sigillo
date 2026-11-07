@@ -76,9 +76,23 @@ export const CONNECTION = {
   sleep: `${CONNECTION_PREFIX}sleep`,
   offline: `${CONNECTION_PREFIX}offline`,
   powerOff: `${CONNECTION_PREFIX}power_off`,
+  modelOpen: `${CONNECTION_PREFIX}model_open`,
+  modelForeign: `${CONNECTION_PREFIX}model_foreign`,
 } as const;
 
-export type HeartbeatEvent = "start" | "beat" | "stop" | "ended" | "ping" | "gap";
+/**
+ * What the SDK's guard process saw around a model on the agent's own computer
+ * (sdk-python _watchdog.py), each written once per session:
+ *
+ *   model_open     the model answers without the sigillo key, where the
+ *                  agent was told to reach it through the door
+ *   model_foreign  something other than the door is talking to the model, or
+ *                  a second model server is running beside it: the agent may
+ *                  be reaching a model without leaving receipts
+ */
+export type GuardAlarm = "model_open" | "model_foreign";
+
+export type HeartbeatEvent = "start" | "beat" | "stop" | "ended" | "ping" | "gap" | "alarm";
 
 /** A stretch of time the guard reports after the fact: it began at `from` and ends when this is received. */
 export interface Gap {
@@ -91,6 +105,7 @@ export interface HeartbeatExtras {
   /** When the computer was switched on (ISO time). */
   boot?: string | null | undefined;
   gap?: Gap | undefined;
+  alarm?: GuardAlarm | undefined;
 }
 
 /** Two boot times closer than this are the same boot: clocks drift and are adjusted. */
@@ -141,6 +156,8 @@ export class ConnectionWatch {
   private readonly since: number;
   /** When each session reported its gaps of the last hour. In memory, like `opened`. */
   private readonly gaps = new Map<string, number[]>();
+  /** Which alarms each session has already had written. In memory: a restart may write one again, which is harmless. */
+  private readonly alarms = new Map<string, Set<GuardAlarm>>();
   /** One change at a time: two beats of one session never both write a receipt. */
   private queue: Promise<unknown> = Promise.resolve();
   private timer: NodeJS.Timeout | undefined;
@@ -172,6 +189,7 @@ export class ConnectionWatch {
       // A ping only shows the network is up: nothing is written or changed.
       if (event === "ping") return null;
       if (event === "gap") return this.gap(systemId, known, at, extras.gap);
+      if (event === "alarm") return this.alarm(systemId, known, at, extras.alarm);
       if (event === "ended") {
         // Said by the guard process once the agent is gone. Only an open
         // session is ended: a normal stop came first, a lost one already says
@@ -241,6 +259,17 @@ export class ConnectionWatch {
     const from = new Date(Math.min(now, Math.max(Date.parse(gap.from), Date.parse(known.started_at)))).toISOString();
     const name = gap.kind === "sleep" ? CONNECTION.sleep : CONNECTION.offline;
     return this.store.recordConnection(known, receiptOf(systemId, name, from, at, gap.kind === "sleep" ? "ok" : "error", "sdk"));
+  }
+
+  /** An alarm the guard raises: written once per session and kind, for a session that is not closed. */
+  private async alarm(systemId: string, known: ConnectionRow | null, at: string, alarm: GuardAlarm | undefined): Promise<Receipt | null> {
+    if (known === null || known.state === "closed" || alarm === undefined) return null;
+    const seen = this.alarms.get(known.session_id) ?? new Set<GuardAlarm>();
+    if (seen.has(alarm)) return null;
+    seen.add(alarm);
+    this.alarms.set(known.session_id, seen);
+    const name = alarm === "model_open" ? CONNECTION.modelOpen : CONNECTION.modelForeign;
+    return this.store.recordConnection(known, receiptOf(systemId, name, at, at, "error", "sdk"));
   }
 
   /** Whether this session's script is no longer the one it started with. */

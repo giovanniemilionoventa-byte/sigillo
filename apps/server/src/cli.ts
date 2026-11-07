@@ -194,6 +194,11 @@ program
       process.env["SIGILLO_ORG_MONTHLY_RECEIPTS"],
       10_000,
     );
+    const systemReceiptsPerMinute = positiveInteger(
+      "SIGILLO_SYSTEM_RECEIPTS_PER_MINUTE",
+      process.env["SIGILLO_SYSTEM_RECEIPTS_PER_MINUTE"],
+      3000,
+    );
     const organizationMaxSystems = positiveInteger(
       "SIGILLO_ORG_MAX_SYSTEMS",
       process.env["SIGILLO_ORG_MAX_SYSTEMS"],
@@ -279,6 +284,7 @@ program
       chainsIntact: () => store.divergentSystems().length === 0 && (healthMonitor?.failedSystems().length ?? 0) === 0,
       ...(pause === null ? {} : { ingestPause: pause }),
       organizationMonthlyReceipts,
+      systemReceiptsPerMinute,
       organizationMaxSystems,
       ...(!uiMounted || healthMonitor === undefined
         ? {}

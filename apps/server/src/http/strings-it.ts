@@ -797,6 +797,24 @@ const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
       "Il computer è stato spento o riavviato prima dell'inizio di questa sessione: il silenzio precedente era uno spegnimento, " +
       "non l'agente isolato. Con il computer spento l'agente non poteva agire. Uno spegnimento regolare e un blackout sembrano uguali.",
   },
+  "sigillo.connection.model_open": {
+    title: "Modello locale aperto senza sigillo",
+    sentence:
+      "Il modello sul computer dell'agente ha risposto senza la chiave di sigillo, mentre l'agente doveva raggiungerlo attraverso la porta di sigillo. " +
+      "Le chiamate fatte direttamente non lasciano ricevute. Un agente in modalità rigorosa si ferma.",
+  },
+  "sigillo.connection.model_foreign": {
+    title: "Modello locale raggiunto aggirando sigillo",
+    sentence:
+      "Il guardiano di sigillo ha visto qualcosa di diverso dalla porta di sigillo parlare con il modello locale, o un secondo server di modelli acceso accanto. " +
+      "L'agente può aver usato un modello senza lasciare ricevute. Un agente in modalità rigorosa si ferma.",
+  },
+  "sigillo.check.tool_unrecorded": {
+    title: "Strumento richiesto, nessuna ricevuta dall'agente",
+    sentence:
+      "Attraverso il gateway, il modello ha chiesto all'agente di usare uno strumento, e dall'agente non è arrivata nessuna ricevuta di quello strumento, " +
+      "pur registrando di solito i suoi strumenti. L'agente può averlo usato senza registrarlo, oppure non averlo usato.",
+  },
   "sigillo.connection.restored": { title: "Collegamento ripreso", sentence: "L'agente ha ripreso a mandare il segnale di vita dopo un'interruzione." },
   "sigillo.connection.script_changed": {
     title: "Script dell'agente modificato",

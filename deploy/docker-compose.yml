@@ -142,6 +142,9 @@ services:
       SIGILLO_PUBLIC_URL: https://${SIGILLO_DOMAIN}
       # Receipts each customer organization may write per calendar month (UTC).
       SIGILLO_ORG_MONTHLY_RECEIPTS: ${SIGILLO_ORG_MONTHLY_RECEIPTS:-10000}
+      # Receipts one system may write per minute, every account's: one agent,
+      # or whoever holds its key, cannot flood the disk or hold the signer.
+      SIGILLO_SYSTEM_RECEIPTS_PER_MINUTE: ${SIGILLO_SYSTEM_RECEIPTS_PER_MINUTE:-3000}
       # Systems one customer organization may create (archived ones count);
       # the administrator's own have no limit.
       SIGILLO_ORG_MAX_SYSTEMS: ${SIGILLO_ORG_MAX_SYSTEMS:-100}

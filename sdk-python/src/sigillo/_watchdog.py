@@ -89,16 +89,14 @@ def model_state(base: str) -> str:
         return "none"
 
 
-def _say_open(config: dict) -> None:
-    """The receipt that says the model can be reached without sigillo."""
-    payload = {
-        "actor": {"agent": "sigillo-guard"},
-        "action": {"kind": "decision", "name": "sigillo.local_model.open"},
-        "outcome": "error",
-    }
+def _alarm(config: dict, kind: str) -> None:
+    """An alarm the server writes as a receipt of its own (`sigillo.connection.<kind>`):
+    "model_open", the model answers without the sigillo key; "model_foreign",
+    something other than the door talks to the model. A client cannot write
+    those names itself; the server writes each once per session."""
     request = urllib.request.Request(
-        config["receipts"],
-        data=json.dumps(payload).encode("utf-8"),
+        config["url"],
+        data=json.dumps({"session": config["session"], "event": "alarm", "alarm": kind}).encode("utf-8"),
         headers={"Authorization": f"Bearer {config['api_key']}", "Content-Type": "application/json"},
         method="POST",
     )
@@ -106,6 +104,11 @@ def _say_open(config: dict) -> None:
         urllib.request.urlopen(request, timeout=10).read()
     except Exception:  # noqa: BLE001 - tried again at the next change
         pass
+
+
+def _say_open(config: dict) -> None:
+    """The alarm that says the model can be reached without sigillo."""
+    _alarm(config, "model_open")
 
 
 def _tell_ended(config: dict) -> None:

@@ -750,6 +750,24 @@ const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
       "not the agent being cut off. The agent could not act while the computer was off. " +
       "A clean shutdown and a cut of power look the same.",
   },
+  "sigillo.connection.model_open": {
+    title: "Local model open without sigillo",
+    sentence:
+      "The model on the agent's computer answered without the sigillo key, where the agent was meant to reach it through sigillo's door. " +
+      "Calls made to it directly leave no receipt. An agent in strict mode stops.",
+  },
+  "sigillo.connection.model_foreign": {
+    title: "Local model reached around sigillo",
+    sentence:
+      "Sigillo's guard saw something other than sigillo's door talking to the local model, or a second model server running beside it. " +
+      "The agent may have used a model without leaving receipts. An agent in strict mode stops.",
+  },
+  "sigillo.check.tool_unrecorded": {
+    title: "Tool asked for, no receipt from the agent",
+    sentence:
+      "Through the model gateway, the model asked the agent to use a tool, and no receipt of that tool came from the agent afterwards, " +
+      "although it records its tools. The agent may have used it without recording it, or not used it at all.",
+  },
   "sigillo.connection.restored": { title: "Connection restored", sentence: "The agent sends its heartbeat again after an interruption." },
   "sigillo.connection.script_changed": {
     title: "Agent script changed",
