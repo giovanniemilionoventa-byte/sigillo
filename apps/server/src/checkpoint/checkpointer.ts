@@ -28,6 +28,15 @@ export interface CheckpointerOptions {
   /** Injected, so tests do not depend on the wall clock. */
   now: () => Date;
   tsa?: TsaOptions;
+  /**
+   * Other, independent authorities asked for a token over the same roots, so
+   * that the time of a checkpoint does not rest on one authority alone (the
+   * security audit of 2026-11-07). Best effort: what they fail to give is
+   * logged and asked again at the next run, never counted as pending, and
+   * only for the checkpoints of the last day, so that adding one to a running
+   * installation does not send it the whole history at once.
+   */
+  extraTsas?: TsaOptions[];
   retry?: RetryOptions;
   intervalMinutes?: number;
   /** How soon to ask again for tokens a run could not obtain. Default 5. */
@@ -121,7 +130,29 @@ export class Checkpointer {
       }
     }
 
+    await this.timestampExtra();
     return { obtained, pending: waiting.length - obtained };
+  }
+
+  /** The other authorities' tokens (CheckpointerOptions.extraTsas). */
+  private async timestampExtra(): Promise<void> {
+    const since = this.options.now().getTime() - 24 * 60 * 60_000;
+    for (const extra of this.options.extraTsas ?? []) {
+      const waiting = this.options.store
+        .checkpointsAwaitingTimestamp(extra.url)
+        .filter((stored) => Date.parse(stored.checkpoint.ts) >= since);
+      for (const stored of waiting) {
+        try {
+          const token = await requestTimestampWithRetry(stored.checkpoint.root_hash, extra, this.options.retry ?? {});
+          await this.options.store.recordTimestamp(stored.id, extra.url, token, this.options.now().toISOString());
+        } catch (error) {
+          this.options.onError?.(
+            `checkpoint ${stored.id} has no token from the second authority yet: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          break; // that authority is down: try it again at the next run, not once per checkpoint now
+        }
+      }
+    }
   }
 
   async runOnce(): Promise<CheckpointRun> {

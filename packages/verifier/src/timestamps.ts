@@ -147,6 +147,8 @@ export async function verifyTimestamps(
   }
 
   const work = mkdtempSync(join(tmpdir(), "sigillo-verify-"));
+  /** The checks that failed only at the signature, for the second look below. */
+  const refusedBySignature = new Set<number>();
   try {
     for (const { entry, timestamp } of referenced) {
       const expectedDigest = entry.checkpoint.root_hash;
@@ -256,6 +258,27 @@ export async function verifyTimestamps(
           status: "failed",
           detail: `openssl ts -verify refused it: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`,
         });
+        refusedBySignature.add(checks.length - 1);
+      }
+    }
+
+    // A checkpoint may carry tokens from two authorities (the server asks a
+    // second one since 2026-11-07), and --tsa-ca names one certificate. A
+    // token the certificate does not verify, over a root whose token from
+    // another authority it does verify, is read as one from an authority not
+    // supplied: its digest and time were checked, its signature was not. The
+    // root's time stands on the verified token either way.
+    for (const index of refusedBySignature) {
+      const check = checks[index]!;
+      const covered = checks.some(
+        (other) => other.status === "verified" && other.expectedDigest === check.expectedDigest && other.tsaUrl !== check.tsaUrl,
+      );
+      if (covered) {
+        checks[index] = {
+          ...check,
+          status: "imprint-only",
+          detail: `from an authority the supplied certificate does not cover (${check.tsaUrl}); the same root has a verified token, and its time is the one used`,
+        };
       }
     }
   } finally {

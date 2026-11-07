@@ -207,6 +207,9 @@ program
       100,
     );
     const tsa = tsaFromOptions(options.tsaUrl);
+    // A second, independent authority over the same roots (TSA_URL_2), unauthenticated.
+    const secondTsaUrl = process.env["TSA_URL_2"];
+    const extraTsas = secondTsaUrl !== undefined && secondTsaUrl.length > 0 && secondTsaUrl !== options.tsaUrl ? [{ url: secondTsaUrl }] : [];
 
     // The operator's view is mounted only when a password is set. An audit log
     // behind no password is worse than an audit log behind no web page.
@@ -267,6 +270,7 @@ program
       store,
       now: () => new Date(),
       ...(tsa === undefined ? {} : { tsa }),
+      extraTsas,
       intervalMinutes: checkpointMinutes,
       retryMinutes: tsaRetryMinutes,
       onError: (message) => process.stderr.write(`${message}\n`),

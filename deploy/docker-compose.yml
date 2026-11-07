@@ -133,6 +133,11 @@ services:
       # a secret: uncomment tsa_password below and in `secrets:` at the end.
       TSA_URL: ${TSA_URL:-https://freetsa.org/tsr}
       TSA_USERNAME: ${TSA_USERNAME:-}
+      # A second, independent authority, asked for a token over the same
+      # checkpoint roots: the time of a checkpoint then rests on two
+      # authorities, not one. Only the 32-byte root leaves the server. Empty
+      # to turn it off.
+      TSA_URL_2: ${TSA_URL_2-http://timestamp.digicert.com}
       # TSA_PASSWORD_FILE: /run/secrets/tsa_password
       # Customer sign-in through Firebase (DEPLOY-PRODUZIONE.md). Both empty:
       # only the operator's password. The API key is public: it names the
