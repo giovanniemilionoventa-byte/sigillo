@@ -255,14 +255,14 @@ class DoorTest(unittest.TestCase):
         free.server_close()
         self.assertEqual(_watchdog.model_state(f"http://127.0.0.1:{port}"), "none")
 
-    def test_an_open_model_is_said_in_a_receipt_the_server_accepts_in_shape(self) -> None:
+    def test_an_open_model_is_said_as_an_alarm_the_server_writes(self) -> None:
         from sigillo import _watchdog
 
         _Capture.bodies = []
-        _watchdog._say_open({"receipts": f"http://127.0.0.1:{self.sigillo.server_address[1]}/api/v1/receipts", "api_key": KEY})
-        sent = json.loads(_Capture.bodies[0])
-        self.assertEqual(sent["action"], {"kind": "decision", "name": "sigillo.local_model.open"})
-        self.assertEqual(sent["outcome"], "error")
+        _Capture.heartbeats = []
+        _watchdog._say_open({"url": f"http://127.0.0.1:{self.sigillo.server_address[1]}/api/v1/heartbeat", "api_key": KEY, "session": "a" * 32})
+        alarms = [body for body, _ in _Capture.heartbeats if body.get("event") == "alarm"]
+        self.assertEqual(alarms, [{"session": "a" * 32, "event": "alarm", "alarm": "model_open"}])
 
     def test_the_guard_ends_the_agent_when_the_local_model_answers_without_the_key(self) -> None:
         import subprocess
@@ -271,13 +271,14 @@ class DoorTest(unittest.TestCase):
         from sigillo import _watchdog
 
         _Capture.bodies = []
+        _Capture.heartbeats = []
         agent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
         self.addCleanup(agent.kill)
         config = {
             "period": 0.1, "probe": f"http://127.0.0.1:{self.model.server_address[1]}",  # open: no key asked
             "script": None, "script_hash": None, "sdk_hash": _watchdog.package_hash(
                 __import__("os").path.dirname(_watchdog.__file__)),
-            "parent": agent.pid, "receipts": f"http://127.0.0.1:{self.sigillo.server_address[1]}/api/v1/receipts",
+            "parent": agent.pid, "url": f"http://127.0.0.1:{self.sigillo.server_address[1]}/api/v1/heartbeat", "session": "a" * 32,
             "api_key": KEY, "strict": True,
         }
         guard = subprocess.Popen([sys.executable, "-I", _watchdog.__file__], stdin=subprocess.PIPE)
@@ -285,7 +286,7 @@ class DoorTest(unittest.TestCase):
         guard.stdin.write((json.dumps(config) + "\n").encode())
         guard.stdin.flush()
         agent.wait(timeout=15)  # ended by the guard
-        self.assertEqual(json.loads(_Capture.bodies[0])["action"]["name"], "sigillo.local_model.open")
+        self.assertIn({"session": "a" * 32, "event": "alarm", "alarm": "model_open"}, [body for body, _ in _Capture.heartbeats])
 
     def test_the_guard_says_an_open_model_once_and_leaves_the_agent_when_the_door_is_beside_it(self) -> None:
         import subprocess
@@ -294,13 +295,14 @@ class DoorTest(unittest.TestCase):
         from sigillo import _watchdog
 
         _Capture.bodies = []
+        _Capture.heartbeats = []
         agent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
         self.addCleanup(agent.kill)
         config = {
             "period": 0.1, "probe": f"http://127.0.0.1:{self.model.server_address[1]}", "keep": True,
             "script": None, "script_hash": None, "sdk_hash": _watchdog.package_hash(
                 __import__("os").path.dirname(_watchdog.__file__)),
-            "parent": agent.pid, "receipts": f"http://127.0.0.1:{self.sigillo.server_address[1]}/api/v1/receipts",
+            "parent": agent.pid, "url": f"http://127.0.0.1:{self.sigillo.server_address[1]}/api/v1/heartbeat", "session": "a" * 32,
             "api_key": KEY, "strict": True,
         }
         guard = subprocess.Popen([sys.executable, "-I", _watchdog.__file__], stdin=subprocess.PIPE)
@@ -308,11 +310,11 @@ class DoorTest(unittest.TestCase):
         guard.stdin.write((json.dumps(config) + "\n").encode())
         guard.stdin.flush()
         for _ in range(50):
-            if _Capture.bodies:
+            if any(body.get("event") == "alarm" for body, _ in _Capture.heartbeats):
                 break
             time.sleep(0.1)
         time.sleep(0.5)
-        self.assertEqual(len(_Capture.bodies), 1)  # said once
+        self.assertEqual(len([body for body, _ in _Capture.heartbeats if body.get("event") == "alarm"]), 1)  # said once
         self.assertIsNone(agent.poll())  # and the agent goes on
 
     def test_calls_to_a_model_that_was_open_are_sent_to_the_door_beside_it_with_the_key(self) -> None:

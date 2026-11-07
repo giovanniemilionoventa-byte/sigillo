@@ -28,9 +28,7 @@ const hexString = (length: number) =>
 export const unsignedCheckpointSchema = z
   .object({
     v: z.literal(CHECKPOINT_VERSION, {
-      errorMap: () => ({
-        message: `unsupported checkpoint version, this build implements version ${CHECKPOINT_VERSION}`,
-      }),
+      error: `unsupported checkpoint version, this build implements version ${CHECKPOINT_VERSION}`,
     }),
     system_id: z.string().min(1).max(128),
     tree_size: z.number().int().positive(),

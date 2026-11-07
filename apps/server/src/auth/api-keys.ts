@@ -51,8 +51,23 @@ interface KeyRow {
   revoked_at: string | null;
 }
 
+/**
+ * Keys issued since the security audit of 2026-11-07 are stored as a plain
+ * SHA-256 of the secret, marked by this value in the salt column. The secret
+ * is 32 random bytes: nobody can guess it, so the slowness of scrypt (meant
+ * for passwords people choose) bought nothing, and cost about 55 ms of CPU
+ * for every wrong token a stranger sent, enough for many addresses together
+ * to stall the server. Keys stored under scrypt still verify, and are moved
+ * to SHA-256 the first time they do.
+ */
+const SHA256_MARK = "sha256";
+
+function sha256Secret(secret: string): Buffer {
+  return createHash("sha256").update(`sigillo-api-key:${secret}`).digest();
+}
+
 function hashSecret(secret: string, salt: string): Buffer {
-  return scryptSync(secret, salt, HASH_BYTES, SCRYPT);
+  return salt === SHA256_MARK ? sha256Secret(secret) : scryptSync(secret, salt, HASH_BYTES, SCRYPT);
 }
 
 /**
@@ -122,7 +137,7 @@ export class ApiKeyStore {
 
     const keyId = randomBytes(KEY_ID_BYTES).toString("hex");
     const secret = randomBytes(SECRET_BYTES).toString("hex");
-    const salt = randomBytes(16).toString("base64");
+    const salt = SHA256_MARK;
 
     this.db
       .prepare(
@@ -194,9 +209,15 @@ export class ApiKeyStore {
     if (options.hashAllowed === false) return null;
 
     const expected = Buffer.from(row.secret_hash, "base64");
-    const actual = await hashSecretAsync(secret, row.salt);
+    const actual = row.salt === SHA256_MARK ? sha256Secret(secret) : await hashSecretAsync(secret, row.salt);
     if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
       return null;
+    }
+    if (row.salt !== SHA256_MARK) {
+      // Moved to SHA-256 now that the secret is known to be right.
+      this.db
+        .prepare("UPDATE api_keys SET salt = ?, secret_hash = ? WHERE key_id = ? AND salt = ?")
+        .run(SHA256_MARK, sha256Secret(secret).toString("base64"), row.key_id, row.salt);
     }
 
     this.verified.set(fingerprint, row.key_id);

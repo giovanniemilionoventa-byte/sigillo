@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./gateway": {
+      "types": "./dist/gateway/shared.d.ts",
+      "default": "./dist/gateway/shared.js"
     }
   },
   "scripts": {
@@ -21,7 +25,7 @@
     "fastify": "^5.12.7",
     "pdfkit": "^0.15.0",
     "protobufjs": "^7.4.0",
-    "zod": "^3.24.1"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@sigillo/signer": "workspace:*",

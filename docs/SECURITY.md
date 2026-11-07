@@ -455,8 +455,13 @@ fingerprint still matches as before.
 Ingest is authenticated by an API key, one per system, sent as a bearer token.
 A key belongs to exactly one system and writes to that chain and no other.
 
-Only an scrypt hash of the secret is stored, with a per-key salt, so a copy of
-the database does not let anyone speak for a system. A test reads the raw bytes
+Only a hash of the secret is stored, so a copy of the database does not let
+anyone speak for a system. Since 2026-11-07 it is a SHA-256: the secret is 32
+random bytes, which no amount of guessing finds, so the slowness of scrypt
+(built for passwords people choose) protected nothing and made every wrong
+token cost the server about 55 ms of CPU, a way to stall it from many
+addresses at once. Keys issued before are stored under scrypt with a per-key
+salt, still verify, and are moved to SHA-256 the first time they do. A test reads the raw bytes
 of the database file and its write-ahead log and requires the secret to appear
 in neither. The token is shown once when it is issued and is not recoverable.
 
@@ -464,7 +469,7 @@ The key identifier inside a token is stored in the clear. It is a lookup handle,
 not a credential: it tells the server which row to check, so verifying costs one
 scrypt rather than one per key in the database.
 
-Checking a token runs scrypt off the event loop, and whether the key is still
+Checking a token still under scrypt runs it off the event loop, and whether the key is still
 live is read from the database on every request: a key revoked with
 `sigillo-server key revoke`, from another process, stops working on the next
 request of the server that is already running. An address that sends too many
@@ -686,6 +691,27 @@ restored on a new machine without that file has keys that no longer open, and
 each customer saves theirs again. The key is opened in memory for each call,
 never logged, never shown again after it is saved.
 
+**The keyholder** (security audit 2026-11-07). With `SIGILLO_KEYHOLDER_SOCKET`
+set, which the compose file does, the server no longer holds anything that
+opens these keys. A separate container, `apps/keyholder`, is the only one
+that can, like the signer for the signing key: it makes an RSA-3072 key on
+its first start, on a volume mounted nowhere else, and publishes the public
+half over a Unix socket shared with the server alone. The server seals each
+new key to it (`box1:`, a fresh AES-256-GCM key wrapped with RSA-OAEP-SHA256,
+the same associated data as above; `gateway/key-box.ts`); for each model call
+it hands the keyholder the sealed key, the provider and the path, and the
+keyholder opens it, calls the provider's catalogue address (it checks the
+path against the catalogue and the closed paths again on its own side) and
+streams the answer back. On the first start with a keyholder the server
+hands it `llm-gateway.key`, so that the keys sealed before keep working, and
+deletes the file on its own side. A server taken over can still make model
+calls through the socket while it holds it, but it can no longer carry a
+customer's key away. The lint rule that keeps private key material out of
+`apps/server/src` holds for this key as for the signing key. The keyholder's
+volume is not in the backups either: losing it means each customer saves
+their model key again. With `SIGILLO_KEY_VAULT=on` the keys stay in the
+server process, as before, and the keyholder is not used.
+
 The request and the answer cross the server in the clear, in memory, like any
 proxy's, and are hashed on the way to the receipt; neither is written to the
 database or the log. Whoever controls the server process could read them while
@@ -729,7 +755,14 @@ and nothing else.
   to send an email reaches the chain without the SDK inside it. That a tool was
   requested does not say it was run: the agent's own code runs it, out of the
   gateway's sight, and an agent that did not run it, or ran it differently,
-  looks the same. Only the SDK sees the action itself. A streamed answer is passed
+  looks the same. Only the SDK sees the action itself. Since 2026-11-07 the server
+  compares the two: for a system whose agent records its own tools, a tool
+  the model asked for through the gateway with no receipt of that tool from
+  the agent within ten minutes becomes `sigillo.check.tool_unrecorded.<tool>`,
+  outcome error (`apps/server/src/check/tool-reconcile.ts`). It catches an
+  agent whose recording was switched off from inside while its heartbeat went
+  on; it cannot tell that from a tool the agent chose not to run, and the
+  requests of the ten minutes before a server restart go unchecked. A streamed answer is passed
   on before its receipt is written: if the signer is away at that moment, the
   agent has the answer and the chain does not (the server's log says so). A
   plain answer is never handed back without its receipt.
@@ -768,6 +801,14 @@ and nothing else.
   `trace_id`/`span_id` and written once. A native API request retried after a
   failure carries no such name, and can be recorded twice; the two receipts
   are both genuine records of what arrived.
+
+**A verifier handed out by a compromised server.** The offline verifier is
+downloaded from the server whose evidence it checks, so a server taken over
+could serve one altered to say OK. Since 2026-11-07 the verify page shows the
+SHA-256 of the zip it serves, and GitHub publishes the same zip with its
+fingerprint, built by this repository's own workflow
+(`.github/workflows/verifier-release.yml`, release `verifier`). The two must
+match; the zip is built in a fixed order so that they can.
 
 **What a compromised server can do before anyone checks.**
 - **Add false receipts, and open false chains.** At the end of every chain,

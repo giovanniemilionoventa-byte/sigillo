@@ -278,3 +278,31 @@ describe("4. one system's sigillo key opens nothing of another's", () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe("5. no path hands the agent a way around the gateway", () => {
+  it.each([
+    "/llm/openai/v1/realtime/client_secrets",
+    "/llm/openai/v1/realtime/sessions",
+    "/llm/openai/v1/REALTIME/transcription_sessions",
+    "/llm/openai/v1/organization/admin_api_keys",
+    "/llm/openai/v1/organization/projects",
+    "/llm/gemini/v1beta/auth_tokens",
+  ])("%s is refused and never reaches the provider", async (path) => {
+    const before = calls();
+    const post = await raw("POST", path, asAgent(), "{}");
+    const get = await raw("GET", path, asAgent());
+    expect(post.status).toBe(403);
+    expect(get.status).toBe(403);
+    expect(seen).toEqual([]);
+    expect(calls()).toBe(before);
+  });
+
+  it("the ordinary model paths still go through", async () => {
+    const answer = await raw("POST", "/llm/openai/v1/chat/completions", asAgent(), JSON.stringify({ model: "gpt-4o", messages: [] }));
+    expect(answer.status).toBe(200);
+    const responses = await raw("POST", "/llm/openai/v1/responses", asAgent(), JSON.stringify({ model: "gpt-4o", input: "hi" }));
+    expect(responses.status).toBe(200);
+    const count = await raw("POST", "/llm/anthropic/v1/messages/count_tokens", asAgent(), JSON.stringify({ model: "claude-x", messages: [] }));
+    expect(count.status).toBe(200);
+  });
+});

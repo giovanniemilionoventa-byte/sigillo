@@ -5,6 +5,7 @@ import type { Receipt } from "@sigillo/core";
 import type { ApiKeyStore } from "../auth/api-keys.js";
 import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
+import { SERVER_ONLY_PREFIXES, serverOnlyName } from "../connection/names.js";
 import { ConnectionWatch, TooManySessionsError } from "../connection/watch.js";
 import { registerGateway, type GatewayOptions } from "../gateway/llm.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
@@ -67,6 +68,13 @@ export interface ServerOptions {
    * month turns; the operator's own systems have no limit. Unset: no limit.
    */
   organizationMonthlyReceipts?: number;
+  /**
+   * How many receipts one system may have written per minute, a batch's
+   * actions and a gateway call each counted. Past it, 429 with Retry-After,
+   * nothing written: one agent (or someone holding its key) cannot flood the
+   * disk, nor hold the one signer every customer shares. Unset: no limit.
+   */
+  systemReceiptsPerMinute?: number;
   /** How many systems one organization may have (ui.ts, organizationMaxSystems). Unset: no limit. */
   organizationMaxSystems?: number;
   /**
@@ -102,6 +110,8 @@ export interface ServerOptions {
     healthMonitor: ChainHealthMonitor;
     checkpointer: Checkpointer;
     loginLimits?: ThrottleSettings;
+    /** The administrator's six-digit code secret (ui.ts, UiOptions.totpSecret). */
+    totpSecret?: Buffer;
     cookieSecure?: boolean | "auto";
     /** The web view's sessions (auth/sessions.ts); a fresh set when not given. */
     sessions?: UiSessions;
@@ -159,7 +169,9 @@ const heartbeatRequestSchema = z
   .object({
     session: z.string().regex(/^[0-9a-f]{32}$/, "must be 32 lowercase hex characters"),
     // `ended`, `ping` and `gap` come from the SDK's guard process (connection/watch.ts).
-    event: z.enum(["start", "beat", "stop", "ended", "ping", "gap"]),
+    event: z.enum(["start", "beat", "stop", "ended", "ping", "gap", "alarm"]),
+    // What an `alarm` event reports (connection/watch.ts, GuardAlarm).
+    alarm: z.enum(["model_open", "model_foreign"]).optional(),
     // When the computer was switched on, to tell a session after a restart from one on the same boot.
     boot: z.string().datetime().nullable().optional(),
     // What a `gap` event reports: a sleep or a network cut that began at `from`.
@@ -350,6 +362,30 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return true;
   };
 
+  // Per system, the times of its receipts in the last minute. In memory: a
+  // restart forgets it. Checked after authentication, like the quota.
+  const recentWrites = new Map<string, number[]>();
+  const tooFast = (systemId: string, count: number, reply: FastifyReply): boolean => {
+    const limit = options.systemReceiptsPerMinute;
+    if (limit === undefined || count <= 0) return false;
+    const at = now().getTime();
+    const recent = (recentWrites.get(systemId) ?? []).filter((time) => at - time < 60_000);
+    // A single batch larger than the whole allowance is let through on an idle
+    // minute, or no exporter could ever deliver it.
+    if (recent.length > 0 && recent.length + count > limit) {
+      recentWrites.set(systemId, recent);
+      const wait = Math.max(1, Math.ceil((recent[0]! + 60_000 - at) / 1000));
+      void reply
+        .code(429)
+        .header("retry-after", String(wait))
+        .send({ error: `this system has written more than ${limit} receipts in the last minute: retry in ${wait} s` });
+      return true;
+    }
+    for (let i = 0; i < count; i++) recent.push(at);
+    recentWrites.set(systemId, recent);
+    return false;
+  };
+
   app.get("/healthz", async (_request, reply) => {
     if (options.signerHealthy !== undefined && !(await options.signerHealthy())) {
       return reply.code(503).send({ status: "signer unavailable" });
@@ -384,6 +420,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       checkpointer: options.ui.checkpointer,
       now,
       ...(options.ui.loginLimits === undefined ? {} : { loginLimits: options.ui.loginLimits }),
+      ...(options.ui.totpSecret === undefined ? {} : { totpSecret: options.ui.totpSecret }),
       ...(options.ui.cookieSecure === undefined ? {} : { cookieSecure: options.ui.cookieSecure }),
       ...(options.ui.sessions === undefined ? {} : { sessions: options.ui.sessions }),
       ...(options.ui.accounts === undefined ? {} : { accounts: options.ui.accounts }),
@@ -435,6 +472,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     }
 
     const batch = adaptSpans(spans);
+    if (tooFast(systemId, batch.actions.length, reply)) return reply;
     const receivedAt = isoNow(now);
 
     // The whole batch in one transaction: if anything fails, nothing of it is
@@ -504,7 +542,13 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   if (options.gateway !== undefined) {
-    registerGateway(app, options.gateway, { store, now, authenticate, pausedFor, overQuota });
+    registerGateway(app, options.gateway, {
+      store,
+      now,
+      authenticate,
+      pausedFor,
+      overQuota: (systemId, reply) => overQuota(systemId, reply) || tooFast(systemId, 1, reply),
+    });
   }
 
   // The Python SDK's heartbeat. A session already open is never refused for
@@ -528,6 +572,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (parsed.data.event === "gap" && parsed.data.gap === undefined) {
       return reply.code(400).send({ error: "gap: a gap event carries the gap" });
     }
+    if (parsed.data.event === "alarm" && parsed.data.alarm === undefined) {
+      return reply.code(400).send({ error: "alarm: an alarm event carries the alarm" });
+    }
     if (store.connection(systemId, parsed.data.session) === null && overQuota(systemId, reply)) return reply;
     let written;
     try {
@@ -541,7 +588,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         parsed.data.session,
         parsed.data.event,
         watched ? { hash: sdkHash === undefined ? (scriptHash ?? null) : guardHash(scriptHash, sdkHash) } : undefined,
-        { boot: parsed.data.boot, gap: parsed.data.gap },
+        { boot: parsed.data.boot, gap: parsed.data.gap, alarm: parsed.data.alarm },
       );
       if (watched && parsed.data.event !== "stop") {
         return reply.code(200).send({
@@ -576,6 +623,14 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       });
     }
     const body = parsed.data;
+
+    if (tooFast(systemId, 1, reply)) return reply;
+
+    if (serverOnlyName(body.action.name)) {
+      return reply.code(400).send({
+        error: `action.name: names starting with ${SERVER_ONLY_PREFIXES.join(" or ")} are written by sigillo alone`,
+      });
+    }
 
     if (body.system_id !== undefined && body.system_id !== systemId) {
       return reply

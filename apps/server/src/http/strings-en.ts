@@ -231,6 +231,7 @@ const ui: Strings = {
     adminTitle: "Administrator sign-in",
     label: "Administrator password",
     placeholder: "Password",
+    codeLabel: "6-digit code (authenticator app)",
     submit: "Sign in",
     wrong: "Wrong password. After too many attempts, signing in is paused for a few minutes.",
   },
@@ -750,6 +751,18 @@ const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
       "not the agent being cut off. The agent could not act while the computer was off. " +
       "A clean shutdown and a cut of power look the same.",
   },
+  "sigillo.connection.model_open": {
+    title: "Local model open without sigillo",
+    sentence:
+      "The model on the agent's computer answered without the sigillo key, where the agent was meant to reach it through sigillo's door. " +
+      "Calls made to it directly leave no receipt. An agent in strict mode stops.",
+  },
+  "sigillo.connection.model_foreign": {
+    title: "Local model reached around sigillo",
+    sentence:
+      "Sigillo's guard saw something other than sigillo's door talking to the local model, or a second model server running beside it. " +
+      "The agent may have used a model without leaving receipts. An agent in strict mode stops.",
+  },
   "sigillo.connection.restored": { title: "Connection restored", sentence: "The agent sends its heartbeat again after an interruption." },
   "sigillo.connection.script_changed": {
     title: "Agent script changed",
@@ -758,6 +771,18 @@ const CONNECTION_TEXTS: Record<string, { title: string; sentence: string }> = {
       "different script than the last time. An agent in strict mode stops on the first case.",
   },
 };
+
+/** A receipt the server wrote itself: the heartbeat's, the guard's, or the gateway check's (check/tool-reconcile.ts). */
+function connectionText(name: string): { title: string; sentence: string } | undefined {
+  const fixed = CONNECTION_TEXTS[name];
+  if (fixed !== undefined) return fixed;
+  if (!name.startsWith("sigillo.check.tool_unrecorded.")) return undefined;
+  const tool = name.slice("sigillo.check.tool_unrecorded.".length);
+  return {
+    title: `Tool asked for, no receipt from the agent: ${tool}`,
+    sentence: `Through the model gateway, the model asked the agent to use the tool «${tool}», and no receipt of it came from the agent within ten minutes, although this agent records its tools. The agent may have used it without recording it, or not used it at all.`,
+  };
+}
 
 const KIND_LABELS: Record<Receipt["action"]["kind"], string> = {
   tool_call: "tool",
@@ -820,7 +845,7 @@ export const EN: Texts = {
     const ok = outcome === "ok";
     const onBehalfOf = onBehalfOfClause(actor.on_behalf_of);
     const model = receipt.v !== 1 ? receipt.model : undefined;
-    const connection = CONNECTION_TEXTS[action.name];
+    const connection = connectionText(action.name);
     if (connection !== undefined) return connection.sentence;
 
     if (action.kind === "genesis") {
@@ -863,7 +888,7 @@ export const EN: Texts = {
 
   receiptTitle(receipt: Receipt): string {
     const { action } = receipt;
-    const connection = CONNECTION_TEXTS[action.name];
+    const connection = connectionText(action.name);
     if (connection !== undefined) return connection.title;
     const model = receipt.v !== 1 ? receipt.model : undefined;
     switch (action.kind) {

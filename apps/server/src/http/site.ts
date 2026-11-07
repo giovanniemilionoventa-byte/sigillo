@@ -1,4 +1,4 @@
-import { VERIFIER_ZIP_NAME, verifierZip } from "./verifier-bundle.js";
+import { VERIFIER_RELEASE_URL, VERIFIER_ZIP_NAME, verifierFingerprint, verifierZip } from "./verifier-bundle.js";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { italianOffered, type Language } from "./locale.js";
@@ -704,6 +704,13 @@ const UPLOAD_ICON = line('<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0
  * the reader's language, for the script to fill in, and the two state icons
  * as templates, so the script never writes markup of its own.
  */
+/** The verifier's fingerprint, and where GitHub publishes the same one; nothing where the verifier is not built. */
+function fingerprintLine(offline: { fingerprint: string; compare: string }): string {
+  const sha256 = verifierFingerprint();
+  if (sha256 === null) return "";
+  return `<p style="font-size:13px;overflow-wrap:anywhere">${escape(offline.fingerprint)} <code>${sha256}</code> · <a href="${VERIFIER_RELEASE_URL}">${escape(offline.compare)}</a></p>`;
+}
+
 function verifyBody(context: PageContext): string {
   const v = context.t.verify;
   return `<div class="wrap page-head"><h1>${escape(v.title)}</h1></div>
@@ -716,7 +723,8 @@ function verifyBody(context: PageContext): string {
 <div class="card" id="offline" style="margin-top:24px"><h2 style="margin-top:0">${escape(v.offline.title)}</h2><p>${escape(v.offline.text)}</p>
 <p><a class="btn" href="/${VERIFIER_ZIP_NAME}" download>${escape(v.offline.download)}</a></p>
 <pre style="overflow:auto;padding:12px;border-radius:8px;border:1px solid var(--separator, #dce0e6)"><code>${escape(v.offline.steps)}</code></pre>
-<p style="font-size:13px">${escape(v.offline.note)}</p></div>
+<p style="font-size:13px">${escape(v.offline.note)}</p>
+${fingerprintLine(v.offline)}</div>
 </div>`;
 }
 

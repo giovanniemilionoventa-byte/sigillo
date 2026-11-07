@@ -101,7 +101,7 @@ export interface SiteTexts {
     details: string;
     /** Plain words for each check of evidence-check.ts that can fail. */
     reasons: Record<string, string>;
-    offline: { title: string; text: string; download: string; steps: string; note: string };
+    offline: { title: string; text: string; download: string; steps: string; note: string; fingerprint: string; compare: string };
   };
   privacy: {
     title: string;
@@ -292,6 +292,8 @@ const EN: SiteTexts = {
       download: "Download the verifier",
       steps: "unzip sigillo-verify.zip\nnode sigillo-verify/sigillo-verify.mjs evidence-pack.zip",
       note: "For the timestamps, add --tsa-ca with the authority's certificate; to check who signed, add --key-id with the key code you were given. The README inside the file has the details.",
+      fingerprint: "SHA-256 of this file:",
+      compare: "compare it with the one published on GitHub",
     },
   },
   privacy: {
@@ -512,6 +514,8 @@ const IT: SiteTexts = {
       download: "Scarica il verificatore",
       steps: "unzip sigillo-verify.zip\nnode sigillo-verify/sigillo-verify.mjs fascicolo.zip",
       note: "Per le marche temporali aggiungi --tsa-ca con il certificato dell'autorità; per sapere chi ha firmato aggiungi --key-id con il codice della chiave che ti hanno dato. Il README dentro il file spiega il resto.",
+      fingerprint: "SHA-256 di questo file:",
+      compare: "confrontalo con quello pubblicato su GitHub",
     },
   },
   privacy: {

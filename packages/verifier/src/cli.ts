@@ -405,7 +405,11 @@ program
       const tokensChecked = timestamps.checks.filter((check) => check.status === "verified" || check.status === "imprint-only").length;
       if (tokensChecked === 0) notDone.push("no timestamp token was checked");
       else if (timestamps.checks.some((check) => check.status === "imprint-only")) {
-        notDone.push("token signatures were not checked (no --tsa-ca)");
+        notDone.push(
+          options.tsaCa === undefined
+            ? "token signatures were not checked (no --tsa-ca)"
+            : "the signatures of tokens from an authority --tsa-ca does not cover were not checked",
+        );
       }
 
       process.stdout.write("\nverified:\n");
