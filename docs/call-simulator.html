@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sigillo: call simulator</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#1b1d22;--mut:#5d6370;--line:#dedbd2;--acc:#1f4fd8;--acc2:#e8eefc;--ok:#1a7f4b;--okbg:#e3f4ea;--bad:#b3261e;--badbg:#fbe9e7;--warn:#8a5a00;--warnbg:#fff3d6}
+@media(prefers-color-scheme:dark){:root{--bg:#121418;--card:#1b1e25;--ink:#ecedf0;--mut:#9aa1ad;--line:#2d313b;--acc:#7da2ff;--acc2:#1f2a47;--ok:#6fd6a0;--okbg:#14301f;--bad:#ff8f86;--badbg:#3a1a17;--warn:#f0c46a;--warnbg:#38290a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:20px 16px 80px}
+h1{font-size:26px;margin:8px 0 4px}
+h2{font-size:20px;margin:0 0 8px}
+p{margin:0 0 12px}
+.mut{color:var(--mut);font-size:15px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:10px 16px}
+button:hover{border-color:var(--acc)}
+button.pri{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
+@media(prefers-color-scheme:dark){button.pri{color:#0b1020}}
+button.big{width:100%;text-align:left;padding:14px 16px;margin:0 0 10px}
+button.big b{display:block}
+button.big span{color:var(--mut);font-size:15px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.sp{flex:1}
+.tag{display:inline-block;font-size:13px;padding:2px 10px;border-radius:99px;background:var(--acc2);color:var(--acc)}
+.who{display:flex;gap:12px;align-items:center;margin-bottom:10px}
+.av{width:44px;height:44px;border-radius:50%;background:var(--acc2);color:var(--acc);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+.q{font-size:20px;font-weight:600;line-height:1.4;margin:6px 0 14px}
+textarea{width:100%;min-height:120px;font:inherit;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);resize:vertical}
+.box{border-radius:12px;padding:14px 16px;margin:12px 0}
+.say{background:var(--okbg);border-left:4px solid var(--ok)}
+.avoid{background:var(--badbg);border-left:4px solid var(--bad)}
+.tip{background:var(--warnbg);border-left:4px solid var(--warn)}
+.box h3{margin:0 0 6px;font-size:15px;text-transform:uppercase;letter-spacing:.04em}
+label.pt{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line);cursor:pointer}
+label.pt:last-child{border:0}
+input[type=checkbox]{width:20px;height:20px;margin-top:3px;flex:none}
+.bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden;margin:6px 0 14px}
+.bar i{display:block;height:100%;background:var(--acc)}
+.score{font-size:44px;font-weight:700}
+table{width:100%;border-collapse:collapse;font-size:15px}
+td,th{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+.star{font-size:22px;background:none;border:0;padding:4px 8px}
+.star.on{color:#e0a100}
+.hide{display:none}
+.timer{font-variant-numeric:tabular-nums;color:var(--mut)}
+a{color:var(--acc)}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+"use strict";
+/* ---------------------------------------------------------------
+   CONTENT. Facts follow docs/PROJECT-KNOWLEDGE.md and the partner call kit.
+   Rules baked in: never say "tamper-proof", "compliant", "AI Act ready", "open source",
+   "certified", "secure". Never invent numbers, customers or dates. Price is indicative.
+   Fields: c = category, p = persona, q = question, say = model answer,
+   pts = key points to cover, avoid = things not to say,
+   push = {q, say} what a tough client says next, tip = coaching note.
+---------------------------------------------------------------- */
+var PERSONAS={
+ marco:{n:"Marco",r:"CTO, fintech scale-up"},
+ elena:{n:"Elena",r:"Head of Compliance, insurance"},
+ tom:{n:"Tom",r:"Founder, AI agency"},
+ sofia:{n:"Sofia",r:"Legal counsel"},
+ jan:{n:"Jan",r:"Head of HR tech"}
+};
+var CATS={basics:"The basics",vs:"Why not logs / alternatives",data:"Data and privacy",sec:"Security",legal:"AI Act, GDPR, legal",tech:"Technical fit",biz:"Price and business",trust:"Trust and tricky",close:"Closing"};
+
+var Q=[
+{id:"what",c:"basics",p:"tom",
+ q:"I only have two minutes. What exactly is Sigillo?",
+ say:"It is a black box for AI agents. Every action an agent takes gets a signed receipt, and anyone can check later that nothing was changed, added or removed. We keep fingerprints, never your content.",
+ pts:["Black box / flight recorder comparison","Signed receipts for what the agent does","Anyone can check it was not changed","Fingerprints only, not content"],
+ avoid:["“Tamper-proof”","“AI Act ready” or “compliant”","Long technical words (Merkle, Ed25519)"],
+ tip:"Use their own problem from the discovery questions in the first sentence."},
+{id:"who-needs",c:"basics",p:"elena",
+ q:"Why would a company like ours need this?",
+ say:"When an agent touches contracts, money, hiring or personal data, someone will eventually ask: what really happened? Sigillo gives you a record you can show to a customer, an auditor or a lawyer, and nobody can quietly rewrite it afterwards.",
+ pts:["Starts from a real situation: someone asks what happened","Names the audience: customer, auditor, lawyer","Record cannot be quietly rewritten"],
+ avoid:["Scaring them with fines","Saying the law forces them to buy it"],
+ push:{q:"Nobody has ever asked us for that.",say:"That is fair, and it is common today. The usual trigger is the first dispute or the first big customer's security review. Has a customer ever asked how you control what the agent does? A small test now costs you nothing and means you are ready when it happens."},
+ tip:"If they say no one asked, do not argue. Ask one more discovery question."},
+{id:"fear-not-seatbelt",c:"basics",p:"marco",
+ q:"Does Sigillo stop the agent from making mistakes?",
+ say:"No. It is a black box, not a seatbelt. It does not prevent the problem. It makes sure you can show exactly what happened and that the record was not touched afterwards.",
+ pts:["Clear no","Black box, not a seatbelt","Value = proof of what happened"],
+ avoid:["Promising it makes agents safer","Suggesting it blocks bad actions"]},
+{id:"logs",c:"vs",p:"marco",
+ q:"We already have logs. What is different?",
+ say:"Logs are written and stored by the same system, so they can be edited, and a third party has little reason to trust them. Sigillo receipts are signed with a key the agent does not hold, chained one to the next, and anyone can check them with an outside program, without trusting you or us.",
+ pts:["Logs can be edited by the same system","Signed with a key the agent does not hold","Chained: removing or reordering is noticed","Checked by an independent program"],
+ avoid:["Saying logs are useless","Saying receipts can never be attacked"],
+ push:{q:"We could just write our logs to write-once storage.",say:"You could, and that is a good practice. The difference is who vouches for the record. With Sigillo a third party can verify it independently, and every action is signed and chained, so a missing or reordered step is named. If you already have that, tell me what is still missing for your auditors and I will take it to our engineer."}},
+{id:"diy",c:"vs",p:"tom",
+ q:"Can't we just build this ourselves?",
+ say:"You can log, yes. The difference is who can change the record. Your own logs are written and kept by you. A sealed record, checked by an outside program, is different. And building signing, chaining and independent verification properly takes time that is not your core business.",
+ pts:["Acknowledge they can log","Key difference: who can change the record","Independent verification is the hard part"],
+ avoid:["Making them feel stupid","Claiming it is impossible to build"]},
+{id:"competitor",c:"vs",p:"marco",
+ q:"A competitor offers qualified eIDAS timestamps. Why not them?",
+ say:"Some competitors have stronger legal marks, and I will not pretend otherwise. Sigillo connects to your existing agent as it is, with nothing to rewrite, and it is built for Europe. If a qualified timestamp is a must-have for you, please tell me. That is valuable for us to know.",
+ pts:["Honest: others may have stronger legal marks","Our strength: connects to the agent as it is","Asks if qualified timestamp is a must-have"],
+ avoid:["Criticising a competitor by name","Saying our timestamp is qualified (it is not)"],
+ tip:"Our current timestamp comes from a free public service (FreeTSA). It is not an eIDAS qualified timestamp."},
+{id:"content",c:"data",p:"elena",
+ q:"Do you see our data and prompts?",
+ say:"No. We store only fingerprints of prompts, tool inputs and outputs, never the text. By default the fingerprint is made on your own side, so the text does not even reach our server.",
+ pts:["Clear no on storing content","Fingerprints (hashes) only","Fingerprint made on their side by default"],
+ avoid:["“We can never see anything” without the exception","Saying “cannot see content” in absolute terms"],
+ push:{q:"What about the model gateway I read about?",say:"Good that you ask. If you use our optional model gateway, the text passes through our server's memory during the call and is not saved. The default setup does not do that. I will send you the exact description, and it is a choice you make."},
+ tip:"Honest limit: with the optional gateway, text passes through server memory. Say it if asked."},
+{id:"training",c:"data",p:"sofia",
+ q:"Do you use our data to train anything?",
+ say:"No. We do not store the content, so there is nothing to train on.",
+ pts:["Clear no","Reason: content is not stored"],
+ avoid:["Long explanations","Promising anything about third-party models they use"]},
+{id:"where",c:"data",p:"elena",
+ q:"Where is the data stored, and who can access the servers?",
+ say:"On a server in Europe. Access is limited to our technical team, and there is an encrypted daily backup. One honest limit: whoever has administrator access to a server could read what is stored, which is fingerprints and account details, not your content.",
+ pts:["Server in Europe","Limited access","Encrypted daily backup","Honest limit about admin access","What is stored: fingerprints and account details"],
+ avoid:["“Nobody can ever access it”","Naming the provider or IP"]},
+{id:"erasure",c:"data",p:"sofia",
+ q:"Receipts cannot be deleted. How do we respect the right to erasure?",
+ say:"Receipts hold fingerprints and a pseudonym, not names. To erase a person we delete the link between the pseudonym and the person, so the receipt no longer points to anyone, and the chain stays valid. A tip for your developers: never write personal data in free-text names such as the agent or action name.",
+ pts:["Receipts hold pseudonyms, not names","Erase the link, not the receipt","Chain stays valid","Tip: no personal data in free-text names"],
+ avoid:["Saying receipts can be deleted","Saying GDPR does not apply"],
+ tip:"If it gets legal, use the rescue: “Your lawyer and our team can go through it in a short call.”"},
+{id:"keys",c:"data",p:"marco",
+ q:"What happens with our model API keys if we give them to you?",
+ say:"They are stored encrypted and only the last 4 digits are shown. To call the model for you, though, our system has to open the key in memory, so I will not claim nobody at Sigillo could ever see it. The safest option is not to give us a key at all, and that works for the basic setup.",
+ pts:["Encrypted, last 4 digits visible","Honest: system must open it to call the model","Safest: not handing over a key"],
+ avoid:["“Invisible even to us”","“Impossible to leak”"],
+ tip:"Say this only if they ask about keys. The key vault with a passphrase is paused, so do not mention it."},
+{id:"fake",c:"sec",p:"marco",
+ q:"Can you, or a hacker, fake or change a receipt?",
+ say:"Each receipt is signed with a key kept in a separate process on our side, which the agent never holds. Receipts cannot be edited or deleted, and any change is detected by the checker. A fingerprint of the chain also goes to a public timestamp service.",
+ pts:["Key in a separate process, agent never holds it","Changes are detected","Public timestamp of the chain"],
+ avoid:["“Impossible to fake”","“Unhackable”"],
+ push:{q:"But you hold the key. So you could fake it.",say:"Correct, the signing key is ours. That is exactly why the external timestamp and the independent checker exist, so changes after the fact can be noticed. For the full threat model I would like to bring our engineer to a technical call."},
+ tip:"Honest limit: a valid key can sign invented actions, so Sigillo proves the record was not changed, not that it is true."},
+{id:"audit",c:"sec",p:"elena",
+ q:"Have you been penetration-tested or audited? SOC 2? ISO 27001?",
+ say:"No. We have our own design, automated tests and reviews. No certification and no external audit yet; an independent review is planned. I prefer to tell you that now.",
+ pts:["Plain no","What exists: own design, tests, reviews","Independent review is planned","Says it before they find out"],
+ avoid:["“Secure”, “hardened”, “certified”","Inventing a date for the audit"],
+ push:{q:"Then how can we trust it with sensitive agents?",say:"That is why we suggest a free pilot on one agent and why the system stores fingerprints, not your content. I can send you a description of what is stored and how data flows, so your team can judge it. If an audit is a must for you, tell me and I will pass that to the team."}},
+{id:"hacked",c:"sec",p:"sofia",
+ q:"What happens if you are hacked?",
+ say:"We have an incident plan: we tell our partner without undue delay and in any case within 48 hours, and they tell you, so you can meet the 72-hour GDPR deadline. Since we hold fingerprints and not content, there is no readable content to leak from the receipts.",
+ pts:["There is an incident plan","Notification within 48 hours to the partner","Helps their 72-hour GDPR deadline","No readable content in receipts"],
+ avoid:["“It cannot happen”","Promising compensation"]},
+{id:"down",c:"sec",p:"marco",
+ q:"What happens if Sigillo is down? Does our agent stop?",
+ say:"Good question. The pilot has no guaranteed uptime, so some events could be missed. I will send you the exact behaviour in writing today.",
+ pts:["No guaranteed uptime in the pilot","Some events could be missed","Promises the written answer today"],
+ avoid:["“The agent keeps working”","“Nothing is lost”","Making up a percentage"],
+ tip:"This is an open point: Giovanni has not confirmed the exact behaviour. After the call, write the question down and send it to him."},
+{id:"court",c:"legal",p:"sofia",
+ q:"Is a Sigillo receipt valid in court?",
+ say:"It is strong technical evidence that a record was not changed. I will not tell you what a court will accept. The timestamp comes from a public service, not a qualified one. Your lawyer decides how to use it.",
+ pts:["Strong technical evidence of no change","Does not promise court outcome","Timestamp is public, not qualified","Lawyer decides"],
+ avoid:["“Legally valid”","“Proves in court”"]},
+{id:"aiact",c:"legal",p:"elena",
+ q:"Does Sigillo make us AI Act compliant?",
+ say:"No tool alone does that. The AI Act asks for record-keeping for some AI systems, and Sigillo helps you keep a record that cannot be quietly altered. Whether your system is in scope is a question for your lawyer.",
+ pts:["Clear no on “compliant”","Helps with record-keeping","Scope is for their lawyer"],
+ avoid:["“AI Act ready”","“Compliant”","Quoting article numbers from memory"],
+ push:{q:"So what do we actually get for the AI Act?",say:"Evidence. If your system has to keep logs, you can show a record that is signed, chained and checkable by anyone. It is one piece of the puzzle, not the whole thing."}},
+{id:"gdpr-dpa",c:"legal",p:"sofia",
+ q:"GDPR: who is the controller? Do we need a DPA?",
+ say:"You decide what your agents record, so you are the controller. We have a draft data-handling description and a draft DPA. A lawyer still has to review them before paid customers, and I will ask Giovanni to send them.",
+ pts:["They are the controller","Drafts exist, lawyer review pending","Does not send legal documents herself"],
+ avoid:["Calling the DPA final","Sending legal documents on her own"]},
+{id:"firebase",c:"legal",p:"sofia",
+ q:"Your login uses Google. Does our email address leave the EU?",
+ say:"Sign-in uses Firebase from Google, which may process the email address outside the EU under standard safeguards. That detail is still being confirmed with a lawyer, and I will send you the exact position.",
+ pts:["Names Firebase / Google sign-in","Email may be processed outside the EU with safeguards","Position still being confirmed"],
+ avoid:["“Everything stays in the EU”"]},
+{id:"company",c:"legal",p:"sofia",
+ q:"Who are you? Which company do we sign with?",
+ say:"I will answer this in writing today.",
+ pts:["Does not improvise","Promises a written answer","Sends the question to Giovanni after the call"],
+ avoid:["Inventing a company name or structure","Saying “we are a startup based in …”"],
+ tip:"The contract structure is Giovanni's decision. This is a rescue answer, so keep it calm and short."},
+{id:"connect",c:"tech",p:"tom",
+ q:"How do you connect to our agent? Do we have to change our code?",
+ say:"A developer installs our small package and adds a few lines at the top of the agent, or we do it with you. The rest of the agent stays as it is. Python today. Our technical team connects it with you, in less than an hour.",
+ pts:["Small package plus a few lines","Rest of the agent unchanged","Python today","Technical team helps"],
+ avoid:["Promising other languages by a date","“Zero changes”"],
+ push:{q:"Our agent is not in Python.",say:"Thank you for telling me. Today we support Python agents, and I do not want to promise more than that. I will note your language and ask our engineer what is possible, and I will come back to you."}},
+{id:"record",c:"tech",p:"marco",
+ q:"What exactly do you record?",
+ say:"Each action the agent takes: what kind of action, when, and fingerprints of the inputs and outputs. Not the content itself.",
+ pts:["Kind of action and time","Fingerprints of inputs and outputs","Not the content"],
+ avoid:["Saying everything is recorded automatically"],
+ tip:"Honest limit if pushed: Sigillo records what the agent reports. Unrecorded actions are unknown."},
+{id:"frameworks",c:"tech",p:"tom",
+ q:"Do you support LangChain, CrewAI, OpenAI, Anthropic?",
+ say:"Python agents, including common frameworks and agents that call OpenAI-style models. For a specific framework or model I will confirm today, I do not want to say yes just to be nice.",
+ pts:["Python, common frameworks","Does not say yes blindly","Promises to confirm today"],
+ avoid:["Saying yes to a named framework without checking"]},
+{id:"perf",c:"tech",p:"marco",
+ q:"What is the performance impact on our agent?",
+ say:"I do not have measured numbers, and I will not guess. I will ask the engineer for them today, and the pilot is the best way to measure it on your real agent.",
+ pts:["Admits no numbers","Will not guess","Pilot measures it on their agent"],
+ avoid:["Inventing milliseconds","“No impact”"]},
+{id:"opensource",c:"tech",p:"tom",
+ q:"Is it open source? Can we read the code?",
+ say:"The checker is a small, readable program that anyone can run, even offline. The licensing terms are still being decided, so I will not call it open source yet.",
+ pts:["The checker is small, readable, runs offline","Licensing still being decided","Does not say open source"],
+ avoid:["“Open source”","Promising the code"]},
+{id:"verify",c:"tech",p:"elena",
+ q:"How do we verify a receipt ourselves, without you?",
+ say:"With the checker program. It verifies the signature and the chain on your own computer, offline, without our servers. There is also a public page where you can drop an export and check it in the browser.",
+ pts:["Checker runs on their computer","Works offline","No need to trust or contact Sigillo"],
+ avoid:["Sounding like they need Sigillo to verify"],
+ tip:"One honest note if asked: a pack alone shows “not modified”, not “from this customer”. The customer passes the short key code through another channel."},
+{id:"volume",c:"tech",p:"marco",
+ q:"Can you handle our volume? How many receipts?",
+ say:"The standard plan covers up to 100,000 receipts a month. If you are far above that, we talk about a custom plan.",
+ pts:["100,000 per month in standard","Custom plan above that"],
+ avoid:["Promising a number of events per second"]},
+{id:"api",c:"tech",p:"tom",
+ q:"Is there an API? Can we export the data?",
+ say:"Yes, there is a documented API, and receipts can be exported in a pack and checked offline. I will send the documentation to your developer.",
+ pts:["Documented API","Export as a pack","Checked offline","Will send docs to developer"],
+ avoid:["Promising integrations she has not seen"]},
+{id:"price",c:"biz",p:"tom",
+ q:"How much does it cost, really? Any extras?",
+ say:"The pilot is free. The standard plan is indicatively from about 190 euro per month, including 100,000 receipts. It is indicative, and we confirm it together after the pilot.",
+ pts:["Pilot is free","About 190 euro a month, indicative","Includes 100,000 receipts","Confirmed after the pilot"],
+ avoid:["Quoting partner commissions or discounts","Multi-year terms","Final prices"],
+ push:{q:"Can you do better on the price?",say:"The pilot lets us see together what you really use, and then we agree on the plan. I do not want to promise numbers I cannot confirm, so let me take it to the team and come back to you."},
+ tip:"The price is provisional. “Indicative” is the word that protects her."},
+{id:"pilot",c:"biz",p:"jan",
+ q:"What is in the free pilot? What is the catch?",
+ say:"The pilot connects one of your agents, with up to 10,000 receipts a month. In exchange we ask for feedback, a short case study if you are happy, and a contact. No uptime guarantee yet, which is one reason it is free.",
+ pts:["One agent, 10,000 receipts per month","In return: feedback, case study, a contact","No guaranteed uptime"],
+ avoid:["Hiding the exchange","“No obligations at all, ever”"]},
+{id:"no-customers",c:"trust",p:"elena",
+ q:"You have no customers yet. Why should we trust you?",
+ say:"Fair. We are early, which is why the pilot is free and why I am telling you exactly what is not done yet: no audit, no certification. Early customers also shape the product.",
+ pts:["Agrees calmly","Free pilot as the answer","States the gaps herself","Early customers shape the product"],
+ avoid:["Inventing customers or logos","Getting defensive"]},
+{id:"saving",c:"trust",p:"tom",
+ q:"How does your encryption and key handling work internally, exactly? Algorithms, key rotation?",
+ say:"That is a good technical question, and I do not want to guess. The exact detail is best from our engineer. May I set a 20-minute technical call with you and your developer?",
+ pts:["No guessing","Hands it to the engineer","Turns it into a next step: technical call","Will write the question down"],
+ avoid:["Making up algorithms","Pretending to know"],
+ tip:"This is the rescue rule: one plain line, offer the technical call, note the question for Giovanni. It is a win, not a failure."},
+{id:"roadmap",c:"trust",p:"marco",
+ q:"When will you have SOC 2, self-hosting, and Java support?",
+ say:"I do not have dates and I will not invent them. Today it is an online service and Python agents. I will note your interest in each and come back to you.",
+ pts:["No dates","Says what exists today","Notes interest"],
+ avoid:["Promising features or quarters"]},
+{id:"send-info",c:"close",p:"jan",
+ q:"Sounds interesting. Just send me some information and I will have a look.",
+ say:"Happy to. To send the right thing: which agent would you try this on first, and who else should see it, your CTO or legal? I will send a 3-minute video and a one-page summary you can forward. May I check in on Thursday?",
+ pts:["Agrees, then asks a question","Finds the real agent and the other decision makers","Sends a concrete item","Fixes a check-in day"],
+ avoid:["Ending with “let us stay in touch”","Sending a long document pack"],
+ tip:"The goal of every call is ONE next step with a date."},
+{id:"not-now",c:"close",p:"tom",
+ q:"We are busy right now. Maybe next quarter.",
+ say:"Understood. May I ask what is the main reason, is it timing, or is there something about the idea itself? The pilot is small and our team does the connecting in under an hour. If not now, may I check back in a few weeks?",
+ pts:["Stays calm","Asks the real reason","Mentions how small the pilot is","Asks permission to follow up"],
+ avoid:["Pushing","Discounts"],
+ tip:"A “no” with a reason is valuable. Write it down and send it to Giovanni."},
+{id:"boss",c:"close",p:"jan",
+ q:"I like it, but I need to talk to my boss.",
+ say:"Of course. I will send you a 3-minute video and a one-page summary that you can forward. What will your boss care about most? And may I check in on a day that suits you?",
+ pts:["Supportive","Provides something forwardable","Learns what the boss cares about","Fixes a check-in day"],
+ avoid:["Asking to talk to the boss directly right away"]}
+];
+
+/* The calls. hard = the client also pushes back after your answer (when the question has a follow-up). */
+var CALLS=[
+ {n:"First friendly call",who:"Alex",role:"CTO of a software company that builds AI agents",d:"Curious and polite. The best place to start.",hard:false,
+  ids:["what","who-needs","logs","content","fake","aiact","connect","price","down","audit","no-customers","send-info"]},
+ {n:"The skeptical CTO",who:"Marco",role:"CTO of a fintech scale-up",d:"Technical, short on time, tests whether you bluff. Pushes back.",hard:true,
+  ids:["what","logs","fake","connect","perf","down","audit","price","send-info"]},
+ {n:"The compliance head",who:"Elena",role:"Head of Compliance at an insurance company",d:"Careful. Wants honesty about limits. Pushes back.",hard:true,
+  ids:["who-needs","content","where","aiact","audit","verify","firebase","no-customers","boss"]},
+ {n:"The lawyer",who:"Sofia",role:"Legal counsel",d:"Every word counts. Pushes back on legal answers.",hard:true,
+  ids:["aiact","court","gdpr-dpa","erasure","hacked","training","company","boss"]},
+ {n:"The busy agency founder",who:"Tom",role:"Founder of an AI agency",d:"Fast and practical. Asks about code, price and why not build it himself.",hard:true,
+  ids:["what","diy","connect","frameworks","opensource","api","price","pilot","not-now"]},
+ {n:"The client who will not decide",who:"Jan",role:"Head of HR tech",d:"Likes it but never commits. Practise closing with ONE next step.",hard:true,
+  ids:["who-needs","pilot","price","roadmap","send-info","boss","not-now"]},
+ {n:"Hard questions only",who:"Marco",role:"A tough client",d:"The trickiest questions: audit, hacked, court, no customers, unknown details.",hard:true,
+  ids:["fake","audit","court","aiact","hacked","no-customers","saving","company","roadmap","down"]}
+];
+
+var app=document.getElementById("app");
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function byId(id){for(var k=0;k<Q.length;k++)if(Q[k].id===id)return Q[k]}
+function list(a){return '<ul style="margin:0;padding-left:20px">'+a.map(function(x){return'<li>'+esc(x)+'</li>'}).join("")+'</ul>'}
+var call,ids,i,got;
+
+function home(){
+ var h='<h1>Sigillo call practice</h1><p>Pick a call. A client asks you questions one at a time. Answer <b>out loud</b>, then tap to see a good answer.</p><h2 style="margin-top:20px">👇 Tap a call to start</h2>';
+ CALLS.forEach(function(c,k){h+='<button class="big" data-k="'+k+'"><b>▶ '+esc(c.n)+'</b><span>'+esc(c.d)+' ('+c.ids.length+' questions)</span></button>'});
+ app.innerHTML=h;
+ app.querySelectorAll("[data-k]").forEach(function(b){b.onclick=function(){call=CALLS[+b.dataset.k];intro()}});
+ window.scrollTo(0,0);
+}
+
+function intro(){
+ app.innerHTML='<p><button id="bk">← All calls</button></p><h1>'+esc(call.n)+'</h1><div class="card"><div class="who"><div class="av">'+esc(call.who.charAt(0))+'</div><div><b>'+esc(call.who)+'</b><div class="mut">'+esc(call.role)+'</div></div></div>'+
+ '<p>'+esc(call.d)+'</p>'+
+ '<p><b>1.</b> Read the question.<br><b>2.</b> Answer <b>out loud</b>, in your own words.<br><b>3.</b> Tap <b>Show the answer</b>, then tap Yes or Not really.'+(call.hard?'<br><b>4.</b> Sometimes the client pushes back. Answer that too.':'')+'</p>'+
+ '<button class="pri big" id="go" style="text-align:center;font-size:19px">▶ Start the call</button></div>';
+ document.getElementById("bk").onclick=home;
+ document.getElementById("go").onclick=function(){ids=call.ids.slice();i=0;got=[];ask()};
+}
+
+function head(){return '<div class="mut">'+esc(call.n)+' · question '+(i+1)+' of '+ids.length+'</div><div class="bar"><i style="width:'+(i/ids.length*100)+'%"></i></div>'}
+function who(){return '<div class="who"><div class="av">'+esc(call.who.charAt(0))+'</div><div><b>'+esc(call.who)+'</b><div class="mut">'+esc(call.role)+'</div></div></div>'}
+
+function ask(){
+ var q=byId(ids[i]);
+ app.innerHTML=head()+'<div class="card">'+who()+'<div class="q">“'+esc(q.q)+'”</div>'+
+ '<p class="mut">Now answer out loud. Take your time.</p><button class="pri" id="rev" style="width:100%">Show the answer</button></div>';
+ window.scrollTo(0,0);
+ document.getElementById("rev").onclick=function(){reveal(q)};
+}
+
+function reveal(q){
+ var more=(q.avoid?'<p><b>Do not say:</b></p>'+list(q.avoid):'')+(q.tip?'<p style="margin-top:10px"><b>Note:</b> '+esc(q.tip)+'</p>':'');
+ app.innerHTML=head()+'<div class="card"><div class="q">“'+esc(q.q)+'”</div>'+
+ '<div class="box say"><h3>A good answer</h3>'+esc(q.say)+'<h3 style="margin-top:14px">Remember</h3>'+list(q.pts)+'</div>'+
+ (more?'<details style="margin-bottom:14px"><summary class="mut" style="cursor:pointer">More tips</summary><div style="padding-top:8px">'+more+'</div></details>':'')+
+ '<p><b>Did you say the main points?</b></p><div class="row"><button class="pri sp" id="ok">✓ Yes</button><button class="sp" id="no">✗ Not really</button></div></div>';
+ window.scrollTo(0,0);
+ document.getElementById("ok").onclick=function(){rated(q,true)};
+ document.getElementById("no").onclick=function(){rated(q,false)};
+}
+
+function rated(q,ok){
+ got.push({q:q,ok:ok});
+ if(call.hard&&q.push)pushback(q);else next();
+}
+
+function pushback(q){
+ app.innerHTML=head()+'<div class="card">'+who()+'<p class="mut">The client is not convinced and says:</p><div class="q">“'+esc(q.push.q)+'”</div>'+
+ '<p class="mut">Answer out loud.</p><div id="pa"><button class="pri" id="pr" style="width:100%">Show the answer</button></div></div>';
+ window.scrollTo(0,0);
+ document.getElementById("pr").onclick=function(){
+  document.getElementById("pa").innerHTML='<div class="box say"><h3>A good answer</h3>'+esc(q.push.say)+'</div><button class="pri" id="nx" style="width:100%">Next →</button>';
+  document.getElementById("nx").onclick=next;
+ };
+}
+
+function next(){i++;if(i<ids.length)ask();else end()}
+
+function end(){
+ var miss=got.filter(function(x){return!x.ok}).map(function(x){return x.q.id});
+ var n=got.length-miss.length;
+ var h='<h1>Call finished</h1><div class="card"><div class="score">'+n+' / '+got.length+'</div><p>'+
+ (miss.length?'Practise the ones you missed, then try again.':'Great. Try another call.')+'</p>';
+ if(miss.length)h+='<p><b>To practise again:</b></p>'+list(got.filter(function(x){return!x.ok}).map(function(x){return x.q.q}));
+ h+='</div>'+(miss.length?'<button class="pri big" id="rp" style="text-align:center">Practise the missed ones</button>':'')+'<button class="big" id="again" style="text-align:center">Try this call again</button><button class="big" id="hm" style="text-align:center">Choose another call</button>';
+ app.innerHTML=h;window.scrollTo(0,0);
+ if(miss.length)document.getElementById("rp").onclick=function(){ids=miss;i=0;got=[];ask()};
+ document.getElementById("again").onclick=intro;
+ document.getElementById("hm").onclick=home;
+}
+
+home();
+</script>
+</body>
+</html>
