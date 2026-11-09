@@ -1,6 +1,6 @@
 # CLAUDE.md — working rules for sigillo
 
-This file collects the permanent rules for anyone (human or AI) working on this repository, plus the build/test commands discovered as the project is scaffolded. See `SPEC.md` for the product specification and `PROGRESS.md` for milestone status.
+This file collects the permanent rules for anyone (human or AI) working on this repository, plus the build/test commands discovered as the project is scaffolded. For a complete overview of the whole project read `docs/SIGILLO-COMPLETO.md` first. See `SPEC.md` for the product specification and `PROGRESS.md` for milestone status.
 
 ## Permanent rules
 
