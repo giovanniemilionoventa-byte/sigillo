@@ -43,19 +43,23 @@ interface DemoAgent {
 
 interface DemoCopy {
   label: string;
+  sub: string;
   h2: string;
   lead: string;
   choose: string;
   window: string;
   list: string;
-  replay: string;
+  reset: string;
+  guide: { step: string; done: string };
+  hints: { connect: string; wait: string; pick: string; edit: string; save: string; verify: string; done: string };
+  waiting: string;
   verify: string;
   pack: string;
   day: string;
   nav: [string, string, string];
   systems: string;
   user: [string, string];
-  badge: { recording: string; checking: string; intact: string; tampered: string; unchecked: string };
+  badge: { idle: string; recording: string; checking: string; intact: string; tampered: string; unchecked: string };
   marks: { sealing: string; sealed: string; ok: string; bad: string; broken: string };
   empty: { working: string; idle: string };
   fields: { agent: string; when: string; today: string; from: string; receipt: string; args: string; prev: string; sealed: string; now: string };
@@ -73,20 +77,32 @@ interface DemoCopy {
 }
 
 const EN: DemoCopy = {
-  label: "Live demo · sample data",
+  label: "Interactive demo",
+  sub: "Sample data, running in your browser. Nothing you do here is sent anywhere.",
   h2: "Watch an AI agent leave a record it can't rewrite",
-  lead: "This is the sigillo console, running on sample data in your browser. Pick an agent, let it work, then try to change what happened.",
+  lead: "Try it yourself in four short steps: connect an agent, let it work, change what happened, then see sigillo catch it.",
   choose: "Choose a sample agent",
   window: "sigillo console, live demo",
   list: "Recorded actions",
-  replay: "Replay",
+  reset: "Reset",
+  guide: { step: "Step {n} of {t}", done: "All done" },
+  hints: {
+    connect: "Tap a sample agent to connect it.",
+    wait: "Watch: each action gets a sealed receipt as it happens.",
+    pick: "Tap any action in the list to open its receipt.",
+    edit: "Press “Try to rewrite…” in the panel on the right.",
+    save: "Change the action or its outcome, then press “Save change”.",
+    verify: "Now press “Verify the chain”.",
+    done: "Caught. Everything after the change is no longer trusted. Press Reset to try another agent.",
+  },
+  waiting: "No agent connected yet. Connect one above to start recording.",
   verify: "Verify the chain",
   pack: "Prepare the evidence pack",
   day: "Today · Wednesday 4 November",
   nav: ["Status", "Actions", "Evidence"],
   systems: "Systems",
   user: ["Acme Srl", "Compliance team"],
-  badge: { recording: "Recording", checking: "Checking…", intact: "Intact", tampered: "Tampered", unchecked: "Not checked since a change" },
+  badge: { idle: "Not connected", recording: "Recording", checking: "Checking…", intact: "Intact", tampered: "Tampered", unchecked: "Not checked since a change" },
   marks: { sealing: "Sealing", sealed: "Sealed", ok: "Verified", bad: "Hash does not match", broken: "Not trusted after the break" },
   empty: { working: "The agent is working. Each action is sealed as it happens.", idle: "Click an action to open its receipt." },
   fields: { agent: "Agent", when: "When", today: "Today", from: "Arrived from", receipt: "Receipt", args: "Arguments (only the hash is kept)", prev: "Previous receipt", sealed: "Sealed hash", now: "Hash of what is stored now" },
@@ -99,9 +115,9 @@ const EN: DemoCopy = {
   ok: { title: "All {n} receipts check out.", body: "Every hash matches its content and links to the receipt before it. The chain is signed and timestamped, so it can also be checked offline." },
   bad: { title: "Receipt #{seq} was changed after it was sealed.", body: "Its content no longer matches the hash that was signed at {at}. sigillo can't stop someone with database access from editing a row, but it makes the edit impossible to hide." },
   steps: [
-    ["The agent works", "Each action gets a sealed receipt, linked to the one before."],
-    ["Open a receipt", "Click any action to see what was sealed."],
-    ["Rewrite the past", "Change an action, the way someone with database access could."],
+    ["Connect an agent", "Pick a sample agent and link it to sigillo."],
+    ["It works, receipts arrive", "Each action gets a sealed receipt, linked to the one before."],
+    ["Edit the record", "Change an action, the way someone with database access could."],
     ["Verify", "sigillo recomputes every hash and finds the change."],
   ],
   packSheet: {
@@ -149,20 +165,32 @@ const EN: DemoCopy = {
 };
 
 const IT: DemoCopy = {
-  label: "Demo dal vivo · dati d'esempio",
+  label: "Demo interattiva",
+  sub: "Dati d'esempio, nel tuo browser. Quello che fai qui non viene inviato da nessuna parte.",
   h2: "Guarda un agente AI lasciare un registro che non può riscrivere",
-  lead: "Questa è la console di sigillo, con dati d'esempio, nel tuo browser. Scegli un agente, lascialo lavorare, poi prova a cambiare quello che è successo.",
+  lead: "Provalo tu in quattro passi: collega un agente, lascialo lavorare, cambia quello che è successo e guarda sigillo accorgersene.",
   choose: "Scegli un agente d'esempio",
   window: "Console di sigillo, demo dal vivo",
   list: "Azioni registrate",
-  replay: "Rivedi",
+  reset: "Ricomincia",
+  guide: { step: "Passo {n} di {t}", done: "Fatto" },
+  hints: {
+    connect: "Tocca un agente d'esempio per collegarlo.",
+    wait: "Guarda: ogni azione riceve una ricevuta sigillata mentre accade.",
+    pick: "Tocca un'azione dell'elenco per aprire la sua ricevuta.",
+    edit: "Premi «Prova a riscrivere…» nel pannello a destra.",
+    save: "Cambia l'azione o il suo esito, poi premi «Salva la modifica».",
+    verify: "Ora premi «Verifica la catena».",
+    done: "Scoperto. Tutto ciò che segue la modifica non è più affidabile. Premi Ricomincia per provare un altro agente.",
+  },
+  waiting: "Nessun agente collegato. Collegane uno qui sopra per iniziare a registrare.",
   verify: "Verifica la catena",
   pack: "Prepara il fascicolo",
   day: "Oggi · mercoledì 4 novembre",
   nav: ["Stato", "Azioni", "Prove"],
   systems: "Sistemi",
   user: ["Acme Srl", "Ufficio compliance"],
-  badge: { recording: "Registra", checking: "Controllo…", intact: "Integro", tampered: "Alterato", unchecked: "Non controllato dopo una modifica" },
+  badge: { idle: "Non collegato", recording: "Registra", checking: "Controllo…", intact: "Integro", tampered: "Alterato", unchecked: "Non controllato dopo una modifica" },
   marks: { sealing: "Sigillo in corso", sealed: "Sigillata", ok: "Verificata", bad: "L'impronta non corrisponde", broken: "Non affidabile dopo la rottura" },
   empty: { working: "L'agente sta lavorando. Ogni azione viene sigillata mentre accade.", idle: "Clicca un'azione per aprire la sua ricevuta." },
   fields: { agent: "Agente", when: "Quando", today: "Oggi", from: "Arrivata da", receipt: "Ricevuta", args: "Argomenti (si conserva solo l'impronta)", prev: "Ricevuta precedente", sealed: "Impronta sigillata", now: "Impronta di ciò che c'è ora" },
@@ -175,9 +203,9 @@ const IT: DemoCopy = {
   ok: { title: "Tutte le {n} ricevute tornano.", body: "Ogni impronta corrisponde al contenuto e si lega alla ricevuta precedente. La catena è firmata e con marca temporale, quindi si controlla anche senza rete." },
   bad: { title: "La ricevuta n. {seq} è stata cambiata dopo il sigillo.", body: "Il contenuto non corrisponde più all'impronta firmata alle {at}. sigillo non può impedire a chi ha accesso al database di modificare una riga, ma rende la modifica impossibile da nascondere." },
   steps: [
-    ["L'agente lavora", "Ogni azione riceve una ricevuta sigillata, legata alla precedente."],
-    ["Apri una ricevuta", "Clicca un'azione per vedere cosa è stato sigillato."],
-    ["Riscrivi il passato", "Cambia un'azione, come potrebbe fare chi ha accesso al database."],
+    ["Collega un agente", "Scegli un agente d'esempio e collegalo a sigillo."],
+    ["Lavora, arrivano le ricevute", "Ogni azione riceve una ricevuta sigillata, legata alla precedente."],
+    ["Modifica il registro", "Cambia un'azione, come potrebbe fare chi ha accesso al database."],
     ["Verifica", "sigillo ricalcola ogni impronta e trova la modifica."],
   ],
   packSheet: {
@@ -245,6 +273,7 @@ const ICON: Record<string, string> = {
   download: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 2v8M4.5 6.5L8 10l3.5-3.5M2.5 13.5h11"/></svg>',
   status: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.5 8h3l2-4.5 3 9 2-4.5h3"/></svg>',
   actions: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.01M2.5 8h.01M2.5 12h.01"/></svg>',
+  arrow: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8h9M8.5 4l4 4-4 4"/></svg>',
   evidence: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 1.5h5.5L13 5v9.5H4z"/><circle cx="8.5" cy="9.5" r="2"/></svg>',
 };
 
@@ -272,13 +301,18 @@ export function demoSection(language: Language): string {
   // The copy and the sample agents for /demo.js. "<" is written as < so
   // nothing in the data can close the script element.
   const data = JSON.stringify({ copy: c, icons: ICON, chipIcons: CHIP_ICON }).replace(/</g, "\\u003c");
+  const steps = c.steps.map(([t, d], i) => `<li class="dm-step${i === 0 ? " now" : ""}"><b><i>${i + 1}</i>${escape(t)}</b><span>${escape(d)}</span></li>`).join("");
   return `<section class="s-sec dm" id="demo" aria-labelledby="dm-title"><div class="s-wrap">
-<header class="dm-intro"><span class="dm-pill">${escape(c.label)}</span><h2 id="dm-title">${escape(c.h2)}</h2><p class="s-lead">${escape(c.lead)}</p></header>
-<div class="dm-chips" role="group" aria-label="${escape(c.choose)}" id="dm-chips">${chips}</div>
-<ol class="dm-steps" id="dm-steps">${c.steps.map(([t, d], i) => `<li class="dm-step"><b><i>${i + 1}</i>${escape(t)}</b><span>${escape(d)}</span></li>`).join("")}</ol>
+<header class="dm-intro"><h2 id="dm-title">${escape(c.h2)}</h2><p class="s-lead">${escape(c.lead)}</p></header>
+<div class="dm-zone">
+<div class="dm-zone-head"><span class="dm-pill">${escape(c.label)}</span><span class="dm-sub">${escape(c.sub)}</span><button class="dm-reset" id="dm-replay" type="button">${icon("replay")}${escape(c.reset)}</button></div>
+<div class="dm-mbar" id="dm-mbar" aria-hidden="true"></div>
+<ol class="dm-steps" id="dm-steps">${steps}</ol>
+<div class="dm-do" id="dm-do"><p class="dm-do-text" id="dm-do-text" role="status">${icon("arrow")}<span>${escape(c.hints.connect)}</span></p>
+<div class="dm-chips" role="group" aria-label="${escape(c.choose)}" id="dm-chips">${chips}</div></div>
 <div class="dm-stage">
 <div class="dm-window" role="region" aria-label="${escape(c.window)}">
-<div class="dm-bar"><div class="dm-lights" aria-hidden="true"><i></i><i></i><i></i></div><div class="dm-address">${icon("lock")}get-sigillo.eu/console</div><button class="dm-replay" id="dm-replay" type="button" hidden>${icon("replay")}${escape(c.replay)}</button></div>
+<div class="dm-bar"><div class="dm-lights" aria-hidden="true"><i></i><i></i><i></i></div><div class="dm-address">${icon("lock")}get-sigillo.eu/console</div><span></span></div>
 <div class="dm-app">
 <nav class="dm-side" aria-label="${escape(c.window)}">
 <div class="dm-brand">${SEAL_SVG}<span>sigillo</span></div>
@@ -295,6 +329,7 @@ export function demoSection(language: Language): string {
 </div></div>
 <div class="dm-scrim" id="dm-scrim" hidden></div>
 </div>
+</div>
 <script type="application/json" id="dm-data">${data}</script>
 </div></section>`;
 }
@@ -306,16 +341,34 @@ export const DEMO_STYLE = `
 .s-sec.dm { padding: 56px 0; }
 .dm .s-wrap { display: grid; gap: 28px; }
 
-.dm-pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--link); background: var(--selected); margin: 0 auto 14px; }
-.dm-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-fill); }
+.dm-zone { border: 1.5px dashed var(--action); border-radius: 20px; background: var(--sidebar); padding: 18px 20px 22px; display: grid; gap: 16px; }
+.dm-zone-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.dm-sub { color: var(--secondary); font-size: 13.5px; flex: 1; min-width: 200px; }
+.dm-reset { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--separator); background: var(--surface); color: var(--text); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; margin-left: auto; }
+.dm-reset:hover { background: var(--hover); }
+.dm-reset svg { width: 13px; height: 13px; }
+.dm-pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 700; letter-spacing: 0.02em; color: var(--on-action); background: var(--action); }
+.dm-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .dm-intro { display: grid; justify-items: center; text-align: center; }
 .dm-intro h2 { max-width: 22ch; margin: 0 auto 14px; text-wrap: balance; }
 .dm-intro .s-lead { margin: 0 auto; text-wrap: balance; }
-.dm-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.dm-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .dm-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--separator); background: var(--surface); color: var(--label); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
 .dm-chip:hover { background: var(--hover); }
 .dm-chip[aria-pressed="true"] { background: var(--selected); border-color: var(--action); color: var(--text); }
 .dm-chip svg { width: 15px; height: 15px; }
+.dm-do { display: none; padding: 12px 16px; border-radius: 12px; background: var(--selected); border: 1px solid var(--action); gap: 10px; }
+.dm.live .dm-do { display: grid; }
+.dm-do-text { margin: 0; display: flex; gap: 10px; align-items: center; font-size: 15px; font-weight: 600; color: var(--text); }
+.dm-do-text svg { width: 16px; height: 16px; flex: none; color: var(--action); }
+.dm-chips { display: none; }
+.dm:not(.live) .dm-chips, .dm[data-hint="connect"] .dm-chips { display: flex; }
+.dm-mbar { display: none; }
+.dm[data-hint="connect"] .dm-chip, .dm[data-hint="pick"] .dm-list, .dm[data-hint="edit"] #dm-edit-open, .dm[data-hint="save"] #dm-edit button[type=submit] { animation: dm-ring 1.6s ease-in-out infinite; }
+.dm[data-hint="pick"] .dm-list { border-radius: 8px; }
+.dm[data-hint="edit"] #dm-edit-open { padding: 4px 8px; border-radius: 7px; }
+.dm-waiting { margin: 40px 10px; display: grid; gap: 10px; justify-items: center; text-align: center; color: var(--secondary); font-size: 14px; }
+.dm-waiting svg { width: 30px; height: 30px; color: var(--separator); }
 .dm-stage { position: relative; }
 .dm-window { border-radius: 14px; background: var(--canvas); box-shadow: var(--shadow-sheet); overflow: hidden; }
 .dm-bar { display: grid; grid-template-columns: 80px minmax(0, 1fr) 80px; align-items: center; height: 40px; padding: 0 14px; border-bottom: 1px solid var(--separator); background: var(--sidebar); }
@@ -392,6 +445,8 @@ export const DEMO_STYLE = `
 .dm-verdict.bad { background: var(--bad-fill); }
 .dm-verdict.bad b { color: var(--bad); }
 .dm-detail { padding: 22px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.dm-detail > * { flex: none; }
+.dm-detail > .dm-empty { flex: 1; }
 .dm-empty { color: var(--secondary); font-size: 14px; margin: auto 0; text-align: center; display: grid; gap: 10px; justify-items: center; }
 .dm-empty svg { width: 34px; height: 34px; color: var(--separator); }
 .dm-d-top { display: flex; justify-content: space-between; align-items: center; }
@@ -415,13 +470,15 @@ export const DEMO_STYLE = `
 .dm-link { border: 0; background: none; color: var(--link); padding: 0; font: inherit; font-size: 14px; font-weight: 600; display: inline-flex; gap: 6px; align-items: center; cursor: pointer; text-align: left; }
 .dm-link svg { width: 14px; height: 14px; flex: none; }
 .dm-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.dm-step { padding: 14px 16px; border-radius: 10px; border: 1px solid var(--separator); display: grid; gap: 4px; align-content: start; transition: border-color .3s, background .3s; }
+.dm-step { padding: 14px 16px; border-radius: 10px; border: 1px solid var(--separator); background: var(--surface); display: grid; gap: 4px; align-content: start; transition: border-color .3s, background .3s; }
 .dm-step b { font-size: 14px; display: flex; gap: 8px; align-items: center; }
 .dm-step b i { font-style: normal; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; background: var(--fill); color: var(--secondary); flex: none; }
 .dm-step span { font-size: 13.5px; color: var(--secondary); }
 .dm-step.now { border-color: var(--action); background: var(--selected); }
 .dm-step.now b i { background: var(--action); color: var(--on-action); }
 .dm-step.done b i { background: var(--ok-fill); color: var(--ok); }
+.dm-step.done { opacity: 0.75; }
+.dm-step.now span { color: var(--label); }
 .dm-scrim { position: absolute; inset: 0; background: var(--scrim); display: grid; place-items: center; padding: 16px; z-index: 2; border-radius: 14px; }
 .dm-scrim[hidden] { display: none; }
 .dm-sheet { width: min(440px, 100%); background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-sheet); padding: 20px; display: grid; gap: 12px; animation: dm-in .25s ease-out both; }
@@ -434,6 +491,7 @@ export const DEMO_STYLE = `
 @keyframes dm-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes dm-spin { to { transform: rotate(360deg); } }
 @keyframes dm-pulse { 50% { opacity: 0.3; } }
+@keyframes dm-ring { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 4px var(--action); } }
 @keyframes dm-nudge { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 5px var(--selected); } }
 @media (prefers-reduced-motion: reduce) { .dm *, .dm *::before { animation: none !important; transition: none !important; } }
 @media (max-width: 1020px) { .dm-app { grid-template-columns: minmax(0, 1fr) 280px; } .dm-side { display: none; } }
@@ -442,7 +500,19 @@ export const DEMO_STYLE = `
   .dm-main { border-right: 0; border-bottom: 1px solid var(--separator); }
   .dm-list { max-height: 360px; }
   .dm-bar { grid-template-columns: 50px minmax(0, 1fr) 70px; }
+  .s-sec.dm { padding: 36px 0; }
+  .dm-zone { padding: 12px 12px 16px; border-radius: 16px; }
+  .dm-sub { display: none; }
+  .dm.live .dm-steps { display: none; }
   .dm-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dm.live .dm-mbar { display: grid; position: sticky; top: 65px; z-index: 4; gap: 8px; padding: 10px 14px; margin: 0 -12px; background: var(--selected); border-block: 1px solid var(--action); font-size: 14px; }
+  .dm-mbar-t { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .dm-mbar-t b { font-weight: 700; }
+  .dm-mbar-t span { color: var(--secondary); font-size: 13px; }
+  .dm-mbar-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .dm-mbar-bar i { height: 4px; border-radius: 2px; background: var(--separator); }
+  .dm-mbar-bar i.on { background: var(--action); }
+  .dm-mbar-bar i.done { background: var(--ok); }
   .dm-row { grid-template-columns: 40px 28px minmax(0, 1fr) 22px; }
   .dm-row .dm-tag { display: none; }
 }
@@ -523,12 +593,11 @@ export const DEMO_SCRIPT = String.raw`"use strict";
   function start(key) {
     clear();
     var sc = C.agents.filter(function (a) { return a.key === key; })[0] || C.agents[0];
-    S = { sc: sc, rows: [], selected: null, phase: "recording", editing: false, verdict: null, step: 1 };
+    S = { sc: sc, rows: [], selected: null, phase: "recording", editing: false, verdict: null, step: 2 };
     $("dm-scrim").hidden = true;
-    $("dm-replay").hidden = false;
     renderAll();
     function add(i) {
-      if (i >= sc.steps.length) { S.phase = "done"; S.step = 2; renderAll(); return; }
+      if (i >= sc.steps.length) { S.phase = "done"; S.step = 3; renderAll(); return; }
       var prev = i ? S.rows[i - 1].hash : GENESIS;
       var row = seal(sc, sc.steps[i], i, prev);
       S.rows.push(row);
@@ -539,19 +608,35 @@ export const DEMO_SCRIPT = String.raw`"use strict";
     }
     if (reduced) {
       sc.steps.forEach(function (_, i) { var r = seal(sc, sc.steps[i], i, i ? S.rows[i - 1].hash : GENESIS); r.mark = "sealed"; r.fresh = false; S.rows.push(r); });
-      S.phase = "done"; S.step = 2; renderAll();
+      S.phase = "done"; S.step = 3; renderAll();
     } else add(0);
+  }
+  // Before any agent is connected: the window waits, and step 1 is the one to do.
+  function idle() {
+    clear();
+    S = { sc: C.agents[0], rows: [], selected: null, phase: "idle", editing: false, verdict: null, step: 1 };
+    $("dm-scrim").hidden = true;
+    renderAll();
+  }
+  function hint() {
+    if (S.phase === "idle") return "connect";
+    if (S.phase === "recording") return "wait";
+    if (S.step >= 5) return "done";
+    if (S.step === 4) return "verify";
+    if (S.editing) return "save";
+    var r = S.rows.filter(function (x) { return x.seq === S.selected; })[0];
+    return r && r.kind !== "open" ? "edit" : "pick";
   }
 
   function renderAll() { renderChips(); renderSystems(); renderHead(); renderList(); renderDetail(); renderSteps(); }
   function renderChips() {
-    Array.prototype.forEach.call($("dm-chips").children, function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-sc") === S.sc.key)); });
+    Array.prototype.forEach.call($("dm-chips").children, function (b) { b.setAttribute("aria-pressed", String(S.phase !== "idle" && b.getAttribute("data-sc") === S.sc.key)); });
   }
   function renderSystems() {
     $("dm-systems").innerHTML = C.agents.map(function (a) {
       var on = a.key === S.sc.key;
-      var dot = !on ? "ok" : S.phase === "recording" ? "rec" : S.verdict === "bad" ? "bad" : "ok";
-      return '<button class="dm-nav dm-sys' + (on ? " on" : "") + '" type="button" data-sc="' + esc(a.key) + '"><span class="dm-dot ' + dot + '"></span><span>' + esc(a.name) + "</span></button>";
+      var dot = S.phase === "idle" ? "" : !on ? "ok" : S.phase === "recording" ? "rec" : S.verdict === "bad" ? "bad" : "ok";
+      return '<button class="dm-nav dm-sys' + (on && S.phase !== "idle" ? " on" : "") + '" type="button" data-sc="' + esc(a.key) + '"><span class="dm-dot ' + dot + '"></span><span>' + esc(a.name) + "</span></button>";
     }).join("");
   }
   function renderHead() {
@@ -559,12 +644,13 @@ export const DEMO_SCRIPT = String.raw`"use strict";
     $("dm-id").textContent = S.sc.id;
     var b = $("dm-badge");
     var anyEdit = S.rows.some(function (r) { return r.edited; });
-    if (S.phase === "recording") { b.className = "dm-badge rec"; b.textContent = C.badge.recording; }
+    if (S.phase === "idle") { b.className = "dm-badge"; b.textContent = C.badge.idle; }
+    else if (S.phase === "recording") { b.className = "dm-badge rec"; b.textContent = C.badge.recording; }
     else if (S.phase === "verifying") { b.className = "dm-badge"; b.textContent = C.badge.checking; }
     else if (S.verdict === "bad") { b.className = "dm-badge bad"; b.innerHTML = ICON.bad + esc(C.badge.tampered); }
     else if (anyEdit && S.verdict !== "ok") { b.className = "dm-badge warn"; b.textContent = C.badge.unchecked; }
     else { b.className = "dm-badge ok"; b.innerHTML = ICON.ok + esc(C.badge.intact); }
-    var busy = S.phase === "recording" || S.phase === "verifying";
+    var busy = S.phase !== "done";
     $("dm-verify").disabled = busy;
     $("dm-pack").disabled = busy;
     $("dm-verify").classList.toggle("nudge", S.step === 4 && S.phase === "done");
@@ -587,7 +673,8 @@ export const DEMO_SCRIPT = String.raw`"use strict";
       verdict = '<div class="dm-verdict bad" role="status"><b>' + esc(fill(C.bad.title, { seq: k.seq })) + "</b><span>" + esc(fill(C.bad.body, { at: k.at })) + "</span></div>";
     }
     var keep = list.scrollTop;
-    list.innerHTML = '<div class="dm-day">' + esc(C.day) + "</div>" + rows + verdict;
+    var waiting = S.phase === "idle" ? '<div class="dm-waiting">' + ICON.open + "<span>" + esc(C.waiting) + "</span></div>" : "";
+    list.innerHTML = '<div class="dm-day">' + esc(C.day) + "</div>" + waiting + rows + verdict;
     list.scrollTop = S.phase === "recording" ? list.scrollHeight : (S.verdict ? list.scrollHeight : keep);
   }
   function renderDetail() {
@@ -631,23 +718,27 @@ export const DEMO_SCRIPT = String.raw`"use strict";
       li.classList.toggle("now", i + 1 === S.step);
       li.classList.toggle("done", i + 1 < S.step);
     });
+    var h = hint();
+    root.setAttribute("data-hint", h);
+    $("dm-do-text").innerHTML = ICON.arrow + "<span>" + esc(C.hints[h]) + "</span>";
+    var total = C.steps.length, finished = S.step > total, n = Math.min(S.step, total);
+    var bar = "";
+    for (var i = 1; i <= total; i++) bar += '<i class="' + (i < S.step ? "done" : i === S.step ? "on" : "") + '"></i>';
+    $("dm-mbar").innerHTML = '<div class="dm-mbar-t"><b>' + esc(finished ? C.guide.done : fill(C.guide.step, { n: n, t: total })) + "</b><span>" + esc(finished ? "" : C.steps[n - 1][0]) + '</span></div><div class="dm-mbar-bar">' + bar + "</div>";
   }
 
   root.addEventListener("click", function (e) {
     var t = e.target;
     var sc = t.closest("[data-sc]");
     if (sc) { start(sc.getAttribute("data-sc")); return; }
-    // A tap on the window before the agent has started starts it (and that tap does nothing else).
-    if (!S) { if (t.closest(".dm-window")) start(C.agents[0].key); return; }
     var row = t.closest(".dm-row");
     if (row && S && S.phase !== "verifying") {
       S.selected = Number(row.getAttribute("data-seq")); S.editing = false;
-      if (S.step === 2 && S.phase === "done") S.step = 3;
       renderAll(); return;
     }
-    if (t.closest("#dm-edit-open")) { S.editing = true; renderDetail(); var n = $("dm-edit-name"); n.focus(); n.select(); return; }
-    if (t.closest("#dm-edit-cancel")) { S.editing = false; renderDetail(); return; }
-    if (t.closest("#dm-replay")) { start(S.sc.key); return; }
+    if (t.closest("#dm-edit-open")) { S.editing = true; renderAll(); var n = $("dm-edit-name"); n.focus(); n.select(); return; }
+    if (t.closest("#dm-edit-cancel")) { S.editing = false; renderAll(); return; }
+    if (t.closest("#dm-replay")) { idle(); return; }
     if (t.closest("#dm-verify")) { verify(); return; }
     if (t.closest("#dm-pack")) { openPack(); return; }
     if (t.id === "dm-scrim" || t.closest("#dm-pack-close")) { $("dm-scrim").hidden = true; }
@@ -661,7 +752,7 @@ export const DEMO_SCRIPT = String.raw`"use strict";
     r.edited = name !== r.orig.name || r.blocked !== r.orig.blocked;
     S.editing = false; S.verdict = null;
     S.rows.forEach(function (x) { if (x.mark !== "sealing") x.mark = "sealed"; });
-    S.step = 4; renderAll();
+    S.step = S.rows.some(function (x) { return x.edited; }) ? 4 : 3; renderAll();
   });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") $("dm-scrim").hidden = true; });
 
@@ -676,7 +767,7 @@ export const DEMO_SCRIPT = String.raw`"use strict";
       if (i >= S.rows.length) {
         S.phase = "done"; S.verdict = broken ? "bad" : "ok";
         if (broken) S.selected = S.rows.filter(function (r) { return r.mark === "bad"; })[0].seq;
-        S.step = broken ? 5 : 4; renderAll(); return;
+        if (broken) S.step = 5; renderAll(); return;
       }
       var r = S.rows[i];
       var expected = i ? S.rows[i - 1].hash : GENESIS;
@@ -699,13 +790,8 @@ export const DEMO_SCRIPT = String.raw`"use strict";
     $("dm-pack-close").focus();
   }
 
-  // The window rests as the page drew it until it is on screen, then the agent starts working.
-  var first = C.agents[0].key;
-  if ("IntersectionObserver" in window) {
-    var seen = new IntersectionObserver(function (entries) {
-      if (entries.some(function (x) { return x.isIntersecting; })) { seen.disconnect(); if (!S) start(first); }
-    }, { threshold: 0, rootMargin: "0px 0px -30% 0px" });
-    seen.observe(root.querySelector(".dm-window"));
-  } else start(first);
+  // The page drew the window at rest; the script takes it over and waits for the visitor to connect an agent.
+  root.classList.add("live");
+  idle();
 })();
 `;
