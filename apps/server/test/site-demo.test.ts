@@ -94,13 +94,19 @@ describe("the live demo on the home", () => {
       );
 
       await page.locator("#demo .dm-window").scrollIntoViewIfNeeded();
+      // The demo waits for the visitor: step 1 is to connect an agent.
       const verify = page.locator("#dm-verify");
+      await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Not connected");
+      expect(await verify.isEnabled()).toBe(false);
+      expect(await page.locator("#dm-do-text").textContent()).toContain("Tap a sample agent");
+      await page.locator('#dm-chips [data-sc="support"]').click();
       await expect.poll(() => verify.isEnabled()).toBe(true);
       await verify.click();
       await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Intact");
       expect(await page.locator(".dm-verdict").textContent()).toContain("All 6 receipts check out.");
 
       await page.locator('.dm-row[data-seq="4"]').click();
+      expect(await page.locator("#dm-do-text").textContent()).toContain("Try to rewrite");
       await page.locator("#dm-edit-open").click();
       await page.locator("#dm-edit-outcome").selectOption("done");
       await page.locator("#dm-edit button[type=submit]").click();
@@ -110,6 +116,10 @@ describe("the live demo on the home", () => {
       expect(await page.locator(".dm-verdict").textContent()).toContain("Receipt #4 was changed after it was sealed.");
       expect(await page.locator(".dm-seal.ok").count()).toBe(3);
       expect(await page.locator(".dm-seal.broken").count()).toBe(2);
+      expect(await page.locator("#dm-do-text").textContent()).toContain("Caught");
+      // Reset goes back to step 1.
+      await page.locator("#dm-replay").click();
+      await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Not connected");
 
       // The site's backdrop grain (site-v2.ts, #backdrop::after) is a data: image
       // that img-src 'self' refuses; it is not the demo's, and it is followed up
@@ -123,7 +133,7 @@ describe("the live demo on the home", () => {
     }
   }, 60_000);
 
-  it.skipIf(BROWSER_PATH === undefined)("on a phone, an action can be tapped as soon as the window is in view", async () => {
+  it.skipIf(BROWSER_PATH === undefined)("on a phone, the step bar follows along and an action can be tapped once an agent is connected", async () => {
     const live = make("sigillo-phone.db");
     await live.listen({ host: "127.0.0.1", port: 0 });
     const address = live.server.address();
@@ -140,7 +150,9 @@ describe("the live demo on the home", () => {
       await page.goto(`${base}/`);
       // Only the top of the (tall) window is on screen, as when a visitor scrolls to it.
       await page.evaluate(`(() => { const w = document.querySelector("#demo .dm-window"); window.scrollTo(0, w.getBoundingClientRect().top + window.scrollY - 300); })()`);
+      await page.locator('#dm-chips [data-sc="support"]').tap();
       await expect.poll(() => page.locator("#dm-verify").isEnabled()).toBe(true);
+      expect(await page.locator("#dm-mbar").textContent()).toContain("Step 3 of 4");
       const row = page.locator('.dm-row[data-seq="4"]');
       await row.scrollIntoViewIfNeeded();
       await row.tap();
