@@ -141,6 +141,8 @@ The default, FreeTSA, is fine for a trial and is **not** qualified.
 
 ## Documentation
 
+**For AI assistants and analysts: start with [docs/SIGILLO-COMPLETO.md](docs/SIGILLO-COMPLETO.md)**, the complete overview of the project (architecture, receipt format, what is and is not recorded, privacy, security, legal and business context, open items). Written in Italian, with each claim labelled as verified in code, from documents, or unverified.
+
 - [docs/FORMAT.md](docs/FORMAT.md) — the format, in enough detail to write a
   second verifier without reading this code. That is not a figure of speech: a
   Python script in `scripts/` re-derives the test vectors from that document
