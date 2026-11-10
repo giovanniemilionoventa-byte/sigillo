@@ -4,7 +4,7 @@ import { ICONS, SEAL_SVG, STATE_ICONS } from "./style.js";
 import { PROOF_ICONS } from "./style-v2.js";
 import type { Language } from "./locale.js";
 import { BLOG_STYLE } from "./site-blog.js";
-import { DEMO_STYLE, demoSection } from "./site-demo.js";
+import { DEMO_SCRIPT_URL, DEMO_STYLE, demoSection } from "./site-demo.js";
 
 /**
  * The redesigned public home (SIGILLO_SITE_V2): one page with anchors, drawn
@@ -619,7 +619,7 @@ ${footer}`;
 <div id="backdrop" aria-hidden="true"><i></i><i></i><i></i></div>
 ${body}
 <script src="/site.js" defer></script>
-<script src="/demo.js" defer></script>
+<script src="${DEMO_SCRIPT_URL}" defer></script>
 </body></html>`;
 }
 

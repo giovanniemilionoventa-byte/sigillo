@@ -4434,3 +4434,16 @@ console (frase, tabella, «Dettagli tecnici»).
   firma) e che la ricevuta riscritta non verifichi più.
 - Nessuna dipendenza nuova. Il verificatore non cambia. Il test `agent-upload-languages` fallisce
   anche su `main` in questo ambiente (non dipende da questa modifica).
+
+## Sito: demo come la proposta B, e script con impronta nell'indirizzo (2026-11-10)
+
+Giovanni ha provato la demo della PR #150 dal telefono: non si poteva selezionare niente, e la
+proposta A non gli era chiara. La demo è rifatta come la proposta B: a sinistra la guida (passo
+n di 4, «Cosa fare», elenco dei passi), a destra il simulatore con l'elenco delle azioni come
+nella console; toccando un'azione si apre sotto la sua ricevuta (frase, tabella, «Dettagli
+tecnici») e lì si riscrive e si salva. Il verdetto della verifica compare nella guida.
+
+- Causa del «non si seleziona»: `/demo.js` è servito con `max-age=3600`, e il telefono aveva
+  ancora la copia vecchia con la pagina nuova. Ora l'indirizzo è `/demo.js?v=<impronta del
+  testo>` (`DEMO_SCRIPT_URL`), quindi ogni modifica dello script cambia indirizzo.
+- Ricevute, firma e verifica non cambiano rispetto alla PR #150 (formato v4, Ed25519 nel browser).
