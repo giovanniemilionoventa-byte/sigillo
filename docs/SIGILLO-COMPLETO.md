@@ -375,7 +375,7 @@ Pagine: `/` (home), `/verify`, `/privacy`, `/terms`, `/dpa`, `/blog` (10 articol
 
 - Solo inglese, salvo `SIGILLO_ITALIAN`. Tema scuro predefinito. Menu: How it works, Pricing, Verify, Privacy, Blog.
 - Video YouTube `lTTV6yQlZd8` incorporato nella home.
-- **Zona demo** separata con tre agenti di esempio (assistenza, fatture, selezione CV) e tutorial in 4 passi (PR #147). Dati finti, gira nel browser.
+- **Zona demo** nella home con tre agenti di esempio (assistenza, fatture, selezione CV). Dal 2026-11-10 ridisegnata in tre passi (Registra, Modifica, Verifica) con ricevute nel formato vero v4, firmate con una chiave Ed25519 creata nel browser. Dati finti, gira nel browser.
 - Sezione AI Act: tabella con articoli 12, 14, 26, titoli ufficiali e riga della fonte (PR #146).
 - Fatti dichiarati sul sito: "Server: Aruba, Italy", "Timestamp: freetsa.org, not eIDAS qualified", "Verifier: open source".
 

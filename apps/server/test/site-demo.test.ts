@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { chromium } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { GENESIS_PREV_HASH, parseReceipt, publicKeyFromRaw, receiptHashHex, verifyReceiptSignature } from "@sigillo/core";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { FirebaseAuth } from "../src/auth/firebase.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
@@ -45,13 +46,13 @@ describe("the live demo on the home", () => {
     for (const page of [en, it_]) {
       expect(page).toContain('id="demo"');
       expect(page).toContain('<script src="/demo.js" defer></script>');
-      expect(page.match(/class="dm-row"/g)?.length).toBe(6);
+      expect(page.match(/class="dm-rc"/g)?.length).toBe(6);
       const data = page.slice(page.indexOf('id="dm-data">'), page.indexOf("</script>", page.indexOf('id="dm-data">')));
       expect(data).not.toContain("<");
     }
-    expect(en).toContain("Watch an AI agent leave a record it can&#39;t rewrite");
+    expect(en).toContain("Try to rewrite an AI agent&#39;s record");
     expect(en).not.toContain("rimborsa_pagamento");
-    expect(it_).toContain("Ha provato «rimborsa_pagamento»");
+    expect(it_).toContain("Prova a riscrivere il registro di un agente AI");
     // It sits right under the opening, before the rest of the page.
     expect(en.indexOf('id="demo"')).toBeLessThan(en.indexOf('id="problema"'));
 
@@ -61,7 +62,7 @@ describe("the live demo on the home", () => {
     expect(script.body).toBe(DEMO_SCRIPT);
   });
 
-  it.skipIf(BROWSER_PATH === undefined)("runs in a browser under the site's policy, and Verify finds a rewritten receipt", async () => {
+  it.skipIf(BROWSER_PATH === undefined)("runs in a browser under the site's policy: real receipts, and Verify finds a rewritten one", async () => {
     const policy = caddyfilePolicy();
     const live = make("sigillo-live.db");
     live.addHook("onSend", async (_request, reply) => {
@@ -93,33 +94,61 @@ describe("the live demo on the home", () => {
         createHash("sha256").update(sample, "utf8").digest("hex"),
       );
 
-      await page.locator("#demo .dm-window").scrollIntoViewIfNeeded();
-      // The demo waits for the visitor: step 1 is to connect an agent.
-      const verify = page.locator("#dm-verify");
-      await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Not connected");
-      expect(await verify.isEnabled()).toBe(false);
-      expect(await page.locator("#dm-do-text").textContent()).toContain("Tap a sample agent");
-      await page.locator('#dm-chips [data-sc="support"]').click();
-      await expect.poll(() => verify.isEnabled()).toBe(true);
-      await verify.click();
-      await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Intact");
-      expect(await page.locator(".dm-verdict").textContent()).toContain("All 6 receipts check out.");
+      await page.locator("#demo .dm-card").scrollIntoViewIfNeeded();
+      // The demo waits for the visitor: step 1 is to start the agent.
+      const go = page.locator("#dm-go");
+      expect(await page.locator("#dm-badge").textContent()).toBe("Not connected");
+      expect(await go.textContent()).toContain("Start the agent");
+      await go.click();
+      await expect.poll(() => go.textContent()).toContain("Edit a receipt");
+      expect(await page.locator("button.dm-rc").count()).toBe(6);
 
-      await page.locator('.dm-row[data-seq="4"]').click();
-      expect(await page.locator("#dm-do-text").textContent()).toContain("Try to rewrite");
-      await page.locator("#dm-edit-open").click();
-      await page.locator("#dm-edit-outcome").selectOption("done");
-      await page.locator("#dm-edit button[type=submit]").click();
-      await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Not checked since a change");
-      await verify.click();
+      // The receipts are sigillo's own: they parse as version 4, their hash is core's, their signature verifies under the key the page made.
+      const made = (await page.evaluate(`(async () => {
+        const s = window.sigilloDemo.state();
+        const raw = new Uint8Array(await crypto.subtle.exportKey("raw", s.key.pub));
+        return { receipts: s.rows.map((x) => x.r), hashes: s.rows.map((x) => x.hash), key: Array.from(raw) };
+      })()`)) as { receipts: unknown[]; hashes: string[]; key: number[] };
+      const publicKey = publicKeyFromRaw(new Uint8Array(made.key));
+      expect(made.receipts).toHaveLength(6);
+      made.receipts.forEach((raw, index) => {
+        const receipt = parseReceipt(raw);
+        expect(receipt.v).toBe(4);
+        expect(receipt.seq).toBe(index);
+        expect(receiptHashHex(receipt)).toBe(made.hashes[index]);
+        expect(verifyReceiptSignature(receipt, publicKey)).toBe(true);
+        expect(receipt.prev_hash).toBe(index === 0 ? GENESIS_PREV_HASH : made.hashes[index - 1]);
+      });
+
+      // Step 2: rewrite the decision (receipt 4) the way someone with database access could.
+      await go.click();
+      await page.locator("#dm-edit-name").fill("approve_everything");
+      await go.click();
+      await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Edited, not checked");
+      expect(await go.textContent()).toContain("Verify the chain");
+      // Step 3: Verify.
+      await go.click();
       await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Tampered");
-      expect(await page.locator(".dm-verdict").textContent()).toContain("Receipt #4 was changed after it was sealed.");
-      expect(await page.locator(".dm-seal.ok").count()).toBe(3);
-      expect(await page.locator(".dm-seal.broken").count()).toBe(2);
-      expect(await page.locator("#dm-do-text").textContent()).toContain("Caught");
+      expect(await page.locator("#dm-side").textContent()).toContain("Receipt no. 4 was changed after it was sealed.");
+      expect(await page.locator("#dm-side").textContent()).toContain("receipt no. 5 no longer matches");
+      expect(await page.locator("button.dm-rc .dm-tag.ok").count()).toBe(4);
+      expect(await page.locator("button.dm-rc.is-bad").count()).toBe(1);
+      expect(await page.locator("button.dm-rc.is-broken").count()).toBe(1);
+      // The rewritten receipt, hashed by core, is not the sealed hash, and its signature no longer holds.
+      const edited = (await page.evaluate(`window.sigilloDemo.state().rows[4].r`)) as unknown;
+      const rewritten = parseReceipt(edited);
+      expect(receiptHashHex(rewritten)).not.toBe(made.hashes[4]);
+      expect(verifyReceiptSignature(rewritten, publicKey)).toBe(false);
+
       // Reset goes back to step 1.
-      await page.locator("#dm-replay").click();
-      await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Not connected");
+      await page.locator("#dm-reset").click();
+      expect(await page.locator("#dm-badge").textContent()).toBe("Not connected");
+      // An untouched run verifies.
+      await go.click();
+      await expect.poll(() => go.textContent()).toContain("Edit a receipt");
+      await page.evaluate(`window.sigilloDemo.state().phase = "edited"`);
+      await page.evaluate(`document.getElementById("dm-go").click()`);
+      await expect.poll(() => page.locator("#dm-side").textContent()).toContain("All 6 receipts check out.");
 
       // The site's backdrop grain (site-v2.ts, #backdrop::after) is a data: image
       // that img-src 'self' refuses; it is not the demo's, and it is followed up
@@ -133,7 +162,7 @@ describe("the live demo on the home", () => {
     }
   }, 60_000);
 
-  it.skipIf(BROWSER_PATH === undefined)("on a phone, the step bar follows along and an action can be tapped once an agent is connected", async () => {
+  it.skipIf(BROWSER_PATH === undefined)("on a phone, the chain scrolls sideways and a receipt can be tapped once the agent has run", async () => {
     const live = make("sigillo-phone.db");
     await live.listen({ host: "127.0.0.1", port: 0 });
     const address = live.server.address();
@@ -148,15 +177,15 @@ describe("the live demo on the home", () => {
         extraHTTPHeaders: { "accept-language": "en" },
       });
       await page.goto(`${base}/`);
-      // Only the top of the (tall) window is on screen, as when a visitor scrolls to it.
-      await page.evaluate(`(() => { const w = document.querySelector("#demo .dm-window"); window.scrollTo(0, w.getBoundingClientRect().top + window.scrollY - 300); })()`);
-      await page.locator('#dm-chips [data-sc="support"]').tap();
-      await expect.poll(() => page.locator("#dm-verify").isEnabled()).toBe(true);
-      expect(await page.locator("#dm-mbar").textContent()).toContain("Step 3 of 4");
-      const row = page.locator('.dm-row[data-seq="4"]');
-      await row.scrollIntoViewIfNeeded();
-      await row.tap();
-      await expect.poll(() => page.locator(".dm-d-title").first().textContent()).toContain("refund_payment");
+      await page.locator("#demo .dm-card").scrollIntoViewIfNeeded();
+      await page.locator("#dm-go").tap();
+      await expect.poll(() => page.locator("#dm-go").textContent()).toContain("Edit a receipt");
+      // The page itself does not scroll sideways.
+      expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
+      const card = page.locator('button.dm-rc[data-seq="3"]');
+      await card.scrollIntoViewIfNeeded();
+      await card.tap();
+      await expect.poll(() => page.locator(".dm-title").first().textContent()).toContain("refund_payment");
     } finally {
       await browser.close();
       await live.close();
