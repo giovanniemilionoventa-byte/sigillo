@@ -62,8 +62,8 @@ interface DemoCopy {
   choose: string;
   window: string;
   reset: string;
-  steps: [string, string, string, string];
-  guide: { step: string; done: string; idle: Guide; recording: Guide; ready: Guide; editing: Guide; edited: Guide };
+  steps: [string, string, string];
+  guide: { step: string; done: string; other: string; idle: Guide; recording: Guide; ready: Guide; editing: Guide; edited: Guide };
   go: { verify: string; checking: string; pack: string };
   list: { title: string; count: string; day: string; waiting: string; rewrite: string };
   badge: { idle: string; recording: string; intact: string; edited: string; checking: string; tampered: string };
@@ -106,18 +106,19 @@ const EN: DemoCopy = {
   choose: "Choose a sample agent",
   window: "sigillo demo",
   reset: "Reset",
-  steps: ["Choose an agent", "Watch it work", "Edit the record", "Verify and find out"],
+  steps: ["Watch the agent work", "Edit the record", "Verify and find out"],
   guide: {
-    step: "Step {n} of 4",
+    step: "Step {n} of 3",
     done: "All done",
-    idle: { t: "Choose an agent", p: "Pick a sample agent. It will work in front of you, and each action it takes becomes a receipt: signed, and linked to the one before.", todo: "Tap one of the sample agents below.", why: "Nothing you do here leaves your browser." },
-    recording: { t: "Watch it work", p: "Each action gets a receipt as it happens. Every receipt holds the fingerprint of the one before it: that link is the chain.", todo: "Wait a moment while the receipts arrive.", why: "A tool's arguments are never stored, only their fingerprint." },
+    other: "Try another sample agent",
+    idle: { t: "An agent is about to start", p: "A sample agent works while you watch. Each action it takes becomes a receipt: signed, and linked to the one before.", todo: "Nothing to do yet: it starts by itself.", why: "Nothing you do here leaves your browser." },
+    recording: { t: "Watch it work", p: "Each action gets a receipt as it happens. Every receipt holds the fingerprint of the one before it: that link is the chain.", todo: "Watch the receipts arrive in the list on the right.", why: "A tool's arguments are never stored, only their fingerprint." },
     ready: { t: "Now try to cheat", p: "Imagine you have access to the database and want the record to say something else. Open an action, then try to rewrite it.", todo: "Tap an action in the list, then press “Try to rewrite this receipt”.", why: "The seal is not updated: it is like erasing in pencil on a signed sheet." },
     editing: { t: "Rewrite the stored receipt", p: "Change the name of the action, or its outcome, the way someone with database access could.", todo: "Change a field, then press “Save change”.", why: "This edits the stored row directly. The signature stays the old one." },
     edited: { t: "Verify and find out", p: "The receipt now says something else, but its seal is still the old one. Ask sigillo to check the whole chain.", todo: "Press “Verify the chain”, at the top of the list.", why: "sigillo recomputes every fingerprint and checks every signature and link." },
   },
   go: { verify: "Verify the chain", checking: "Checking…", pack: "Prepare the evidence pack" },
-  list: { title: "Recorded actions", count: "{n} receipts today", day: "Today · Wednesday 4 November", waiting: "No agent connected yet. Choose one on the left to start recording.", rewrite: "Try to rewrite this receipt" },
+  list: { title: "Recorded actions", count: "{n} receipts today", day: "Today · Wednesday 4 November", waiting: "The agent will start in a moment.", rewrite: "Try to rewrite this receipt" },
   badge: { idle: "Not connected", recording: "Recording", intact: "Intact", edited: "Edited, not checked", checking: "Checking…", tampered: "Tampered" },
   marks: { sealing: "Sealing…", sealed: "Sealed", ok: "Verified", bad: "Altered", broken: "Not trusted" },
   no: "No. {n}",
@@ -221,18 +222,19 @@ const IT: DemoCopy = {
   choose: "Scegli un agente d'esempio",
   window: "Demo di sigillo",
   reset: "Ricomincia",
-  steps: ["Scegli un agente", "Guardalo lavorare", "Modifica il registro", "Verifica e scoprilo"],
+  steps: ["Guarda l'agente lavorare", "Modifica il registro", "Verifica e scoprilo"],
   guide: {
-    step: "Passo {n} di 4",
+    step: "Passo {n} di 3",
     done: "Fatto",
-    idle: { t: "Scegli un agente", p: "Scegli un agente d'esempio. Lavorerà davanti a te, e ogni azione che compie diventa una ricevuta: firmata e legata alla precedente.", todo: "Tocca uno degli agenti d'esempio qui sotto.", why: "Quello che fai qui non esce dal tuo browser." },
-    recording: { t: "Guardalo lavorare", p: "Ogni azione riceve una ricevuta mentre accade. Ogni ricevuta contiene l'impronta della precedente: quel legame è la catena.", todo: "Aspetta un momento: arrivano le ricevute.", why: "Gli argomenti di uno strumento non si salvano mai, solo la loro impronta." },
+    other: "Prova un altro agente d'esempio",
+    idle: { t: "Sta per partire un agente", p: "Un agente d'esempio lavora mentre guardi. Ogni azione che compie diventa una ricevuta: firmata e legata alla precedente.", todo: "Non devi fare ancora niente: parte da solo.", why: "Quello che fai qui non esce dal tuo browser." },
+    recording: { t: "Guardalo lavorare", p: "Ogni azione riceve una ricevuta mentre accade. Ogni ricevuta contiene l'impronta della precedente: quel legame è la catena.", todo: "Guarda arrivare le ricevute nell'elenco a destra.", why: "Gli argomenti di uno strumento non si salvano mai, solo la loro impronta." },
     ready: { t: "Ora prova a barare", p: "Immagina di avere accesso al database e di volere che il registro dica un'altra cosa. Apri un'azione e prova a riscriverla.", todo: "Tocca un'azione dell'elenco, poi premi «Prova a riscrivere questa ricevuta».", why: "Il sigillo non viene aggiornato: è come cancellare a matita su un foglio firmato." },
     editing: { t: "Riscrivi la ricevuta salvata", p: "Cambia il nome dell'azione, o il suo esito, come potrebbe fare chi ha accesso al database.", todo: "Cambia un campo, poi premi «Salva la modifica».", why: "Modifica la riga salvata direttamente. La firma resta quella vecchia." },
     edited: { t: "Verifica e scoprilo", p: "La ricevuta ora dice altro, ma il suo sigillo è ancora quello vecchio. Chiedi a sigillo di controllare tutta la catena.", todo: "Premi «Verifica la catena», in alto sopra l'elenco.", why: "sigillo ricalcola ogni impronta e controlla ogni firma e ogni legame." },
   },
   go: { verify: "Verifica la catena", checking: "Controllo…", pack: "Prepara il fascicolo" },
-  list: { title: "Azioni registrate", count: "{n} ricevute oggi", day: "Oggi · mercoledì 4 novembre", waiting: "Nessun agente collegato. Scegline uno a sinistra per iniziare a registrare.", rewrite: "Prova a riscrivere questa ricevuta" },
+  list: { title: "Azioni registrate", count: "{n} ricevute oggi", day: "Oggi · mercoledì 4 novembre", waiting: "L'agente parte tra un momento.", rewrite: "Prova a riscrivere questa ricevuta" },
   badge: { idle: "Non collegato", recording: "Registra", intact: "Integro", edited: "Modificato, non controllato", checking: "Controllo…", tampered: "Alterato" },
   marks: { sealing: "Sigillo in corso…", sealed: "Sigillata", ok: "Verificata", bad: "Alterata", broken: "Non affidabile" },
   no: "N. {n}",
@@ -360,7 +362,7 @@ export function demoSection(language: Language): string {
   const first = c.agents[0];
   if (first === undefined) return "";
   const icon = (name: string): string => ICON[name] ?? "";
-  const chips = c.agents.map((a) => `<button class="dm-chip" type="button" data-sc="${escape(a.key)}">${escape(a.tab)}</button>`).join("");
+  const chips = c.agents.map((a, i) => `<button class="dm-chip" type="button" data-sc="${escape(a.key)}" aria-pressed="${i === 0}">${escape(a.tab)}</button>`).join("");
   const steps = c.steps.map((label, i) => `<li class="dm-st${i === 0 ? " now" : ""}"><i>${i + 1}</i>${escape(label)}</li>`).join("");
   const g = c.guide.idle;
   const rows = first.steps
@@ -379,9 +381,9 @@ export function demoSection(language: Language): string {
 <div class="dm-grid" role="region" aria-label="${escape(c.window)}">
 <aside class="dm-guide">
 <span class="dm-k" id="dm-k">${escape(c.guide.step.replace("{n}", "1"))}</span>
-<div class="dm-bar"><i id="dm-bar" style="width:25%"></i></div>
+<div class="dm-bar"><i id="dm-bar" style="width:33%"></i></div>
 <div id="dm-gbody"><h3>${escape(g.t)}</h3><p>${escape(g.p)}</p><div class="dm-todo"><b>${escape(c.guide.step.replace("{n}", "1").toUpperCase())}</b>${escape(g.todo)}</div><p class="dm-why">${escape(g.why)}</p></div>
-<div class="dm-chips" id="dm-chips" role="group" aria-label="${escape(c.choose)}">${chips}</div>
+<div class="dm-other"><span>${escape(c.guide.other)}</span><div class="dm-chips" id="dm-chips" role="group" aria-label="${escape(c.choose)}">${chips}</div></div>
 <ol class="dm-steps" id="dm-steps">${steps}</ol>
 <button class="dm-btn dm-reset" id="dm-reset" type="button">${icon("replay")}${escape(c.reset)}</button>
 </aside>
@@ -416,9 +418,11 @@ export const DEMO_STYLE = `
 .dm-todo { margin-top: 16px; background: var(--selected); border: 1px solid var(--action); border-radius: 12px; padding: 14px 16px; font-size: 15px; line-height: 1.5; color: var(--text); }
 .dm-todo b { display: block; font-size: 11.5px; letter-spacing: 0.08em; color: var(--link); margin-bottom: 5px; }
 .dm-guide p.dm-why { margin-top: 14px; font-size: 13.5px; color: var(--secondary); border-left: 2px solid var(--separator); padding-left: 12px; }
-.dm-chips { display: grid; gap: 8px; }
-.dm-chip { display: flex; align-items: center; min-height: 46px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--action); background: var(--surface); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; animation: dm-ring 1.8s ease-in-out infinite; }
+.dm-other { display: grid; gap: 8px; font-size: 13px; color: var(--secondary); }
+.dm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dm-chip { min-height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--separator); background: var(--surface); color: var(--label); font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer; }
 .dm-chip:hover { background: var(--hover); }
+.dm-chip[aria-pressed="true"] { background: var(--selected); border-color: var(--action); color: var(--text); }
 .dm-steps { list-style: none; margin: auto 0 0; padding: 0; display: grid; gap: 2px; font-size: 14px; }
 .dm-st { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; color: var(--secondary); }
 .dm-st i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 700; background: var(--fill); flex: none; }
@@ -513,7 +517,7 @@ button.dm-row:hover { background: var(--hover); }
 .dm-btn.pri:hover:not(:disabled) { background: var(--action); filter: brightness(1.1); }
 .dm-btn.pulse:not(:disabled) { animation: dm-ring 1.8s ease-in-out infinite; }
 .dm-btn svg { width: 15px; height: 15px; }
-.dm:not(.live) .dm-chips, .dm:not(.live) .dm-reset { display: none; }
+.dm:not(.live) .dm-other, .dm:not(.live) .dm-reset { display: none; }
 .dm-scrim { position: absolute; inset: 0; background: var(--scrim); display: grid; place-items: center; padding: 16px; z-index: 2; border-radius: 20px; }
 .dm-scrim[hidden] { display: none; }
 .dm-sheet { width: min(440px, 100%); background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-sheet); padding: 20px; display: grid; gap: 12px; animation: dm-in 0.25s ease-out both; }
@@ -717,21 +721,20 @@ export const DEMO_SCRIPT = String.raw`"use strict";
     return fill(tpl, { name: r.action.name });
   }
 
-  // The four steps of the guide: 1 choose, 2 watch, 3 edit, 4 verify.
+  // The three steps of the guide: 1 watch the agent work, 2 edit the record, 3 verify.
   function step() {
-    return { idle: 1, recording: 2, ready: 3, editing: 3, edited: 4, verifying: 4, done: 5 }[S.phase];
+    return { idle: 1, recording: 1, ready: 2, editing: 2, edited: 3, verifying: 3, done: 4 }[S.phase];
   }
   function renderAll() { renderGuide(); renderHead(); renderList(); }
   function renderGuide() {
     var n = step(), total = C.steps.length, finished = n > total;
     $("dm-k").textContent = finished ? C.guide.done : fill(C.guide.step, { n: n });
-    $("dm-bar").style.width = (finished ? 100 : n * 25) + "%";
-    $("dm-chips").style.display = S.phase === "idle" ? "" : "none";
+    $("dm-bar").style.width = (finished ? 100 : Math.round(n * 100 / total)) + "%";
+    Array.prototype.forEach.call($("dm-chips").children, function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-sc") === S.sc.key)); });
     $("dm-steps").innerHTML = C.steps.map(function (label, i) {
       var cls = i + 1 < n ? " done" : i + 1 === n ? " now" : "";
       return '<li class="dm-st' + cls + '"><i>' + (i + 1 < n ? "✓" : i + 1) + "</i>" + esc(label) + "</li>";
     }).join("");
-    $("dm-reset").disabled = S.phase === "idle";
     var body = $("dm-gbody"), v = S.verdict;
     if (S.phase === "done" && v) {
       var items;
@@ -893,7 +896,7 @@ export const DEMO_SCRIPT = String.raw`"use strict";
     }
     if (t.closest("#dm-edit-open")) { beginEdit(); return; }
     if (t.closest("#dm-edit-cancel")) { cancelEdit(); return; }
-    if (t.closest("#dm-reset")) { idle(S.sc.key); return; }
+    if (t.closest("#dm-reset")) { idle(S.sc.key); record(); return; }
     if (t.closest("#dm-verify")) { verify(); return; }
     if (t.closest("#dm-pack")) { openPack(); return; }
     if (t.id === "dm-scrim" || t.closest("#dm-pack-close")) { $("dm-scrim").hidden = true; }
@@ -904,10 +907,18 @@ export const DEMO_SCRIPT = String.raw`"use strict";
   });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") $("dm-scrim").hidden = true; });
 
-  // The page drew the first agent's actions at rest; the script takes it over and waits for the visitor to choose an agent.
+  // The page drew the first agent's actions at rest; the script takes it over. The first agent starts by itself the moment the demo comes into view.
   root.classList.add("live");
   window.sigilloDemo = { state: function () { return S; }, receiptHash: receiptHash, canon: canon };
   idle(C.agents[0].key);
+  var grid = root.querySelector(".dm-grid");
+  function autostart() { if (S.phase === "idle") record(); }
+  if ("IntersectionObserver" in window && grid) {
+    var seen = new IntersectionObserver(function (entries) {
+      if (entries.some(function (en) { return en.isIntersecting; })) { seen.disconnect(); autostart(); }
+    }, { threshold: 0.3 });
+    seen.observe(grid);
+  } else autostart();
 })();
 `;
 
