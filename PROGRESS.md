@@ -4416,3 +4416,21 @@ Restano al titolare: SSH solo con chiave e niente aggiornamento automatico da ma
 copie fuori sede su uno spazio che non permetta di cancellare; revocare la chiave sigillo finita
 in chiaro in un file d'esempio. Il punto del modello locale (porta casuale e allarme se qualcun
 altro lo usa) aspetta il suo via libera.
+
+## Sito: demo ridisegnata, ricevute vere (2026-11-10)
+
+La demo nella home (`apps/server/src/http/site-demo.ts`) è stata ridisegnata su richiesta di
+Giovanni (proposta «A, essenziale»): tre passi (Registra, Modifica, Verifica), un solo pulsante
+alla volta, le ricevute in fila come una catena e, sotto, il pannello della ricevuta com'è nella
+console (frase, tabella, «Dettagli tecnici»).
+
+- Le ricevute sono nel **formato vero v4** (`docs/FORMAT.md`): JSON canonico RFC 8785, SHA-256,
+  firma Ed25519 sull'impronta, `prev_hash` verso la precedente. La chiave è creata nel browser
+  del visitatore a ogni prova (WebCrypto); il server non tiene nessuna chiave per la demo. In un
+  browser senza Ed25519 restano impronte e legami, e il verdetto lo dice.
+- Gli argomenti degli strumenti sono solo impronte (schema `plain`); importi e beneficiari non
+  compaiono più in chiaro da nessuna parte.
+- Il test nel browser controlla le ricevute della pagina con `@sigillo/core` (parseReceipt, hash,
+  firma) e che la ricevuta riscritta non verifichi più.
+- Nessuna dipendenza nuova. Il verificatore non cambia. Il test `agent-upload-languages` fallisce
+  anche su `main` in questo ambiente (non dipende da questa modifica).
