@@ -4447,3 +4447,11 @@ tecnici») e lì si riscrive e si salva. Il verdetto della verifica compare nell
   ancora la copia vecchia con la pagina nuova. Ora l'indirizzo è `/demo.js?v=<impronta del
   testo>` (`DEMO_SCRIPT_URL`), quindi ogni modifica dello script cambia indirizzo.
 - Ricevute, firma e verifica non cambiano rispetto alla PR #150 (formato v4, Ed25519 nel browser).
+
+## Sito: la demo parte da sola (2026-11-10)
+
+Giovanni: all'inizio non era intuitivo scegliere l'agente. Ora il primo agente (assistenza
+clienti) parte da solo appena la demo entra nello schermo (`IntersectionObserver`, soglia 30%;
+senza di esso parte subito). I passi sono 3 (guarda l'agente lavorare, modifica, verifica); gli
+altri agenti restano come scelta secondaria sotto la guida, e «Ricomincia» fa ripartire lo stesso
+agente.

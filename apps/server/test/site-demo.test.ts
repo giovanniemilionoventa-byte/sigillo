@@ -97,14 +97,10 @@ describe("the live demo on the home", () => {
       );
 
       await page.locator("#demo .dm-grid").scrollIntoViewIfNeeded();
-      // The demo waits for the visitor: step 1 is to choose an agent.
+      // The first agent starts by itself once the demo is in view.
       const verify = page.locator("#dm-verify");
-      expect(await page.locator("#dm-badge").textContent()).toBe("Not connected");
-      expect(await verify.isEnabled()).toBe(false);
-      expect(await page.locator("#dm-k").textContent()).toBe("Step 1 of 4");
-      await page.locator('.dm-chip[data-sc="support"]').click();
       await expect.poll(() => verify.isEnabled()).toBe(true);
-      expect(await page.locator("#dm-k").textContent()).toBe("Step 3 of 4");
+      expect(await page.locator("#dm-k").textContent()).toBe("Step 2 of 3");
       expect(await page.locator("button.dm-row").count()).toBe(6);
 
       // The receipts are sigillo's own: they parse as version 4, their hash is core's, their signature verifies under the key the page made.
@@ -130,7 +126,7 @@ describe("the live demo on the home", () => {
       await page.locator("#dm-edit-name").fill("approve_everything");
       await page.locator('#dm-edit button[type="submit"]').click();
       await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Edited, not checked");
-      expect(await page.locator("#dm-k").textContent()).toBe("Step 4 of 4");
+      expect(await page.locator("#dm-k").textContent()).toBe("Step 3 of 3");
       // Step 4: Verify.
       await verify.click();
       await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Tampered");
@@ -145,9 +141,11 @@ describe("the live demo on the home", () => {
       expect(receiptHashHex(rewritten)).not.toBe(made.hashes[4]);
       expect(verifyReceiptSignature(rewritten, publicKey)).toBe(false);
 
-      // Reset goes back to step 1, and an untouched run verifies.
+      // Reset starts the agent again, and an untouched run verifies.
       await page.locator("#dm-reset").click();
-      expect(await page.locator("#dm-badge").textContent()).toBe("Not connected");
+      expect(await page.locator("#dm-badge").textContent()).toBe("Recording");
+      await expect.poll(() => verify.isEnabled()).toBe(true);
+      // Another sample agent can be chosen.
       await page.locator('.dm-chip[data-sc="invoice"]').click();
       await expect.poll(() => verify.isEnabled()).toBe(true);
       await verify.click();
@@ -181,7 +179,6 @@ describe("the live demo on the home", () => {
       });
       await page.goto(`${base}/`);
       await page.locator("#demo .dm-grid").scrollIntoViewIfNeeded();
-      await page.locator('.dm-chip[data-sc="support"]').tap();
       await expect.poll(() => page.locator("#dm-verify").isEnabled()).toBe(true);
       // The page itself does not scroll sideways.
       expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
