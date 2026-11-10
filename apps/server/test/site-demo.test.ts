@@ -11,7 +11,7 @@ import { FirebaseAuth } from "../src/auth/firebase.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
 import { buildServer } from "../src/http/server.js";
-import { DEMO_SCRIPT } from "../src/http/site-demo.js";
+import { DEMO_SCRIPT, DEMO_SCRIPT_URL } from "../src/http/site-demo.js";
 import { ReceiptStore } from "../src/storage/store.js";
 import { BROWSER_PATH, caddyfilePolicy } from "./helpers/browser.js";
 import { createTestSigner } from "./helpers/signer.js";
@@ -45,8 +45,8 @@ describe("the live demo on the home", () => {
     const it_ = (await app.inject({ method: "GET", url: "/", headers: { "accept-language": "it" } })).body;
     for (const page of [en, it_]) {
       expect(page).toContain('id="demo"');
-      expect(page).toContain('<script src="/demo.js" defer></script>');
-      expect(page.match(/class="dm-rc"/g)?.length).toBe(6);
+      expect(page).toMatch(/<script src="\/demo\.js\?v=[0-9a-f]{12}" defer><\/script>/);
+      expect(page.match(/class="dm-row"/g)?.length).toBe(6);
       const data = page.slice(page.indexOf('id="dm-data">'), page.indexOf("</script>", page.indexOf('id="dm-data">')));
       expect(data).not.toContain("<");
     }
@@ -60,6 +60,8 @@ describe("the live demo on the home", () => {
     expect(script.statusCode).toBe(200);
     expect(script.headers["content-type"]).toBe("text/javascript; charset=utf-8");
     expect(script.body).toBe(DEMO_SCRIPT);
+    // The address changes with the script, so a browser that kept an older copy fetches the new one.
+    expect(DEMO_SCRIPT_URL).toMatch(/^\/demo\.js\?v=[0-9a-f]{12}$/);
   });
 
   it.skipIf(BROWSER_PATH === undefined)("runs in a browser under the site's policy: real receipts, and Verify finds a rewritten one", async () => {
@@ -94,14 +96,16 @@ describe("the live demo on the home", () => {
         createHash("sha256").update(sample, "utf8").digest("hex"),
       );
 
-      await page.locator("#demo .dm-card").scrollIntoViewIfNeeded();
-      // The demo waits for the visitor: step 1 is to start the agent.
-      const go = page.locator("#dm-go");
+      await page.locator("#demo .dm-grid").scrollIntoViewIfNeeded();
+      // The demo waits for the visitor: step 1 is to choose an agent.
+      const verify = page.locator("#dm-verify");
       expect(await page.locator("#dm-badge").textContent()).toBe("Not connected");
-      expect(await go.textContent()).toContain("Start the agent");
-      await go.click();
-      await expect.poll(() => go.textContent()).toContain("Edit a receipt");
-      expect(await page.locator("button.dm-rc").count()).toBe(6);
+      expect(await verify.isEnabled()).toBe(false);
+      expect(await page.locator("#dm-k").textContent()).toBe("Step 1 of 4");
+      await page.locator('.dm-chip[data-sc="support"]').click();
+      await expect.poll(() => verify.isEnabled()).toBe(true);
+      expect(await page.locator("#dm-k").textContent()).toBe("Step 3 of 4");
+      expect(await page.locator("button.dm-row").count()).toBe(6);
 
       // The receipts are sigillo's own: they parse as version 4, their hash is core's, their signature verifies under the key the page made.
       const made = (await page.evaluate(`(async () => {
@@ -120,35 +124,34 @@ describe("the live demo on the home", () => {
         expect(receipt.prev_hash).toBe(index === 0 ? GENESIS_PREV_HASH : made.hashes[index - 1]);
       });
 
-      // Step 2: rewrite the decision (receipt 4) the way someone with database access could.
-      await go.click();
+      // Step 3: open the decision (receipt 4) and rewrite it the way someone with database access could.
+      await page.locator('button.dm-row[data-seq="4"]').click();
+      await page.locator("#dm-edit-open").click();
       await page.locator("#dm-edit-name").fill("approve_everything");
-      await go.click();
+      await page.locator('#dm-edit button[type="submit"]').click();
       await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Edited, not checked");
-      expect(await go.textContent()).toContain("Verify the chain");
-      // Step 3: Verify.
-      await go.click();
+      expect(await page.locator("#dm-k").textContent()).toBe("Step 4 of 4");
+      // Step 4: Verify.
+      await verify.click();
       await expect.poll(() => page.locator("#dm-badge").textContent()).toBe("Tampered");
-      expect(await page.locator("#dm-side").textContent()).toContain("Receipt no. 4 was changed after it was sealed.");
-      expect(await page.locator("#dm-side").textContent()).toContain("receipt no. 5 no longer matches");
-      expect(await page.locator("button.dm-rc .dm-tag.ok").count()).toBe(4);
-      expect(await page.locator("button.dm-rc.is-bad").count()).toBe(1);
-      expect(await page.locator("button.dm-rc.is-broken").count()).toBe(1);
+      expect(await page.locator("#dm-gbody").textContent()).toContain("Receipt no. 4 was changed after it was sealed.");
+      expect(await page.locator("#dm-gbody").textContent()).toContain("receipt no. 5 no longer matches");
+      expect(await page.locator("button.dm-row .dm-sl", { hasText: "Verified" }).count()).toBe(4);
+      expect(await page.locator("button.dm-row.is-bad").count()).toBe(1);
+      expect(await page.locator("button.dm-row.is-broken").count()).toBe(1);
       // The rewritten receipt, hashed by core, is not the sealed hash, and its signature no longer holds.
       const edited = (await page.evaluate(`window.sigilloDemo.state().rows[4].r`)) as unknown;
       const rewritten = parseReceipt(edited);
       expect(receiptHashHex(rewritten)).not.toBe(made.hashes[4]);
       expect(verifyReceiptSignature(rewritten, publicKey)).toBe(false);
 
-      // Reset goes back to step 1.
+      // Reset goes back to step 1, and an untouched run verifies.
       await page.locator("#dm-reset").click();
       expect(await page.locator("#dm-badge").textContent()).toBe("Not connected");
-      // An untouched run verifies.
-      await go.click();
-      await expect.poll(() => go.textContent()).toContain("Edit a receipt");
-      await page.evaluate(`window.sigilloDemo.state().phase = "edited"`);
-      await page.evaluate(`document.getElementById("dm-go").click()`);
-      await expect.poll(() => page.locator("#dm-side").textContent()).toContain("All 6 receipts check out.");
+      await page.locator('.dm-chip[data-sc="invoice"]').click();
+      await expect.poll(() => verify.isEnabled()).toBe(true);
+      await verify.click();
+      await expect.poll(() => page.locator("#dm-gbody").textContent()).toContain("All 6 receipts check out.");
 
       // The site's backdrop grain (site-v2.ts, #backdrop::after) is a data: image
       // that img-src 'self' refuses; it is not the demo's, and it is followed up
@@ -162,7 +165,7 @@ describe("the live demo on the home", () => {
     }
   }, 60_000);
 
-  it.skipIf(BROWSER_PATH === undefined)("on a phone, the chain scrolls sideways and a receipt can be tapped once the agent has run", async () => {
+  it.skipIf(BROWSER_PATH === undefined)("on a phone, a receipt can be tapped once the agent has run", async () => {
     const live = make("sigillo-phone.db");
     await live.listen({ host: "127.0.0.1", port: 0 });
     const address = live.server.address();
@@ -177,12 +180,12 @@ describe("the live demo on the home", () => {
         extraHTTPHeaders: { "accept-language": "en" },
       });
       await page.goto(`${base}/`);
-      await page.locator("#demo .dm-card").scrollIntoViewIfNeeded();
-      await page.locator("#dm-go").tap();
-      await expect.poll(() => page.locator("#dm-go").textContent()).toContain("Edit a receipt");
+      await page.locator("#demo .dm-grid").scrollIntoViewIfNeeded();
+      await page.locator('.dm-chip[data-sc="support"]').tap();
+      await expect.poll(() => page.locator("#dm-verify").isEnabled()).toBe(true);
       // The page itself does not scroll sideways.
       expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
-      const card = page.locator('button.dm-rc[data-seq="3"]');
+      const card = page.locator('button.dm-row[data-seq="3"]');
       await card.scrollIntoViewIfNeeded();
       await card.tap();
       await expect.poll(() => page.locator(".dm-title").first().textContent()).toContain("refund_payment");

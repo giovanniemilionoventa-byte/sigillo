@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { escape } from "./layout.js";
 import type { Language } from "./locale.js";
 
@@ -47,6 +48,13 @@ interface DemoAgent {
   steps: DemoStep[];
 }
 
+interface Guide {
+  t: string;
+  p: string;
+  todo: string;
+  why: string;
+}
+
 interface DemoCopy {
   h2: string;
   lead: string;
@@ -54,9 +62,10 @@ interface DemoCopy {
   choose: string;
   window: string;
   reset: string;
-  steps: [string, string, string];
-  go: { start: string; recording: string; edit: string; save: string; verify: string; checking: string; pack: string };
-  hints: { idle: string; recording: string; ready: string; editing: string; edited: string; done: string };
+  steps: [string, string, string, string];
+  guide: { step: string; done: string; idle: Guide; recording: Guide; ready: Guide; editing: Guide; edited: Guide };
+  go: { verify: string; checking: string; pack: string };
+  list: { title: string; count: string; day: string; waiting: string; rewrite: string };
   badge: { idle: string; recording: string; intact: string; edited: string; checking: string; tampered: string };
   marks: { sealing: string; sealed: string; ok: string; bad: string; broken: string };
   no: string;
@@ -83,14 +92,7 @@ interface DemoCopy {
     input: string;
     version: string;
   };
-  edit: { title: string; action: string; outcome: string; cancel: string; note: string };
-  side: {
-    idle: { k: string; t: string; p: string };
-    recording: { k: string; t: string; p: string };
-    ready: { k: string; t: string; p: string };
-    editing: { k: string; t: string; p: string };
-    edited: { k: string; t: string; p: string };
-  };
+  edit: { title: string; action: string; outcome: string; cancel: string; save: string; note: string };
   ok: { tag: string; title: string; body: string; checks: [string, string, string]; nosig: string };
   bad: { tag: string; title: string; checks: { fp: string; sig: string; link: string }; note: string };
   packSheet: { title: string; body: string; files: [string, string][]; note: string; close: string };
@@ -104,16 +106,18 @@ const EN: DemoCopy = {
   choose: "Choose a sample agent",
   window: "sigillo demo",
   reset: "Reset",
-  steps: ["Record", "Edit", "Verify"],
-  go: { start: "Start the agent", recording: "Recording…", edit: "Edit a receipt", save: "Save change", verify: "Verify the chain", checking: "Checking…", pack: "See the evidence pack" },
-  hints: {
-    idle: "Press “Start the agent”: each action it takes will get a signed receipt.",
-    recording: "Each action is sealed as it happens, and linked to the one before.",
-    ready: "Next: rewrite one stored receipt, the way someone with database access could.",
-    editing: "Change the action or its outcome, then save. The signature is not updated.",
-    edited: "The change is saved. Now ask sigillo to check the chain.",
-    done: "Want to hand it to an auditor? The evidence pack can be checked offline.",
+  steps: ["Choose an agent", "Watch it work", "Edit the record", "Verify and find out"],
+  guide: {
+    step: "Step {n} of 4",
+    done: "All done",
+    idle: { t: "Choose an agent", p: "Pick a sample agent. It will work in front of you, and each action it takes becomes a receipt: signed, and linked to the one before.", todo: "Tap one of the sample agents below.", why: "Nothing you do here leaves your browser." },
+    recording: { t: "Watch it work", p: "Each action gets a receipt as it happens. Every receipt holds the fingerprint of the one before it: that link is the chain.", todo: "Wait a moment while the receipts arrive.", why: "A tool's arguments are never stored, only their fingerprint." },
+    ready: { t: "Now try to cheat", p: "Imagine you have access to the database and want the record to say something else. Open an action, then try to rewrite it.", todo: "Tap an action in the list, then press “Try to rewrite this receipt”.", why: "The seal is not updated: it is like erasing in pencil on a signed sheet." },
+    editing: { t: "Rewrite the stored receipt", p: "Change the name of the action, or its outcome, the way someone with database access could.", todo: "Change a field, then press “Save change”.", why: "This edits the stored row directly. The signature stays the old one." },
+    edited: { t: "Verify and find out", p: "The receipt now says something else, but its seal is still the old one. Ask sigillo to check the whole chain.", todo: "Press “Verify the chain”, at the top of the list.", why: "sigillo recomputes every fingerprint and checks every signature and link." },
   },
+  go: { verify: "Verify the chain", checking: "Checking…", pack: "Prepare the evidence pack" },
+  list: { title: "Recorded actions", count: "{n} receipts today", day: "Today · Wednesday 4 November", waiting: "No agent connected yet. Choose one on the left to start recording.", rewrite: "Try to rewrite this receipt" },
   badge: { idle: "Not connected", recording: "Recording", intact: "Intact", edited: "Edited, not checked", checking: "Checking…", tampered: "Tampered" },
   marks: { sealing: "Sealing…", sealed: "Sealed", ok: "Verified", bad: "Altered", broken: "Not trusted" },
   no: "No. {n}",
@@ -148,14 +152,7 @@ const EN: DemoCopy = {
     input: "Input fingerprint",
     version: "Format version",
   },
-  edit: { title: "Rewrite the stored receipt", action: "Action", outcome: "Outcome", cancel: "Cancel", note: "This edits the stored row directly, like someone with access to the database. The seal is not updated." },
-  side: {
-    idle: { k: "Step 1 of 3", t: "Let an agent work", p: "Pick a sample agent above, then press the button below. Each action it takes becomes a receipt, signed and linked to the one before." },
-    recording: { k: "Step 1 of 3", t: "Receipts are arriving", p: "Each one holds the hash of the receipt before it. That link is the chain." },
-    ready: { k: "Step 2 of 3", t: "Now try to cheat", p: "Imagine you have access to the database and want the record to say something else. Pick a receipt in the chain, then press “Edit a receipt”." },
-    editing: { k: "Step 2 of 3", t: "Rewrite the stored receipt", p: "Change the action name or the outcome in the panel, then press “Save change”." },
-    edited: { k: "Step 3 of 3", t: "Ask sigillo to check", p: "The receipt now says something else, but its seal is the old one. Press “Verify the chain”." },
-  },
+  edit: { title: "Rewrite the stored receipt", action: "Action", outcome: "Outcome", cancel: "Cancel", save: "Save change", note: "This edits the stored row directly, like someone with access to the database. The seal is not updated." },
   ok: {
     tag: "Intact",
     title: "All {n} receipts check out.",
@@ -224,16 +221,18 @@ const IT: DemoCopy = {
   choose: "Scegli un agente d'esempio",
   window: "Demo di sigillo",
   reset: "Ricomincia",
-  steps: ["Registra", "Modifica", "Verifica"],
-  go: { start: "Avvia l'agente", recording: "Registrazione…", edit: "Modifica una ricevuta", save: "Salva la modifica", verify: "Verifica la catena", checking: "Controllo…", pack: "Vedi il fascicolo" },
-  hints: {
-    idle: "Premi «Avvia l'agente»: ogni azione che compie riceverà una ricevuta firmata.",
-    recording: "Ogni azione viene sigillata mentre accade e legata alla precedente.",
-    ready: "Ora: riscrivi una ricevuta salvata, come potrebbe fare chi ha accesso al database.",
-    editing: "Cambia l'azione o il suo esito, poi salva. La firma non viene aggiornata.",
-    edited: "La modifica è salvata. Ora chiedi a sigillo di controllare la catena.",
-    done: "Vuoi consegnarlo a un revisore? Il fascicolo si controlla anche senza rete.",
+  steps: ["Scegli un agente", "Guardalo lavorare", "Modifica il registro", "Verifica e scoprilo"],
+  guide: {
+    step: "Passo {n} di 4",
+    done: "Fatto",
+    idle: { t: "Scegli un agente", p: "Scegli un agente d'esempio. Lavorerà davanti a te, e ogni azione che compie diventa una ricevuta: firmata e legata alla precedente.", todo: "Tocca uno degli agenti d'esempio qui sotto.", why: "Quello che fai qui non esce dal tuo browser." },
+    recording: { t: "Guardalo lavorare", p: "Ogni azione riceve una ricevuta mentre accade. Ogni ricevuta contiene l'impronta della precedente: quel legame è la catena.", todo: "Aspetta un momento: arrivano le ricevute.", why: "Gli argomenti di uno strumento non si salvano mai, solo la loro impronta." },
+    ready: { t: "Ora prova a barare", p: "Immagina di avere accesso al database e di volere che il registro dica un'altra cosa. Apri un'azione e prova a riscriverla.", todo: "Tocca un'azione dell'elenco, poi premi «Prova a riscrivere questa ricevuta».", why: "Il sigillo non viene aggiornato: è come cancellare a matita su un foglio firmato." },
+    editing: { t: "Riscrivi la ricevuta salvata", p: "Cambia il nome dell'azione, o il suo esito, come potrebbe fare chi ha accesso al database.", todo: "Cambia un campo, poi premi «Salva la modifica».", why: "Modifica la riga salvata direttamente. La firma resta quella vecchia." },
+    edited: { t: "Verifica e scoprilo", p: "La ricevuta ora dice altro, ma il suo sigillo è ancora quello vecchio. Chiedi a sigillo di controllare tutta la catena.", todo: "Premi «Verifica la catena», in alto sopra l'elenco.", why: "sigillo ricalcola ogni impronta e controlla ogni firma e ogni legame." },
   },
+  go: { verify: "Verifica la catena", checking: "Controllo…", pack: "Prepara il fascicolo" },
+  list: { title: "Azioni registrate", count: "{n} ricevute oggi", day: "Oggi · mercoledì 4 novembre", waiting: "Nessun agente collegato. Scegline uno a sinistra per iniziare a registrare.", rewrite: "Prova a riscrivere questa ricevuta" },
   badge: { idle: "Non collegato", recording: "Registra", intact: "Integro", edited: "Modificato, non controllato", checking: "Controllo…", tampered: "Alterato" },
   marks: { sealing: "Sigillo in corso…", sealed: "Sigillata", ok: "Verificata", bad: "Alterata", broken: "Non affidabile" },
   no: "N. {n}",
@@ -268,14 +267,7 @@ const IT: DemoCopy = {
     input: "Impronta input",
     version: "Versione del formato",
   },
-  edit: { title: "Riscrivi la ricevuta salvata", action: "Azione", outcome: "Esito", cancel: "Annulla", note: "Modifica la riga salvata direttamente, come farebbe chi ha accesso al database. Il sigillo non viene aggiornato." },
-  side: {
-    idle: { k: "Passo 1 di 3", t: "Lascia lavorare un agente", p: "Scegli un agente d'esempio qui sopra, poi premi il pulsante in basso. Ogni azione diventa una ricevuta, firmata e legata alla precedente." },
-    recording: { k: "Passo 1 di 3", t: "Arrivano le ricevute", p: "Ognuna contiene l'impronta della ricevuta prima di lei. Quel legame è la catena." },
-    ready: { k: "Passo 2 di 3", t: "Ora prova a barare", p: "Immagina di avere accesso al database e di volere che il registro dica un'altra cosa. Scegli una ricevuta nella catena, poi premi «Modifica una ricevuta»." },
-    editing: { k: "Passo 2 di 3", t: "Riscrivi la ricevuta salvata", p: "Cambia il nome dell'azione o l'esito nel pannello, poi premi «Salva la modifica»." },
-    edited: { k: "Passo 3 di 3", t: "Chiedi a sigillo di controllare", p: "La ricevuta ora dice altro, ma il suo sigillo è quello vecchio. Premi «Verifica la catena»." },
-  },
+  edit: { title: "Riscrivi la ricevuta salvata", action: "Azione", outcome: "Esito", cancel: "Annulla", save: "Salva la modifica", note: "Modifica la riga salvata direttamente, come farebbe chi ha accesso al database. Il sigillo non viene aggiornato." },
   ok: {
     tag: "Integro",
     title: "Tutte le {n} ricevute tornano.",
@@ -354,7 +346,7 @@ const ICON: Record<string, string> = {
   play: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.8v10.4L13 8z"/></svg>',
 };
 
-/** The short title a card or the list uses for a receipt, from the copy's templates. */
+/** The short title a row uses for a receipt, from the copy's templates. */
 function shortTitle(c: DemoCopy, step: DemoStep): string {
   const name = step.name ?? "";
   const template =
@@ -362,21 +354,21 @@ function shortTitle(c: DemoCopy, step: DemoStep): string {
   return template.replace("{name}", name);
 }
 
-/** The section, at rest: the first agent's receipts, all sealed, nothing selected. /demo.js brings it to life. */
+/** The section, at rest: step 1 on the left, the first agent's actions (all sealed) on the right. /demo.js brings it to life. */
 export function demoSection(language: Language): string {
   const c = COPY[language];
   const first = c.agents[0];
   if (first === undefined) return "";
-  const tabs = c.agents
-    .map((a, i) => `<button class="dm-tab" type="button" data-sc="${escape(a.key)}" aria-pressed="${i === 0}">${escape(a.tab)}</button>`)
-    .join("");
-  const prog = c.steps
-    .map((label, i) => `<span class="dm-pstep${i === 0 ? " now" : ""}"><i>${i + 1}</i>${escape(label)}</span>${i < c.steps.length - 1 ? "<hr>" : ""}`)
-    .join("");
-  const cards = first.steps
+  const icon = (name: string): string => ICON[name] ?? "";
+  const chips = c.agents.map((a) => `<button class="dm-chip" type="button" data-sc="${escape(a.key)}">${escape(a.tab)}</button>`).join("");
+  const steps = c.steps.map((label, i) => `<li class="dm-st${i === 0 ? " now" : ""}"><i>${i + 1}</i>${escape(label)}</li>`).join("");
+  const g = c.guide.idle;
+  const rows = first.steps
     .map(
-      (s, i) =>
-        `<div class="dm-rc"><span class="dm-n">${escape(c.no.replace("{n}", String(i)))} · ${escape(s.at)}</span><b>${escape(shortTitle(c, s))}</b><span class="dm-tag ok">${escape(c.marks.sealed)}</span></div>`,
+      (s) =>
+        `<div class="dm-row"><span class="dm-t">${escape(s.at)}</span><span class="dm-kind">${icon(s.kind)}</span><span class="dm-name">${escape(shortTitle(c, s))}</span>${
+          s.blocked === true ? `<span class="dm-tag warn">⚠ ${escape(c.outcomes.blocked)}</span>` : ""
+        }<span class="dm-sl">${escape(c.marks.sealed)}</span></div>`,
     )
     .join("");
   // The copy and the sample agents for /demo.js. "<" is written as < so
@@ -384,12 +376,21 @@ export function demoSection(language: Language): string {
   const data = JSON.stringify({ copy: c, icons: ICON }).replace(/</g, "\\u003c");
   return `<section class="s-sec dm" id="demo" aria-labelledby="dm-title"><div class="s-wrap">
 <header class="dm-intro"><h2 id="dm-title">${escape(c.h2)}</h2><p class="s-lead">${escape(c.lead)}</p></header>
-<div class="dm-tabs" role="group" aria-label="${escape(c.choose)}" id="dm-tabs">${tabs}</div>
-<div class="dm-card" role="region" aria-label="${escape(c.window)}">
-<div class="dm-prog"><div class="dm-psteps" id="dm-prog">${prog}</div><span class="dm-id mono" id="dm-id">${escape(first.id)}</span><span class="dm-badge ok" id="dm-badge">${ICON.ok}${escape(c.badge.intact)}</span></div>
-<div class="dm-chain" id="dm-chain">${cards}</div>
-<div class="dm-res"><div class="dm-rp" id="dm-rp" aria-live="polite"><p class="dm-empty">${escape(c.rp.empty)}</p></div><div class="dm-side" id="dm-side" aria-live="polite"></div></div>
-<div class="dm-foot"><span class="dm-hint" id="dm-hint">${escape(c.sub)}</span><button class="dm-btn" id="dm-reset" type="button">${ICON.replay}${escape(c.reset)}</button><button class="dm-btn pri" id="dm-go" type="button"></button></div>
+<div class="dm-grid" role="region" aria-label="${escape(c.window)}">
+<aside class="dm-guide">
+<span class="dm-k" id="dm-k">${escape(c.guide.step.replace("{n}", "1"))}</span>
+<div class="dm-bar"><i id="dm-bar" style="width:25%"></i></div>
+<div id="dm-gbody"><h3>${escape(g.t)}</h3><p>${escape(g.p)}</p><div class="dm-todo"><b>${escape(c.guide.step.replace("{n}", "1").toUpperCase())}</b>${escape(g.todo)}</div><p class="dm-why">${escape(g.why)}</p></div>
+<div class="dm-chips" id="dm-chips" role="group" aria-label="${escape(c.choose)}">${chips}</div>
+<ol class="dm-steps" id="dm-steps">${steps}</ol>
+<button class="dm-btn dm-reset" id="dm-reset" type="button">${icon("replay")}${escape(c.reset)}</button>
+</aside>
+<div class="dm-sim">
+<div class="dm-sh"><span class="dm-kind big">${icon("decision")}</span><b class="dm-sname" id="dm-name">${escape(first.name)}</b><span class="dm-id mono" id="dm-id">${escape(first.id)}</span><span class="dm-badge ok" id="dm-badge">${icon("ok")}${escape(c.badge.intact)}</span>
+<span class="dm-sa"><button class="dm-btn pri" id="dm-verify" type="button" disabled>${icon("shield")}${escape(c.go.verify)}</button><button class="dm-btn" id="dm-pack" type="button" disabled>${icon("download")}${escape(c.go.pack)}</button></span></div>
+<p class="dm-meta" id="dm-meta">${escape(c.list.count.replace("{n}", String(first.steps.length)))}</p>
+<div class="dm-list" id="dm-list" role="listbox" aria-label="${escape(c.list.title)}"><div class="dm-day">${escape(c.list.day)}</div>${rows}</div>
+</div>
 <div class="dm-scrim" id="dm-scrim" hidden></div>
 </div>
 <script type="application/json" id="dm-data">${data}</script>
@@ -401,58 +402,70 @@ export const DEMO_STYLE = `
 :where(.dm) button { justify-content: flex-start; box-shadow: none; min-height: 0; white-space: normal; }
 :where(.dm) button:disabled, :where(.dm) button:disabled:hover { cursor: default; }
 .s-sec.dm { padding: 56px 0; }
-.dm .s-wrap { display: grid; gap: 24px; }
+.dm .s-wrap { display: grid; gap: 26px; }
 .dm-intro { display: grid; justify-items: center; text-align: center; }
 .dm-intro h2 { max-width: 22ch; margin: 0 auto 14px; text-wrap: balance; }
 .dm-intro .s-lead { margin: 0 auto; text-wrap: balance; }
-.dm-tabs { justify-self: center; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; padding: 4px; border-radius: 12px; background: var(--segment); }
-.dm-tab { min-height: 36px; padding: 0 16px; border: 0; border-radius: 9px; background: none; color: var(--secondary); font: inherit; font-size: 14.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
-.dm-tab:hover { color: var(--text); }
-.dm-tab[aria-pressed="true"] { background: var(--segment-on); color: var(--text); box-shadow: var(--shadow-segment); }
-.dm-card { position: relative; border: 1px solid var(--separator); border-radius: 20px; background: var(--surface); padding: 24px 26px 22px; display: grid; gap: 22px; }
-.dm-prog { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; font-size: 14px; color: var(--secondary); }
-.dm-psteps { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-right: auto; }
-.dm-pstep { display: inline-flex; align-items: center; gap: 8px; }
-.dm-pstep i { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; background: var(--fill); }
-.dm-pstep.now { color: var(--text); font-weight: 600; }
-.dm-pstep.now i { background: var(--action); color: var(--on-action); }
-.dm-pstep.done i { background: var(--ok-fill); color: var(--ok); }
-.dm-psteps hr { width: 36px; border: 0; border-top: 1px solid var(--separator); margin: 0; }
+.dm-grid { position: relative; display: grid; grid-template-columns: 360px minmax(0, 1fr); border: 1px solid var(--separator); border-radius: 20px; overflow: hidden; background: var(--surface); }
+.dm-guide { background: var(--sidebar); border-right: 1px solid var(--separator); padding: 26px 26px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.dm-k { font-size: 13px; color: var(--link); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.dm-bar { height: 6px; background: var(--fill); border-radius: 3px; overflow: hidden; }
+.dm-bar i { display: block; height: 100%; background: var(--action); transition: width 0.3s; }
+.dm-guide h3 { margin: 6px 0 10px; font-size: 24px; line-height: 1.2; letter-spacing: -0.01em; }
+.dm-guide p { margin: 0; color: var(--label); font-size: 15px; line-height: 1.6; }
+.dm-todo { margin-top: 16px; background: var(--selected); border: 1px solid var(--action); border-radius: 12px; padding: 14px 16px; font-size: 15px; line-height: 1.5; color: var(--text); }
+.dm-todo b { display: block; font-size: 11.5px; letter-spacing: 0.08em; color: var(--link); margin-bottom: 5px; }
+.dm-guide p.dm-why { margin-top: 14px; font-size: 13.5px; color: var(--secondary); border-left: 2px solid var(--separator); padding-left: 12px; }
+.dm-chips { display: grid; gap: 8px; }
+.dm-chip { display: flex; align-items: center; min-height: 46px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--action); background: var(--surface); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; animation: dm-ring 1.8s ease-in-out infinite; }
+.dm-chip:hover { background: var(--hover); }
+.dm-steps { list-style: none; margin: auto 0 0; padding: 0; display: grid; gap: 2px; font-size: 14px; }
+.dm-st { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; color: var(--secondary); }
+.dm-st i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 700; background: var(--fill); flex: none; }
+.dm-st.done { color: var(--label); }
+.dm-st.done i { background: var(--ok-fill); color: var(--ok); }
+.dm-st.now { background: var(--fill); color: var(--text); font-weight: 600; }
+.dm-st.now i { background: var(--action); color: var(--on-action); }
+.dm-reset { justify-content: center; }
+.dm-sim { padding: 22px 26px 24px; min-width: 0; display: flex; flex-direction: column; min-height: 640px; }
+.dm-sh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.dm-sname { font-size: 20px; letter-spacing: -0.01em; }
 .dm-id { font-size: 13px; color: var(--secondary); }
+.dm-sa { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.dm-meta { margin: 8px 0 14px; font-size: 13.5px; color: var(--secondary); }
 .dm-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--fill); color: var(--label); }
 .dm-badge svg { width: 13px; height: 13px; }
 .dm-badge.ok { background: var(--ok-fill); color: var(--ok); }
 .dm-badge.bad { background: var(--bad-fill); color: var(--bad); }
 .dm-badge.warn { background: var(--warn-fill); color: var(--warn); }
-.dm-chain { display: flex; gap: 22px; overflow-x: auto; padding: 4px 2px 6px; }
-.dm-rc { position: relative; flex: 1 0 138px; min-width: 0; display: grid; gap: 6px; align-content: start; padding: 14px; border: 1px solid var(--separator); border-radius: 14px; background: var(--canvas); color: var(--text); font: inherit; text-align: left; font-size: 14px; }
-button.dm-rc { cursor: pointer; }
-button.dm-rc:hover { background: var(--hover); }
-.dm-rc::after { content: ""; position: absolute; left: 100%; top: 50%; width: 22px; border-top: 2px solid var(--ok); opacity: 0.6; }
-.dm-rc:last-child::after { display: none; }
-.dm-rc.lk-bad::after { border-top: 2px dashed var(--bad); opacity: 1; }
-.dm-rc.lk-gone::after { border-top: 2px dashed var(--thread); opacity: 1; }
-.dm-rc[aria-pressed="true"] { border-color: var(--action); box-shadow: 0 0 0 3px var(--selected); }
-.dm-rc.is-bad { border-color: var(--bad); background: var(--bad-fill); }
-.dm-rc.is-broken { opacity: 0.55; border-style: dashed; }
-.dm-rc.ghost { border-style: dashed; opacity: 0.45; min-height: 112px; }
-.dm-rc.new { animation: dm-in 0.35s ease-out both; }
-.dm-rc b { font-size: 13.5px; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere; }
-.dm-n { font-size: 11.5px; letter-spacing: 0.05em; color: var(--secondary); font-weight: 600; text-transform: uppercase; }
-.dm-h { font-size: 11px; color: var(--secondary); overflow-wrap: anywhere; }
-.dm-h.bad { color: var(--bad); }
-.dm-tag { justify-self: start; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--fill); color: var(--label); }
+.dm-list { flex: 1; }
+.dm-day { margin: 2px 12px 8px; font-size: 12.5px; color: var(--secondary); font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
+.dm-row { width: 100%; display: grid; grid-template-columns: 44px 30px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; min-height: 52px; padding: 0 12px; border: 1px solid transparent; border-radius: 10px; background: none; color: var(--text); text-align: left; font: inherit; font-size: 15px; }
+button.dm-row { cursor: pointer; }
+button.dm-row:hover { background: var(--hover); }
+.dm-row.new { animation: dm-in 0.35s ease-out both; }
+.dm-row[aria-selected="true"] { background: var(--selected); border-color: var(--action); box-shadow: 0 0 0 4px color-mix(in srgb, var(--action) 18%, transparent); font-weight: 600; }
+.dm-row.is-bad { background: var(--bad-fill); border-color: var(--bad); }
+.dm-row.is-broken { opacity: 0.5; }
+.dm-list.editing .dm-row:not([aria-selected="true"]) { opacity: 0.4; }
+.dm-t { color: var(--secondary); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 400; }
+.dm-kind { width: 30px; height: 30px; border-radius: 8px; background: var(--fill); display: grid; place-items: center; color: var(--label); flex: none; }
+.dm-kind.big { width: 34px; height: 34px; }
+.dm-kind svg { width: 16px; height: 16px; }
+.dm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-name em { font-style: normal; color: var(--warn); font-size: 12px; margin-left: 8px; font-weight: 600; }
+.dm-tag { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--fill); color: var(--label); white-space: nowrap; }
 .dm-tag.ok { background: var(--ok-fill); color: var(--ok); }
 .dm-tag.bad { background: var(--bad-fill); color: var(--bad); }
 .dm-tag.warn { background: var(--warn-fill); color: var(--warn); }
-.dm-res { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; }
-.dm-rp { border: 1px solid var(--separator); border-radius: 14px; background: var(--canvas); padding: 18px 20px; display: grid; gap: 12px; align-content: start; min-height: 300px; }
-.dm-empty { margin: auto; color: var(--secondary); font-size: 14px; }
+.dm-sl { font-size: 12.5px; font-weight: 600; color: var(--ok); white-space: nowrap; font-weight: 600; }
+.dm-sl.sealing { color: var(--secondary); }
+.dm-sl.bad { color: var(--bad); }
+.dm-sl.broken { color: var(--warn); }
+.dm-open { margin: 6px 0 10px 56px; border: 1px solid var(--separator); border-radius: 14px; background: var(--canvas); padding: 18px 20px; display: grid; gap: 12px; animation: dm-in 0.25s ease-out both; }
 .dm-rp-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.dm-kind { width: 30px; height: 30px; border-radius: 8px; background: var(--fill); display: grid; place-items: center; color: var(--label); }
-.dm-kind svg { width: 16px; height: 16px; }
 .dm-tags { display: flex; gap: 6px; flex-wrap: wrap; }
-.dm-title { margin: 0; font-size: 18px; line-height: 1.35; font-weight: 600; overflow-wrap: anywhere; }
+.dm-title { margin: 0; font-size: 17px; line-height: 1.4; font-weight: 600; overflow-wrap: anywhere; }
 .dm-tbl { border: 1px solid var(--separator); border-radius: 12px; overflow: hidden; background: var(--surface); }
 .dm-kv { display: flex; justify-content: space-between; gap: 14px; padding: 10px 14px; font-size: 14px; border-top: 1px solid var(--separator); }
 .dm-kv:first-child { border-top: 0; }
@@ -471,34 +484,36 @@ button.dm-rc:hover { background: var(--hover); }
 .dm-fp code.bad { color: var(--bad); }
 .dm-edit { display: grid; gap: 10px; }
 .dm-edit label { display: grid; gap: 4px; font-size: 13px; color: var(--secondary); }
-.dm-edit input, .dm-edit select { min-height: 38px; border-radius: 8px; border: 1px solid var(--separator); background: var(--fill); color: var(--text); padding: 0 10px; font: inherit; font-size: 14.5px; width: 100%; }
+.dm-edit input, .dm-edit select { min-height: 40px; border-radius: 8px; border: 1px solid var(--separator); background: var(--fill); color: var(--text); padding: 0 10px; font: inherit; font-size: 15px; width: 100%; }
 .dm-edit input:focus, .dm-edit select:focus { outline: 2px solid var(--focus); outline-offset: 1px; }
+.dm-edit-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .dm-note { margin: 0; font-size: 12.5px; color: var(--secondary); }
-.dm-link { border: 0; background: none; color: var(--link); padding: 0; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; justify-self: start; }
-.dm-side { border-radius: 14px; padding: 20px 22px; display: grid; gap: 10px; align-content: start; background: var(--selected); border: 1px solid var(--separator); }
-.dm-side .k { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--link); }
-.dm-side h3 { margin: 0; font-size: 20px; line-height: 1.25; }
-.dm-side p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--label); }
-.dm-side.bad { background: var(--bad-fill); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
-.dm-side.bad .k { color: var(--bad); }
-.dm-side.ok { background: var(--ok-fill); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
-.dm-side.ok .k { color: var(--ok); }
-.dm-checks { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 10px; font-size: 14px; line-height: 1.4; color: var(--text); }
+.dm-warn { margin: 0; font-size: 13px; color: var(--warn); background: var(--warn-fill); border-radius: 8px; padding: 9px 12px; }
+.dm-link { border: 0; background: none; color: var(--link); padding: 0; font: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; justify-self: start; }
+.dm-link svg { width: 14px; height: 14px; }
+.dm-waiting { margin: 60px 12px; text-align: center; color: var(--secondary); font-size: 14.5px; }
+.dm-verdict { border-radius: 12px; padding: 16px 18px; display: grid; gap: 8px; animation: dm-in 0.3s ease-out both; }
+.dm-verdict .k { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.dm-verdict h3 { margin: 0; font-size: 18px; line-height: 1.3; }
+.dm-verdict.bad { background: var(--bad-fill); border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); }
+.dm-verdict.bad .k { color: var(--bad); }
+.dm-verdict.ok { background: var(--ok-fill); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); }
+.dm-verdict.ok .k { color: var(--ok); }
+.dm-guide .dm-verdict p { font-size: 14px; }
+.dm-checks { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 9px; font-size: 14px; line-height: 1.4; color: var(--text); }
 .dm-checks li { display: flex; gap: 10px; align-items: flex-start; }
-.dm-checks i { flex: none; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 700; background: var(--bad-fill); color: var(--bad); }
-.dm-side.ok .dm-checks i { background: var(--ok-fill); color: var(--ok); box-shadow: 0 0 0 1px var(--ok); }
-.dm-side.bad .dm-checks i { box-shadow: 0 0 0 1px var(--bad); }
+.dm-checks i { flex: none; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 700; }
+.dm-verdict.bad .dm-checks i { color: var(--bad); box-shadow: 0 0 0 1px var(--bad); }
+.dm-verdict.ok .dm-checks i { color: var(--ok); box-shadow: 0 0 0 1px var(--ok); }
 .dm-checks .mono { font-size: 12px; color: var(--secondary); display: block; margin-top: 2px; overflow-wrap: anywhere; }
-.dm-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 20px; border-top: 1px solid var(--separator); }
-.dm-hint { margin-right: auto; color: var(--secondary); font-size: 14px; flex: 1 1 260px; }
-.dm:not(.live) #dm-go, .dm:not(.live) #dm-reset { display: none; }
-.dm-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 20px; border-radius: 10px; border: 1px solid var(--separator); background: var(--fill); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.dm-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--separator); background: var(--fill); color: var(--text); font: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer; }
 .dm-btn:hover:not(:disabled) { background: var(--hover); }
-.dm-btn:disabled { opacity: 0.5; }
+.dm-btn:disabled { opacity: 0.45; }
 .dm-btn.pri { background: var(--action); border-color: var(--action); color: var(--on-action); }
 .dm-btn.pri:hover:not(:disabled) { background: var(--action); filter: brightness(1.1); }
 .dm-btn.pulse:not(:disabled) { animation: dm-ring 1.8s ease-in-out infinite; }
 .dm-btn svg { width: 15px; height: 15px; }
+.dm:not(.live) .dm-chips, .dm:not(.live) .dm-reset { display: none; }
 .dm-scrim { position: absolute; inset: 0; background: var(--scrim); display: grid; place-items: center; padding: 16px; z-index: 2; border-radius: 20px; }
 .dm-scrim[hidden] { display: none; }
 .dm-sheet { width: min(440px, 100%); background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-sheet); padding: 20px; display: grid; gap: 12px; animation: dm-in 0.25s ease-out both; }
@@ -511,18 +526,21 @@ button.dm-rc:hover { background: var(--hover); }
 @keyframes dm-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes dm-ring { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 5px var(--selected); } }
 @media (prefers-reduced-motion: reduce) { .dm *, .dm *::before { animation: none !important; transition: none !important; } }
-@media (max-width: 860px) {
-  .dm-res { grid-template-columns: minmax(0, 1fr); }
-  .dm-rp { min-height: 0; }
+@media (max-width: 900px) {
+  .dm-grid { grid-template-columns: minmax(0, 1fr); }
+  .dm-guide { border-right: 0; border-bottom: 1px solid var(--separator); padding: 18px 16px; }
+  .dm-steps, .dm-guide p.dm-why { display: none; }
+  .dm-guide h3 { font-size: 20px; }
+  .dm-sim { min-height: 0; padding: 16px 12px 18px; }
+  .dm-open { margin-left: 0; }
 }
 @media (max-width: 760px) {
   .s-sec.dm { padding: 36px 0; }
-  .dm-card { padding: 16px 14px 16px; border-radius: 16px; }
-  .dm-chain { gap: 22px; }
-  .dm-rc { flex: 0 0 168px; }
-  .dm-tabs { justify-content: flex-start; width: 100%; overflow-x: auto; flex-wrap: nowrap; }
-  .dm-foot { position: sticky; bottom: 0; background: var(--surface); padding-bottom: 4px; }
-  .dm-btn { flex: 1 1 auto; justify-content: center; }
+  .dm-grid { border-radius: 16px; }
+  .dm-row { grid-template-columns: 40px 28px minmax(0, 1fr) auto; gap: 8px; padding: 0 8px; }
+  .dm-row .dm-tag, .dm-row .dm-ph { display: none; }
+  .dm-sa { margin-left: 0; width: 100%; }
+  .dm-sa .dm-btn { flex: 1 1 auto; justify-content: center; }
 }
 `;
 
@@ -674,12 +692,7 @@ export const DEMO_SCRIPT = String.raw`"use strict";
       var i = 0;
       function reveal() {
         if (token !== runId) return;
-        if (i >= rows.length) {
-          S.phase = "ready";
-          var d = rows.filter(function (x) { return x.r.action.kind === "decision"; })[0] || rows[rows.length - 1];
-          S.target = d.r.seq; S.selected = d.r.seq;
-          renderAll(); return;
-        }
+        if (i >= rows.length) { S.phase = "ready"; renderAll(); return; }
         var row = rows[i++];
         S.rows.push(row); renderAll(); row.fresh = false;
         later(function () { row.mark = "sealed"; renderAll(); }, 450);
@@ -697,121 +710,114 @@ export const DEMO_SCRIPT = String.raw`"use strict";
     if (k === "llm_call") return fill(blocked ? t.llm_fail : t.llm_ok, vals);
     return fill(blocked ? t.decision_fail : t.decision_ok, vals);
   }
-  function cardTitle(r) {
+  function rowTitle(r) {
     var k = r.action.kind, s = C.short;
     if (k === "genesis") return s.genesis;
     var tpl = k === "tool_call" ? (r.outcome === "blocked" ? s.tool_fail : s.tool_ok) : k === "llm_call" ? s.llm : s.decision;
     return fill(tpl, { name: r.action.name });
   }
 
+  // The four steps of the guide: 1 choose, 2 watch, 3 edit, 4 verify.
   function step() {
-    return { idle: 1, recording: 1, ready: 2, editing: 2, edited: 3, verifying: 3, done: 4 }[S.phase];
+    return { idle: 1, recording: 2, ready: 3, editing: 3, edited: 4, verifying: 4, done: 5 }[S.phase];
   }
-  function renderAll() { renderTabs(); renderProg(); renderChain(); renderRp(); renderSide(); renderFoot(); }
-  function renderTabs() {
-    Array.prototype.forEach.call($("dm-tabs").children, function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-sc") === S.sc.key)); });
-  }
-  function renderProg() {
-    var n = step();
-    $("dm-prog").innerHTML = C.steps.map(function (label, i) {
+  function renderAll() { renderGuide(); renderHead(); renderList(); }
+  function renderGuide() {
+    var n = step(), total = C.steps.length, finished = n > total;
+    $("dm-k").textContent = finished ? C.guide.done : fill(C.guide.step, { n: n });
+    $("dm-bar").style.width = (finished ? 100 : n * 25) + "%";
+    $("dm-chips").style.display = S.phase === "idle" ? "" : "none";
+    $("dm-steps").innerHTML = C.steps.map(function (label, i) {
       var cls = i + 1 < n ? " done" : i + 1 === n ? " now" : "";
-      return '<span class="dm-pstep' + cls + '"><i>' + (i + 1 < n ? "✓" : i + 1) + "</i>" + esc(label) + "</span>" + (i < C.steps.length - 1 ? "<hr>" : "");
+      return '<li class="dm-st' + cls + '"><i>' + (i + 1 < n ? "✓" : i + 1) + "</i>" + esc(label) + "</li>";
     }).join("");
+    $("dm-reset").disabled = S.phase === "idle";
+    var body = $("dm-gbody"), v = S.verdict;
+    if (S.phase === "done" && v) {
+      var items;
+      if (v.ok) {
+        items = C.ok.checks.map(function (t, i) { return "<li><i>" + (i === 1 && !v.sig ? "–" : "✓") + "</i><span>" + esc(t) + "</span></li>"; }).join("");
+        body.innerHTML = '<div class="dm-verdict ok" role="status"><span class="k">' + esc(C.ok.tag) + "</span><h3>" + esc(fill(C.ok.title, { n: S.rows.length })) + "</h3><p>" + esc(C.ok.body) + '</p><ul class="dm-checks">' + items + "</ul>" + (v.sig ? "" : '<p class="dm-note">' + esc(C.ok.nosig) + "</p>") + "</div>";
+      } else {
+        items = '<li><i>✕</i><span>' + esc(C.bad.checks.fp) + '<span class="mono">' + short(v.sealed) + " → " + short(v.now) + "</span></span></li>" +
+          (v.sig ? '<li><i>✕</i><span>' + esc(fill(C.bad.checks.sig, { key: short(v.key) })) + "</span></li>" : "") +
+          (v.next === null ? "" : '<li><i>✕</i><span>' + esc(fill(C.bad.checks.link, { next: v.next })) + "</span></li>");
+        body.innerHTML = '<div class="dm-verdict bad" role="status"><span class="k">' + esc(C.bad.tag) + "</span><h3>" + esc(fill(C.bad.title, { seq: v.seq })) + '</h3><ul class="dm-checks">' + items + '</ul><p class="dm-note">' + esc(C.bad.note) + "</p></div>";
+      }
+      return;
+    }
+    var g = C.guide[S.phase === "verifying" ? "edited" : S.phase];
+    body.innerHTML = "<h3>" + esc(g.t) + "</h3><p>" + esc(g.p) + '</p><div class="dm-todo"><b>' + esc(fill(C.guide.step, { n: n }).toUpperCase()) + "</b>" + esc(g.todo) + '</div><p class="dm-why">' + esc(g.why) + "</p>";
+  }
+  function renderHead() {
+    $("dm-name").textContent = S.sc.name;
     $("dm-id").textContent = S.sc.id;
+    $("dm-meta").textContent = fill(C.list.count, { n: S.sc.steps.length });
     var b = $("dm-badge"), p = S.phase;
     if (p === "idle") { b.className = "dm-badge"; b.textContent = C.badge.idle; }
     else if (p === "recording") { b.className = "dm-badge"; b.textContent = C.badge.recording; }
     else if (p === "verifying") { b.className = "dm-badge"; b.textContent = C.badge.checking; }
     else if (S.verdict && S.verdict.ok === false) { b.className = "dm-badge bad"; b.innerHTML = ICON.bad + esc(C.badge.tampered); }
-    else if (p === "edited" || p === "editing" && S.rows.some(function (x) { return x.edited; })) { b.className = "dm-badge warn"; b.textContent = C.badge.edited; }
+    else if (p === "edited" || (p === "editing" && S.rows.some(function (x) { return x.edited; }))) { b.className = "dm-badge warn"; b.textContent = C.badge.edited; }
     else { b.className = "dm-badge ok"; b.innerHTML = ICON.ok + esc(C.badge.intact); }
+    var v = $("dm-verify"), canVerify = p === "ready" || p === "edited" || p === "done";
+    v.disabled = !canVerify;
+    v.classList.toggle("pulse", p === "edited");
+    v.lastChild.textContent = p === "verifying" ? C.go.checking : C.go.verify;
+    $("dm-pack").disabled = !(p === "ready" || p === "edited" || p === "done");
   }
-  function renderChain() {
-    var html = "";
-    var total = S.sc.steps.length;
-    for (var i = 0; i < total; i++) {
-      var row = S.rows[i], next = S.rows[i + 1];
-      if (!row) {
-        html += '<div class="dm-rc ghost" aria-hidden="true"><span class="dm-n">' + esc(fill(C.no, { n: i })) + " · " + esc(S.sc.steps[i].at) + "</span><b>…</b></div>";
-        continue;
-      }
-      var cls = "dm-rc" + (row.fresh ? " new" : "") + (row.mark === "bad" ? " is-bad" : "") + (row.mark === "broken" ? " is-broken" : "");
-      if (next && next.mark === "bad") cls += " lk-bad";
-      else if (row.mark === "bad" || row.mark === "broken") cls += " lk-gone";
-      var tag = row.mark === "bad" ? "bad" : row.mark === "broken" ? "warn" : row.mark === "sealing" ? "" : "ok";
-      var hash = '<span class="dm-h mono' + (row.now ? " bad" : "") + '">' + short(row.hash) + (row.now ? " ≠ " + short(row.now) : "") + "</span>";
-      html += '<button class="' + cls + '" type="button" data-seq="' + row.r.seq + '" aria-pressed="' + (S.selected === row.r.seq) + '">' +
-        '<span class="dm-n">' + esc(fill(C.no, { n: row.r.seq })) + " · " + esc(row.at) + "</span><b>" + esc(cardTitle(row.r)) + "</b>" + hash +
-        '<span class="dm-tag ' + tag + '">' + esc(C.marks[row.mark]) + (row.edited ? " · " + esc(C.edited) : "") + "</span></button>";
-    }
-    $("dm-chain").innerHTML = html;
-  }
-  function renderRp() {
-    var d = $("dm-rp");
-    var row = S.rows.filter(function (x) { return x.r.seq === S.selected; })[0];
-    if (!row) { d.innerHTML = '<p class="dm-empty">' + esc(C.rp.empty) + "</p>"; return; }
+  function openPanel(row) {
     var r = row.r;
-    var open = S.phase === "done" || row.edited;
     var now = row.edited ? receiptHash(r) : null;
     var tags = (row.edited ? '<span class="dm-tag warn">' + esc(C.edited) + "</span>" : "") +
       '<span class="dm-tag ' + (r.outcome === "blocked" ? "warn" : "ok") + '">' + esc(r.outcome === "blocked" ? C.outcomes.blocked : C.outcomes.ok) + "</span>";
     var top = '<div class="dm-rp-top"><span class="dm-kind">' + ICON[r.action.kind === "genesis" ? "genesis" : r.action.kind] + '</span><span class="dm-tags">' + tags + "</span></div>";
     if (S.phase === "editing" && S.target === r.seq) {
-      d.innerHTML = top + '<h3 class="dm-title">' + esc(C.edit.title) + '</h3><form class="dm-edit" id="dm-edit">' +
+      return '<div class="dm-open">' + top + '<h4 class="dm-title">' + esc(C.edit.title) + '</h4><form class="dm-edit" id="dm-edit">' +
         '<label for="dm-edit-name">' + esc(C.edit.action) + '<input id="dm-edit-name" maxlength="256" value="' + esc(r.action.name) + '" autocomplete="off"></label>' +
         '<label for="dm-edit-outcome">' + esc(C.edit.outcome) + '<select id="dm-edit-outcome"><option value="ok"' + (r.outcome === "ok" ? " selected" : "") + ">" + esc(C.outcomes.ok) + '</option><option value="blocked"' + (r.outcome === "blocked" ? " selected" : "") + ">" + esc(C.outcomes.blocked) + "</option></select></label>" +
-        '<button class="dm-link" type="button" id="dm-edit-cancel">' + esc(C.edit.cancel) + '</button><p class="dm-note">' + esc(C.edit.note) + "</p></form>";
-      return;
+        '<p class="dm-warn">' + esc(C.edit.note) + '</p><div class="dm-edit-btns"><button class="dm-btn" type="button" id="dm-edit-cancel">' + esc(C.edit.cancel) + '</button><button class="dm-btn pri pulse" type="submit">' + esc(C.edit.save) + "</button></div></form></div>";
     }
     var facts = (r.action.kind === "genesis" ? "" : '<div class="dm-kv"><span>' + esc(C.rp.agent) + "</span><span>" + esc(r.actor.agent) + "</span></div>") +
       '<div class="dm-kv"><span>' + esc(C.rp.when) + "</span><span>" + esc(C.date) + ", " + esc(row.at) + "</span></div>" +
       '<div class="dm-kv"><span>' + esc(C.rp.from) + "</span><span>" + esc(C.rp.sources[r.source.type] || "sigillo") + "</span></div>";
-    var sealed = row.mark === "sealing" ? '<span>' + esc(C.rp.sealing) + "</span>" : '<span class="okv">' + esc(fill(C.rp.sealedAt, { date: C.date, time: S.sc.sealAt })) + "</span>";
+    var sealed = row.mark === "sealing" ? "<span>" + esc(C.rp.sealing) + "</span>" : '<span class="okv">' + esc(fill(C.rp.sealedAt, { date: C.date, time: S.sc.sealAt })) + "</span>";
     var tech = '<div class="dm-fp"><small>' + esc(C.rp.fp) + "</small><code>" + row.hash + "</code></div>" +
       (now ? '<div class="dm-fp"><small>' + esc(C.rp.fpNow) + '</small><code class="bad">' + now + "</code></div>" : "") +
       '<div class="dm-fp"><small>' + esc(r.seq === 0 ? C.rp.first : fill(C.rp.linked, { n: r.seq - 1 })) + "</small><code>" + r.prev_hash + "</code></div>" +
       '<div class="dm-fp"><small>' + esc(C.rp.sig) + "</small><code>" + (r.sig ? "Ed25519 · " + r.key_id + "<br>" + r.sig : "—") + "</code></div>" +
       (r.input_hash ? '<div class="dm-fp"><small>' + esc(C.rp.input) + "</small><code>" + r.input_hash + "</code></div>" : "") +
       '<div class="dm-fp"><small>' + esc(C.rp.version) + "</small><code>v" + r.v + "</code></div>";
-    d.innerHTML = top + '<h3 class="dm-title">' + esc(sentence(r)) + '</h3><div class="dm-tbl">' + facts + '</div><div class="dm-tbl"><div class="dm-kv"><span>' + esc(C.rp.seal) + "</span>" + sealed + "</div></div>" +
-      '<details class="dm-det"' + (open ? " open" : "") + "><summary>" + esc(C.rp.details) + '</summary><div class="dm-tbl">' + tech + "</div></details>";
+    var canEdit = (S.phase === "ready" || S.phase === "edited") && r.action.kind !== "genesis";
+    return '<div class="dm-open">' + top + '<h4 class="dm-title">' + esc(sentence(r)) + '</h4><div class="dm-tbl">' + facts + '</div><div class="dm-tbl"><div class="dm-kv"><span>' + esc(C.rp.seal) + "</span>" + sealed + "</div></div>" +
+      '<details class="dm-det"' + (S.phase === "done" || row.edited ? " open" : "") + "><summary>" + esc(C.rp.details) + '</summary><div class="dm-tbl">' + tech + "</div></details>" +
+      (canEdit ? '<button class="dm-link" type="button" id="dm-edit-open">' + ICON.pencil + esc(C.list.rewrite) + "</button>" : "") + "</div>";
   }
-  function renderSide() {
-    var el = $("dm-side"), v = S.verdict;
-    if (S.phase === "done" && v) {
-      var items = "";
-      if (v.ok) {
-        items = C.ok.checks.map(function (t, i) { return "<li><i>" + (i === 1 && !v.sig ? "–" : "✓") + "</i><span>" + esc(t) + "</span></li>"; }).join("");
-        el.className = "dm-side ok";
-        el.innerHTML = '<span class="k">' + esc(C.ok.tag) + "</span><h3>" + esc(fill(C.ok.title, { n: S.rows.length })) + "</h3><p>" + esc(C.ok.body) + '</p><ul class="dm-checks">' + items + "</ul>" + (v.sig ? "" : '<p class="dm-note">' + esc(C.ok.nosig) + "</p>");
-        return;
-      }
-      items = '<li><i>✕</i><span>' + esc(C.bad.checks.fp) + '<span class="mono">' + short(v.sealed) + " → " + short(v.now) + "</span></span></li>" +
-        (v.sig ? '<li><i>✕</i><span>' + esc(fill(C.bad.checks.sig, { key: short(v.key) })) + "</span></li>" : "") +
-        (v.next === null ? "" : '<li><i>✕</i><span>' + esc(fill(C.bad.checks.link, { next: v.next })) + "</span></li>");
-      el.className = "dm-side bad";
-      el.innerHTML = '<span class="k">' + esc(C.bad.tag) + "</span><h3>" + esc(fill(C.bad.title, { seq: v.seq })) + '</h3><ul class="dm-checks">' + items + '</ul><p class="dm-note">' + esc(C.bad.note) + "</p>";
-      return;
-    }
-    var p = S.phase === "verifying" ? C.side.edited : C.side[S.phase];
-    el.className = "dm-side";
-    el.innerHTML = '<span class="k">' + esc(p.k) + "</span><h3>" + esc(p.t) + "</h3><p>" + esc(p.p) + "</p>";
-  }
-  function renderFoot() {
-    var go = $("dm-go"), p = S.phase;
-    var label = { idle: C.go.start, recording: C.go.recording, ready: C.go.edit, editing: C.go.save, edited: C.go.verify, verifying: C.go.checking, done: C.go.pack }[p];
-    var icon = { idle: ICON.play, ready: ICON.pencil, edited: ICON.shield, done: ICON.download }[p] || "";
-    go.innerHTML = icon + esc(label);
-    go.disabled = p === "recording" || p === "verifying";
-    go.classList.toggle("pulse", !go.disabled);
-    $("dm-hint").textContent = p === "verifying" ? C.hints.edited : C.hints[p === "idle" ? "idle" : p];
-    $("dm-reset").disabled = p === "idle";
+  function renderList() {
+    var list = $("dm-list");
+    var html = '<div class="dm-day">' + esc(C.list.day) + "</div>";
+    if (S.phase === "idle") html += '<p class="dm-waiting">' + esc(C.list.waiting) + "</p>";
+    S.rows.forEach(function (row) {
+      var r = row.r, sel = S.selected === r.seq;
+      var cls = "dm-row" + (row.fresh ? " new" : "") + (row.mark === "bad" ? " is-bad" : "") + (row.mark === "broken" ? " is-broken" : "");
+      var mark = row.mark === "bad" ? "bad" : row.mark === "broken" ? "broken" : row.mark === "sealing" ? "sealing" : "";
+      html += '<button class="' + cls + '" type="button" role="option" data-seq="' + r.seq + '" aria-selected="' + sel + '">' +
+        '<span class="dm-t">' + esc(row.at) + '</span><span class="dm-kind">' + ICON[r.action.kind] + "</span>" +
+        '<span class="dm-name">' + esc(rowTitle(r)) + (row.edited ? "<em>" + esc(C.edited) + "</em>" : "") + "</span>" +
+        (r.outcome === "blocked" ? '<span class="dm-tag warn">⚠ ' + esc(C.outcomes.blocked) + "</span>" : '<span class="dm-ph"></span>') +
+        '<span class="dm-sl ' + mark + '">' + esc(C.marks[row.mark]) + "</span></button>";
+      if (sel) html += openPanel(row);
+    });
+    list.className = "dm-list" + (S.phase === "editing" ? " editing" : "");
+    var keep = list.scrollTop;
+    list.innerHTML = html;
+    list.scrollTop = keep;
   }
 
   function beginEdit() {
     var row = S.rows.filter(function (x) { return x.r.seq === S.selected && x.r.action.kind !== "genesis"; })[0];
-    if (!row) row = S.rows.filter(function (x) { return x.r.seq === S.target; })[0];
-    S.target = row.r.seq; S.selected = row.r.seq; S.phase = "editing";
+    if (!row) return;
+    S.target = row.r.seq; S.phase = "editing";
     renderAll();
     var n = $("dm-edit-name"); if (n) { n.focus(); n.select(); }
   }
@@ -820,8 +826,8 @@ export const DEMO_SCRIPT = String.raw`"use strict";
     var name = $("dm-edit-name").value.trim() || row.r.action.name;
     row.r.action.name = name;
     row.r.outcome = $("dm-edit-outcome").value;
-    row.edited = name !== row.orig.name || row.r.outcome !== row.orig.outcome;
-    S.phase = row.edited ? "edited" : "ready";
+    row.edited = name !== row.orig.name || row.r.outcome !== row.orig.outcome || row.edited;
+    S.phase = S.rows.some(function (x) { return x.edited; }) ? "edited" : "ready";
     renderAll();
   }
   function cancelEdit() { S.phase = S.rows.some(function (x) { return x.edited; }) ? "edited" : "ready"; renderAll(); }
@@ -876,26 +882,20 @@ export const DEMO_SCRIPT = String.raw`"use strict";
 
   root.addEventListener("click", function (e) {
     var t = e.target;
-    var tab = t.closest(".dm-tab");
-    if (tab) { idle(tab.getAttribute("data-sc")); return; }
-    var card = t.closest("button.dm-rc");
-    if (card && S && S.phase !== "recording" && S.phase !== "verifying") {
-      S.selected = Number(card.getAttribute("data-seq"));
-      if (S.phase === "editing") S.phase = "ready";
-      if (S.phase === "ready" && S.selected !== 0) S.target = S.selected;
+    var chip = t.closest(".dm-chip");
+    if (chip) { idle(chip.getAttribute("data-sc")); record(); return; }
+    var row = t.closest("button.dm-row");
+    if (row && S && S.phase !== "recording" && S.phase !== "verifying") {
+      var seq = Number(row.getAttribute("data-seq"));
+      if (S.phase === "editing") S.phase = S.rows.some(function (x) { return x.edited; }) ? "edited" : "ready";
+      S.selected = S.selected === seq ? null : seq;
       renderAll(); return;
     }
+    if (t.closest("#dm-edit-open")) { beginEdit(); return; }
     if (t.closest("#dm-edit-cancel")) { cancelEdit(); return; }
     if (t.closest("#dm-reset")) { idle(S.sc.key); return; }
-    if (t.closest("#dm-go")) {
-      var p = S.phase;
-      if (p === "idle") record();
-      else if (p === "ready") beginEdit();
-      else if (p === "editing") saveEdit();
-      else if (p === "edited") verify();
-      else if (p === "done") openPack();
-      return;
-    }
+    if (t.closest("#dm-verify")) { verify(); return; }
+    if (t.closest("#dm-pack")) { openPack(); return; }
     if (t.id === "dm-scrim" || t.closest("#dm-pack-close")) { $("dm-scrim").hidden = true; }
   });
   root.addEventListener("submit", function (e) {
@@ -904,9 +904,12 @@ export const DEMO_SCRIPT = String.raw`"use strict";
   });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") $("dm-scrim").hidden = true; });
 
-  // The page drew the chain at rest; the script takes it over and waits for the visitor to start the agent.
+  // The page drew the first agent's actions at rest; the script takes it over and waits for the visitor to choose an agent.
   root.classList.add("live");
   window.sigilloDemo = { state: function () { return S; }, receiptHash: receiptHash, canon: canon };
   idle(C.agents[0].key);
 })();
 `;
+
+/** The script's address carries a fingerprint of its text, so a browser that kept an older copy fetches the one that matches the page. */
+export const DEMO_SCRIPT_URL = `/demo.js?v=${createHash("sha256").update(DEMO_SCRIPT).digest("hex").slice(0, 12)}`;
