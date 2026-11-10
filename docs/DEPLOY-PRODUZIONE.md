@@ -17,6 +17,27 @@ con il risultato atteso, da spuntare riga per riga.
 Per una prova sul proprio computer, senza dominio, c'è `PROVA-LOCALE.md`.
 Questa guida è per il server vero.
 
+> **Aggiornamento del 10 novembre 2026, dal confronto con il codice.** Tre cose
+> sono cambiate da quando la guida è stata scritta, e valgono per tutto il
+> testo qui sotto:
+>
+> - **I servizi sono quattro, non tre.** Dal 7 novembre 2026
+>   `docker-compose.yml` avvia anche `keyholder`, il processo separato che
+>   custodisce ciò che apre le chiavi dei modelli dei clienti (gateway). Parte
+>   da solo con `docker compose up -d`, crea la propria chiave al primo avvio e
+>   non richiede nessun comando. Il suo volume (`keyholder-key`) non è nei
+>   backup: se va perso, ogni cliente salva di nuovo la chiave del suo modello.
+> - **La pagina web è in inglese.** Le etichette italiane citate in questa
+>   guida ("È tutto a posto?", "Sigilla adesso", "Clienti", "Impostazioni")
+>   compaiono come "Is everything all right?", "Seal now", "Customers",
+>   "Settings"; il pulsante del fascicolo è "Download evidence pack". L'italiano
+>   si può scegliere solo se il server parte con `SIGILLO_ITALIAN=1`, che il
+>   `docker-compose.yml` fornito non imposta.
+> - **Le autorità di marca temporale sono due.** Oltre a `TSA_URL` (FreeTSA) il
+>   server chiede una seconda marca sulle stesse radici a `TSA_URL_2`
+>   (predefinita nel compose: `http://timestamp.digicert.com`; vuota per
+>   spegnerla). Un fascicolo può quindi contenere due token per checkpoint.
+
 ---
 
 ## Cosa serve
@@ -306,8 +327,8 @@ $ docker compose up -d
 $ docker compose ps
 ```
 
-Dopo 30–60 secondi `docker compose ps` deve mostrare `signer` e `server` come
-`Up … (healthy)` e `caddy` come `Up`. Se `server` resta `(health: starting)` o
+Dopo 30–60 secondi `docker compose ps` deve mostrare `signer`, `keyholder` e
+`server` come `Up … (healthy)` e `caddy` come `Up`. Se `server` resta `(health: starting)` o
 diventa `(unhealthy)`: `docker compose logs server`.
 
 Controlla che Caddy abbia ottenuto il certificato:
@@ -496,7 +517,12 @@ verified:
   - …
 ```
 
-e uscita `0` (`echo $?`). `verified` accanto al token vuol dire che la firma
+e uscita `0` (`echo $?`). Per un checkpoint fatto dal server in funzione (non
+dal comando del punto 5.1, che chiede solo a `TSA_URL`) possono esserci due
+righe `timestamp`: quella di FreeTSA `verified` e quella della seconda
+autorità `imprint-only`, perché `--tsa-ca` indica un solo certificato. Non è
+un errore: l'ora provata è quella del token verificato. `verified` accanto al
+token vuol dire che la firma
 dell'autorità è stata controllata con il suo certificato; l'`attested time` è
 l'ora certificata da FreeTSA, la prova del "quando". Se manca l'opzione
 `--tsa-ca` il token risulta `imprint-only`: la marca riguarda proprio questo
@@ -639,7 +665,7 @@ dal deposito, sul portatile):
 
 ```sh
 portatile$ age -d -i sigillo-backup-chiave.txt -o sigillo-ripristino.db sigillo-AAAAMMGGThhmmssZ.db.age
-portatile$ node dist/cli.js system list --all --db sigillo-ripristino.db
+portatile$ node apps/server/dist/cli.js system list --all --db sigillo-ripristino.db
 ```
 
 Deve elencare i tuoi sistemi (6.2). Il login del deposito sta nella
@@ -668,7 +694,7 @@ Un backup mai provato non è un backup. Sul portatile, nella cartella `sigillo`:
 
 ```sh
 portatile$ tar -xf sigillo-backup.tar
-portatile$ node dist/cli.js system list --all --db sigillo-*.db
+portatile$ node apps/server/dist/cli.js system list --all --db sigillo-*.db
 ```
 
 Deve elencare `acme-support-bot` con lo stesso numero di ricevute che mostra la
@@ -682,8 +708,10 @@ $ /srv/sigillo/deploy/update.sh
 ```
 
 Lo script fa, nell'ordine: `git pull --ff-only`, `docker compose build`,
-`docker compose up -d`, **`docker compose restart caddy`**, e poi controlla che
-Caddy stia davvero usando il `Caddyfile` appena scaricato. Si ferma al primo
+`docker compose up -d`, **`docker compose restart caddy`**, poi controlla che
+Caddy stia davvero usando il `Caddyfile` appena scaricato, e infine esegue
+`sigillo-server signer check`, che confronta il registro del signer con il
+database e fa fallire lo script se non concordano. Si ferma al primo
 passo che fallisce (un `git pull` che non riesce non tocca nessun container).
 
 Perché riavvia Caddy **ogni volta**: Caddy legge il `Caddyfile` solo quando
@@ -706,7 +734,14 @@ e `docker compose logs caddy` ne mostra il motivo. L'esito atteso:
 update.sh: done; Caddy restarted and serves the Caddyfile's script hash 'sha256-…'
 ```
 
-**Aggiornamento automatico, ogni minuto.** Dopo il primo `update.sh` fatto a mano,
+seguito dall'esito di `signer check` e dall'elenco dei container (`signer`,
+`keyholder` e `server` `(healthy)`, `caddy` `Up`).
+
+**Aggiornamento automatico, ogni minuto.** Gli esempi qui sotto usano
+`/root/sigillo`, la cartella dell'installazione di produzione attuale; se hai
+clonato in `/srv/sigillo` come al punto 2.1, usa quel percorso. Lo script
+aggiorna solo se il clone è sul ramo `main`, ed esegue come l'utente del
+crontab tutto ciò che arriva su `main`: va attivato sapendolo. Dopo il primo `update.sh` fatto a mano,
 una volta sola (si può rifare: sostituisce la riga che c'era, ad esempio quella
 vecchia delle tre ore):
 
@@ -725,8 +760,7 @@ finché in `main` non ne arriva uno nuovo (per riprovarlo subito:
 `auto-update.sh uninstall`. Per un'altra frequenza:
 `SIGILLO_AUTO_UPDATE_SCHEDULE="0 */3 * * *" /root/sigillo/deploy/auto-update.sh install`.
 
-seguito dall'elenco dei container (`signer` e `server` `(healthy)`, `caddy`
-`Up`). Per controllarlo anche dall'esterno, come lo vede un browser:
+Per controllare l'impronta dello script anche dall'esterno, come la vede un browser:
 
 ```sh
 $ grep -o "script-src '[^']*'" /srv/sigillo/deploy/Caddyfile
@@ -769,7 +803,8 @@ firmatario» per ogni sistema.
 
 Il comando controlla ogni catena (posizioni, collegamenti, impronte, firme) e si
 rifiuta se una non torna, senza scrivere niente. Si esegue una volta sola: una
-seconda volta si rifiuta. Se lo salti, il server parte comunque, ma mostra in
+seconda volta non scrive niente e dice soltanto se il signer concorda ancora
+con il database (`already initialised …: nothing to do`). Se lo salti, il server parte comunque, ma mostra in
 rosso ogni sistema che esisteva («Il firmatario e il database non concordano»)
 e il signer non firma più nulla per quei sistemi finché non lo esegui.
 
@@ -817,7 +852,22 @@ accettato per iscritto. Quando ci sarà un fornitore qualificato: `TSA_URL` e
 `TSA_USERNAME` in `.env`, la password in `secrets/tsa_password`, e le due righe
 `tsa_password` in `docker-compose.yml` da decommentare. Poi
 `docker compose up -d`, e il suo certificato va usato con `--tsa-ca` nella
-verifica.
+verifica. Neppure la seconda autorità predefinita (`TSA_URL_2`, DigiCert) è
+qualificata eIDAS; per spegnerla, `TSA_URL_2=` (vuoto) in `.env`.
+
+### 6.6 (Facoltativo) Il secondo fattore per la password dell'amministratore
+
+Dal 7 novembre 2026 l'accesso dell'amministratore può chiedere, oltre alla
+password, un codice a sei cifre di un'app di autenticazione (TOTP):
+
+```sh
+$ docker compose exec server node dist/cli.js admin-code
+$ docker compose restart server
+```
+
+Il primo comando stampa il segreto da inserire nell'app e lo salva in un file
+accanto al database (`admin-code.key`); il server lo legge all'avvio, per
+questo va riavviato. Per toglierlo: `admin-code --off`, e di nuovo il riavvio.
 
 ---
 
@@ -859,7 +909,7 @@ non dà il risultato atteso, fermati lì.
 | 10 | server | `docker compose build` | termina senza `ERROR` |
 | 11 | server | `docker compose run --rm signer keygen --key /var/lib/sigillo-key/signer.key` | `key written to …`, `key_id <16 hex>`, `public_key_base64 …`; key_id scritto fuori dal server |
 | 12 | server | copia cifrata della chiave (3.3), poi `openssl enc -d … \| tar -tvf -` | elenca `signer.key` `-rw-------`; file portato fuori e cancellato dal server |
-| 13 | server | `docker compose up -d && sleep 60 && docker compose ps` | signer e server `(healthy)`, caddy `Up` |
+| 13 | server | `docker compose up -d && sleep 60 && docker compose ps` | signer, keyholder e server `(healthy)`, caddy `Up` |
 | 14 | server | `docker compose logs caddy \| grep -i "certificate obtained successfully"` | almeno una riga con il dominio |
 | 15 | portatile | `curl -sS https://sigillo.tuaazienda.it/healthz` | `{"status":"ok"}` |
 | 16 | portatile | `curl -sSI https://sigillo.tuaazienda.it/ui/login \| grep -iE 'strict-transport\|x-frame\|x-content-type\|referrer-policy\|cache-control'` | cinque righe |
@@ -879,7 +929,7 @@ non dà il risultato atteso, fermati lì.
 | 30 | server | `docker compose exec -T server /app/backup.sh` | `wrote … bytes`, `backups in …: 1` |
 | 31 | server | `crontab -l` | la riga `0 * * * *` del backup orario |
 | 32 | portatile | copia dell'ultimo backup (6.1) e `tar -tvf sigillo-backup.tar` | un file `sigillo-….db` |
-| 33 | portatile | `node dist/cli.js system list --all --db sigillo-*.db` | `acme-support-bot	N receipts	active	…` |
+| 33 | portatile | `node apps/server/dist/cli.js system list --all --db sigillo-*.db` | `acme-support-bot	N receipts	active	…` |
 
 Quando tutte le righe sono spuntate, sigillo è in produzione. Restano le scelte
 della checklist "Before going to production" di `SECURITY.md`: chi custodisce la

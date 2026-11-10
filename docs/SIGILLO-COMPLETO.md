@@ -174,7 +174,7 @@ Zip deterministico con: `receipts.jsonl`, `checkpoints.jsonl`, `artifacts-index.
 
 ### 4.6 Il verificatore (`sigillo-verify`) [CODICE]
 
-File principali: `cli.ts` (586 righe), `verify.ts` (780 righe), `timestamps.ts`. Fa 14 controlli: manifest, versioni, system_id, sequenza, genesis, prev_hash, firme, indice degli artefatti, aperture, firme dei checkpoint, radici Merkle, prove di inclusione, intervalli e conteggi, marche RFC 3161 via openssl, tempi di ancoraggio.
+File principali: `cli.ts` (586 righe), `verify.ts` (780 righe), `timestamps.ts`. Fa 14 controlli numerati (più l'8b sulle aperture e sugli pseudonimi), nell'ordine di `docs/FORMAT.md` 10.5: manifest, versioni, system_id, sequenza, genesis, prev_hash, firme, indice degli artefatti, aperture, firme dei checkpoint, radici Merkle, prove di inclusione, intervalli e conteggi, marche RFC 3161 via openssl, tempi di ancoraggio.
 
 - Ancoraggio: errore se l'ora differisce di più di 5 minuti, errore se l'ordine è sbagliato, avviso se il ritardo supera 60 minuti.
 - Opzioni: `--key-id`, `--previous`, `--strict`, `--tsa-ca`, `--clock-tolerance`, `--max-anchor-delay`.
@@ -225,15 +225,15 @@ Tutto avviene **nel browser**: il file dell'agente non viene caricato sul server
 - Python e Node/TypeScript sono **attivi nel codice**.
 - Java e .NET sono sospesi: rispondono "coming soon" (interruttore `data-other-languages`, mai acceso).
 
-**Discrepanza:** `docs/PROJECT-KNOWLEDGE.md` dice che anche il caricamento TypeScript è spento. Il codice di oggi dice di no: per i file Node/TS produce il file modificato. Vale il codice, e il documento è da correggere.
+(`docs/PROJECT-KNOWLEDGE.md` diceva che anche il caricamento TypeScript era spento: corretto il 2026-11-10.)
 
 Nota di sicurezza: la chiave Sigillo del sistema finisce in chiaro dentro il file dell'agente. Vedi audit, punto 2.
 
 ### 5.5 Battito e guardiano [CODICE]
 
-- L'SDK manda un battito ogni 60 secondi a `POST /api/v1/heartbeat` { sessione di 32 esadecimali, evento `start|beat|stop|ended|ping|gap`, più eventuale allarme }.
+- L'SDK manda un battito ogni 60 secondi a `POST /api/v1/heartbeat` { sessione di 32 esadecimali, evento `start|beat|stop|ended|ping|gap|alarm`; l'allarme è `model_open` o `model_foreign` }.
 - Un **guardiano** (`_watchdog.py`) gira come processo separato (interprete avviato con `-I`). Segnala se l'agente è finito, se il computer è andato in sospensione o offline, o è stato riavviato.
-- Il server scrive nella catena ricevute riservate: `sigillo.connection.start`, `.stop`, `.lost` (dopo 3 minuti senza battito), `.ended`, `.sleep`, `.offline`, `.power_off`, `.restored`, `.script_changed`.
+- Il server scrive nella catena ricevute riservate: `sigillo.connection.start`, `.stop`, `.lost` (dopo 3 minuti senza battito), `.ended`, `.sleep`, `.offline`, `.power_off`, `.restored`, `.script_changed`, `.model_open`, `.model_foreign`.
 - **Modalità strict:** il guardiano ricalcola l'impronta dello script, del pacchetto SDK e delle librerie OpenTelemetry/OpenInference; se cambiano ferma l'agente. L'agente esce con codice 70 se lo script cambia o dopo 3 battiti mancati.
 - Limiti: 60 nuove sessioni l'ora, 24 "gap" l'ora.
 - Limite noto [DOCUMENTI]: Ctrl-C viene registrato come `lost`. Dalla 0.11 "ended" e "lost" sono distinti; il caso preciso di Ctrl-C oggi è [NON VERIFICATO].
@@ -271,9 +271,9 @@ Salvate con AES-256-GCM (nonce 12 byte, dato associato = id del sistema + fornit
 
 Ogni 60 secondi il server confronta gli strumenti che il modello ha chiesto (visti dal gateway) con quelli che l'agente ha registrato. Dopo 10 minuti di tolleranza scrive un allarme `sigillo.check.tool_unrecorded.<strumento>` (`agent_step`, esito `error`). Limiti: massimo 20 allarmi per sistema a giro; solo per i sistemi che dall'avvio del processo hanno registrato almeno uno strumento proprio; al riavvio i 10 minuti precedenti non vengono controllati; il confronto dei nomi è largo.
 
-### Incoerenza nei documenti
+### Nota sui documenti
 
-`docs/API.md` dice ancora che il gateway "non è offerto nella console dal 2026-10-07" ed elenca solo 3 fornitori. Il codice e il compose dicono: gateway acceso per tutti (`all`) e 18 fornitori. Vale il codice.
+`docs/API.md` diceva che il gateway "non è offerto nella console dal 2026-10-07" ed elencava solo 3 fornitori. È stato riallineato al codice il 2026-11-10: gateway acceso per tutti nel compose (`all`) e 18 fornitori.
 
 ---
 
@@ -289,7 +289,7 @@ python -m sigillo.door --endpoint ... --system-id ... --upstream ... --port ... 
 
 - La porta ascolta sull'indirizzo abituale del modello: 127.0.0.1:11434 (Ollama), 1234 (LM Studio), 8080 (llama.cpp), 8000 (vLLM), 1337 (Jan).
 - Controlla il token (confronto a tempo costante) e inoltra al modello, che viene spostato sulla porta successiva (per Ollama 11435).
-- Solo Ollama può essere avviato automaticamente. Se Ollama è già aperto, la porta si apre accanto su una porta libera e viene registrato `sigillo.local_model.open`.
+- Solo Ollama può essere avviato automaticamente. Se Ollama è già aperto, la porta si apre accanto su una porta libera e il server scrive la ricevuta `sigillo.connection.model_open` (il commento nell'SDK la chiama ancora `sigillo.local_model.open`, ma il nome scritto nella catena è questo: `connection/watch.ts`).
 - Si attiva con `sigillo.init(local_model=True)`.
 
 **Limite serio (audit, punto 1, non corretto):** la porta spostata (11435) **non ha autenticazione**. Un processo sulla stessa macchina può chiamare il modello direttamente o avviarne uno suo. La correzione proposta (porta casuale più allarme sull'uso estraneo) aspetta l'OK di Giovanni. Una garanzia forte richiede isolamento a livello di sistema operativo. **Non dire che la guardia è ermetica.**
@@ -341,7 +341,7 @@ Applicata in `auth/tenancy.ts`, chiusa per impostazione predefinita. Però: una 
 
 ## 9. Accessi e sicurezza dell'applicazione [CODICE + docs/SECURITY.md]
 
-- **Chiavi API Sigillo:** formato `sigillo_<16 esadecimali id>_<64 esadecimali segreto>`. Dal 2026-11-07 salvate come SHA-256 (le vecchie in scrypt migrano al primo uso). `docs/API.md` e `STORAGE-INVENTORY.md` dicono ancora "scrypt": testo vecchio. Blocco dopo 20 chiavi sbagliate al minuto.
+- **Chiavi API Sigillo:** formato `sigillo_<16 esadecimali id>_<64 esadecimali segreto>`. Dal 2026-11-07 salvate come SHA-256 (le vecchie in scrypt migrano al primo uso). `docs/API.md` è stato corretto il 2026-11-10; `STORAGE-INVENTORY.md` dice ancora "scrypt" perché è generato da una tabella nel codice (`assurance/privacy-check.ts`), che va corretta lì. Blocco dopo 20 chiavi sbagliate al minuto.
 - **Amministratore:** password di almeno 12 caratteri letta da file; 5 errori in 15 minuti bloccano per 5 minuti, raddoppiando fino a 60; limite globale; **secondo fattore facoltativo** a sei cifre (TOTP: `sigillo-server admin-code`, file `admin-code.key`). Se in produzione sia stato attivato è [NON VERIFICATO].
 - **Sessione:** cookie HMAC, HttpOnly, SameSite=Strict; il segreto cambia a ogni riavvio (quindi un riavvio disconnette tutti, apposta). Protezione CSRF con Sec-Fetch-Site/Origin.
 - **Account dei clienti:** Firebase, chiamato dal server (niente JavaScript di Firebase nel browser), accesso con email o Google, password di almeno 10 caratteri, email non verificata non entra, i nuovi aspettano l'approvazione dell'operatore (pagina "Clienti" o `org approve`).
@@ -532,7 +532,7 @@ Cose che solo Giovanni può fare:
 
 Sospese (non riproporre): cassaforte delle chiavi, SDK Rust, caricamento Java/.NET, test mostrati ai clienti nella console, prodotto self-hosted, marca qualificata eIDAS.
 
-Documenti da riallineare al codice: `docs/API.md` (gateway, 3 fornitori, scrypt), `docs/STORAGE-INVENTORY.md` (scrypt), `docs/PROJECT-KNOWLEDGE.md` (caricamento TypeScript, zod, secondo fattore), Termini (backup "ogni due ore"), DPA (manca DigiCert), sito ("open source").
+Documenti riallineati al codice il 2026-11-10: `docs/API.md`, `docs/FORMAT.md`, `docs/SECURITY.md`, `docs/PROJECT-KNOWLEDGE.md`, `docs/DEPLOY-PRODUZIONE.md`, `README.md`. Restano da riallineare, perché stanno nel codice e non nei documenti: `docs/STORAGE-INVENTORY.md` (scrypt, generato da `privacy-check.ts`), Termini (backup "ogni due ore"), DPA (manca DigiCert), sito ("open source").
 
 ---
 

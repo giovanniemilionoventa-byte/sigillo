@@ -1,6 +1,7 @@
 # Project knowledge: decisions that live outside the code
 
-State as of 2026-11-05 (main after PR #138). This file keeps what the owner (Giovanni)
+State as of 2026-11-05 (main after PR #138), with the statements about the code
+corrected against the code on 2026-11-10 (main after PR #148). This file keeps what the owner (Giovanni)
 decided in conversations and that the code, `SPEC.md`, `PROGRESS.md` and `CLAUDE.md` do not
 say. It holds no passwords, tokens or keys. Where the code already answers, it is not repeated.
 
@@ -52,19 +53,24 @@ say. It holds no passwords, tokens or keys. Where the code already answers, it i
 - **Key vault (passphrase-sealed keys): suspended** on 2026-10-23 (`SIGILLO_KEY_VAULT`,
   default off, `on` restores it; code and tables kept). Do not propose re-enabling unless he
   asks. Why: without a passphrase the server could open it, with one he found it inconvenient.
-- **API keys customers hand over:** stored AES-256-GCM, key file apart from the database, only
-  the last 4 digits shown. The server must be able to open them to call the model, so
-  "invisible even to the server" is **not** achieved. Privacy texts promise only that.
-- **Upload your agent:** Python only in the console. TypeScript upload and Java/.NET
+- **API keys customers hand over:** stored AES-256-GCM, only the last 4 digits shown. Since
+  PR #145 (2026-11-07) they are sealed to a separate keyholder process, which alone opens them
+  and makes the call to the model provider; the server no longer holds what opens them, but
+  the service as a whole must be able to, so "invisible even to sigillo" is **not** achieved.
+  Privacy texts promise only that.
+- **Upload your agent:** Python and Node/TypeScript files in the console (the TypeScript SDK
+  was added on 2026-10-31; the page accepts `.py`, `.ts`, `.js` and their variants). Java/.NET
   OpenTelemetry settings are built but switched off (`data-other-languages`), because only what
   gives the same control as Python is kept. The Rust SDK (PR #117, branch
   `claude/project-thread-6olagu`) was **closed unmerged**; its dependencies (ureq, ring,
   unicode-normalization) were never approved. Resume only if he asks.
-- **Not eIDAS-qualified:** FreeTSA stamps are not qualified; a qualified stamp or company seal
+- **Not eIDAS-qualified:** FreeTSA stamps, and those of the second authority added in PR #145
+  (DigiCert's public service), are not qualified; a qualified stamp or company seal
   needs a company. Decision: wait.
 - **Known gaps:** no key-code field on the public `/verify` page (proposal pending); no
   automatic retention/deletion (proposal of 6 or 12 months pending, see
-  `docs/PROPOSTA-CONSERVAZIONE.md`); admin password has no second factor; no GitHub login; SDK
+  `docs/PROPOSTA-CONSERVAZIONE.md`); the admin password's second factor exists since PR #145 but
+  is optional and off until `sigillo-server admin-code` is run; no GitHub login; SDK
   not on PyPI (installed from the repository zip); no self-hosted product yet; no local queue
   (capture lost if the server is unreachable for more than about 10 s); Ctrl-C is recorded as
   `lost`.
@@ -92,8 +98,7 @@ say. It holds no passwords, tokens or keys. Where the code already answers, it i
 
 ## Open items
 
-- PR #129 (zod 4) fixes `pnpm audit`, red on main because of a zod advisory; awaiting a
-  decision.
+- PR #129 (zod 4) is superseded: the zod update went in with PR #145. It can be closed.
 - Caddyfile `img-src 'self'` blocks the `data:` SVG grain of the backdrop.
 - Partner call kit and a 50-minute Italian training course were built on request (2026-10-27,
   2026-11-02); facts in them may be out of date after later decisions. Answers on price and

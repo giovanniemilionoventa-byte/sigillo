@@ -36,7 +36,7 @@ recommendations at the end of this page still apply.
 | member | where the value comes from | what sigillo checks |
 |---|---|---|
 | `system_id` | the operator, when the system is created (CLI or web view) | 1–128 characters |
-| `actor.agent` | native API: the caller. OTLP: `gen_ai.agent.name`, else `gen_ai.provider.name` / `gen_ai.system` (GenAI) or `llm.system` (OpenInference), else the resource's `service.name`, else `unknown`. The Python SDK sets `service.name` to the `system_id` | 1–256 |
+| `actor.agent` | native API: the caller. OTLP: `gen_ai.agent.name`, else `gen_ai.provider.name` / `gen_ai.system` (GenAI) or `llm.system` (OpenInference), else the resource's `service.name`, else `unknown`. The Python and TypeScript SDKs set `service.name` to the `system_id` | 1–256 |
 | `actor.on_behalf_of` | native API: the caller. OTLP: the span attribute `user.id`, else `enduser.id`. Absent when neither is set. **Replaced by the server with a `psn_` token** before the receipt is written (version 4); the identifier goes only into the `subjects` table | 1–256 sent; a token recorded |
 | `action.name` | native API: the caller. OTLP: the tool name, the model name or the agent name, depending on the kind of action, else **the span's own name** | 1–256 |
 | `artifacts[].label`, `artifacts[].media_type` | the `sigillo.artifact(...)` call in the agent's code | 1–256, 1–128 |
@@ -142,8 +142,8 @@ only the digest (`sigillo.input.sha256` / `sigillo.output.sha256`) and an
 allow-list of identifiers; the raw value never leaves the agent's machine.
 Measured on the CV demo: with the filter on, no candidate's name and no line
 of any CV appears anywhere in the traffic sent to sigillo (before, the demo
-sent the full text of every CV — see `docs/PROPOSTA-FASE-8.md` §1 for the
-measurement that led to this). This is `sigillo.init(..., redact_content=True)`,
+sent the full text of every CV; the measurement that led to this is recorded
+in `PROGRESS.md`, fase 8 and fase 9 of the pilot plan). This is `sigillo.init(..., redact_content=True)`,
 the default; `redact_content=False` reverts to sending the raw value, which
 the server still reduces to a digest, but only after receiving it.
 

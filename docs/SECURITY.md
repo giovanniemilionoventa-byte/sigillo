@@ -34,8 +34,8 @@ in the supplied `docker-compose.yml` it runs with `network_mode: none`.
 
 The signer is not a signing oracle. Until protocol version 2 it signed any
 32-byte digest it was handed; it no longer signs a digest at all. It speaks
-four requests (`PUBKEY`, `SIGN_RECEIPT`, `CHECKPOINT`, `GET_HEAD`; see "The
-signer's own record of every chain" below), each one line of at most 256 KiB,
+five requests (`PUBKEY`, `SIGN_RECEIPT`, `CHECKPOINT`, `GET_HEAD`,
+`GET_RECEIPTS`; see "The signer's own record of every chain" below), each one line of at most 256 KiB,
 each checked against a strict schema in which an unknown field is a refusal,
 and handles them one at a time. Every request carries an `id`, which the
 signer echoes on its reply and which is the only thing the server matches
@@ -48,8 +48,8 @@ it is about to store, under the public key the signer announced (whose
 identifier must be the `key_id` the record carries). A signature that does not
 verify is refused and the transaction is rolled back: nothing is written. If
 the signer did sign that position, its own record says so, and the next write
-takes that receipt, with its real signature, from `GET_HEAD` (below) before
-going on.
+takes that receipt, with its real signature, back from the signer
+(`GET_HEAD` and `GET_RECEIPTS`, below) before going on.
 
 ## If the server is compromised
 
@@ -398,7 +398,7 @@ rests on; the web page and `sigillo-verify doc` always say it.
   bytes. A match means the bytes are identical, one by one. This is the only
   fingerprint a PDF, an image, a CSV or any document that is not `text/plain`
   ever has, and its meaning has not changed.
-- **Same text** (`text.sha256` under `sigillo-text/1`, version 3 only; rule in
+- **Same text** (`text.sha256` under `sigillo-text/1`, versions 3 and 4; rule in
   `docs/FORMAT.md`, 2.5.1). SHA-256 of the document's text after removing four
   invisible characters, Unicode NFC, collapsing every run of whitespace into
   one space and trimming. A match means the same characters in the same order,
@@ -452,8 +452,9 @@ fingerprint still matches as before.
 
 ## Authentication
 
-Ingest is authenticated by an API key, one per system, sent as a bearer token.
-A key belongs to exactly one system and writes to that chain and no other.
+Ingest is authenticated by an API key, sent as a bearer token. A key belongs
+to exactly one system and writes to that chain and no other; a system may have
+more than one key, each revocable on its own.
 
 Only a hash of the secret is stored, so a copy of the database does not let
 anyone speak for a system. Since 2026-11-07 it is a SHA-256: the secret is 32
@@ -467,7 +468,7 @@ in neither. The token is shown once when it is issued and is not recoverable.
 
 The key identifier inside a token is stored in the clear. It is a lookup handle,
 not a credential: it tells the server which row to check, so verifying costs one
-scrypt rather than one per key in the database.
+hash rather than one per key in the database.
 
 Checking a token still under scrypt runs it off the event loop, and whether the key is still
 live is read from the database on every request: a key revoked with
@@ -476,9 +477,23 @@ request of the server that is already running. An address that sends too many
 wrong tokens is locked out for a while, during which no scrypt is run for it,
 while tokens the server has already accepted keep working.
 
-The web view is guarded by a single administrator password, from
-`SIGILLO_ADMIN_PASSWORD_FILE` (a file, as the supplied Compose file provides
-it) or `SIGILLO_ADMIN_PASSWORD`. Without either the view is not served at all.
+The operator's side of the web view is guarded by a single administrator
+password, from `SIGILLO_ADMIN_PASSWORD_FILE` (a file, as the supplied Compose
+file provides it) or `SIGILLO_ADMIN_PASSWORD`. Without either the view is not
+served at all. Customers sign in with accounts of their own ("Customers'
+accounts" below).
+
+- **An optional second factor** (since 2026-11-07). `sigillo-server
+  admin-code` makes a secret for an authenticator app and keeps it in a file
+  beside the database (`admin-code.key`, or `SIGILLO_ADMIN_CODE_FILE`); a
+  server started with that file asks for the six-digit code (TOTP) together
+  with the password, and accepts each code once. `admin-code --off` removes
+  it. Without the file, the password alone signs in.
+- **Attempts are also limited across all addresses together**: 50 wrong
+  operator passwords in an hour, from anywhere, lock the operator's sign-in
+  for 15 minutes, doubling up to four hours, except from an address that has
+  signed in since the server started (`OPERATOR_GLOBAL_LIMITS` in
+  `apps/server/src/http/ui.ts`).
 
 - **Attempts are limited per address.** After 5 wrong passwords in 15 minutes
   (both configurable), the address is locked out for 5 minutes, doubling on
@@ -496,8 +511,10 @@ it) or `SIGILLO_ADMIN_PASSWORD`. Without either the view is not served at all.
   whenever the browser came over HTTPS (always, in the supplied Compose file).
   Its secret is per process, so a restart signs everyone out and nothing about
   the session is stored. Signing out, which is a POST, ends every session
-  issued until then, a copied cookie included: there is one password, so every
-  session is the same person's.
+  issued to the same viewer until then, a copied cookie included: the operator
+  signing out ends every operator session, and a customer's member signing out
+  ends that member's sessions and nobody else's. A session lasts 12 hours at
+  most.
 - **Every page behind the password is `Cache-Control: no-store`**, including
   the one that shows a new API key the only time it exists.
 - **A form posted from another site is refused** (`403`) when the browser says
@@ -678,8 +695,9 @@ rotation to whatever runs it (systemd's journal rotates on its own).
 
 ### The customers' model keys
 
-The model gateway holds each customer's OpenAI, Anthropic or Google Gemini key
-(`apps/server/src/gateway/provider-keys.ts`), in the `provider_keys` table,
+The model gateway holds each customer's model provider key, for any of the
+eighteen providers it carries (`apps/server/src/gateway/catalog.ts`; the keys
+are handled in `apps/server/src/gateway/provider-keys.ts`), in the `provider_keys` table,
 sealed with AES-256-GCM: a fresh 12-byte nonce per key, the system id and the
 provider bound in as associated data (a sealed key copied to another row does
 not open), and only the last four characters in the clear, for the console.
@@ -731,7 +749,7 @@ and nothing else.
   activity (a day by default), and that is all: silence is reported as
   inactivity, never as tampering, and an export of the period is simply
   shorter.
-  An agent on the Python SDK is the exception, as far as it goes: its
+  An agent on the Python or the TypeScript SDK is the exception, as far as it goes: its
   heartbeat (`docs/API.md`, `POST /api/v1/heartbeat`) makes a silence of more
   than three minutes a signed `sigillo.connection.lost` receipt on the chain,
   dated at the last beat, whether sigillo's code was removed, the process
@@ -907,13 +925,12 @@ rather than leaking across organizations (`apps/server/test/tenancy.test.ts`).
 What it does not change: one signing key signs every organization's chains;
 whoever administers the server and its database (the `sigillo-server` command
 line, a copy of the file, the backups) can still read every organization's
-records, since they are one database on one machine; and the people pages
-stay the operator's alone, because one person has one pseudonym token across
-every system, whichever organization's agent acted for them. Until pseudonyms
-are kept per organization, opening those pages to an organization would let it
-look up, and erase, another's people. On those pages the operator, too, finds
-only people its own systems acted for; erasing a person on a customer's
-request is done with `sigillo-server subject erase` on the server.
+records, since they are one database on one machine; and one person has one
+pseudonym token across every system, whichever organization's agent acted for
+them. The web view has no page that looks people up (the "persone" page was
+removed on 2026-10-06): finding or erasing a person, on a customer's request
+too, is done with `sigillo-server subject find` and `subject erase` on the
+server.
 
 **Retention is not automatic, and erasure is all or nothing.** Nothing
 deletes a recorded action on a schedule, and the append-only triggers refuse
@@ -932,8 +949,11 @@ keep the erased data until they rotate out: two hours on the server, 30 days
 off-site. Erasing the oldest part of a chain while keeping the rest needs a
 new receipt format, proposed in `docs/PROPOSTA-CONSERVAZIONE.md` and not built.
 
-**The default timestamp authority is not qualified under eIDAS.** `TSA_URL`
-points at FreeTSA unless a deployment changes it. A FreeTSA token is a genuine
+**The default timestamp authorities are not qualified under eIDAS.** In the
+supplied Compose file `TSA_URL` points at FreeTSA and `TSA_URL_2`, the second
+authority asked over the same roots since 2026-11-07, at DigiCert's public
+timestamp service, unless a deployment changes them; neither is a qualified
+service. A FreeTSA token is a genuine
 RFC 3161 token and a verifier checks it as one, but it carries no qualified
 status: it shows *when*, attested by an authority that no eIDAS supervisory body
 stands behind. A deployment that needs qualified timestamps points `TSA_URL` at
@@ -950,7 +970,7 @@ signer and nothing else, which is part of why the signer is a separate process.
 | No off-site backup | **Closed in code** by `deploy/offsite-backup.sh` (age public-key encryption, rclone transport, pruned by count, fails when the hourly backup stops). Stays open until the owner runs the five steps of DEPLOY-PRODUZIONE.md 6.1 on the server. The sealing key of the model gateway (`llm-gateway.key`) is deliberately not in it. |
 | Spam sign-ups could not be rejected | **Closed.** The operator's Customers page has a Reject button for a waiting organization with no systems (`organization.reject` in the administrative log). The person's Firebase login remains, so they can sign up again. |
 | Unlimited systems per organization | **Closed.** `SIGILLO_ORG_MAX_SYSTEMS` (default 100, archived ones count; the operator has none). |
-| The administrator has one password, no second factor | Open. Mitigated by the lockout (6 wrong attempts) and HTTPS. A second factor is a feature of its own. |
+| The administrator has one password, no second factor | **Closed in code on 2026-11-07**: an optional TOTP second factor (`sigillo-server admin-code`) and a limit on wrong passwords across all addresses. Stays open on a server until the owner turns the code on. |
 | Everyone is signed out on each restart | Open, kept on purpose: the cookie secret lives only in memory, so a leaked cookie dies with the process, and so does a sign-out. Persisting the secret would make a sign-out forgotten by a restart. |
 | FreeTSA is not eIDAS-qualified | Open: a business decision (a qualified provider costs money), see "Evidence" below. |
 

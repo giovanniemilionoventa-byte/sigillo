@@ -18,6 +18,19 @@ quel file e vedrai la verifica rifiutarlo.
 > computer, non è raggiungibile da internet e non c'è il lucchetto della
 > connessione sicura. Non metterci dentro dati veri.
 
+> **Nota del 10 novembre 2026, dal confronto con il codice.** I comandi di
+> questa guida valgono ancora (`deploy/docker-compose.local.yml` avvia sempre
+> due servizi, `signer` e `server`, più gli agenti di esempio). Le **schermate
+> descritte però sono quelle di settembre 2026**: oggi la pagina web è **in
+> inglese** (l'italiano compare solo se il server parte con
+> `SIGILLO_ITALIAN=1`, che questo file compose non imposta) ed è organizzata
+> in tre viste, **Status**, **Actions** ed **Evidence**. Le etichette citate
+> più sotto si leggono così: "È tutto a posto?" è "Is everything all right?",
+> "Cosa ha fatto l'AI?" è "What did the AI do?", "Dettagli tecnici" è
+> "Technical details", "Sigilla adesso" è "Seal now", e il fascicolo si scarica
+> dalla vista Evidence ("Download the evidence pack (.zip)"). I passi a video
+> non sono stati riprovati uno per uno dopo il ridisegno della console.
+
 ---
 
 ## Prima di cominciare: quattro cose sul terminale
@@ -457,8 +470,8 @@ impossibili da modificare — rende ogni modifica impossibile da nascondere.
 ## Passo 15 — Le novità della fase 2
 
 Tutto quello che hai fatto finora usava già, senza che lo notassi, l'interfaccia
-della **fase 2** di sigillo: è per questo che era già in italiano e già
-organizzata intorno a "È tutto a posto?", "Cosa ha fatto l'AI?" e "Mi prepari
+della **fase 2** di sigillo: è per questo che era già (allora in italiano; vedi la
+nota in cima) organizzata intorno a "È tutto a posto?", "Cosa ha fatto l'AI?" e "Mi prepari
 le prove?" fin dal Passo 8. Restano da vedere due cose che il Passo 9 e il
 Passo 12 non hanno ancora mostrato: la pagina per creare un sistema **senza
 terminale**, e la verifica di un documento.
