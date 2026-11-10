@@ -173,7 +173,7 @@ never an empty array — the same discipline as `actor.on_behalf_of`.
   two different digests. Nothing normalises this digest, deliberately, in
   any version. Computing it is exactly `openssl dgst -sha256 <file>`,
   nothing more.
-- `text`: object, optional, **version 3 only**. A second fingerprint, of the
+- `text`: object, optional, **versions 3 and 4 only**. A second fingerprint, of the
   document's text rather than its bytes, for a document whose `media_type`
   is `text/plain` (parameters such as `; charset=utf-8` aside) and whose
   bytes are UTF-8. Two members, both required, no others:
@@ -184,8 +184,9 @@ never an empty array — the same discipline as `actor.on_behalf_of`.
 
   Absent for every other document (a PDF, an image, a CSV, Markdown, HTML,
   source code: formats where spacing and line breaks are content), for bytes
-  that are not UTF-8, and for a text that is nothing but whitespace. A
-  receipt where no artifact has `text` is written as version 2.
+  that are not UTF-8, and for a text that is nothing but whitespace. (Before
+  version 4, the sigillo server wrote a receipt where no artifact has `text`
+  as version 2; since 2026-10-01 it writes every receipt as version 4.)
 
 Order is preserved: an array is never reordered by canonicalisation (section
 3 sorts object *members*, not array elements), so two artifacts of the same
@@ -705,6 +706,15 @@ If the authority is unreachable, the checkpoint is still written and signed, and
 the token is fetched later. A checkpoint with no token yet is a checkpoint
 waiting for an anchor, not a gap.
 
+A checkpoint may carry more than one token. Since 2026-11-07 a server
+configured with a second authority (`TSA_URL_2`) asks it for a token over the
+same root, best effort, so `timestamps` in `checkpoints.jsonl` (10.2) may list
+tokens from two authorities. A checkpoint's proven time is the earliest
+`genTime` among its tokens (10.5, check 14). `sigillo-verify --tsa-ca` names
+one certificate: a token it does not verify, over a root that has a verified
+token from another authority, is reported as checked for its digest only, not
+as a failure.
+
 sigillo uses `https://freetsa.org/tsr` in development and in its tests.
 FreeTSA is **not** a qualified trust service provider under eIDAS: a deployment
 that needs qualified timestamps points `TSA_URL` at a qualified provider and
@@ -794,7 +804,7 @@ two lines:
 | `seq` | integer | `>= 0`; the receipt that names this artifact |
 | `role` | string | `input` or `output`, copied from the artifact |
 | `label` | string | copied from the artifact |
-| `text` | object, optional | copied from a version 3 artifact that has one (`canon` and `sha256`); absent otherwise |
+| `text` | object, optional | copied from a version 3 or 4 artifact that has one (`canon` and `sha256`); absent otherwise |
 
 `system_id` is not repeated here: the archive covers exactly one, named in the
 manifest. This file is what makes "has this document been used" a lookup
@@ -852,7 +862,7 @@ published under an identifier that is not its own `key_id` is rejected, because
 5. If the export starts at `seq` 0, that receipt is a genesis receipt.
 6. Every `prev_hash` equals the recomputed hash of the preceding receipt.
 7. Every receipt names a key the manifest publishes, and its signature verifies.
-8. Every artifact a version 2 or 3 receipt declares has exactly one matching
+8. Every artifact a version 2, 3 or 4 receipt declares has exactly one matching
    line in `artifacts-index.jsonl`, `text` included, and the index claims
    nothing the receipts do not (section 10.3). Tampering with an artifact needs no separate detection here:
    it is a member of the receipt like any other, so changing it already fails
@@ -1052,11 +1062,12 @@ Where they differ:
 
 The difference in what `prev_hash` covers is the substantive one. sigillo
 chains content only, so a receipt's identity exists before it is signed: the
-server assigns `seq` and `prev_hash` inside one database transaction and asks a
-separate signing process for a signature afterwards, without the chain ever
-depending on the signer being reachable. Chaining the signature as well, as the
-draft does, would make the chain depend on the signature and remove that
-separation. Both constructions are tamper-evident.
+server assigns `seq` and `prev_hash`, and a separate signing process computes
+the same hash from the unsigned receipt and signs it, refusing any receipt that
+is not the next one of the chain it has itself recorded (SECURITY.md, "The
+signer's own record of every chain"). Chaining the signature as well, as the
+draft does, would make a receipt's hash depend on its signature. Both
+constructions are tamper-evident.
 
 ### Possible alignments, for decision
 
@@ -1069,7 +1080,7 @@ These are not implemented. They are recorded here as proposals:
 2. **`record_phase`.** The draft's distinction between a record written before
    an action ran and one written after it is genuinely useful under AI Act
    art. 14: it is what makes `blocked` mean "stopped" rather than "failed".
-   Adding it would require receipt version 2.
+   Adding it would require a new receipt version.
 3. **Trust level.** `trust_level` presumes the draft's companion identity
    framework. It is not meaningful for sigillo as specified and is not proposed.
 4. **Record size limit.** The draft requires rejecting records above 256 KB.

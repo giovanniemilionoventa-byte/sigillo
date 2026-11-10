@@ -95,9 +95,31 @@ tampering and refuses to run unrecorded; it cannot forbid it. To make the file
 read-only for the agent, run the agent as another operating-system user than the
 file's owner.
 
-A process stopped by `SIGTERM` (a computer shutting down, `systemctl stop`)
-does not run Python's exit handlers, so it shows as lost rather than closed,
-unless the program catches the signal and calls `shutdown()`.
+A process stopped by `SIGTERM` (`systemctl stop`, a kill) does not run
+Python's exit handlers, so it does not show as closed, unless the program
+catches the signal and calls `shutdown()`. What it shows as depends on the
+**guard process** `init` starts beside the agent (`_watchdog.py`, a second
+Python process from this same package): while the computer stays on, the guard
+sees the agent's process end and tells the server, which writes `ended`; if
+the guard is stopped together with the agent, or the computer is switched off
+or loses the network, nobody is left to say anything and the server writes
+`lost` after three minutes. The guard also reports a sleep or a network cut
+once it is over (`sleep`, `offline`), and in strict mode it re-reads the
+hashes of the script, of this package and of the OpenTelemetry and
+OpenInference libraries every few seconds and ends the agent when one changes.
+
+## A model on the same computer
+
+`sigillo.init(..., strict=True, local_model=True)` puts a door
+(`python -m sigillo.door`) in front of a local model server: it listens where
+the agent expects the model (Ollama's `127.0.0.1:11434`; pass a port number
+instead of `True` for LM Studio 1234, llama.cpp 8080, vLLM 8000), lets through
+only requests carrying the system's sigillo key, forwards them to the model on
+the next port up, and writes a receipt for each. Only Ollama is started by the
+door itself. If the guard finds the model answering without the key, the
+server writes `sigillo.connection.model_open` on the chain. The model's real
+port is not authenticated: another process on the same computer can still
+reach it directly, so this shows an open model, it does not seal one.
 
 ## Tool calls written by hand
 

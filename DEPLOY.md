@@ -8,9 +8,20 @@ v2, signer "senza memoria") a quella con le tre novità unite in `main`:
   firma solo la ricevuta successiva;
 - **pseudonimi e impronte con sale, ricevute v4** (PR #19).
 
+> **Nota del 10 novembre 2026, dal confronto con il codice.** Questa pagina è
+> la procedura di **un aggiornamento preciso**, quello di ottobre 2026 (da
+> ricevute v2 a v4, con il signer che tiene memoria). Resta qui come
+> riferimento per il piano di ritorno e per il ripristino da backup; per
+> installare da zero e per gli aggiornamenti normali vale
+> `docs/DEPLOY-PRODUZIONE.md`. Rispetto a quando è stata scritta: i servizi
+> del `docker-compose.yml` sono ora quattro (c'è anche `keyholder`, che deve
+> risultare `(healthy)` come `signer` e `server`), la pagina web è in inglese
+> salvo `SIGILLO_ITALIAN=1`, e `update.sh` esegue da solo `signer check` alla
+> fine. Il rapporto citato qui sotto non è nella repo.
+
 È stata provata per intero il 1° ottobre 2026 su una copia simulata della
 produzione, in Docker, con la stessa `docker-compose.yml` (rapporto:
-`docs/RAPPORTO-VERIFICA-2026-10-01.md`). Il servizio resta fermo **circa 30 secondi**
+`docs/RAPPORTO-VERIFICA-2026-10-01.md`, non presente nella repo). Il servizio resta fermo **circa 30 secondi**
 (punto 4). In tutto servono 30–45 minuti, quasi tutti di controlli.
 
 ## Come leggere questa pagina

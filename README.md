@@ -109,10 +109,12 @@ model, so running it costs nothing.
 |---|---|
 | `packages/core` | the format: schema, canonicalisation, hashing, signatures, Merkle. No I/O, no clock, no environment |
 | `packages/verifier` | `sigillo-verify`, open source, depends only on core and `openssl` |
-| `apps/signer` | the separate process that holds the key |
-| `apps/server` | ingest, storage, checkpoints, anchoring, export, the web view |
-| `sdk-python/` | `sigillo.init()`, `sigillo.artifact()` |
-| `deploy/` | Dockerfile, docker-compose, Caddy, backup |
+| `apps/signer` | the separate process that holds the signing key, and its own record of every chain |
+| `apps/keyholder` | the separate process that holds what opens the customers' model keys (model gateway) |
+| `apps/server` | ingest, storage, checkpoints, anchoring, export, the web view, the public site, the model gateway |
+| `sdk-python/` | the Python SDK: `sigillo.init()`, `sigillo.artifact()`, heartbeat and guard |
+| `packages/sdk-typescript` | the TypeScript/Node SDK, no dependencies |
+| `deploy/` | Dockerfile, docker-compose, Caddy, backup and update scripts |
 
 All the cryptography lives in `core`, and the server and the verifier use the
 same code. An auditor who wants to check what matters reads `core` and
@@ -131,13 +133,15 @@ docker compose exec server node dist/cli.js system create acme-support-bot
 docker compose exec server node dist/cli.js key create acme-support-bot
 ```
 
-Three containers: the signer with the key and no network, the server with the
-database, Caddy with TLS. See [`deploy/`](deploy/). The complete procedure for a
+Four containers: the signer with the signing key and no network, the keyholder
+with what opens the customers' model keys, the server with the database, Caddy
+with TLS. See [`deploy/`](deploy/). The complete procedure for a
 real server, from `git clone` to a verified evidence file, with a checklist, is
 [`docs/DEPLOY-PRODUZIONE.md`](docs/DEPLOY-PRODUZIONE.md) (in Italian).
 
 For qualified timestamps under eIDAS, point `TSA_URL` at a qualified provider.
-The default, FreeTSA, is fine for a trial and is **not** qualified.
+The defaults, FreeTSA and (as the second authority, `TSA_URL_2`) DigiCert's
+public timestamp service, are fine for a trial and are **not** qualified.
 
 ## Documentation
 
@@ -162,7 +166,10 @@ everything the system did was recorded — that depends on your instrumentation,
 and no log format can attest it. It says so in the report it produces, too.
 
 Also out of scope in this version: cross-checking multiple sources, automatic
-deletion for retention, HSM or KMS key storage, multi-tenancy, analytics.
+deletion for retention, HSM or KMS key storage, analytics. A hosted
+installation can hold several customer organizations, each seeing only its own
+systems in the web view, but they share one database and one signing key
+(SECURITY.md, "Known limits").
 
 ## Development
 

@@ -27,7 +27,8 @@ of.
   your own.
 - **Where it stays.** In your agent's file, on your machine. The SDK uses it
   inside your process and never sends it (`nonce_for` and
-  `_filtered_attributes` in `sdk-python/src/sigillo/__init__.py`).
+  `_filtered_attributes` in `sdk-python/src/sigillo/__init__.py`; `nonceFor`
+  in `packages/sdk-typescript/src/content.ts` for a Node agent).
 - **One per customer, or per agent.** Two customers never share a key: each
   key is made separately, by the customer's own browser. An account with
   several agents may give them the same key or one each.
@@ -38,9 +39,9 @@ of.
    recorded by the SDK in your process).
 2. For each input and output, the SDK computes a 32-byte value from your key
    and the action's identifiers:
-   `nonce = HMAC-SHA256(your key, "sigillo-nonce-v1" ‖ trace id ‖ span id ‖ input|output)`.
-3. It computes the fingerprint `SHA-256(nonce ‖ content)` (the salted digest of
-   `docs/FORMAT.md`, section 2.7) and **replaces the content with it**. Every
+   `nonce = HMAC-SHA256(your key, "sigillo-nonce-v1\n" + trace id + "\n" + span id + "\n" + "input" or "output")`.
+3. It computes the fingerprint `SHA-256(nonce ‖ canonical JSON of the content)`
+   (the salted digest of `docs/FORMAT.md`, section 2.7) and **replaces the content with it**. Every
    other attribute the server does not read is dropped.
 4. It sends the fingerprint, with the word `customer` where a nonce would go.
    The nonce and the key are not sent.
