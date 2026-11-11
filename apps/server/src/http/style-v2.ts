@@ -136,6 +136,10 @@ body { font-size: 15px; line-height: 1.47; }
 .steps-v2 li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-top: 1px solid var(--separator); }
 .steps-v2 li:first-child { border-top: 0; }
 .steps-v2 .num { width: 28px; height: 28px; border-radius: 999px; border: 1.5px solid var(--label); display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--label); }
+.first-receipt { margin-bottom: 24px; }
+.first-receipt .steps-v2 { padding: 0 16px; }
+.sample-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 12px 0 0; padding: 12px 16px; border: 1px dashed var(--separator); border-radius: 12px; }
+.sample-note p { margin: 0; flex: 1 1 320px; }
 .code-key { font-family: var(--mono); font-size: 15px; font-weight: 600; letter-spacing: 0.02em; word-spacing: 0.3em; }
 .preview { font-size: 20px; line-height: 28px; font-weight: 600; margin: 4px 0 16px; }
 .evidence-form { display: grid; gap: 16px; }

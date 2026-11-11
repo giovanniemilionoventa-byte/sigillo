@@ -4,7 +4,8 @@ import type { ExportRegisterEntry, ReceiptStore, SystemRecord } from "../storage
 import { connectionStatus } from "../connection/watch.js";
 import { capital, escape, kindIcon, languageSwitch, STATE_ICON, systemPath, type SystemRow } from "./layout.js";
 import { italianOffered } from "./locale.js";
-import { firstSteps, quotaNotice, receiptPath, type Quota } from "./pages.js";
+import { atFirstSteps, firstSteps, quotaNotice, receiptPath, type FirstStepsOffer, type Quota } from "./pages.js";
+import { isSampleSystem } from "./sample-system.js";
 import {
   actionKindLabel,
   formatClock,
@@ -91,18 +92,40 @@ function startOfToday(now: Date): string | undefined {
   return today === null ? undefined : localDayRange(today).from;
 }
 
+/**
+ * The few words for an account whose agent has just sent its first receipts:
+ * shown from the first action of its own systems until the first seal over
+ * one, which comes within the hour. Nothing to dismiss and nothing stored:
+ * the seal is what ends it.
+ */
+function firstReceipt(store: ReceiptStore, own: SystemRow[]): string {
+  const acting = own.filter(({ record }) => record.receipts > 1);
+  if (acting.length === 0) return "";
+  const sealed = acting.some(({ record }) => (store.latestCheckpoint(record.system_id)?.checkpoint.tree_size ?? 0) > 1);
+  if (sealed) return "";
+  const t = UI.home.firstReceipt;
+  const first = acting[0];
+  const open = first === undefined ? "" : `<div class="card-foot"><a href="${systemPath(first.record.system_id)}">${escape(t.open)} ›</a></div>`;
+  return `<section class="card first-receipt" aria-labelledby="prima-ricevuta-titolo">
+<div class="card-head"><h2 id="prima-ricevuta-titolo">${escape(t.title)}</h2></div>
+<ol class="steps-v2">${t.lines().map((line, index) => `<li><span class="num">${index + 1}</span><span>${escape(line)}</span></li>`).join("")}</ol>
+${open}</section>`;
+}
+
 /** «È tutto a posto?»: the answer, four figures that lead to the actions, the systems with two signals, what is worth a look. */
-export function statoPage(view: { store: ReceiptStore; records: SystemRecord[]; shown: SystemRow[]; quota: Quota | null; now: Date }): string {
+export function statoPage(view: { store: ReceiptStore; records: SystemRecord[]; shown: SystemRow[]; quota: Quota | null; now: Date; offer?: FirstStepsOffer }): string {
   const { store, records, shown, now } = view;
   const t = UI.v2.stato;
-  if (records.length === 0 || records.every((record) => record.receipts <= 1)) {
-    return `${quotaNotice(view.quota)}${firstSteps(records)}`;
+  if (atFirstSteps(records)) {
+    return `${quotaNotice(view.quota)}${firstSteps(records, view.offer)}`;
   }
+  // The example's made-up actions stay out of the figures and of what to look at: those are about the account's own agents.
+  const own = shown.filter(({ record }) => !isSampleSystem(record.system_id));
 
   const from = startOfToday(now);
   const totals: Record<string, number> = {};
   let lastSeal: string | null = null;
-  for (const { record } of shown) {
+  for (const { record } of own) {
     const counts = store.countReceiptsByOutcome({ systemId: record.system_id, ...(from === undefined ? {} : { from }) });
     for (const [outcome, count] of Object.entries(counts)) totals[outcome] = (totals[outcome] ?? 0) + count;
     const latest = store.latestCheckpoint(record.system_id);
@@ -139,7 +162,7 @@ ${fig("/ui/evidence", lastSeal === null ? "—" : formatListTime(lastSeal, now),
 </section>`;
 
   const weekAgo = new Date(now.getTime() - 7 * 24 * 3600_000).toISOString();
-  const problems = shown
+  const problems = own
     .flatMap(({ record }) =>
       store
         .searchReceipts({ systemId: record.system_id, from: weekAgo, outcomes: ["error", "blocked", "unknown"], actionsOnly: true, limit: 5 })
@@ -162,7 +185,7 @@ ${fig("/ui/evidence", lastSeal === null ? "—" : formatListTime(lastSeal, now),
 </section>`;
 
   return `${quotaNotice(view.quota)}<header class="q-head"><div><h1>${escape(t.question)}</h1>${stateAnswer(store, shown, now)}</div></header>
-<div class="model-b"><div>${figures}${systems}</div><div>${watch}</div></div>`;
+${firstReceipt(store, own)}<div class="model-b"><div>${figures}${systems}</div><div>${watch}</div></div>`;
 }
 
 /** The filters of Azioni, from the address. */
@@ -562,6 +585,7 @@ export function servicePage(view: {
     reportLanguage: "SIGILLO_REPORT_LANGUAGE",
     packReader: "SIGILLO_PACK_READER",
     siteV2: "SIGILLO_SITE_V2",
+    sampleSystem: "SIGILLO_SAMPLE_SYSTEM",
     agentUpload: "SIGILLO_AGENT_UPLOAD",
     transfer: "SIGILLO_TRANSFER",
   };

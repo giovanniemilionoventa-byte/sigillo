@@ -5,6 +5,7 @@ import type { StoredExport } from "../backup/daily-export.js";
 import { connectionStatus } from "../connection/watch.js";
 import { CATALOG, PROVIDERS } from "../gateway/catalog.js";
 import { discloseFields } from "./history.js";
+import { isSampleSystem } from "./sample-system.js";
 import { italianOffered } from "./locale.js";
 import {
   archivedButShown,
@@ -117,18 +118,51 @@ ${tile(lastSeal === null ? "—" : formatListTime(lastSeal, now), t.lastSeal)}
 </div>`;
 }
 
-/** The first steps, for an account with no system yet, or with systems that never received an action. */
-export function firstSteps(records: SystemRecord[]): string {
+/** What the first steps offer besides the four steps themselves. */
+export interface FirstStepsOffer {
+  /** Offer the example register (SIGILLO_SAMPLE_SYSTEM, sample-system.ts). */
+  sample: boolean;
+  /** Where to write to set up the agent together; none, no such line. */
+  contactEmail?: string;
+}
+
+/** Whether an account is still at its first steps: none of its own systems has received an action. The example does not count. */
+export function atFirstSteps(records: SystemRecord[]): boolean {
+  return records.every((record) => isSampleSystem(record.system_id) || record.receipts <= 1);
+}
+
+/**
+ * The first steps, for an account none of whose own systems has received an
+ * action: the four steps, with the example register beside them when it is
+ * offered, and the offer to connect the agent together.
+ */
+export function firstSteps(records: SystemRecord[], offer: FirstStepsOffer = { sample: false }): string {
   const t = UI.home.steps;
-  const created = records.length > 0;
+  const own = records.filter((record) => !isSampleSystem(record.system_id));
+  const sample = records.find((record) => isSampleSystem(record.system_id));
+  const created = own.length > 0;
   const step = (done: boolean, icon: string, tile: string, title: string, end: string, later = false): string =>
     `<li><div class="line${later ? " later" : ""}"><span class="tile-icon ${done ? "green" : tile}" aria-hidden="true">${done ? STATE_ICONS.ok : icon}</span><span class="line-text">${escape(title)}</span>${
       done ? `<span class="pill green">${STATE_ICONS.ok}${escape(t.done)}</span>` : end
     }</div></li>`;
-  const first = records[0];
+  // The example is beside the steps, not one of them: it is never "to do", and once opened it stays one click away.
+  const example =
+    offer.sample || sample !== undefined
+      ? `<li><div class="line"><span class="tile-icon ${sample === undefined ? "blue" : "green"}" aria-hidden="true">${sample === undefined ? ICONS.seal : STATE_ICONS.ok}</span><span class="line-text">${escape(t.sample)}<br><span class="sign ink">${escape(`${t.optional}. ${t.sampleHint}`)}</span></span>${
+          sample === undefined
+            ? `<form method="post" action="/ui/esempio"><button type="submit">${escape(t.sampleButton)}</button></form>`
+            : `<a class="button" href="${systemPath(sample.system_id)}">${escape(t.sampleButton)}</a>`
+        }</div></li>`
+      : "";
+  const first = own[0];
+  const together =
+    offer.contactEmail === undefined
+      ? ""
+      : `<p class="sign ink">${escape(t.together)} <a href="mailto:${escape(offer.contactEmail)}">${escape(t.togetherLink)}</a></p>`;
   return `${pageHead(UI.home.welcome)}
 <ol class="card lines steps">
 ${step(true, "", "green", t.account, "")}
+${example}
 ${step(created, ICONS.plus, "blue", t.create, `<a class="button primary" href="/ui/sistemi/nuovo">${escape(t.createButton)}</a>`)}
 ${step(
   false,
@@ -139,7 +173,8 @@ ${step(
   !created,
 )}
 ${step(false, ICONS.seal, "grey", t.receive, "", true)}
-</ol>`;
+</ol>
+${together}`;
 }
 
 /** The main page: the situation, four figures, the systems, the latest actions, and the evidence file. */
@@ -154,7 +189,7 @@ export function homePage(view: {
   const { store, records, shown, now } = view;
   const t = UI.home;
   const top = `${view.justCheckpointed ? notices({ notice: t.checkpointDone }) : ""}${quotaNotice(view.quota)}`;
-  if (records.length === 0 || records.every((record) => record.receipts <= 1)) {
+  if (atFirstSteps(records)) {
     return `${top}${firstSteps(records)}`;
   }
 

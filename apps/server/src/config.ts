@@ -188,11 +188,17 @@ export interface ConsoleFeatures {
   packReader: Access;
   /** SIGILLO_SITE_V2: the redesigned public site, previewed in the console first. */
   siteV2: Access;
+  /**
+   * SIGILLO_SAMPLE_SYSTEM: the example register a new account can open from its
+   * first steps (http/sample-system.ts). Defaults to `all`: rule 11 was suspended
+   * on 2026-10-20, and the owner chose this onboarding on 2026-11-11.
+   */
+  sampleSystem: Access;
 }
 
-function accessOf(env: Environment, name: string): Access {
+function accessOf(env: Environment, name: string, fallback: Access = "operator"): Access {
   const value = env[name];
-  if (value === undefined || value.length === 0) return "operator";
+  if (value === undefined || value.length === 0) return fallback;
   if (value === "off" || value === "operator" || value === "all") return value;
   throw new ConfigError(`${name} must be off, operator or all, received ${JSON.stringify(value)}`);
 }
@@ -205,6 +211,7 @@ export function consoleFeatures(env: Environment): ConsoleFeatures {
     reportLanguage: accessOf(env, "SIGILLO_REPORT_LANGUAGE"),
     packReader: accessOf(env, "SIGILLO_PACK_READER"),
     siteV2: accessOf(env, "SIGILLO_SITE_V2"),
+    sampleSystem: accessOf(env, "SIGILLO_SAMPLE_SYSTEM", "all"),
   };
 }
 
