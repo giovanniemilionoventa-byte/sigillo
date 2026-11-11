@@ -19,6 +19,7 @@ import {
 } from "./strings.js";
 import { ICONS, STATE_ICONS } from "./style.js";
 import { consoleV2 } from "./console-mode.js";
+import { isSampleSystem } from "./sample-system.js";
 
 /**
  * One system's pages: the header and tabs they share, the evidence sheet,
@@ -110,6 +111,16 @@ export function timestampStatus(store: ReceiptStore, systemId: string, seq: numb
   return token.genTime === undefined ? t.unreadable : t.at(formatTs(token.genTime));
 }
 
+/** What every page of the example register says first: made up, but real receipts; and how to hide it. */
+function sampleNote(record: SystemRecord): string {
+  const t = UI.sample;
+  const hide =
+    record.archived_at === null
+      ? `<form method="post" action="${systemPath(record.system_id)}/archive"><button type="submit">${escape(t.hide)}</button></form>`
+      : "";
+  return `<div class="sample-note" role="note"><p><strong>${escape(t.banner)}</strong> ${escape(t.tryIt)}</p>${hide}</div>`;
+}
+
 export type SystemTab = "history" | "checkpoints" | "manage" | "connect";
 
 /** The header of every page about one system, its tabs, and the button that opens its evidence sheet. */
@@ -127,6 +138,7 @@ export function systemHeader(record: SystemRecord, health: SystemHealth, tab: Sy
 <div class="titleline"><h1>${escape(systemTitle(record))}</h1><code class="sys-id">${escape(record.system_id)}</code>${never && health.status !== "red" ? `<span class="pill" data-chain="new">${STATE_ICONS.archived}${escape(UI.v2.signals.newRecord)}</span>` : chainPill(health.status)}${record.archived_at === null ? "" : archivedPill()}
 <span class="end">${action}</span></div>
 ${health.status === "green" || never ? "" : `<p class="sys-health ${health.status}">${escape(health.message)}</p>`}
+${isSampleSystem(record.system_id) ? sampleNote(record) : ""}
 <nav class="tabs" aria-label="${escape(UI.system.tabsLabel)}">
 ${tabLink("history", path, t.tabs.actions)}
 ${tabLink("connect", `${path}/collega`, t.tabs.connect)}

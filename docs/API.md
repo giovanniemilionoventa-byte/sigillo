@@ -653,8 +653,9 @@ only; the code's default) or `all` (every account; what the deployment's
 `SIGILLO_AGENT_UPLOAD`, `SIGILLO_SCRIPT_GUARD`, `SIGILLO_PLAIN_AGENTS`,
 `SIGILLO_AGENT_PROTECTION`, `SIGILLO_TRANSFER`, `SIGILLO_CONSOLE_V2`,
 `SIGILLO_RUNS`, `SIGILLO_EXTRA_KEYS`, `SIGILLO_EXPORT_REGISTER`,
-`SIGILLO_REPORT_LANGUAGE`, `SIGILLO_PACK_READER`, `SIGILLO_SITE_V2`. The code
-that reads all of these is `apps/server/src/config.ts`.
+`SIGILLO_REPORT_LANGUAGE`, `SIGILLO_PACK_READER`, `SIGILLO_SITE_V2`,
+`SIGILLO_SAMPLE_SYSTEM` (the example register of the first steps; its code
+default is `all`). The code that reads all of these is `apps/server/src/config.ts`.
 
 The web view's password attempts are limited per address: after
 `SIGILLO_LOGIN_MAX_FAILURES` wrong ones in the window, the address waits, and

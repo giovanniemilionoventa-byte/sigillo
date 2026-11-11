@@ -228,6 +228,7 @@ services:
       SIGILLO_EXPORT_REGISTER: ${SIGILLO_EXPORT_REGISTER:-all}
       SIGILLO_REPORT_LANGUAGE: ${SIGILLO_REPORT_LANGUAGE:-all}
       SIGILLO_PACK_READER: ${SIGILLO_PACK_READER:-all}
+      SIGILLO_SAMPLE_SYSTEM: ${SIGILLO_SAMPLE_SYSTEM:-all}
       # The redesigned public home, served at / (opened to everyone on the project owner's word, 2026-10-20).
       SIGILLO_SITE_V2: ${SIGILLO_SITE_V2:-all}
     healthcheck:

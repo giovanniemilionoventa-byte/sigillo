@@ -4455,3 +4455,27 @@ clienti) parte da solo appena la demo entra nello schermo (`IntersectionObserver
 senza di esso parte subito). I passi sono 3 (guarda l'agente lavorare, modifica, verifica); gli
 altri agenti restano come scelta secondaria sotto la guida, e «Ricomincia» fa ripartire lo stesso
 agente.
+
+## Console: primi passi dei nuovi clienti (2026-11-11)
+
+Decisione di Giovanni: niente tour a fumetti e niente esplorazione libera. La lista «Benvenuto
+in sigillo» resta la spina dorsale, con tre aggiunte:
+
+- **Registro di esempio** (`SIGILLO_SAMPLE_SYSTEM`, predefinito `all`): «Apri l'esempio» crea
+  `<organizzazione>.esempio` con una esecuzione inventata di un assistente rimborsi (9 azioni,
+  una bloccata e una fallita). Le ricevute sono vere: firmate, in catena, sigillate subito
+  (`requestRun`) e il fascicolo passa il verificatore (test). Input e output sono frasi
+  inventate, passate come valori: restano solo le impronte salate. Ogni pagina del sistema
+  dice che è un esempio e offre «Nascondi l'esempio» (archivia): come ogni registro di un
+  cliente non si può cancellare. Nessuna chiave, nessun trasferimento, il nome è riservato e
+  non conta nel limite di sistemi. Non sposta l'account oltre i primi passi, e le sue azioni
+  restano fuori dai numeri di Stato. Le ricevute contano nella quota mensile (10).
+- **Prima ricevuta**: su Stato, dalla prima azione di un agente vero fino al primo sigillo che
+  la copre, tre righe su cosa fare (aprirla, il sigillo entro un'ora, il fascicolo). Nessuno
+  stato salvato: è il sigillo a chiuderlo.
+- **Farlo insieme**: sotto la lista, l'offerta di una chiamata di 20 minuti per collegare
+  l'agente, con il link all'indirizzo di contatto del sito.
+
+Circa 250 righe tra codice, testi in due lingue e test (`apps/server/test/onboarding.test.ts`,
+9 test). Il verificatore non è toccato.
+

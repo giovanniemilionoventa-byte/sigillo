@@ -17,6 +17,7 @@ import { isProvider, ProviderKeyError, VaultError, VaultLockedError, VaultSealed
 import { ScheduleError } from "../gateway/vault-schedule.js";
 import { vaultPage, type VaultView } from "./vault-page.js";
 import { AGENT_SETUP_SCRIPT } from "./agent-setup.js";
+import { isSampleSystem, sampleEvents, sampleSystemId } from "./sample-system.js";
 import { SDK_TGZ_NAME, sdkTarball } from "./sdk-bundle.js";
 import {
   normaliseDisplayName,
@@ -72,6 +73,7 @@ import {
   transferAcceptPage,
   transferLinkPage,
   verifyDocumentResult,
+  type FirstStepsOffer,
   type Quota,
   type SystemsView,
   type Theme,
@@ -751,7 +753,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     if (consoleV2()) {
       return html(
         reply,
-        render(session, { title: UI.v2.stato.title, current: "registro", body: statoPage({ store, records, shown, quota: quotaOf(session.viewer), now }) }),
+        render(session, { title: UI.v2.stato.title, current: "registro", body: statoPage({ store, records, shown, quota: quotaOf(session.viewer), now, offer: firstStepsOffer(request) }) }),
       );
     }
     return html(
@@ -984,6 +986,34 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
   const renderNewSystem = (session: Session, extra: { error?: string } = {}, values: { system_id?: string; display_name?: string } = {}): string =>
     render(session, { title: UI.systemsPage.newTitle, current: "sistemi", body: newSystemPage(extra, values) });
 
+  /** What the first steps offer this viewer: the example register where its switch allows, and the address to write to. */
+  const firstStepsOffer = (request: FastifyRequest): FirstStepsOffer => ({
+    sample: featureOn(request, "sampleSystem"),
+    ...(SITE_CONTACT_EMAIL === undefined ? {} : { contactEmail: SITE_CONTACT_EMAIL }),
+  });
+
+  // The example register (sample-system.ts): made once per account, with one
+  // made-up run of real receipts, sealed at once; opened again if it exists.
+  app.post("/ui/esempio", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    if (!featureOn(request, "sampleSystem")) return notFound(session, reply);
+    const organizationId = session.viewer.kind === "organization" ? session.viewer.organizationId : null;
+    const systemId = sampleSystemId(organizationId);
+    if (allSystems.systemRecord(systemId) === null) {
+      const now = options.now();
+      // Through the viewer's store, so the system is its own from the genesis on.
+      await session.store.createSystem(systemId, now.toISOString());
+      await session.store.renameSystem(systemId, UI.sample.name, adminRequest(request, session.viewer));
+      await allSystems.appendBatch(sampleEvents(systemId, now));
+      request.log.info({ system: systemId, action: "sample.create" }, "an example register was made");
+      // The seal and its timestamp, now rather than within the hour: the
+      // example shows a sealed register. Not waited for: the authority may be slow.
+      options.checkpointer.requestRun().catch((error: unknown) => request.log.warn({ err: error }, "the example's seal will come with the next run"));
+    }
+    return reply.redirect(systemPath(systemId), 303);
+  });
+
   app.get("/ui/sistemi/nuovo", async (request, reply) => {
     const session = requireSession(request, reply);
     if (session === null) return reply;
@@ -1008,8 +1038,9 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     const refuse = (error: string): FastifyReply =>
       html(reply, renderNewSystem(session, { error }, { system_id: given, display_name: displayName }), 400);
     if (systemId === "") return refuse(UI.systemsPage.nameRequired);
+    if (isSampleSystem(systemId)) return refuse(UI.sample.reserved);
     if (session.viewer.kind === "organization" && options.organizationMaxSystems !== undefined) {
-      const held = session.store.listSystemRecords().length;
+      const held = session.store.listSystemRecords().filter((record) => !isSampleSystem(record.system_id)).length;
       if (held >= options.organizationMaxSystems) return refuse(UI.systemsPage.tooMany(options.organizationMaxSystems));
     }
     // The operator's systems have no prefix, and never take a customer's: an
@@ -1191,6 +1222,9 @@ ${exportSheet(record)}`,
     const { systemId } = request.params as { systemId: string };
     const record = store.systemRecord(systemId);
     if (record === null) return notFound(session, reply);
+    if (isSampleSystem(systemId)) {
+      return html(reply, systemPage(session, record, "connect", UI.connect.title(systemTitle(record)), `<p class="notice" role="status">${escape(UI.sample.noKey)}</p>`));
+    }
     const firstReceipt = record.receipts > 1 ? store.receiptAt(systemId, 1) : null;
     const body = connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now(), protection: offersProtection(record) });
     // In the redesigned console connecting is one of the system's tabs, with its keys.
@@ -1438,6 +1472,7 @@ ${exportSheet(record)}`,
     const { systemId } = request.params as { systemId: string };
     const record = store.systemRecord(systemId);
     if (record === null) return notFound(session, reply);
+    if (isSampleSystem(systemId)) return html(reply, systemPage(session, record, "connect", UI.connect.title(systemTitle(record)), `<p class="notice" role="status">${escape(UI.sample.noKey)}</p>`), 400);
     const at = options.now().toISOString();
     // "Add a key" (SIGILLO_EXTRA_KEYS) keeps the others working; anything else replaces them, as it always has.
     const add = featureOn(request, "extraKeys") && (request.body as { mode?: unknown } | undefined)?.mode === "add";
@@ -1465,7 +1500,7 @@ ${exportSheet(record)}`,
     if (session === null) return reply;
     const { systemId } = request.params as { systemId: string };
     const record = session.store.systemRecord(systemId);
-    if (record === null || !offersTransfer(record)) return notFound(session, reply);
+    if (record === null || !offersTransfer(record) || isSampleSystem(systemId)) return notFound(session, reply);
     const { secret, expiresAt } = await session.store.createTransfer(systemId, adminRequest(request, session.viewer));
     request.log.info({ system: systemId, action: "transfer.create" }, "a transfer link was made");
     const url = `${endpointFor(request)}${TRANSFER_PATH}/${secret}`;
@@ -1536,6 +1571,8 @@ ${exportSheet(record)}`,
     const { systemId } = request.params as { systemId: string };
     if (!store.hasSystem(systemId)) return notFound(session, reply);
     await store.archiveSystem(systemId, adminRequest(request, session.viewer));
+    // Hiding the example ends the visit to it.
+    if (isSampleSystem(systemId)) return reply.redirect("/ui", 303);
     return reply.redirect(manageUrl(systemId, "archiviato"), 303);
   });
 
