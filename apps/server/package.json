@@ -7,10 +7,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./gateway": {
-      "types": "./dist/gateway/shared.d.ts",
-      "default": "./dist/gateway/shared.js"
     }
   },
   "scripts": {
@@ -18,7 +14,6 @@
   },
   "dependencies": {
     "@sigillo/core": "workspace:*",
-    "@sigillo/sdk": "workspace:*",
     "@sigillo/verifier": "workspace:*",
     "better-sqlite3": "^11.7.0",
     "commander": "^12.1.0",

@@ -562,7 +562,6 @@ export function servicePage(view: {
     reportLanguage: "SIGILLO_REPORT_LANGUAGE",
     packReader: "SIGILLO_PACK_READER",
     siteV2: "SIGILLO_SITE_V2",
-    agentUpload: "SIGILLO_AGENT_UPLOAD",
     transfer: "SIGILLO_TRANSFER",
   };
   const switches = Object.entries(view.switches)

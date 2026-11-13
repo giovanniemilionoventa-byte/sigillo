@@ -12,12 +12,6 @@ import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { archiveFromStore, positionsIn, tokensIn } from "../export/from-store.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
-import { gatewayAllowed, type GatewayOptions, providerRefuses } from "../gateway/llm.js";
-import { isProvider, ProviderKeyError, VaultError, VaultLockedError, VaultSealedError } from "../gateway/provider-keys.js";
-import { ScheduleError } from "../gateway/vault-schedule.js";
-import { vaultPage, type VaultView } from "./vault-page.js";
-import { AGENT_SETUP_SCRIPT } from "./agent-setup.js";
-import { SDK_TGZ_NAME, sdkTarball } from "./sdk-bundle.js";
 import {
   normaliseDisplayName,
   StorageError,
@@ -163,17 +157,6 @@ export interface UiOptions {
    */
   backupDirectory?: string;
   /**
-   * The model gateway (gateway/llm.ts): given, an uploaded agent is also
-   * pointed at it and its provider key saved, where agentProtection allows.
-   */
-  gateway?: GatewayOptions;
-  /**
-   * Who sees "upload your agent" on the connect page (agent-setup.ts):
-   * `operator`, the administrator's own systems only, until the owner opens
-   * it to `all`. Not given: nobody.
-   */
-  agentUpload?: "off" | "operator" | "all";
-  /**
    * Who gets the redesigned console (console-v2.ts): off, the operator's own
    * account (the default, CLAUDE.md rule 11) or every account.
    */
@@ -184,12 +167,6 @@ export interface UiOptions {
   /** Whether the signer answers: read for Amministrazione › Servizio. */
   signerHealthy?: () => Promise<boolean>;
   service?: { tsaUrl?: string; checkpointMinutes: number; version: string };
-  /**
-   * Uploaded agents' protection level (agent-setup.ts): whether to wrap them
-   * with strict mode and script change detection. `operator`, the administrator's
-   * own systems only, until opened to `all`. Not given: nobody.
-   */
-  agentProtection?: "off" | "operator" | "all";
   /**
    * Whose systems show "Transfer" in their settings, to hand them to another
    * account with a link: `operator` until the owner opens it to `all`. Not
@@ -680,50 +657,10 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
     return { used: allSystems.receiptsSince(viewer.organizationId, month.start), limit, resume: month.next };
   };
 
-  /**
-   * Whether the connect page offers "upload your agent" (agent-setup.ts): to
-   * the operator's own systems, and to every account's once it is opened.
-   */
-  const offersUpload = (record: SystemRecord): boolean =>
-    options.agentUpload === "all" || (options.agentUpload === "operator" && record.organization_id === null);
-
-  /**
-   * Whether uploaded agents are protected with strict mode and script change detection:
-   * to the operator's own systems, and to every account's once it is opened.
-   */
-  const offersProtection = (record: SystemRecord): boolean =>
-    options.agentProtection === "all" || (options.agentProtection === "operator" && record.organization_id === null);
-
-  /** The gateway, where it is open to this system. */
-  const gatewayOf = (record: SystemRecord): GatewayOptions | null =>
-    options.gateway !== undefined && gatewayAllowed(options.gateway.access, record.organization_id) ? options.gateway : null;
-
-  /** Whether an uploaded agent is also routed through the gateway: protection's audience, where the gateway is open. */
-  const offersGateway = (record: SystemRecord): boolean => offersProtection(record) && gatewayOf(record) !== null;
-
   /** Whether a system's settings offer to hand it to another account: the same rule, under its own switch. */
   const offersTransfer = (record: SystemRecord): boolean =>
     options.transfer === "all" || (options.transfer === "operator" && record.organization_id === null);
 
-
-  /** Whether the file "upload your agent" gives back records a framework-less agent: the same rule, under its own switch. */
-  const offersPlainAgents = (record: SystemRecord): boolean =>
-    options.plainAgents === "all" || (options.plainAgents === "operator" && record.organization_id === null);
-
-  // The script of "upload your agent": the same for everyone, and nothing in
-  // it is secret, so it is served without a session.
-  app.get("/ui/agent-setup.js", async (_request, reply) =>
-    reply.type("text/javascript; charset=utf-8").header("cache-control", "no-cache").send(AGENT_SETUP_SCRIPT),
-  );
-
-  // The TypeScript SDK, for `npm install <this address>` (sdk-bundle.ts): public code, no secret in it.
-  app.get(`/${SDK_TGZ_NAME}`, async (_request, reply) =>
-    reply
-      .type("application/gzip")
-      .header("content-disposition", `attachment; filename="${SDK_TGZ_NAME}"`)
-      .header("cache-control", "no-cache")
-      .send(sdkTarball().tgz),
-  );
 
   /** Where agents send their actions, as the snippets of the connect page write it. */
   const endpointFor = (request: FastifyRequest): string =>
@@ -866,7 +803,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
           checkpointMinutes: options.service?.checkpointMinutes ?? 60,
           chains: allSystems.listSystemRecords().length,
           ...(lastSeal === undefined || lastSeal === "" ? {} : { lastSeal }),
-          switches: { consoleV2: options.consoleV2 ?? "off", ...(options.features ?? {}), agentUpload: options.agentUpload ?? "off", transfer: options.transfer ?? "off" },
+          switches: { consoleV2: options.consoleV2 ?? "off", ...(options.features ?? {}), transfer: options.transfer ?? "off" },
           version: options.service?.version ?? "",
           now: options.now(),
         }),
@@ -1037,7 +974,7 @@ export function registerUi(app: FastifyInstance, options: UiOptions): void {
         render(session, {
           title: UI.connect.ready(systemTitle(record)),
           current: `system:${systemId}`,
-          body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), protection: offersProtection(record), gateway: offersGateway(record), vault: options.gateway?.keys.vaultEnabled ?? false })}`,
+          body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "created", firstReceipt: null, now: options.now() })}`,
         }),
       );
     } catch (error) {
@@ -1192,7 +1129,7 @@ ${exportSheet(record)}`,
     const record = store.systemRecord(systemId);
     if (record === null) return notFound(session, reply);
     const firstReceipt = record.receipts > 1 ? store.receiptAt(systemId, 1) : null;
-    const body = connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now(), protection: offersProtection(record) });
+    const body = connectPage({ record, endpoint: endpointFor(request), token: null, mode: "connect", firstReceipt, now: options.now() });
     // In the redesigned console connecting is one of the system's tabs, with its keys.
     if (consoleV2()) {
       const done = (request.query as { fatto?: string }).fatto;
@@ -1230,24 +1167,12 @@ ${exportSheet(record)}`,
       record,
       "manage",
       `${systemTitle(record)} — ${UI.settings.title}`,
-      managePage(record, extra, activeKeys(record.system_id), offersTransfer(record) ? { open: session.store.hasOpenTransfer(record.system_id, options.now().toISOString()) } : null, session.viewer.kind === "operator", vaultStateFor(session, record)),
+      managePage(record, extra, activeKeys(record.system_id), offersTransfer(record) ? { open: session.store.hasOpenTransfer(record.system_id, options.now().toISOString()) } : null, session.viewer.kind === "operator"),
     );
-  };
-  // The state of the account's key vault, for the settings page of a system the gateway serves.
-  const vaultStateFor = (session: Session, record: SystemRecord): "none" | "locked" | "open" | "sealed" | null => {
-    const gateway = options.gateway;
-    if (gateway === undefined || !gateway.keys.vaultEnabled || !gatewayAllowed(gateway.access, record.organization_id)) return null;
-    const vaults = gateway.keys.vaults;
-    const owner = session.viewer.kind === "operator" ? "operator" : session.viewer.organizationId;
-    const at = options.now();
-    if (!vaults.exists(owner)) return "none";
-    if (vaults.isUnlocked(owner, at)) return "open";
-    return vaults.isSealed(owner, at) ? "sealed" : "locked";
   };
 
   // Keys into UI.manage, read when a page is written, in its reader's language.
-  const DONE: Record<string, "renamed" | "archived" | "unarchived" | "modelSaved" | "transferRevoked"> = {
-    modello: "modelSaved",
+  const DONE: Record<string, "renamed" | "archived" | "unarchived" | "transferRevoked"> = {
     annullato: "transferRevoked",
     nome: "renamed",
     archiviato: "archived",
@@ -1285,130 +1210,6 @@ ${exportSheet(record)}`,
     await store.exclusive(async () => keys.revoke(keyId, options.now().toISOString()));
     request.log.info({ system: systemId, action: "key.retire", key: keyId }, "a key of a system was retired");
     return reply.redirect(`${systemPath(systemId)}/collega?fatto=ritirata`, 303);
-  });
-
-  // The key vault: the passphrase that seals the account's model keys
-  // (gateway/provider-keys.ts). Present wherever the gateway is.
-  const vaultOwnerOf = (viewer: Viewer): string => (viewer.kind === "operator" ? "operator" : viewer.organizationId);
-  const renderVault = (session: Session, view: Omit<VaultView, "state">, status = 200, reply?: FastifyReply): string | FastifyReply => {
-    const vaults = options.gateway!.keys.vaults;
-    const owner = vaultOwnerOf(session.viewer);
-    const at = options.now();
-    const state = !vaults.exists(owner) ? "none" : vaults.isUnlocked(owner, at) ? "open" : "locked";
-    const page = vaultPage({ ...view, state, schedule: vaults.schedule(owner), sealedNow: vaults.isSealed(owner, at) });
-    const body = render(session, { title: UI.vault.title, current: "impostazioni", body: page });
-    return reply === undefined ? body : html(reply, body, status);
-  };
-  const vaultRoute = (path: string, act: (session: Session, request: FastifyRequest, reply: FastifyReply, vaults: GatewayOptions["keys"]["vaults"], owner: string) => FastifyReply | Promise<FastifyReply>) => {
-    const handler = async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
-      const session = requireSession(request, reply);
-      if (session === null) return reply;
-      if (options.gateway === undefined) return notFound(session, reply);
-      return act(session, request, reply, options.gateway.keys.vaults, vaultOwnerOf(session.viewer));
-    };
-    // Suspended unless SIGILLO_KEY_VAULT=on: no page, no route, a plain 404.
-    if (options.gateway?.keys.vaultEnabled !== true) return;
-    if (path === "") app.get("/ui/vault", handler);
-    else app.post(`/ui/vault/${path}`, handler);
-  };
-  const fieldOf = (request: FastifyRequest, name: string): string => {
-    const value = (request.body as Record<string, unknown> | undefined)?.[name];
-    return typeof value === "string" ? value : "";
-  };
-  vaultRoute("", (session, _request, reply) => renderVault(session, {}, 200, reply) as FastifyReply);
-  vaultRoute("create", (session, request, reply, vaults, owner) => {
-    const passphrase = fieldOf(request, "passphrase");
-    if (passphrase !== fieldOf(request, "again")) return renderVault(session, { error: UI.vault.mismatch }, 400, reply) as FastifyReply;
-    try {
-      const recoveryKey = options.gateway!.keys.createVault(owner, passphrase, options.now());
-      request.log.info({ action: "vault.create", owner }, "an account made its key vault");
-      return renderVault(session, { recoveryKey }, 200, reply) as FastifyReply;
-    } catch (error) {
-      if (!(error instanceof VaultError)) throw error;
-      const message = vaults.exists(owner) ? UI.vault.already : UI.vault.tooShort;
-      return renderVault(session, { error: message }, 400, reply) as FastifyReply;
-    }
-  });
-  vaultRoute("unlock", (session, request, reply, vaults, owner) => {
-    try {
-      if (!vaults.exists(owner) || !vaults.unlock(owner, fieldOf(request, "secret"), options.now())) {
-        return renderVault(session, { error: UI.vault.wrong }, 400, reply) as FastifyReply;
-      }
-    } catch (error) {
-      if (error instanceof VaultSealedError) return renderVault(session, {}, 423, reply) as FastifyReply;
-      if (!(error instanceof VaultError)) throw error;
-      return renderVault(session, { error: UI.vault.tooMany }, 429, reply) as FastifyReply;
-    }
-    request.log.info({ action: "vault.unlock", owner }, "an account opened its key vault");
-    return reply.redirect("/ui/vault", 303);
-  });
-  vaultRoute("lock", (_session, request, reply, vaults, owner) => {
-    vaults.lock(owner);
-    request.log.info({ action: "vault.lock", owner }, "an account locked its key vault");
-    return reply.redirect("/ui/vault", 303);
-  });
-  // Sealed hours (gateway/vault-schedule.ts). The server can close the vault
-  // by itself; it never opens it by itself.
-  const saveSchedule = (session: Session, reply: FastifyReply, vaults: GatewayOptions["keys"]["vaults"], owner: string, schedule: unknown): FastifyReply => {
-    try {
-      vaults.setSchedule(owner, schedule, options.now());
-    } catch (error) {
-      if (!(error instanceof VaultError) && !(error instanceof ScheduleError)) throw error;
-      return renderVault(session, { error: error instanceof ScheduleError ? UI.vault.scheduleInvalid : UI.vault.needFirst }, 400, reply) as FastifyReply;
-    }
-    return reply.redirect("/ui/vault", 303);
-  };
-  vaultRoute("schedule/add", (session, request, reply, vaults, owner) => {
-    const days = [0, 1, 2, 3, 4, 5, 6].filter((d) => fieldOf(request, `day${d}`) !== "");
-    const current = vaults.schedule(owner);
-    const windows = [...(current?.windows ?? []), { days, from: fieldOf(request, "from"), to: fieldOf(request, "to") }];
-    request.log.info({ action: "vault.schedule", owner }, "an account changed the sealed hours of its key vault");
-    return saveSchedule(session, reply, vaults, owner, { timezone: fieldOf(request, "timezone").trim(), windows });
-  });
-  vaultRoute("schedule/remove", (session, request, reply, vaults, owner) => {
-    const current = vaults.schedule(owner);
-    if (current === null) return reply.redirect("/ui/vault", 303);
-    const index = Number(fieldOf(request, "index"));
-    request.log.info({ action: "vault.schedule", owner }, "an account changed the sealed hours of its key vault");
-    return saveSchedule(session, reply, vaults, owner, { ...current, windows: current.windows.filter((_, i) => i !== index) });
-  });
-  vaultRoute("passphrase", (session, request, reply, vaults, owner) => {
-    const passphrase = fieldOf(request, "passphrase");
-    if (passphrase !== fieldOf(request, "again")) return renderVault(session, { error: UI.vault.mismatch }, 400, reply) as FastifyReply;
-    try {
-      vaults.changePassphrase(owner, passphrase, options.now());
-    } catch (error) {
-      if (!(error instanceof VaultError)) throw error;
-      const message = error instanceof VaultLockedError ? UI.vault.lockedTitle : UI.vault.tooShort;
-      return renderVault(session, { error: message }, 400, reply) as FastifyReply;
-    }
-    return renderVault(session, { notice: UI.vault.changed }, 200, reply) as FastifyReply;
-  });
-
-  // The provider key of an uploaded agent (agent-setup.ts), sealed
-  // (gateway/provider-keys.ts) and never shown again.
-  app.post("/ui/systems/:systemId/llm-key", async (request, reply) => {
-    const session = requireSession(request, reply);
-    if (session === null) return reply;
-    const { store } = session;
-    const { systemId } = request.params as { systemId: string };
-    const record = store.systemRecord(systemId);
-    const gateway = record === null ? null : gatewayOf(record);
-    if (record === null || gateway === null || !offersGateway(record)) return notFound(session, reply);
-    const body = request.body as { provider?: unknown; key?: unknown } | undefined;
-    try {
-      if (!isProvider(body?.provider) || typeof body?.key !== "string") throw new ProviderKeyError("invalid");
-      if (await providerRefuses(body.provider, body.key.trim(), gateway.upstream?.[body.provider])) {
-        return html(reply, renderManage(session, record, { error: UI.manage.modelKeyRefused }), 400);
-      }
-      gateway.keys.set(systemId, body.provider, body.key, options.now().toISOString(), options.now());
-    } catch (error) {
-      if (error instanceof VaultError) return html(reply, renderVault(session, { error: UI.vault.needFirst }) as string, 409);
-      if (!(error instanceof ProviderKeyError)) throw error;
-      return html(reply, renderManage(session, record, { error: UI.manage.modelKeyInvalid }), 400);
-    }
-    request.log.info({ system: systemId, action: "llm-key.set", provider: body.provider }, "a model key was saved for a system");
-    return reply.redirect(manageUrl(systemId, "modello"), 303);
   });
 
   app.post("/ui/systems/:systemId/rename", async (request, reply) => {
@@ -1452,7 +1253,7 @@ ${exportSheet(record)}`,
       render(session, {
         title: UI.connect.newKey(systemTitle(record)),
         current: `system:${systemId}`,
-        body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now(), upload: offersUpload(record), plainAgents: offersPlainAgents(record), protection: offersProtection(record), gateway: offersGateway(record), vault: options.gateway?.keys.vaultEnabled ?? false })}`,
+        body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now() })}`,
       }),
     );
   });

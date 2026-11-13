@@ -172,20 +172,17 @@ class DemoEndToEndTest(unittest.TestCase):
         llm_calls = [r for r in receipts if r["action"]["kind"] == "llm_call"]
         self.assertEqual(len(llm_calls), CANDIDATE_COUNT)
 
-        # Every real action was recorded as acting for the same recruiter, by
-        # pseudonym (receipt version 4): the receipts carry her token, and only
-        # the server's erasable subjects table says it is elena.rizzo.
-        token = self._run(["node", str(SERVER_CLI), "subject", "find", "elena.rizzo",
-                           "--db", str(self.db_path)]).strip()
-        self.assertRegex(token, r"^psn_[0-9a-f]{32}$")
-        # The agent's heartbeat opened and closed its connection on the chain:
-        # those two receipts are the server's own, on behalf of nobody.
+        # The recruiter the agent acts for is a person's identifier: the
+        # recorder never sends it (user.id stays in the agent's process), so
+        # no receipt says who, and the server keeps no one's name.
+        found = subprocess.run(["node", str(SERVER_CLI), "subject", "find", "elena.rizzo", "--db", str(self.db_path)],
+                               capture_output=True, text=True, cwd=ROOT, timeout=60)
+        self.assertNotEqual(found.returncode, 0)
+        # The agent's heartbeat opened and closed its connection on the chain.
         connection = [r["action"]["name"] for r in receipts if r["action"]["name"].startswith("sigillo.connection.")]
         self.assertEqual(connection, ["sigillo.connection.start", "sigillo.connection.stop"])
         for receipt in receipts[1:]:
-            if receipt["action"]["name"].startswith("sigillo.connection."):
-                continue
-            self.assertEqual(receipt["actor"].get("on_behalf_of"), token)
+            self.assertNotIn("on_behalf_of", receipt["actor"])
         self.assertNotIn("elena.rizzo", receipts_text)
 
         # One input artifact (the CV) and one output artifact (the reply) per

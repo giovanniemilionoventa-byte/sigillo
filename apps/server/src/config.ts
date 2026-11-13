@@ -129,33 +129,7 @@ export function ingestPause(env: Environment): { except: ReadonlySet<string> } |
   return { except: new Set(except) };
 }
 
-/**
- * SIGILLO_LLM_GATEWAY: who may use the model gateway (gateway/llm.ts). `off`
- * serves no /llm/* at all; `operator`, the default, the operator's own
- * systems only; `all`, every account's. A new feature reaches the operator's
- * account first and every customer only once the owner says so (CLAUDE.md,
- * rule 11): opening it is this one setting.
- */
-export function llmGateway(env: Environment): "off" | "operator" | "all" {
-  const value = env["SIGILLO_LLM_GATEWAY"];
-  if (value === undefined || value.length === 0) return "operator";
-  if (value === "off" || value === "operator" || value === "all") return value;
-  throw new ConfigError(`SIGILLO_LLM_GATEWAY must be off, operator or all, received ${JSON.stringify(value)}`);
-}
 
-/**
- * SIGILLO_KEY_VAULT: whether customers' model keys are sealed under a
- * passphrase-protected vault (gateway/provider-keys.ts, vault-page.ts).
- * `off`, the default, is how it was suspended on 2026-10-23: no vault page,
- * no /vault/* calls, new keys sealed under the server's own key. `on` brings
- * the vault back; the code and its tables are untouched.
- */
-export function keyVault(env: Environment): boolean {
-  const value = env["SIGILLO_KEY_VAULT"];
-  if (value === undefined || value.length === 0 || value === "off") return false;
-  if (value === "on") return true;
-  throw new ConfigError(`SIGILLO_KEY_VAULT must be on or off, received ${JSON.stringify(value)}`);
-}
 
 /**
  * SIGILLO_CONSOLE_V2: who gets the redesigned console (design/DESIGN.md,
@@ -208,33 +182,7 @@ export function consoleFeatures(env: Environment): ConsoleFeatures {
   };
 }
 
-/**
- * SIGILLO_AGENT_UPLOAD: who sees "upload your agent" on the connect page
- * (http/agent-setup.ts), where the browser adds the sigillo lines to an
- * agent's .py file. `off`, `operator` (the default: new, so the
- * administrator's own systems only, CLAUDE.md rule 11) or `all`. The
- * deployment (deploy/docker-compose.yml) opened it to all on 2026-10-06, on
- * the owner's word.
- */
-export function agentUpload(env: Environment): "off" | "operator" | "all" {
-  const value = env["SIGILLO_AGENT_UPLOAD"];
-  if (value === undefined || value.length === 0) return "operator";
-  if (value === "off" || value === "operator" || value === "all") return value;
-  throw new ConfigError(`SIGILLO_AGENT_UPLOAD must be off, operator or all, received ${JSON.stringify(value)}`);
-}
 
-/**
- * Whether the gateway also writes a receipt for each tool a model asks for
- * (gateway/tool-requests.ts): SIGILLO_LLM_TOOL_REQUESTS, `off`, `operator`
- * (the default) or `all`. New, so for the administrator's own systems until
- * the owner says otherwise (CLAUDE.md, rule 11).
- */
-export function llmToolRequests(env: Environment): "off" | "operator" | "all" {
-  const value = env["SIGILLO_LLM_TOOL_REQUESTS"];
-  if (value === undefined || value.length === 0) return "operator";
-  if (value === "off" || value === "operator" || value === "all") return value;
-  throw new ConfigError(`SIGILLO_LLM_TOOL_REQUESTS must be off, operator or all, received ${JSON.stringify(value)}`);
-}
 
 /**
  * Customers' accounts (auth/firebase.ts): SIGILLO_FIREBASE_API_KEY and
@@ -318,15 +266,3 @@ export function scriptGuard(env: Environment): "off" | "operator" | "all" {
   throw new ConfigError(`SIGILLO_SCRIPT_GUARD must be off, operator or all, received ${JSON.stringify(value)}`);
 }
 
-/**
- * SIGILLO_AGENT_PROTECTION: whether uploaded agents are wrapped with
- * strict mode and script change detection (http/agent-setup.ts). `off`,
- * `operator` (the default: new, so the administrator's own systems only,
- * CLAUDE.md rule 11) or `all`.
- */
-export function agentProtection(env: Environment): "off" | "operator" | "all" {
-  const value = env["SIGILLO_AGENT_PROTECTION"];
-  if (value === undefined || value.length === 0) return "operator";
-  if (value === "off" || value === "operator" || value === "all") return value;
-  throw new ConfigError(`SIGILLO_AGENT_PROTECTION must be off, operator or all, received ${JSON.stringify(value)}`);
-}

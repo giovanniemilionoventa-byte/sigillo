@@ -1,11 +1,8 @@
-# Four services, and the separation between them is the point.
+# Three services, and the separation between them is the point.
 #
 #   signer     holds the signing key. Nothing else mounts the key volume.
-#   keyholder  holds what opens the customers' model keys, and calls the
-#              model providers with them for the gateway. Nothing else mounts
-#              its volume.
-#   server     holds the database. It reaches the signer and the keyholder
-#              through sockets and has no way to read either key.
+#   server     holds the database. It reaches the signer through a socket
+#              and has no way to read its key.
 #   caddy   terminates TLS. It is the only service on a public port.
 #
 # Before the first start (docs/DEPLOY-PRODUZIONE.md has every step):
@@ -71,39 +68,6 @@ services:
       timeout: 3s
       retries: 5
 
-  keyholder:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      target: keyholder
-    restart: unless-stopped
-    volumes:
-      # Its key, and the older model-key file the server hands over and then
-      # deletes on its own side. Mounted here and nowhere else.
-      - keyholder-key:/var/lib/sigillo-keyholder
-      # The socket, shared with the server and with nothing else. It listens
-      # on no port: the network is only for its calls out to the providers.
-      - keyholder-socket:/run/sigillo-keyholder
-    read_only: true
-    tmpfs:
-      - /tmp:size=8m,mode=1777
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    deploy:
-      resources:
-        limits:
-          cpus: "0.50"
-          memory: 192M
-          pids: 64
-    logging: *logging
-    healthcheck:
-      test: ["CMD", "test", "-S", "/run/sigillo-keyholder/keyholder.sock"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
   server:
     build:
       context: ..
@@ -113,12 +77,9 @@ services:
     depends_on:
       signer:
         condition: service_healthy
-      keyholder:
-        condition: service_healthy
     volumes:
       - sigillo-data:/var/lib/sigillo
       - signer-socket:/run/sigillo
-      - keyholder-socket:/run/sigillo-keyholder
       - backups:/var/lib/sigillo-backups
     read_only: true
     tmpfs:
@@ -192,33 +153,14 @@ services:
       # Systems one customer organization may create (archived ones count);
       # the administrator's own have no limit.
       SIGILLO_ORG_MAX_SYSTEMS: ${SIGILLO_ORG_MAX_SYSTEMS:-100}
-      # The model gateway (/llm/...): "all" (opened to customers by the owner,
-      # 2026-10-05), "operator" for the administrator's own systems only, "off"
-      # to close it.
-      # The customers' model keys are sealed to the keyholder, which alone
-      # opens them; an older sealing key beside the database is handed to it
-      # on the first start and deleted here. Empty: sealed and opened in the
-      # server, under the key file beside the database, as before.
-      SIGILLO_LLM_GATEWAY: ${SIGILLO_LLM_GATEWAY:-all}
-      SIGILLO_KEYHOLDER_SOCKET: ${SIGILLO_KEYHOLDER_SOCKET-/run/sigillo-keyholder/keyholder.sock}
-      # Whether it also writes a receipt for each tool the model asks for
-      # (model_requested.<tool>). Same values: "all" (opened by the owner, 2026-10-15).
-      SIGILLO_LLM_TOOL_REQUESTS: ${SIGILLO_LLM_TOOL_REQUESTS:-all}
-      # "Upload your agent" on the connect page: the browser adds the sigillo
-      # lines to the agent's .py file. Same values: "all" (opened to
-      # customers by the owner, 2026-10-06), "operator" for the
-      # administrator's own systems only, "off" to hide it.
-      SIGILLO_AGENT_UPLOAD: ${SIGILLO_AGENT_UPLOAD:-all}
       # The features below were the administrator's alone while they were tried
       # (CLAUDE.md rule 11). The owner opened them to every account on
       # 2026-10-15: administrator and customers now see the same. Each can
       # still be set back to "operator" or "off".
       # Script guard (connection/watch.ts).
       SIGILLO_SCRIPT_GUARD: ${SIGILLO_SCRIPT_GUARD:-all}
-      # Agents with no framework recorded from urllib and file writes (sdk "stdlib"), and the door in front of a local model.
+      # Agents with no framework recorded from urllib and file writes (sdk "stdlib").
       SIGILLO_PLAIN_AGENTS: ${SIGILLO_PLAIN_AGENTS:-all}
-      # Uploaded agents wrapped with strict mode and script change detection ("Più sicurezza").
-      SIGILLO_AGENT_PROTECTION: ${SIGILLO_AGENT_PROTECTION:-all}
       # Handing a system over to another account with a link.
       SIGILLO_TRANSFER: ${SIGILLO_TRANSFER:-all}
       # The redesigned console (Stato, Azioni, Prove) and its parts.
@@ -288,8 +230,6 @@ secrets:
 volumes:
   signer-key:
   signer-socket:
-  keyholder-key:
-  keyholder-socket:
   sigillo-data:
   backups:
   caddy-data:
