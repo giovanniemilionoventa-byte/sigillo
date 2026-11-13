@@ -4455,3 +4455,44 @@ clienti) parte da solo appena la demo entra nello schermo (`IntersectionObserver
 senza di esso parte subito). I passi sono 3 (guarda l'agente lavorare, modifica, verifica); gli
 altri agenti restano come scelta secondaria sotto la guida, e «Ricomincia» fa ripartire lo stesso
 agente.
+
+## Architettura di base, passo 1 (2026-11-13)
+
+Giovanni ha chiesto di portare il codice all'architettura di base della riprogettazione: un
+registratore (la libreria Python), un notaio (server + firmatario), un verificatore. Tutto il
+resto esce dal codice e resta nella storia di git, da rimettere solo se un cliente lo chiede.
+
+Tolto:
+- gateway dei modelli (`/llm/*`), custode delle chiavi (`apps/keyholder`), cassaforte delle chiavi,
+  ricevute degli strumenti chiesti dal modello e loro confronto (`check/tool-reconcile.ts`);
+  il terzo contenitore sparisce da `deploy/` (restano signer, server, caddy). Le tabelle del
+  gateway restano nello schema, vuote, così un database esistente si apre come prima.
+- «Carica il tuo agente» (`agent-setup.ts`, `agent-detect.ts`): basta la riga di codice.
+- SDK TypeScript (`packages/sdk-typescript`) e il suo pacchetto servito dal server.
+- Nel registratore: modalità `strict` e `on_halt` (l'agente non si ferma mai), processo guardiano
+  (`_watchdog.py`), porta per il modello locale (`door.py`, `local_model`), puntamento al gateway
+  (`_gateway.py`), `sigillo.pseudonym()`, le opzioni `redact_content` e `salt_content`.
+
+Aggiunto nel registratore (`sdk-python` 0.13.0):
+- coda su disco (`_queue.py`): ogni gruppo di azioni è scritto su disco prima di essere spedito
+  e cancellato solo quando il server lo ha preso; se la rete o il server cadono non si perde
+  niente, e quello che aspetta riparte da solo, in ordine, anche al riavvio successivo; dove la
+  cartella non è scrivibile la coda resta in memoria, con un avviso;
+- chiave del cliente sempre presente, con una regola sola: quella passata a `init`, poi
+  `SIGILLO_CUSTOMER_KEY`, poi il file `customer.key` della cartella dell'agente; se manca, la
+  crea e la salva lì (permessi 0600) e avvisa di farne una copia. Ogni impronta è salata con
+  questa chiave; il server non riceve mai né la chiave né il nonce;
+- `user.id` ed `enduser.id` non escono più dal processo dell'agente (niente «per conto di chi»).
+
+Il battito resta com'è: le ricevute nascono solo quando l'agente si collega, chiude, tace e
+torna (un battito normale non scrive niente), quindi non pesa sulla quota. Senza guardiano,
+un processo ucciso risulta `lost` dopo tre minuti, «motivo non noto».
+
+Restano per il passo 2: il timbro su ogni evento (cambia il formato delle ricevute, quindi
+versione nuova e test prima), l'API diretta `/api/v1/receipts` (usata ancora da molti test),
+le impronte dei documenti (`sigillo.artifact`) e la parte server degli pseudonimi, che resta
+solo per i dati già salvati.
+
+Test: 1506 Node verdi (+2 saltati) dopo aver tolto i test delle parti rimosse; 82 SDK Python;
+22 demo. Il test della demo nel browser (`site-demo`) è passato da solo ma è fallito una volta
+sotto il carico dell'intera suite.

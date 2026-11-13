@@ -321,7 +321,7 @@ class SigilloInitTest(unittest.TestCase):
         }
         with mock.patch.dict(sys.modules, blocked):
             with self.assertNoLogs("sigillo", level=logging.WARNING):
-                tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s")
+                tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", customer_key="k-cliente")
         self.addCleanup(tracing.shutdown)
 
         self.assertEqual(tracing.instrumented, ())
@@ -743,15 +743,15 @@ class SigilloInitTest(unittest.TestCase):
             with tracing.tool(""):
                 pass
 
-    def test_the_public_surface_is_three_functions_and_a_handle(self) -> None:
+    def test_the_public_surface_is_four_functions_and_a_handle(self) -> None:
         self.assertEqual(
             sigillo.__all__,
-            ["init", "artifact", "current_span_from_callbacks", "pseudonym", "nonce_for", "Tracing"],
+            ["init", "artifact", "current_span_from_callbacks", "nonce_for", "Tracing"],
         )
         public = [name for name in dir(sigillo) if not name.startswith("_")]
         self.assertEqual(
             sorted(name for name in public if callable(getattr(sigillo, name))),
-            ["Tracing", "artifact", "current_span_from_callbacks", "init", "nonce_for", "pseudonym"],
+            ["Tracing", "artifact", "current_span_from_callbacks", "init", "nonce_for"],
         )
 
 
@@ -908,8 +908,8 @@ class HeartbeatTest(unittest.TestCase):
 
 class ScriptGuardTest(unittest.TestCase):
     """The script guard, SDK side: the SHA-256 of the agent's main script goes
-    with every beat, read again each time; in strict mode the agent stops when
-    the server says the script changed or when it cannot record for a while.
+    with every beat, read again each time, and the agent is never stopped for
+    it: the server writes the change on the chain.
     """
 
     def setUp(self) -> None:
@@ -977,25 +977,7 @@ class ScriptGuardTest(unittest.TestCase):
             tracing.shutdown()
         self.assertEqual(set(self._hashes()), {"absent"})
 
-    def test_strict_stops_the_agent_when_the_server_says_the_script_changed(self) -> None:
-        _Capture.heartbeat_reply = b'{"recorded": null, "script_changed": true}'
-        halted: list[str] = []
-        with self._main(self.script):
-            tracing = sigillo.init(
-                endpoint=self.base,
-                api_key="k",
-                system_id="s",
-                instrument=[],
-                heartbeat_seconds=0.05,
-                strict=True,
-                on_halt=halted.append,
-            )
-            self._wait_for(lambda: len(halted) >= 1)
-            tracing.shutdown()
-        self.assertEqual(len(halted), 1)
-        self.assertIn("script", halted[0])
-
-    def test_without_strict_the_same_answer_changes_nothing(self) -> None:
+    def test_the_server_saying_the_script_changed_does_not_stop_the_agent(self) -> None:
         _Capture.heartbeat_reply = b'{"recorded": null, "script_changed": true}'
         with self._main(self.script):
             tracing = sigillo.init(
@@ -1004,39 +986,6 @@ class ScriptGuardTest(unittest.TestCase):
             self._wait_for(lambda: len(self._hashes()) >= 3)
             tracing.shutdown()
         self.assertGreaterEqual(len(self._hashes()), 3)
-
-    def test_strict_stops_the_agent_after_three_beats_that_do_not_get_through(self) -> None:
-        halted: list[str] = []
-        with self._main(self.script):
-            tracing = sigillo.init(
-                endpoint="http://127.0.0.1:9",
-                api_key="k",
-                system_id="s",
-                instrument=[],
-                heartbeat_seconds=0.05,
-                strict=True,
-                on_halt=halted.append,
-            )
-            self._wait_for(lambda: len(halted) >= 1)
-            tracing.shutdown()
-        self.assertEqual(len(halted), 1)
-        self.assertIn("record", halted[0])
-
-    def test_strict_does_not_stop_an_agent_whose_beats_get_through(self) -> None:
-        halted: list[str] = []
-        with self._main(self.script):
-            tracing = sigillo.init(
-                endpoint=self.base,
-                api_key="k",
-                system_id="s",
-                instrument=[],
-                heartbeat_seconds=0.05,
-                strict=True,
-                on_halt=halted.append,
-            )
-            self._wait_for(lambda: len(self._hashes()) >= 6)
-            tracing.shutdown()
-        self.assertEqual(halted, [])
 
     def test_every_beat_carries_the_hash_of_the_sigillo_package_and_not_the_stop(self) -> None:
         with self._main(self.script):
@@ -1052,132 +1001,19 @@ class ScriptGuardTest(unittest.TestCase):
                 self.assertRegex(body["sdk_hash"], r"^[0-9a-f]{64}$")
         self.assertEqual(len({b["sdk_hash"] for b, _ in _Capture.heartbeats if b["event"] != "stop"}), 1)
 
-    def _run_agent(self, lines: str) -> subprocess.Popen:
-        """The agent as a real process: strict, the guard checking every 0.2 seconds."""
-        self.script.write_text(
-            "import time, sigillo\n"
-            f"beat = sigillo._Heartbeat('{self.base}/api/v1/heartbeat', 'k', 60, strict=True, guard_seconds=0.2)\n"
-            "beat.start()\n"
-            "print('up', flush=True)\n"
-            f"{lines}\n"
-        )
-        env = {**__import__("os").environ, "PYTHONPATH": str(Path(sigillo.__file__).parent.parent)}
-        process = subprocess.Popen([sys.executable, str(self.script)], stdout=subprocess.PIPE, text=True, env=env)
-        self.addCleanup(process.kill)
-        assert process.stdout is not None
-        self.assertEqual(process.stdout.readline().strip(), "up")
-        return process
-
-    def test_the_guard_process_ends_an_agent_whose_script_is_edited_and_tells_the_server_at_once(self) -> None:
-        process = self._run_agent("time.sleep(60)")
-        self._wait_for(lambda: len(self._hashes()) >= 1)
-        before = self._hashes()[0]
-        self.script.write_text(self.script.read_text() + "# edited by the agent\n")
-        self.assertIsNotNone(process.wait(timeout=15))
-        self.assertNotEqual(process.returncode, 0)
-        sent = [b for b, _ in _Capture.heartbeats if b["event"] == "beat"]
-        self.assertEqual(len(sent), 1)
-        self.assertRegex(sent[0]["script_hash"], r"^[0-9a-f]{64}$")
-        self.assertNotEqual(sent[0]["script_hash"], before)
-
-    def test_the_guard_process_leaves_an_agent_alone_whose_script_does_not_change_and_ends_with_it(self) -> None:
-        process = self._run_agent("time.sleep(1.5)")
-        self.assertEqual(process.wait(timeout=15), 0)
-        self.assertEqual([b["event"] for b, _ in _Capture.heartbeats if b["event"] == "beat"], [])
-
-    def _run_plain_agent(self, lines: str) -> subprocess.Popen:
-        """The agent as a real process, not strict: only the guard's first job."""
-        self.script.write_text(
-            "import time, sigillo\n"
-            f"beat = sigillo._Heartbeat('{self.base}/api/v1/heartbeat', 'k', 60)\n"
-            "beat.start()\n"
-            "print('up', flush=True)\n"
-            f"{lines}\n"
-        )
-        env = {**__import__("os").environ, "PYTHONPATH": str(Path(sigillo.__file__).parent.parent)}
-        process = subprocess.Popen([sys.executable, str(self.script)], stdout=subprocess.PIPE, text=True, env=env)
-        self.addCleanup(process.kill)
-        assert process.stdout is not None
-        self.assertEqual(process.stdout.readline().strip(), "up")
-        return process
-
     def _events(self) -> list[str]:
         return [b["event"] for b, _ in _Capture.heartbeats]
 
-    def test_the_guard_tells_the_server_the_agent_ended_when_it_is_killed_and_the_computer_stays_on(self) -> None:
-        process = self._run_plain_agent("time.sleep(60)")
-        self._wait_for(lambda: "start" in self._events())
-        process.kill()
-        self._wait_for(lambda: "ended" in self._events())
-        ended = [b for b, _ in _Capture.heartbeats if b["event"] == "ended"]
-        started = [b for b, _ in _Capture.heartbeats if b["event"] == "start"]
-        self.assertEqual(ended[0]["session"], started[0]["session"])
-
-    def test_the_guard_says_nothing_when_the_agent_closes_normally_or_just_ends(self) -> None:
-        process = self._run_plain_agent("beat.close()")
-        process.wait(timeout=15)
-        time.sleep(0.5)
-        self.assertIn("stop", self._events())
-        self.assertNotIn("ended", self._events())
-
-    def test_a_plain_agent_is_not_ended_when_its_script_changes(self) -> None:
-        process = self._run_plain_agent("time.sleep(1.5)")
-        self.script.write_text(self.script.read_text() + "# edited\n")
-        self.assertEqual(process.wait(timeout=15), 0)
-
-    def test_a_beat_that_finds_the_guard_gone_halts_a_strict_agent(self) -> None:
-        halted: list[str] = []
-        with self._main(self.script):
-            beat = sigillo._Heartbeat(f"{self.base}/api/v1/heartbeat", "k", 60, strict=True)
-            beat._on_halt = halted.append
-            beat._guard = subprocess.Popen([sys.executable, "-c", "pass"])
-            beat._guard.wait()
-            beat._send("beat")
-        self.assertEqual(len(halted), 1)
-        self.assertIn("guard", halted[0])
 
 
-class GuardGapsTest(unittest.TestCase):
-    """What the guard tells about the computer: sleeps, network cuts, boot time."""
+class BootTimeTest(unittest.TestCase):
+    """When the computer was switched on, so that the server can tell a computer
+    switched off from an agent that went silent."""
 
     def setUp(self) -> None:
-        from sigillo import _watchdog
+        from sigillo import _host
 
-        self.w = _watchdog
-        self.gaps = _watchdog.Gaps(1000.0, 5.0)
-
-    def test_a_loop_that_ran_on_time_reports_nothing(self) -> None:
-        for now in (1005.0, 1010.0, 1031.0):  # 21s late is still within 3 periods + 15s
-            self.gaps.tick(now)
-        self.assertEqual(self.gaps.pending, [])
-
-    def test_a_clock_that_jumped_is_a_sleep_from_the_last_look(self) -> None:
-        self.gaps.tick(1005.0)
-        self.gaps.tick(1005.0 + 3600)
-        self.assertEqual(self.gaps.pending, [{"kind": "sleep", "from": self.w.iso(1005.0)}])
-
-    def test_a_network_cut_is_reported_when_it_ends_from_the_last_time_the_server_answered(self) -> None:
-        self.gaps.reached(1060.0, True)
-        self.gaps.reached(1120.0, False)
-        self.gaps.reached(1180.0, False)
-        self.assertEqual(self.gaps.pending, [])  # not over yet
-        self.gaps.reached(1240.0, True)
-        self.assertEqual(self.gaps.pending, [{"kind": "offline", "from": self.w.iso(1060.0)}])
-        self.gaps.reached(1300.0, True)
-        self.assertEqual(len(self.gaps.pending), 1)
-
-    def test_a_short_cut_is_not_worth_a_receipt(self) -> None:
-        self.gaps.reached(1060.0, True)
-        self.gaps.reached(1120.0, False)
-        self.gaps.reached(1130.0, True)
-        self.assertEqual(self.gaps.pending, [])
-
-    def test_a_failed_attempt_during_sleep_is_not_a_network_cut(self) -> None:
-        self.gaps.reached(1060.0, True)
-        self.gaps.reached(1120.0, False)
-        self.gaps.tick(1120.0 + 3600)  # the computer slept through it
-        self.gaps.reached(1120.0 + 3600, True)
-        self.assertEqual([g["kind"] for g in self.gaps.pending], ["sleep"])
+        self.w = _host
 
     def test_boot_time_is_in_the_past_where_the_computer_can_say(self) -> None:
         boot = self.w.boot_time()
@@ -1227,8 +1063,9 @@ class ContentFilterTest(unittest.TestCase):
         tracing.flush()
         return _Capture.bodies[-1]
 
-    def test_replaces_input_and_output_with_matching_digests(self) -> None:
-        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+    def test_replaces_input_and_output_with_digests_salted_by_the_customer_key(self) -> None:
+        key = "chiave-del-cliente-per-il-test"
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], customer_key=key)
         self.addCleanup(tracing.shutdown)
         input_value = '{"order_id": "A-1099", "candidate": "Maria Bianchi"}'
         output_value = "Il candidato è stato ammesso al colloquio del 12 marzo."
@@ -1243,24 +1080,25 @@ class ContentFilterTest(unittest.TestCase):
             },
         )
 
-        attributes = _string_attributes(_first_span(body).attributes)
+        span = _first_span(body)
+        attributes = _string_attributes(span.attributes)
         self.assertNotIn("input.value", attributes)
         self.assertNotIn("output.value", attributes)
         for role, value in (("input", input_value), ("output", output_value)):
-            nonce = bytes.fromhex(attributes[f"sigillo.{role}.nonce"])
-            self.assertEqual(len(nonce), 32)
+            self.assertEqual(attributes[f"sigillo.{role}.nonce"], "customer")
+            nonce = bytes.fromhex(sigillo.nonce_for(key, span.trace_id.hex(), span.span_id.hex(), role))
             self.assertEqual(
                 attributes[f"sigillo.{role}.sha256"],
                 hashlib.sha256(nonce + json.dumps(value, ensure_ascii=False).encode("utf-8")).hexdigest(),
             )
-        self.assertNotEqual(attributes["sigillo.input.nonce"], attributes["sigillo.output.nonce"])
         self.assertNotIn(input_value.encode("utf-8"), body)
         self.assertNotIn(output_value.encode("utf-8"), body)
         self.assertNotIn(b"Maria Bianchi", body)
+        self.assertNotIn(key.encode("utf-8"), body)
 
     @unittest.skipIf(_core_requirements_met() is not None, _core_requirements_met() or "")
     def test_the_digest_matches_what_the_server_itself_would_compute(self) -> None:
-        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
+        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], customer_key="k-cliente")
         self.addCleanup(tracing.shutdown)
         for value in [
             '{"messages": [{"role": "user", "content": "dov\'è il mio ordine?"}]}',
@@ -1273,13 +1111,12 @@ class ContentFilterTest(unittest.TestCase):
                     tracing,
                     {"openinference.span.kind": "TOOL", "tool.name": "t", "input.value": value},
                 )
-                attributes = _string_attributes(_first_span(body).attributes)
-                self.assertEqual(
-                    attributes["sigillo.input.sha256"],
-                    _salted_digest_in_node(value, attributes["sigillo.input.nonce"]),
-                )
+                span = _first_span(body)
+                attributes = _string_attributes(span.attributes)
+                nonce = sigillo.nonce_for("k-cliente", span.trace_id.hex(), span.span_id.hex(), "input")
+                self.assertEqual(attributes["sigillo.input.sha256"], _salted_digest_in_node(value, nonce))
 
-    def test_a_fresh_nonce_each_time_so_the_same_value_never_gives_the_same_digest(self) -> None:
+    def test_each_action_its_own_nonce_so_the_same_value_never_gives_the_same_digest(self) -> None:
         tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
         self.addCleanup(tracing.shutdown)
         seen = set()
@@ -1347,24 +1184,9 @@ class ContentFilterTest(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 sigillo.nonce_for(*bad)
 
-    def test_a_customer_key_needs_salting(self) -> None:
-        with self.assertRaises(ValueError):
-            sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], customer_key="k", salt_content=False)
-        with self.assertRaises(ValueError):
-            sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], customer_key="k", redact_content=False)
-        with self.assertRaises(ValueError):
-            sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], customer_key="")
+    def test_refuses_the_placeholder_customer_key(self) -> None:
         with self.assertRaises(ValueError):
             sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], customer_key="<your-own-key>")
-
-    @unittest.skipIf(_core_requirements_met() is not None, _core_requirements_met() or "")
-    def test_the_plain_digest_still_matches_the_server_when_salting_is_turned_off(self) -> None:
-        tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[], salt_content=False)
-        self.addCleanup(tracing.shutdown)
-        body = self._emit(tracing, {"openinference.span.kind": "TOOL", "tool.name": "t", "input.value": "caffè ☕"})
-        attributes = _string_attributes(_first_span(body).attributes)
-        self.assertNotIn("sigillo.input.nonce", attributes)
-        self.assertEqual(attributes["sigillo.input.sha256"], _hash_canonical_json_in_node("caffè ☕"))
 
     def test_strips_attributes_the_server_does_not_read(self) -> None:
         tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
@@ -1386,7 +1208,7 @@ class ContentFilterTest(unittest.TestCase):
         for kept in ("openinference.span.kind", "tool.name"):
             self.assertIn(kept, attributes)
 
-    def test_keeps_the_identifiers_the_server_actually_reads(self) -> None:
+    def test_keeps_the_identifiers_the_server_reads_and_never_a_person_s(self) -> None:
         tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
         self.addCleanup(tracing.shutdown)
         body = self._emit(
@@ -1401,7 +1223,9 @@ class ContentFilterTest(unittest.TestCase):
         attributes = _string_attributes(_first_span(body).attributes)
         self.assertEqual(attributes["llm.model_name"], "claude-sonnet-5")
         self.assertEqual(attributes["llm.provider"], "anthropic")
-        self.assertEqual(attributes["user.id"], "u-123")
+        # Who the agent acted for is a person's identifier: it does not leave.
+        self.assertNotIn("user.id", attributes)
+        self.assertNotIn(b"u-123", body)
 
     def test_leaves_sigillo_artifact_events_untouched(self) -> None:
         tracing = sigillo.init(endpoint=self.base, api_key="k", system_id="s", instrument=[])
@@ -1470,63 +1294,157 @@ class ContentFilterTest(unittest.TestCase):
             tracing.shutdown()
         self.assertNotIn("[sigillo sends]", printed.getvalue())
 
-    def test_can_be_turned_off_explicitly(self) -> None:
-        tracing = sigillo.init(
-            endpoint=self.base, api_key="k", system_id="s", instrument=[], redact_content=False
+
+class _Flaky(http.server.BaseHTTPRequestHandler):
+    """A server that is down (503) until told otherwise, then takes everything."""
+
+    up = False
+    bodies: list[bytes] = []
+
+    def do_POST(self):  # noqa: N802 - the name is fixed by the base class
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        if self.path.endswith("/api/v1/heartbeat"):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+            return
+        if not type(self).up:
+            self.send_response(503)
+            self.end_headers()
+            return
+        type(self).bodies.append(body)
+        self.send_response(200)
+        self.end_headers()
+
+    def log_message(self, *_args):
+        pass
+
+
+class RecorderQueueTest(unittest.TestCase):
+    """Write first, send after: an action is on disk before it is sent, a server
+    that is down loses nothing, and the agent is never stopped."""
+
+    def setUp(self) -> None:
+        _Flaky.up = False
+        _Flaky.bodies = []
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), _Flaky)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+        self.state = Path(tempfile.mkdtemp(prefix="sigillo-state-"))
+        self.addCleanup(shutil.rmtree, self.state, ignore_errors=True)
+
+    def tearDown(self) -> None:
+        self.server.shutdown()
+        self.thread.join(timeout=5)
+        self.server.server_close()
+
+    def _queued(self) -> list[Path]:
+        return sorted((self.state / "s" / "queue").glob("*.pb"))
+
+    def _act(self, tracing: sigillo.Tracing, name: str) -> None:
+        with tracing.provider.get_tracer("t").start_as_current_span(name) as span:
+            span.set_attribute("openinference.span.kind", "TOOL")
+            span.set_attribute("tool.name", name)
+        tracing.flush()
+
+    def test_actions_wait_on_disk_while_the_server_is_down_and_go_in_order_when_it_is_back(self) -> None:
+        with self.assertLogs("sigillo", level="WARNING"):
+            tracing = sigillo.init(
+                endpoint=self.base, api_key="k", system_id="s", instrument=[], state_dir=self.state, customer_key="c"
+            )
+            self.addCleanup(tracing.shutdown)
+            for name in ("first", "second", "third"):
+                self._act(tracing, name)  # returns at once: the agent goes on
+        self.assertEqual(len(self._queued()), 3)
+        self.assertEqual(_Flaky.bodies, [])
+
+        _Flaky.up = True
+        self.assertTrue(tracing._queue_flush())
+        self.assertEqual(self._queued(), [])
+        self.assertEqual([span.name for body in _Flaky.bodies for span in _all_spans(body)], ["first", "second", "third"])
+
+    def test_a_new_run_sends_what_the_last_one_left_behind(self) -> None:
+        with self.assertLogs("sigillo", level="WARNING"):
+            first = sigillo.init(
+                endpoint=self.base, api_key="k", system_id="s", instrument=[], state_dir=self.state, customer_key="c"
+            )
+            self._act(first, "before the restart")
+            first.shutdown()
+        self.assertEqual(len(self._queued()), 1)
+
+        _Flaky.up = True
+        second = sigillo.init(
+            endpoint=self.base, api_key="k", system_id="s", instrument=[], state_dir=self.state, customer_key="c"
         )
-        self.addCleanup(tracing.shutdown)
-        body = self._emit(
-            tracing,
-            {"openinference.span.kind": "TOOL", "tool.name": "t", "input.value": "in chiaro di proposito"},
-        )
-        attributes = _string_attributes(_first_span(body).attributes)
-        self.assertEqual(attributes["input.value"], "in chiaro di proposito")
-        self.assertNotIn("sigillo.input.sha256", attributes)
+        self.addCleanup(second.shutdown)
+        deadline = time.monotonic() + 5
+        while self._queued() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertEqual(self._queued(), [])
+        self.assertEqual([span.name for span in _all_spans(_Flaky.bodies[0])], ["before the restart"])
+
+    def test_what_waits_on_disk_holds_no_text(self) -> None:
+        with self.assertLogs("sigillo", level="WARNING"):
+            tracing = sigillo.init(
+                endpoint=self.base, api_key="k", system_id="s", instrument=[], state_dir=self.state, customer_key="c"
+            )
+            self.addCleanup(tracing.shutdown)
+            with tracing.provider.get_tracer("t").start_as_current_span("leggi") as span:
+                span.set_attribute("input.value", "il CV di Maria Bianchi")
+            tracing.flush()
+        (queued,) = self._queued()
+        self.assertNotIn(b"Maria Bianchi", queued.read_bytes())
+
+    def test_an_unwritable_folder_keeps_the_queue_in_memory_and_says_so(self) -> None:
+        blocker = self.state / "not-a-folder"
+        blocker.write_text("")
+        with self.assertLogs("sigillo", level="WARNING") as logs:
+            tracing = sigillo.init(
+                endpoint=self.base, api_key="k", system_id="s", instrument=[], state_dir=blocker, customer_key="c"
+            )
+            self.addCleanup(tracing.shutdown)
+            self._act(tracing, "kept in memory")
+        self.assertTrue(any("kept in memory" in line for line in logs.output), logs.output)
+        _Flaky.up = True
+        self.assertTrue(tracing._queue_flush())
+        self.assertEqual([span.name for span in _all_spans(_Flaky.bodies[0])], ["kept in memory"])
 
 
-class PseudonymTest(unittest.TestCase):
-    """Fase 9, decision F (D1 of docs/PROPOSTA-FASE-4.md): an opaque stand-in
-    for `on_behalf_of`, so the one field the instrumentation puts in clear by
-    convention need not carry a real identifier into a receipt. The key never
-    leaves the caller's process; sigillo never sees it.
-    """
+class CustomerKeyTest(unittest.TestCase):
+    """One rule for the customer key: the one given, else the environment's,
+    else the one in the agent's folder, else a new one saved there."""
 
-    def test_is_deterministic_for_the_same_value_and_key(self) -> None:
-        self.assertEqual(
-            sigillo.pseudonym("elena.rizzo", key=b"a-key-only-the-client-holds"),
-            sigillo.pseudonym("elena.rizzo", key=b"a-key-only-the-client-holds"),
-        )
+    def setUp(self) -> None:
+        self.state = Path(tempfile.mkdtemp(prefix="sigillo-key-"))
+        self.addCleanup(shutil.rmtree, self.state, ignore_errors=True)
+        patcher = unittest.mock.patch.dict("os.environ")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        import os
 
-    def test_differs_for_a_different_value_or_a_different_key(self) -> None:
-        base = sigillo.pseudonym("elena.rizzo", key=b"key-one")
-        self.assertNotEqual(base, sigillo.pseudonym("m.rossi", key=b"key-one"))
-        self.assertNotEqual(base, sigillo.pseudonym("elena.rizzo", key=b"key-two"))
+        os.environ.pop("SIGILLO_CUSTOMER_KEY", None)
 
-    def test_never_contains_the_original_value(self) -> None:
-        result = sigillo.pseudonym("elena.rizzo", key=b"a-key-only-the-client-holds")
-        self.assertNotIn("elena.rizzo", result)
+    def _key(self, given=None) -> bytes:
+        return sigillo._customer_key(given, self.state / "s")
 
-    def test_accepts_a_string_key_too(self) -> None:
-        self.assertEqual(
-            sigillo.pseudonym("elena.rizzo", key="a text key"),
-            sigillo.pseudonym("elena.rizzo", key=b"a text key"),
-        )
+    def test_without_one_a_key_is_made_once_saved_privately_and_reused(self) -> None:
+        with self.assertLogs("sigillo", level="WARNING") as logs:
+            made = self._key()
+        self.assertTrue(any("keep a copy" in line for line in logs.output))
+        self.assertRegex(made.decode("ascii"), r"^[0-9a-f]{64}$")
+        path = self.state / "s" / "customer.key"
+        self.assertEqual(path.read_text().strip(), made.decode("ascii"))
+        if sys.platform != "win32":
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        with self.assertNoLogs("sigillo", level="WARNING"):
+            self.assertEqual(self._key(), made)
 
-    def test_fits_the_on_behalf_of_length_limit(self) -> None:
-        # docs/DATA-INVENTORY.md, D4: 64 characters for on_behalf_of.
-        result = sigillo.pseudonym("a very very very long identifier indeed, much longer than usual", key=b"k")
-        self.assertLessEqual(len(result), 64)
+    def test_the_one_given_wins_then_the_environment(self) -> None:
+        import os
 
-    def test_is_a_real_hmac_sha256_truncated_and_prefixed(self) -> None:
-        import hmac
-
-        expected = "p:" + hmac.new(b"k", "elena.rizzo".encode("utf-8"), hashlib.sha256).hexdigest()[:32]
-        self.assertEqual(sigillo.pseudonym("elena.rizzo", key=b"k"), expected)
-
-    def test_rejects_an_empty_key(self) -> None:
-        with self.assertRaises(ValueError):
-            sigillo.pseudonym("elena.rizzo", key=b"")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        os.environ["SIGILLO_CUSTOMER_KEY"] = "dall-ambiente"
+        self.assertEqual(self._key("data-a-init"), b"data-a-init")
+        self.assertEqual(self._key(), b"dall-ambiente")
+        self.assertFalse((self.state / "s" / "customer.key").exists())
