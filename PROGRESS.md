@@ -4493,6 +4493,6 @@ versione nuova e test prima), l'API diretta `/api/v1/receipts` (usata ancora da 
 le impronte dei documenti (`sigillo.artifact`) e la parte server degli pseudonimi, che resta
 solo per i dati già salvati.
 
-Test: 1506 Node verdi (+2 saltati) dopo aver tolto i test delle parti rimosse; 82 SDK Python;
-22 demo. Il test della demo nel browser (`site-demo`) è passato da solo ma è fallito una volta
-sotto il carico dell'intera suite.
+Test: 1507 Node verdi (+2 saltati) dopo aver tolto i test delle parti rimosse; 82 SDK Python;
+22 demo; smoke-dist e cross-check Python verdi. Il test della demo nel browser (`site-demo`) è
+fallito una volta su due esecuzioni dell'intera suite, sotto carico; da solo passa sempre.
