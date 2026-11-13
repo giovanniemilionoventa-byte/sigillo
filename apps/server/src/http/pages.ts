@@ -3,7 +3,6 @@ import type { AdminLogEntry, DocumentMatch, ReceiptStore, SystemRecord } from ".
 import type { ChainStatus } from "../health/chain-health.js";
 import type { StoredExport } from "../backup/daily-export.js";
 import { connectionStatus } from "../connection/watch.js";
-import { CATALOG, PROVIDERS } from "../gateway/catalog.js";
 import { discloseFields } from "./history.js";
 import { italianOffered } from "./locale.js";
 import {
@@ -310,10 +309,9 @@ export const SDK_REQUIREMENT =
 /** Where the page's script writes a key it made in the browser; the placeholder stays without the script. */
 const CUSTOMER_KEY_MARK = "\u0000customer-key\u0000";
 
-function connectWays(systemId: string, endpoint: string, token: string | null, upload: boolean, plainAgents: boolean, protection: boolean = false, gateway: boolean = false, vault: boolean = false): string {
+function connectWays(systemId: string, endpoint: string, token: string | null): string {
   const t = UI.connect;
   const key = token ?? t.keyPlaceholder;
-  const agent = upload && token !== null ? agentUpload(systemId, endpoint, token, plainAgents, protection, gateway, vault) : "";
   const python = [
     `# ${t.pasteAtTop}`,
     "import sigillo",
@@ -335,59 +333,8 @@ function connectWays(systemId: string, endpoint: string, token: string | null, u
 <div class="ways">
 ${pythonWay}
 </div>
-${agent}${install}
+${install}
 <pre class="code python">${escape(python).replace(CUSTOMER_KEY_MARK, `<span id="sigillo-customer-key">${escape(t.customerKeyPlaceholder)}</span>`)}</pre>`;
-}
-
-/**
- * "Upload your agent" (agent-setup.ts): shown only where the key is on the
- * page, since the file it gives back carries it, and only once its script has
- * run (the `ready` class), so a browser without scripts sees the code alone.
- * What the script writes is in the data attributes, in the reader's language.
- */
-function agentUpload(systemId: string, endpoint: string, token: string, plainAgents: boolean, protection: boolean, gateway: boolean, vault: boolean): string {
-  const t = UI.connect.upload;
-  const url = SDK_REQUIREMENT.slice(SDK_REQUIREMENT.indexOf("@") + 1).trim();
-  return `<div class="agent-upload" id="sigillo-agent" data-endpoint="${escape(endpoint)}" data-key="${escape(token)}" data-system="${escape(systemId)}" data-url="${escape(url)}" data-sdk-url="${escape(endpoint.replace(/\/+$/, ""))}/sigillo-sdk.tgz" data-detected="${escape(t.detected)}" data-no-framework="${escape(t.noFramework)}" data-done-node="${escape(t.doneNode)}" data-done-node-vercel="${escape(t.doneNodeVercel)}" data-done-otel="${escape(t.doneOtel)}" data-soon="${escape(t.soon)}"${plainAgents ? ' data-stdlib="1"' : ""} data-protection="${protection}"${gateway ? ` data-gateway="${escape(endpoint.replace(/\/+$/, ""))}/llm"` : ""} data-analysis-cloud="${escape(t.analysisCloud)}" data-analysis-local="${escape(t.analysisLocal)}" data-analysis-local-guarded="${escape(t.analysisLocalGuarded)}" data-analysis-other="${escape(t.analysisOther)}" data-another="${escape(t.another)}" data-done="${escape(t.done)}" data-done-no-framework="${escape(t.doneNoFramework)}" data-already="${escape(t.already)}" data-not-python="${escape(t.notPython)}">
-<label class="drop"><span class="tile-icon blue empty-icon" aria-hidden="true">${ICONS.upload}</span><span class="tile-icon blue picked-icon" aria-hidden="true">${ICONS.python}</span><strong>${escape(t.drop)}</strong><small>${escape(t.choose)}</small><input type="file" class="sr" id="sigillo-agent-file" accept=".py,.ts,.mts,.cts,.tsx,.js,.mjs,.cjs,.jsx"></label>
-<p class="notice" id="sigillo-agent-detected" role="status" hidden>${STATE_ICONS.ok}<span></span></p>
-<p class="notice ok" id="sigillo-agent-done" role="status" hidden>${STATE_ICONS.ok}<span></span></p>
-<p class="notice warn" id="sigillo-agent-problem" role="alert" hidden>${STATE_ICONS.warn}<span></span></p>
-${gateway ? `${choiceBox()}${modelKeyForm(systemId, vault)}` : ""}<div id="sigillo-agent-connect" class="connect-settings" hidden><pre class="code"></pre></div>
-<p class="or">${escape(t.or)}</p>
-<script src="/ui/agent-setup.js" defer></script>
-</div>
-`;
-}
-
-/** After the file is read: what the agent uses, the option for more security (only for a cloud model), and the download. */
-function choiceBox(): string {
-  const t = UI.connect.upload;
-  return `<div class="card choice" id="sigillo-agent-choice" hidden>
-<p id="sigillo-agent-analysis"></p>
-<label class="secure" id="sigillo-agent-secure-label" hidden><input type="checkbox" id="sigillo-agent-secure"> ${escape(t.secure)}</label>
-<button class="button primary" type="button" id="sigillo-agent-download">${escape(t.download)}</button>
-</div>
-`;
-}
-
-/**
- * The step that follows an upload through the model gateway: the provider key
- * the file held (or the one the person pastes) is saved in sigillo, sealed, and
- * the old key is to be deleted at the provider, or an agent that wanted to
- * could still use it and skip sigillo. A plain form: the page makes no
- * requests of its own (Content-Security-Policy).
- */
-function modelKeyForm(systemId: string, vault: boolean): string {
-  const t = UI.connect.upload;
-  return `<form class="card model-key" id="sigillo-agent-model" method="post" action="/ui/systems/${encodeURIComponent(systemId)}/llm-key" hidden>
-<p>${escape(t.modelFound)}</p>
-<label>${escape(t.modelProvider)} <select name="provider">${PROVIDERS.map((name) => `<option value="${name}">${escape(CATALOG[name].label)}</option>`).join("")}</select></label>
-<label>${escape(t.modelKey)} <input type="password" name="key" autocomplete="off" required></label>
-<p>${escape(t.modelRevoke)}</p>
-${vault ? `<p><a href="/ui/vault">${escape(UI.vault.link)}</a></p>\n` : ""}<button class="button primary" type="submit">${escape(t.modelSave)}</button>
-</form>
-`;
 }
 
 /**
@@ -403,16 +350,6 @@ export function connectPage(view: {
   mode: "created" | "newKey" | "connect";
   firstReceipt: Receipt | null;
   now: Date;
-  /** Whether to offer "upload your agent" (agent-setup.ts), where the key is shown. */
-  upload?: boolean;
-  /** Whether the uploaded agent is recorded from the standard library's calls when it uses no framework (SIGILLO_PLAIN_AGENTS). */
-  plainAgents?: boolean;
-  /** Whether uploaded agents get strict mode protection (agent-setup.ts). */
-  protection?: boolean;
-  /** Whether an uploaded agent is also pointed at the model gateway (agent-setup.ts). */
-  gateway?: boolean;
-  /** Whether the account's key vault is on (SIGILLO_KEY_VAULT), so the step links to it. */
-  vault?: boolean;
 }): string {
   const t = UI.connect;
   const { record, token, mode } = view;
@@ -428,7 +365,7 @@ export function connectPage(view: {
         : `${mode === "connect" ? '<meta http-equiv="refresh" content="10">' : ""}<div class="card wait-line" role="status"><span class="spinner" aria-hidden="true"></span><span>${escape(t.waiting)}</span><a class="end" href="${path}/collega">${escape(t.check)}</a></div>`;
   return `<div class="narrow">${pageHead(title)}
 ${mode === "connect" ? "" : `<h2>${escape(t.heading)}</h2>`}
-${connectWays(record.system_id, view.endpoint, token, view.upload ?? false, view.plainAgents ?? false, view.protection ?? false, view.gateway ?? false, view.vault ?? false)}
+${connectWays(record.system_id, view.endpoint, token)}
 ${wait}
 </div>`;
 }
@@ -473,8 +410,6 @@ export function managePage(
   transfer: { open: boolean } | null = null,
   /** The administrator's own system: it can be deleted whatever it recorded. */
   erasable: boolean = false,
-  /** The account's key vault, when the model gateway serves this system. */
-  vault: "none" | "locked" | "open" | "sealed" | null = null,
 ): string {
   const t = UI.manage;
   const path = systemPath(record.system_id);
@@ -526,7 +461,6 @@ ${block(
   `<div class="inline"><code class="keybox" aria-label="${escape(t.keyLabel)}">${escape(current)}</code><a class="button" href="#nuova-chiave">${escape(t.newKey)}</a></div>
 <p class="section"><a href="${path}/collega">${escape(t.connect)}</a></p>`,
 )}
-${vault === null ? "" : block("grey", ICONS.lock, t.vaultTitle, `<p>${escape(t.vaultState[vault])}</p>\n<p class="section"><a href="/ui/vault">${escape(t.vaultLink)}</a></p>`)}
 ${transfer === null ? "" : block("grey", ICONS.link, t.transferTitle, transferBody(path, transfer.open))}
 ${block("grey", ICONS.archive, t.archiveTitle, archive)}
 ${block("red", ICONS.trash, t.deleteTitle, removal)}

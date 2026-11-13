@@ -1,7 +1,5 @@
 import { execFile } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,15 +18,13 @@ import {
   unclassifiedColumns,
 } from "../src/assurance/privacy-check.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
-import { loadOrCreateSealingKey, ProviderKeyStore } from "../src/gateway/provider-keys.js";
 import { buildServer } from "../src/http/server.js";
 import { ReceiptStore } from "../src/storage/store.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
 
 /**
  * The privacy scan (docs/DATA-PROTECTION.md, last section), run the way a partner
- * runs it: a marker goes through a real agent's records and a real call to the
- * model gateway, in every place an agent puts content, and the scan of the
+ * runs it: a marker goes through a real agent's records, in every place an agent puts content, and the scan of the
  * database's columns and raw bytes must not find it. Where the marker goes into
  * a field sigillo does record as sent (a person's id, a span's name), the scan
  * must find it, and say where: a check that cannot fail proves nothing.
@@ -46,8 +42,6 @@ let databasePath: string;
 let signer: TestSigner;
 let store: ReceiptStore;
 let keys: ApiKeyStore;
-let providerKeys: ProviderKeyStore;
-let upstream: Server;
 let app: FastifyInstance;
 let token: string;
 let marker: string;
@@ -104,15 +98,6 @@ async function runWithMarkerInContent(): Promise<void> {
       attribute("gen_ai.output.messages", JSON.stringify([{ role: "assistant", content: marker }])),
     ], [{ name: "exception", timeUnixNano: String(BigInt(Date.parse(NOW)) * 1_000_000n), attributes: [attribute("exception.message", secret)] }]),
   ]);
-  // And a call through the model gateway: the prompt and the answer both carry it.
-  const call = await app.inject({
-    method: "POST",
-    url: "/llm/openai/v1/chat/completions",
-    headers: { authorization: `Bearer ${token}` },
-    payload: { model: "gpt-4o-mini", messages: [{ role: "user", content: secret }] },
-  });
-  expect(call.statusCode, call.body).toBe(200);
-  expect(call.body).toContain(marker);
 }
 
 function serverCli(...args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -127,19 +112,6 @@ function serverCli(...args: string[]): Promise<{ code: number; stdout: string; s
 }
 
 beforeEach(async () => {
-  upstream = createServer((request, response) => {
-    const chunks: Buffer[] = [];
-    request.on("data", (chunk: Buffer) => chunks.push(chunk));
-    request.on("end", () => {
-      // The stand-in provider repeats the prompt back, so the answer carries the marker too.
-      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { messages: { content: string }[] };
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: `You said: ${body.messages[0]?.content}` } }] }));
-    });
-  });
-  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
-  const upstreamUrl = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
-
   directory = mkdtempSync(join(tmpdir(), "sigillo-privacy-check-"));
   databasePath = join(directory, "sigillo.db");
   signer = createTestSigner();
@@ -147,14 +119,10 @@ beforeEach(async () => {
   await store.createSystem(SYSTEM, NOW);
   keys = ApiKeyStore.open(databasePath);
   token = keys.issue(SYSTEM, NOW).token;
-  providerKeys = ProviderKeyStore.open(databasePath, loadOrCreateSealingKey(join(directory, "llm-gateway.key")));
-  providerKeys.createVault("operator", "correct horse battery staple", new Date(NOW));
-  providerKeys.set(SYSTEM, "openai", "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789", NOW);
   app = buildServer({
     store,
     keys,
     now: () => new Date(NOW),
-    gateway: { keys: providerKeys, access: "all", toolRequests: "all", upstream: { openai: upstreamUrl } },
   });
   await app.ready();
   marker = newCanary();
@@ -162,8 +130,6 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await app.close();
-  await new Promise<void>((resolve) => upstream.close(() => resolve()));
-  providerKeys.close();
   keys.close();
   store.close();
   rmSync(directory, { recursive: true, force: true });
@@ -194,9 +160,9 @@ describe("the storage inventory", () => {
 });
 
 describe("the canary scan", () => {
-  it("does not find content an agent sent, through its spans or through the model gateway", async () => {
+  it("does not find content an agent sent, through its spans", async () => {
     await runWithMarkerInContent();
-    expect(store.readChain(SYSTEM).length).toBeGreaterThan(4);
+    expect(store.readChain(SYSTEM).length).toBe(4); // the genesis and the three spans
 
     const db = new Database(databasePath, { readonly: true });
     try {

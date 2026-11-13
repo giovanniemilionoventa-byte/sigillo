@@ -5,7 +5,6 @@ import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { UiSessions } from "../src/auth/sessions.js";
-import { OPERATOR, type Viewer } from "../src/auth/tenancy.js";
 import { Checkpointer } from "../src/checkpoint/checkpointer.js";
 import { plainAgents } from "../src/config.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
@@ -17,14 +16,12 @@ import { createTestSigner, type TestSigner } from "./helpers/signer.js";
  * Agents with no framework, recorded from the standard library's own calls
  * (the SDK's "stdlib" instrumentation): new, so SIGILLO_PLAIN_AGENTS opens it
  * to the operator's own systems first, and to every account only on the
- * owner's word (CLAUDE.md rule 11). The file that "upload your agent" gives
- * back is offered the recording only where the account is opened, and the
- * server refuses the spans of one that is not.
+ * owner's word (CLAUDE.md rule 11). The server refuses the spans of
+ * an account it is not opened to.
  */
 
 const NOW = "2026-10-08T12:00:00.000Z";
 const ADMIN = { actor: "cli test", ts: NOW };
-const ACME: Viewer = { kind: "organization", organizationId: "acme" };
 const OPERATOR_BOT = "operator-bot";
 const ACME_BOT = "acme.cv-bot";
 
@@ -50,7 +47,6 @@ async function start(access?: "off" | "operator" | "all"): Promise<void> {
       healthMonitor: new ChainHealthMonitor(store, signer.publicKey, 24 * 60 * 60_000),
       checkpointer: new Checkpointer({ store, now: () => new Date(NOW) }),
       sessions,
-      agentUpload: "all",
     },
   });
   await app.ready();
@@ -125,19 +121,6 @@ const send = async (systemId: string, client: string | null = "stdlib") =>
     payload: traces(client),
   });
 
-const newKey = async (viewer: Viewer, systemId: string): Promise<string> =>
-  (
-    await app!.inject({
-      method: "POST",
-      url: `/ui/systems/${systemId}/key`,
-      headers: {
-        cookie: `sigillo_session=${sessions.issue(viewer, Date.parse(NOW)).value}`,
-        "content-type": "application/x-www-form-urlencoded",
-      },
-      payload: "",
-    })
-  ).body;
-
 describe("SIGILLO_PLAIN_AGENTS", () => {
   it("defaults to the operator's own systems, and opens to all only when told (rule 11)", () => {
     expect(plainAgents({})).toBe("operator");
@@ -167,17 +150,5 @@ describe("spans from an agent recorded from the standard library", () => {
     await start("off");
     expect((await send(OPERATOR_BOT)).statusCode).toBe(403);
     expect((await send(ACME_BOT, null)).statusCode).toBe(200);
-  });
-});
-
-describe("the file that 'upload your agent' gives back", () => {
-  it("is offered the recording on the operator's systems only, and on a customer's once opened", async () => {
-    await start();
-    expect(await newKey(OPERATOR, OPERATOR_BOT)).toContain('data-stdlib="1"');
-    const customer = await newKey(ACME, ACME_BOT);
-    expect(customer).toContain('id="sigillo-agent"'); // the upload itself is open to all here
-    expect(customer).not.toContain("data-stdlib");
-    await start("all");
-    expect(await newKey(ACME, ACME_BOT)).toContain('data-stdlib="1"');
   });
 });
