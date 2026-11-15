@@ -4496,3 +4496,33 @@ solo per i dati già salvati.
 Test: 1507 Node verdi (+2 saltati) dopo aver tolto i test delle parti rimosse; 82 SDK Python;
 22 demo; smoke-dist e cross-check Python verdi. Il test della demo nel browser (`site-demo`) è
 fallito una volta su due esecuzioni dell'intera suite, sotto carico; da solo passa sempre.
+
+## Identità dell'agente: impronta del programma e link per il revisore (2026-11-15)
+
+Domanda di Giovanni: come sa un revisore che il pacchetto è proprio dell'agente che ha causato il
+problema, se l'azienda ha più agenti simili e li distingue solo il nome? Fatto (attivo per tutti
+gli account, regola 11 sospesa):
+
+- **Impronta del programma sulla catena.** Le ricevute `sigillo.connection.start` e
+  `sigillo.connection.script_changed` portano lo SHA-256 dello script principale dell'agente (lo
+  stesso che il battito già mandava) come artifact `agent program` (`PROGRAM_ARTIFACT_LABEL` in
+  core). Nessun cambio di formato: `artifacts` esiste dalla v2. Solo il server scrive quei nomi.
+- **`python -m sigillo fingerprint <file>`** (o `impronta`), sdk-python: stampa l'impronta e
+  niente del file. Il file non va mai mostrato al revisore.
+- **`sigillo-verify program <pacchetto> <impronta|file>`**: dice da quando a quando quel programma
+  ha scritto la catena; legge solo le ricevute `sigillo.connection.*`. Circa 80 righe in più nel
+  verificatore (regola 5): sono il confronto stesso, senza astrazioni.
+- **Link per il revisore** (`http/review.ts`): «Condividi con il revisore» nel modulo del
+  pacchetto crea `/revisione/<segreto>` (32 byte casuali, salvato solo l'hash in `review_links`,
+  scade dopo 30 giorni, revocabile). La pagina pubblica mostra azienda e agente come li conosce
+  Sigillo, con «Verifica qui» (controllo nel browser, lo stesso della pagina Verifica, sul
+  pacchetto preso dal server, più elenco dei programmi registrati e confronto di un'impronta) e
+  «Scarica». La creazione del link scrive `sigillo.review.shared` sulla catena e una riga nel
+  registro amministrativo. Tabella nuova senza nuova versione di schema (una release precedente
+  la ignora). Caddyfile: `connect-src 'self'`, serve a «Verifica qui».
+
+Non fatto: la chiave per installazione (passo 2). Limite da dire: l'impronta è la parola del
+registratore; lega una catena a un programma, non prova che un registratore truccato non menta.
+
+Test: 1522 Node verdi (+2 saltati), 86 SDK Python; lint, typecheck, build, smoke-dist verdi.
+Provato nel browser (Chromium) con la CSP del Caddyfile: «Verifica qui» e confronto funzionano.

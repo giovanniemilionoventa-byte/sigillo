@@ -85,6 +85,22 @@ links that hand a system to another account. Kept: as a record of who received w
 | `used_by` | identifier | the receiving account |
 | `revoked_at` | time |  |
 
+## `review_links`
+
+links that let an auditor see and download one system's evidence pack. Kept: as a record of who was shown what.
+
+| column | class | note |
+|---|---|---|
+| `id` | operational |  |
+| `token_hash` | credential-hash | SHA-256 of the secret in the link |
+| `system_id` | identifier |  |
+| `period_from` | time |  |
+| `period_to` | time |  |
+| `created_at` | time |  |
+| `created_by` | recorded-as-sent | who made the link: 'web <address>' or 'web <email> (<account>)' |
+| `expires_at` | time |  |
+| `revoked_at` | time |  |
+
 ## `receipts`
 
 the signed, chained record of each agent action (the evidence). Kept: for the life of the chain: append-only, enforced by database triggers.

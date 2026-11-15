@@ -2,6 +2,8 @@ import { GENESIS_PREV_HASH, receiptHashHex, type Receipt } from "@sigillo/core";
 import type { SystemHealth } from "../health/chain-health.js";
 import type { ReceiptStore, SystemRecord } from "../storage/store.js";
 import { archivedPill, capital, chainPill, escape, kindIcon, outcomePill, systemPath } from "./layout.js";
+import { currentLanguage } from "./locale.js";
+import { shareButton } from "./review.js";
 import {
   actionKindLabel,
   artifactRoleWords,
@@ -168,12 +170,13 @@ export function exportSheet(record: SystemRecord): string {
   return `<section class="sheet-layer" id="fascicolo" aria-labelledby="fascicolo-title">
 <div class="sheet">
 <form method="post" action="${systemPath(record.system_id)}/export">
+<input type="hidden" name="system_id" value="${escape(record.system_id)}">
 <div class="sheet-body">
 <h2 id="fascicolo-title">${escape(t.title(systemTitle(record)))}</h2>
 <div class="fields-row"><label>${escape(UI.home.fromDate)}<input type="date" name="from"></label><label>${escape(UI.home.toDate)}<input type="date" name="to"></label></div>
 ${discloseFields()}
 </div>
-<div class="sheet-foot"><a class="button" href="#main">${escape(t.cancel)}</a><button type="submit" class="primary">${ICONS.download}${escape(t.submit)}</button></div>
+<div class="sheet-foot"><a class="button" href="#main">${escape(t.cancel)}</a>${shareButton(currentLanguage())}<button type="submit" class="primary">${ICONS.download}${escape(t.submit)}</button></div>
 </form>
 </div>
 </section>`;

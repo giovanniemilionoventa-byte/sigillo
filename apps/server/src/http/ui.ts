@@ -24,6 +24,7 @@ import {
 import { registerAccounts, TRANSFER_COOKIE, TRANSFER_PATH, TRANSFER_TTL_MS } from "./accounts.js";
 import { consoleV2, switchAllows, withConsoleV2 } from "./console-mode.js";
 import { siteV2Page } from "./site-v2.js";
+import { registerReview, REVIEW_PATH, REVIEW_SHARED, reviewLinksPage } from "./review.js";
 import { PACK_READER_SCRIPT } from "./pack-reader.js";
 import { packReaderPage, adminTabs, actionsPage, actionsQuery, changesPage, evidencePage, keyCode, keysSection, accountPageV2, servicePage, sealsPage, statoPage, type RunPreview } from "./pages-v2.js";
 import { registerFonts } from "./fonts.js";
@@ -1256,6 +1257,55 @@ ${exportSheet(record)}`,
         body: `${consoleV2() ? `<p class="sign ink">${escape(UI.v2more.keys.visibleOnce)}</p>` : ""}${connectPage({ record, endpoint: endpointFor(request), token: issued.token, mode: "newKey", firstReceipt: null, now: options.now() })}`,
       }),
     );
+  });
+
+  // The auditor's link (review.ts): made from the export form, for its system
+  // and period. The secret is shown once and kept only as a hash; the making
+  // of it is a receipt on the system's own chain, so who was shown what is in
+  // the record too.
+  registerReview(app, { store: allSystems, now: options.now, languageOf });
+
+  const reviewSystem = (session: Session, body: unknown): SystemRecord | null => {
+    const systemId = (body as { system_id?: unknown } | undefined)?.system_id;
+    return typeof systemId === "string" ? session.store.systemRecord(systemId) : null;
+  };
+
+  app.post("/ui/review-links", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const record = reviewSystem(session, request.body);
+    if (record === null) return notFound(session, reply);
+    const body = request.body as { from?: unknown; to?: unknown } | undefined;
+    const period = dayBounds(body?.from, body?.to);
+    const admin = adminRequest(request, session.viewer);
+    const { secret, expiresAt } = await session.store.createReviewLink(record.system_id, period, admin);
+    await allSystems.append({
+      system_id: record.system_id,
+      ts_event: admin.ts,
+      ts_received: admin.ts,
+      actor: { agent: "sigillo" },
+      action: { kind: "agent_step", name: REVIEW_SHARED },
+      input_hash: null,
+      output_hash: null,
+      outcome: "ok",
+      source: { type: "api" },
+    });
+    request.log.info({ system: record.system_id, action: "review.create" }, "an auditor's link was made");
+    const url = `${endpointFor(request)}${REVIEW_PATH}/${secret}`;
+    const links = session.store.reviewLinks(record.system_id, options.now().toISOString());
+    const made = { url, from: period.from ?? null, to: period.to ?? null, expiresAt };
+    return html(reply, render(session, { title: systemTitle(record), current: `system:${record.system_id}`, body: reviewLinksPage(currentLanguage(), record, links, made, systemPath(record.system_id)) }));
+  });
+
+  app.post("/ui/review-links/:id/revoke", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (session === null) return reply;
+    const record = reviewSystem(session, request.body);
+    const { id } = request.params as { id: string };
+    if (record === null || !/^[0-9]{1,15}$/.test(id)) return notFound(session, reply);
+    await session.store.revokeReviewLink(record.system_id, Number(id), adminRequest(request, session.viewer));
+    const links = session.store.reviewLinks(record.system_id, options.now().toISOString());
+    return html(reply, render(session, { title: systemTitle(record), current: `system:${record.system_id}`, body: reviewLinksPage(currentLanguage(), record, links, null, systemPath(record.system_id)) }));
   });
 
   // Handing a system to another account. The giver makes a link; whoever

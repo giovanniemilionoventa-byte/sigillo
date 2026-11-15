@@ -4,7 +4,8 @@ import type { ChainStatus } from "../health/chain-health.js";
 import type { StoredExport } from "../backup/daily-export.js";
 import { connectionStatus } from "../connection/watch.js";
 import { discloseFields } from "./history.js";
-import { italianOffered } from "./locale.js";
+import { currentLanguage, italianOffered } from "./locale.js";
+import { shareButton } from "./review.js";
 import {
   archivedButShown,
   archivedPill,
@@ -194,6 +195,7 @@ export function homePage(view: {
 <div class="fields-row"><label>${escape(t.fromDate)}<input type="date" name="from"></label><label>${escape(t.toDate)}<input type="date" name="to"></label></div>
 ${discloseFields()}
 <button type="submit" class="primary wide">${ICONS.download}${escape(t.generate)}</button>
+${shareButton(currentLanguage())}
 </form>
 </div>
 <form method="post" action="/ui/checkpoint" class="section"><button type="submit" class="wide">${ICONS.seal}${escape(t.checkpointNow)}</button></form>
