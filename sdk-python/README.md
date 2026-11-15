@@ -92,6 +92,18 @@ agent runs, or the agent restarts with a different one, the server writes
 records, it does not interrupt. To make the file read-only for the agent, run
 the agent as another operating-system user than the file's owner.
 
+The server also writes that fingerprint on the connection receipt, as the
+`agent program` artifact, so that an evidence pack says which program wrote it.
+To give an auditor the fingerprint without showing the file, run on the agent's
+computer:
+
+```
+python -m sigillo fingerprint agent.py      # or: python -m sigillo impronta agent.py
+```
+
+It prints the 64 characters and nothing else of the file; the auditor matches
+them with `sigillo-verify program pack.zip <fingerprint>`.
+
 A process stopped by `SIGTERM` (`systemctl stop`, a kill) does not run
 Python's exit handlers, so it does not show as closed, unless the program
 catches the signal and calls `shutdown()`: the server writes `lost` after three
