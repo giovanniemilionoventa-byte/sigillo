@@ -108,6 +108,16 @@ export const sourceSchema = z
 export const artifactRoleSchema = z.enum(["input", "output"]);
 
 /**
+ * The label of the artifact a connection receipt carries for the agent's own
+ * program: the SHA-256 of the main script the agent was started with, as its
+ * recorder read it. An auditor matches it against the file on the agent's
+ * computer (`sigillo-verify program`) to tell which program wrote a chain,
+ * without ever seeing the file. Written by the server alone, on
+ * `sigillo.connection.start` and `sigillo.connection.script_changed`.
+ */
+export const PROGRAM_ARTIFACT_LABEL = "agent program";
+
+/**
  * A document's fingerprint, never its content. `sha256` is over the artifact's
  * exact raw bytes — no JSON canonicalisation, since a document is not JSON.
  * `label` is a developer-chosen category ("curriculum"), never a filename: a

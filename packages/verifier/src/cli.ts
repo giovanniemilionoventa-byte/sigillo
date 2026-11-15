@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Command } from "commander";
@@ -8,6 +9,7 @@ import {
   documentFingerprints,
   formatDuration,
   fromHex,
+  PROGRAM_ARTIFACT_LABEL,
   readZip,
   safeParseCheckpointEntry,
   type ArtifactEntryV3,
@@ -582,5 +584,80 @@ program
       );
     },
   );
+
+program
+  .command("program <archive> <fingerprint>")
+  .description(
+    "check when the agent program with this SHA-256 fingerprint (64 hex characters, as printed by " +
+      "`python -m sigillo fingerprint` on the agent's computer) wrote the receipts in <archive>; " +
+      "a path to the program file is also accepted and only its fingerprint is used",
+  )
+  .action((archivePath: string, given: string) => {
+    let fingerprint = given.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(fingerprint)) {
+      try {
+        fingerprint = createHash("sha256").update(readFileSync(given)).digest("hex");
+      } catch {
+        process.stderr.write(`<fingerprint> must be 64 hex characters or a readable file, not ${given}\n`);
+        process.exit(2);
+      }
+    }
+    let archive: Archive;
+    try {
+      archive = readArchive(archivePath);
+    } catch (error) {
+      process.stderr.write(`cannot read ${archivePath}: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exit(2);
+    }
+    // As for doc: nothing is reported from an archive that does not verify.
+    const result = verifyBundle(archive.bundle);
+    if (!result.ok) {
+      process.stderr.write(`FAILED  ${result.check} at ${result.location}\n`);
+      process.stderr.write(`        ${result.detail}\n`);
+      process.exit(1);
+    }
+    const manifest = JSON.parse(archive.bundle.manifestJson) as { system_id: string };
+
+    // The program records, in chain order: only receipts the server alone
+    // writes (sigillo.connection.*, refused from every client) count, so an
+    // agent cannot plant a program fingerprint in an ordinary action.
+    const records: { seq: number; ts: string; sha256: string }[] = [];
+    for (const receipt of result.receipts) {
+      if (!receipt.action.name.startsWith("sigillo.connection.")) continue;
+      const artifacts: ArtifactEntryV3[] = receipt.v === 1 ? [] : (receipt.artifacts ?? []);
+      const entry = artifacts.find((artifact) => artifact.label === PROGRAM_ARTIFACT_LABEL);
+      if (entry !== undefined) records.push({ seq: receipt.seq, ts: receipt.ts_received, sha256: entry.sha256 });
+    }
+    if (records.length === 0) {
+      process.stdout.write(
+        `No receipt in this archive records an agent program: it was written before programs were recorded, ` +
+          `or by a recorder that sent none.\n`,
+      );
+      process.exit(1);
+    }
+    const last = result.receipts.at(-1)?.ts_received ?? "";
+    const runs: string[] = [];
+    for (const [index, record] of records.entries()) {
+      if (record.sha256 !== fingerprint) continue;
+      // It ran until the next record of a different program, or to the end of the archive.
+      const next = records.slice(index + 1).find((other) => other.sha256 !== fingerprint);
+      runs.push(`  from ${record.ts} (seq ${record.seq}) until ${next === undefined ? `the end of this archive, ${last}` : `${next.ts} (seq ${next.seq})`}`);
+    }
+    if (runs.length === 0) {
+      process.stdout.write(`NO MATCH  no receipt of ${manifest.system_id} in this archive was written by this program.\n`);
+      process.stdout.write("The programs recorded in it:\n");
+      for (const sha256 of new Set(records.map((record) => record.sha256))) {
+        const first = records.find((record) => record.sha256 === sha256)!;
+        process.stdout.write(`  ${sha256}  first recorded ${first.ts} (seq ${first.seq})\n`);
+      }
+      process.exit(1);
+    }
+    process.stdout.write(`MATCH  this program is the one ${manifest.system_id} recorded it was running:\n`);
+    for (const line of runs) process.stdout.write(`${line}\n`);
+    process.stdout.write(
+      "The fingerprint is the agent's own recorder's word, signed and sealed by sigillo when received: " +
+        "it tells which program wrote this chain, not that a recorder built to lie did not.\n",
+    );
+  });
 
 await program.parseAsync(process.argv);

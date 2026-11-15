@@ -133,6 +133,7 @@ export {
   modelSchema,
   outcomeSchema,
   parseReceipt,
+  PROGRAM_ARTIFACT_LABEL,
   parseUnsignedReceipt,
   receiptHash,
   receiptHashHex,
