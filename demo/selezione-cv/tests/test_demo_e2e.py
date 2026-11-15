@@ -12,6 +12,7 @@ missing, so `python -m unittest` still works on its own.
 
 from __future__ import annotations
 
+import hashlib
 import http.client
 import importlib.util
 import json
@@ -188,7 +189,13 @@ class DemoEndToEndTest(unittest.TestCase):
         # One input artifact (the CV) and one output artifact (the reply) per
         # candidate, indexed on both sides — this is what N3's verifier check
         # and the "verifica un documento" page depend on.
-        index_lines = [json.loads(line) for line in index_text.splitlines() if line]
+        # The connection receipt adds one more: the agent program's fingerprint,
+        # the SHA-256 of the agent's main script, never its content.
+        all_lines = [json.loads(line) for line in index_text.splitlines() if line]
+        programs = [e for e in all_lines if e["label"] == "agent program"]
+        self.assertEqual(len(programs), 1)
+        self.assertEqual(programs[0]["sha256"], hashlib.sha256(AGENT.read_bytes()).hexdigest())
+        index_lines = [e for e in all_lines if e["label"] != "agent program"]
         self.assertEqual(len(index_lines), 2 * CANDIDATE_COUNT)
         self.assertEqual(sum(1 for e in index_lines if e["role"] == "input"), CANDIDATE_COUNT)
         self.assertEqual(sum(1 for e in index_lines if e["role"] == "output"), CANDIDATE_COUNT)
