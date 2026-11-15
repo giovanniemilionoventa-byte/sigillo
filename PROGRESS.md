@@ -4524,5 +4524,5 @@ gli account, regola 11 sospesa):
 Non fatto: la chiave per installazione (passo 2). Limite da dire: l'impronta è la parola del
 registratore; lega una catena a un programma, non prova che un registratore truccato non menta.
 
-Test: 1522 Node verdi (+2 saltati), 86 SDK Python; lint, typecheck, build, smoke-dist verdi.
+Test: 1522 Node verdi (+2 saltati), 84 SDK Python (end-to-end compresi); lint, typecheck, build, smoke-dist verdi.
 Provato nel browser (Chromium) con la CSP del Caddyfile: «Verifica qui» e confronto funzionano.
