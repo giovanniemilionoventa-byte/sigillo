@@ -4,6 +4,8 @@
 
 # SIGILLO: tutto quello che c'è da sapere
 
+> **Aggiornamento 2026-11-13, architettura di base (PROGRESS.md, "Architettura di base, passo 1").** Dal codice sono usciti gateway dei modelli, custode delle chiavi, cassaforte, «Carica il tuo agente», SDK TypeScript, modalità `strict`, guardiano, porta per il modello locale e `sigillo.pseudonym()`. Il registratore Python scrive prima su disco e poi spedisce, crea da solo la chiave del cliente e non ferma mai l'agente. Dove questo file descrive quelle parti, descrive lo stato del 2026-11-09, non il codice di oggi.
+
 Scritto il 2026-11-09 leggendo da capo la repo GitHub `giovanniemilionoventa-byte/sigillo` (ramo `main` dopo la PR #147, commit `989f47a`), i documenti in `docs/`, la storia in `PROGRESS.md`, i file condivisi del progetto e la memoria del vecchio progetto.
 
 Questo file è pensato per essere allegato a un nuovo progetto Claude e bastare da solo. Non contiene password, chiavi o token.

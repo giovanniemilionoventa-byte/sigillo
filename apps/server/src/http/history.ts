@@ -118,7 +118,7 @@ function sampleNote(record: SystemRecord): string {
     record.archived_at === null
       ? `<form method="post" action="${systemPath(record.system_id)}/archive"><button type="submit">${escape(t.hide)}</button></form>`
       : "";
-  return `<div class="sample-note" role="note"><p><strong>${escape(t.banner)}</strong> ${escape(t.tryIt)}</p>${hide}</div>`;
+  return `<div class="sample-note" role="note"><p><strong>${escape(t.banner)}</strong></p>${hide}</div>`;
 }
 
 export type SystemTab = "history" | "checkpoints" | "manage" | "connect";

@@ -85,41 +85,34 @@ killed, the computer switched off, the network down) and when it comes back.
 An ordinary beat writes nothing. See `POST /api/v1/heartbeat` in
 `docs/API.md`.
 
-Each beat also carries the SHA-256 of the agent's main script file (never its
-content). If the script is edited while the agent runs, or the agent restarts
-with a different one, the server writes `script_changed` on the chain. With
-`sigillo.init(..., strict=True)` the agent also stops itself (message on
-standard error, exit status 70; `on_halt=` replaces that) when the server
-reports the change or when three beats in a row do not get through. It shows
-tampering and refuses to run unrecorded; it cannot forbid it. To make the file
-read-only for the agent, run the agent as another operating-system user than the
-file's owner.
+Each beat also carries the SHA-256 of the agent's main script file and of the
+recording libraries (never their content). If the script is edited while the
+agent runs, or the agent restarts with a different one, the server writes
+`script_changed` on the chain. The agent is never stopped for it: sigillo
+records, it does not interrupt. To make the file read-only for the agent, run
+the agent as another operating-system user than the file's owner.
 
 A process stopped by `SIGTERM` (`systemctl stop`, a kill) does not run
 Python's exit handlers, so it does not show as closed, unless the program
-catches the signal and calls `shutdown()`. What it shows as depends on the
-**guard process** `init` starts beside the agent (`_watchdog.py`, a second
-Python process from this same package): while the computer stays on, the guard
-sees the agent's process end and tells the server, which writes `ended`; if
-the guard is stopped together with the agent, or the computer is switched off
-or loses the network, nobody is left to say anything and the server writes
-`lost` after three minutes. The guard also reports a sleep or a network cut
-once it is over (`sleep`, `offline`), and in strict mode it re-reads the
-hashes of the script, of this package and of the OpenTelemetry and
-OpenInference libraries every few seconds and ends the agent when one changes.
+catches the signal and calls `shutdown()`: the server writes `lost` after three
+minutes without a beat, "beats interrupted, reason not known". A computer
+switched off is told apart by the time it was switched on, which every new
+session sends.
 
-## A model on the same computer
+## Write first, send after
 
-`sigillo.init(..., strict=True, local_model=True)` puts a door
-(`python -m sigillo.door`) in front of a local model server: it listens where
-the agent expects the model (Ollama's `127.0.0.1:11434`; pass a port number
-instead of `True` for LM Studio 1234, llama.cpp 8080, vLLM 8000), lets through
-only requests carrying the system's sigillo key, forwards them to the model on
-the next port up, and writes a receipt for each. Only Ollama is started by the
-door itself. If the guard finds the model answering without the key, the
-server writes `sigillo.connection.model_open` on the chain. The model's real
-port is not authenticated: another process on the same computer can still
-reach it directly, so this shows an open model, it does not seal one.
+Every batch of actions is written to a queue on disk before it is sent, and
+deleted only once the server has it. A network cut, a server that is down or
+busy, or an agent that stops before the batch went out loses nothing: what is
+waiting is sent again by itself, in order, every 30 seconds and at the next
+start. The server writes each action once, however many times it arrives. The
+agent never waits for the network and is never stopped.
+
+The queue and the customer key live in one folder per agent, under
+`state_dir` (default: the `SIGILLO_STATE_DIR` environment variable, else
+`~/.sigillo`). In a container, give that folder a persistent volume: a queue in
+a folder that a restart wipes is lost with it. Where the folder cannot be
+written at all, the queue is kept in memory, with a warning.
 
 ## Tool calls written by hand
 
@@ -153,42 +146,28 @@ agent, what kind of action, its name, whether it succeeded, and where it sits in
 the chain, plus the digest of an input or an output, never the value. See
 [docs/FORMAT.md](../docs/FORMAT.md).
 
-By default, `init` computes that digest right here too, before anything is
-sent, rather than letting the raw text travel to the server and be hashed
-there (`redact_content=True`, the default since fase 9 of the pilot plan). It
-also drops every span attribute the server does not read — a tool's
-docstring, a framework's own bookkeeping, the full text of every message —
-keeping identifiers (which tool, which model, who the action was for) and
-nothing an agent produced. Pass `redact_content=False` to send exactly what
-the instrumentation attached, as every version of this SDK did before fase 9;
-the server still stores only a digest either way — this setting decides what
-crosses the network and sits in the server's memory while a request is
-handled, not what a receipt ends up holding.
+That digest is computed right here, before anything is sent: the raw text
+never travels to the server. `init` also drops every span attribute the server
+does not read (a tool's docstring, a framework's own bookkeeping, the full text
+of every message, and who the action was for, `user.id`, which is a person's
+identifier), keeping which tool, which model and what kind of action.
 
-Each digest is also **salted** (`salt_content=True`, the default since October
-2026): SHA-256 of a fresh 32-byte nonce followed by the content, with the
-nonce sent beside it as `sigillo.input.nonce` / `sigillo.output.nonce`. A
-receipt then holds a digest nobody can guess a short value from ("score: 7"),
-and the server keeps the nonce apart, where erasing it cuts the receipt off
-from its content. A server older than October 2026 does not read the nonce and
-would record the salted digest as a plain one: only for such a server, pass
-`salt_content=False`.
+## Your customer key
 
-## Your own key
+Each digest is **salted** with a nonce made here from your customer key and the
+action's identifiers: SHA-256 of the nonce followed by the content. The key and
+the nonce are **never sent**: the server receives the digest, and the word
+`customer` where the nonce would be. Neither sigillo nor anyone who takes its
+database can open a digest or test a guess against it ("score: 7"). You can,
+at any time, with `sigillo.nonce_for(key, trace_id, span_id, "input")` and
+`sigillo-verify open --nonce`.
 
-```python
-sigillo.init(..., customer_key="<a secret of your own>")
-```
-
-With `customer_key` (version 0.9 and later), the nonce of each salted digest
-is made here from your key and the action's identifiers, and is **not sent**:
-the server receives the digest, and the word `customer` where the nonce would
-be. Neither sigillo nor anyone who takes its database can open the digest or
-test a guess against it. You can, at any time, with `sigillo.nonce_for(key,
-trace_id, span_id, "input")` and `sigillo-verify open --nonce`. The console's
-"Upload your agent" writes a key made in your browser into the file. Keep a
-copy: without it nobody can show what a digest was of, and destroying it is
-how every digest it salted is erased for good. See
+There is one rule for where the key comes from: `init(customer_key=...)` if
+you pass one, else the `SIGILLO_CUSTOMER_KEY` environment variable, else the
+file `customer.key` in the agent's folder; and when there is none, a new one is
+made the first time and saved there (readable by its owner only), with a
+warning. **Keep a copy**: without it nobody can show what a digest was of, and
+destroying it is how every digest it salted is erased for good. See
 [docs/DATA-PROTECTION.md](../docs/DATA-PROTECTION.md).
 
 ## Seeing what leaves your computer
@@ -201,30 +180,13 @@ that a customer can check, on their own machine and without taking sigillo's
 word for it, that none of their content is sent.
 
 ```
-[sigillo sends] action {"name": "leggi_curriculum", "attributes": {"tool.name": "leggi_curriculum", "sigillo.input.sha256": "9f2c…", "sigillo.input.nonce": "51ab…"}}
+[sigillo sends] action {"name": "leggi_curriculum", "attributes": {"tool.name": "leggi_curriculum", "sigillo.input.sha256": "9f2c…", "sigillo.input.nonce": "customer"}}
 [sigillo sends] heartbeat {"session": "4be1…", "event": "beat"}
 ```
 
 An exception is sent as its class only (`ValueError`): its message and
 traceback, which can quote the content, stay in the process, and so does the
 description OpenTelemetry writes into the status of a span an exception ended.
-
-## Pseudonymous identities
-
-`actor.on_behalf_of` — who an action was for — is the one receipt field an
-instrumentation is likely to fill with a real identifier (`user.id`,
-`enduser.id`) by convention, not by your own choice. Once it is in a receipt
-it cannot be corrected or erased. `sigillo.pseudonym(value, key)` turns it
-into an opaque stand-in instead:
-
-```python
-actor_id = sigillo.pseudonym(user_id, key=os.environ["SIGILLO_PSEUDONYM_KEY"])
-```
-
-`key` never leaves this process and is never sent to sigillo. The same
-`value` and `key` always give the same pseudonym, useful for recognising the
-same actor across receipts; without the key, the pseudonym does not lead back
-to `value`. See its docstring for the exact construction.
 
 ## Documents and model identity
 

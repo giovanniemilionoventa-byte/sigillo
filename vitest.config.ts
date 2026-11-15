@@ -9,8 +9,6 @@ export default defineConfig({
     alias: {
       "@sigillo/core": resolveFromRoot("./packages/core/src/index.ts"),
       "@sigillo/verifier": resolveFromRoot("./packages/verifier/src/index.ts"),
-      "@sigillo/sdk": resolveFromRoot("./packages/sdk-typescript/src/index.ts"),
-      "@sigillo/server/gateway": resolveFromRoot("./apps/server/src/gateway/shared.ts"),
     },
   },
   test: {

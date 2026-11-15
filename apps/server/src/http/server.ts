@@ -7,7 +7,6 @@ import { AttemptThrottle, type ThrottleSettings } from "../auth/throttle.js";
 import type { Checkpointer } from "../checkpoint/checkpointer.js";
 import { SERVER_ONLY_PREFIXES, serverOnlyName } from "../connection/names.js";
 import { ConnectionWatch, TooManySessionsError } from "../connection/watch.js";
-import { registerGateway, type GatewayOptions } from "../gateway/llm.js";
 import type { ChainHealthMonitor } from "../health/chain-health.js";
 import { adaptSpans } from "../ingest/adapter.js";
 import { decodeJsonTraces, decodeProtobufTraces, OtlpDecodeError } from "../ingest/otlp.js";
@@ -70,7 +69,7 @@ export interface ServerOptions {
   organizationMonthlyReceipts?: number;
   /**
    * How many receipts one system may have written per minute, a batch's
-   * actions and a gateway call each counted. Past it, 429 with Retry-After,
+   * actions each counted. Past it, 429 with Retry-After,
    * nothing written: one agent (or someone holding its key) cannot flood the
    * disk, nor hold the one signer every customer shares. Unset: no limit.
    */
@@ -98,8 +97,6 @@ export interface ServerOptions {
    * your agent": `off`, `operator` (the default, CLAUDE.md rule 11) or `all`.
    */
   plainAgents?: "off" | "operator" | "all";
-  /** The model gateway (gateway/llm.ts). Not given: /llm/* is not served. */
-  gateway?: GatewayOptions;
   /**
    * The operator's view. Without a password it is not mounted at all: an
    * unguarded window onto an audit log is worse than no window.
@@ -119,16 +116,12 @@ export interface ServerOptions {
     accounts?: UiOptions["accounts"];
     /** The backups directory, for the daily export in Impostazioni (ui.ts, UiOptions.backupDirectory). */
     backupDirectory?: string;
-    /** Who sees "upload your agent" on the connect page (ui.ts, UiOptions.agentUpload). */
-    agentUpload?: UiOptions["agentUpload"];
     /** Who gets the redesigned console (ui.ts, UiOptions.consoleV2). */
     consoleV2?: UiOptions["consoleV2"];
     /** The redesigned console's other switches (config.ts, ConsoleFeatures). */
     features?: UiOptions["features"];
     /** What Amministrazione › Servizio reports about the installation. */
     service?: UiOptions["service"];
-    /** Whether uploaded agents get protection with strict mode (ui.ts, UiOptions.agentProtection). */
-    agentProtection?: UiOptions["agentProtection"];
   };
 }
 
@@ -425,13 +418,10 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       ...(options.ui.sessions === undefined ? {} : { sessions: options.ui.sessions }),
       ...(options.ui.accounts === undefined ? {} : { accounts: options.ui.accounts }),
       ...(options.ui.backupDirectory === undefined ? {} : { backupDirectory: options.ui.backupDirectory }),
-      ...(options.ui.agentUpload === undefined ? {} : { agentUpload: options.ui.agentUpload }),
       ...(options.ui.consoleV2 === undefined ? {} : { consoleV2: options.ui.consoleV2 }),
       ...(options.ui.features === undefined ? {} : { features: options.ui.features }),
       ...(options.ui.service === undefined ? {} : { service: options.ui.service }),
       ...(options.signerHealthy === undefined ? {} : { signerHealthy: options.signerHealthy }),
-      ...(options.gateway === undefined ? {} : { gateway: options.gateway }),
-      ...(options.ui.agentProtection === undefined ? {} : { agentProtection: options.ui.agentProtection }),
       transfer: options.transfer ?? "operator",
       plainAgents: options.plainAgents ?? "operator",
       ...(options.organizationMonthlyReceipts === undefined
@@ -540,16 +530,6 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       },
     });
   });
-
-  if (options.gateway !== undefined) {
-    registerGateway(app, options.gateway, {
-      store,
-      now,
-      authenticate,
-      pausedFor,
-      overQuota: (systemId, reply) => overQuota(systemId, reply) || tooFast(systemId, 1, reply),
-    });
-  }
 
   // The Python SDK's heartbeat. A session already open is never refused for
   // the monthly limit: a receipt saying an agent went silent is worth most

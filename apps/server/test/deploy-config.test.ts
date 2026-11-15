@@ -71,7 +71,7 @@ describe.skipIf(!haveCompose)("deploy/docker-compose.yml, as Compose resolves it
   });
 
   it("hardens every service", () => {
-    expect(Object.keys(services).sort()).toEqual(["caddy", "keyholder", "server", "signer"]);
+    expect(Object.keys(services).sort()).toEqual(["caddy", "server", "signer"]);
     for (const [name, service] of Object.entries(services)) {
       expect(service.read_only, name).toBe(true);
       expect(service.security_opt, name).toContain("no-new-privileges:true");
@@ -191,7 +191,7 @@ describe("deploy/Dockerfile", () => {
 
   it("builds from a base image pinned by digest", () => {
     const froms = [...readFileSync(join(DEPLOY, "Dockerfile"), "utf8").matchAll(/^FROM (\S+)/gm)].map((m) => m[1] ?? "");
-    expect(froms).toHaveLength(4);
+    expect(froms).toHaveLength(3);
     for (const from of froms) expect(from).toMatch(/@sha256:[0-9a-f]{64}$/);
     expect(new Set(froms).size).toBe(1);
   });

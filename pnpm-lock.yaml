@@ -30,23 +30,11 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@22.20.4)(vite@8.3.4(@types/node@22.20.4)(esbuild@0.28.2)(tsx@4.23.15))
 
-  apps/keyholder:
-    dependencies:
-      '@sigillo/server':
-        specifier: workspace:*
-        version: link:../server
-      commander:
-        specifier: ^12.1.0
-        version: 12.1.0
-
   apps/server:
     dependencies:
       '@sigillo/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@sigillo/sdk':
-        specifier: workspace:*
-        version: link:../../packages/sdk-typescript
       '@sigillo/verifier':
         specifier: workspace:*
         version: link:../../packages/verifier
@@ -109,12 +97,6 @@ importers:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
-
-  packages/sdk-typescript:
-    devDependencies:
-      '@sigillo/core':
-        specifier: workspace:*
-        version: link:../core
 
   packages/verifier:
     dependencies:

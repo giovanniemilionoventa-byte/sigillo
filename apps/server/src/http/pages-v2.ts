@@ -586,7 +586,6 @@ export function servicePage(view: {
     packReader: "SIGILLO_PACK_READER",
     siteV2: "SIGILLO_SITE_V2",
     sampleSystem: "SIGILLO_SAMPLE_SYSTEM",
-    agentUpload: "SIGILLO_AGENT_UPLOAD",
     transfer: "SIGILLO_TRANSFER",
   };
   const switches = Object.entries(view.switches)
