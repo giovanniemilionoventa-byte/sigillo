@@ -146,12 +146,12 @@ describe("every form keeps its action, method and field names", () => {
         [
           "post /ui/logout []",
           `get /ui/systems/${SYSTEM} [name from to]`,
-          `post /ui/systems/${SYSTEM}/export [from to subjects openings]`,
+          `post /ui/systems/${SYSTEM}/export [system_id from to subjects openings]`,
         ],
       ],
       [
         `/ui/systems/${SYSTEM}/checkpoints`,
-        ["post /ui/logout []", "post /ui/checkpoint []", `post /ui/systems/${SYSTEM}/export [from to subjects openings]`],
+        ["post /ui/logout []", "post /ui/checkpoint []", `post /ui/systems/${SYSTEM}/export [system_id from to subjects openings]`],
       ],
       [
         `/ui/systems/${SYSTEM}/manage`,
@@ -162,7 +162,7 @@ describe("every form keeps its action, method and field names", () => {
           `post /ui/systems/${SYSTEM}/archive []`,
           `post /ui/systems/${SYSTEM}/delete [confirm]`,
           `post /ui/systems/${SYSTEM}/key []`,
-          `post /ui/systems/${SYSTEM}/export [from to subjects openings]`,
+          `post /ui/systems/${SYSTEM}/export [system_id from to subjects openings]`,
         ],
       ],
       [
@@ -174,7 +174,7 @@ describe("every form keeps its action, method and field names", () => {
           `post /ui/systems/${EMPTY}/archive []`,
           `post /ui/systems/${EMPTY}/delete [confirm]`,
           `post /ui/systems/${EMPTY}/key []`,
-          `post /ui/systems/${EMPTY}/export [from to subjects openings]`,
+          `post /ui/systems/${EMPTY}/export [system_id from to subjects openings]`,
         ],
       ],
       ["/ui/verify-document", ["post /ui/logout []"]],

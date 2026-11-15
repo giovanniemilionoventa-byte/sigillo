@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { receiptHashHex, verifyReceiptSignature } from "@sigillo/core";
+import { PROGRAM_ARTIFACT_LABEL, receiptHashHex, verifyReceiptSignature } from "@sigillo/core";
 import { ApiKeyStore } from "../src/auth/api-keys.js";
 import { CONNECTION, ConnectionWatch, connectionStatus } from "../src/connection/watch.js";
 import { ChainHealthMonitor } from "../src/health/chain-health.js";
@@ -482,5 +482,49 @@ describe("the script guard", () => {
     await app.ready();
     expect((await beat("start", SESSION, token, SCRIPT_A)).json()).toEqual({ recorded: { seq: 1, name: CONNECTION.start } });
     expect((await beat("beat", SESSION, token, SCRIPT_B)).json()).toEqual({ recorded: null });
+  });
+});
+
+describe("the agent's program on the chain", () => {
+  const program = (receipt: { v: number } & Record<string, unknown>) =>
+    (receipt as { artifacts?: { label: string; sha256: string; role: string }[] }).artifacts?.find(
+      (artifact) => artifact.label === PROGRAM_ARTIFACT_LABEL,
+    );
+
+  it("writes the fingerprint of the agent's main script on the start receipt, signed with it", async () => {
+    await beat("start", SESSION, token, SCRIPT_A);
+    const started = store.readChain(SYSTEM).at(-1)!;
+    expect(started.action.name).toBe(CONNECTION.start);
+    expect(program(started)).toEqual({ role: "input", label: PROGRAM_ARTIFACT_LABEL, media_type: "text/x-python", sha256: SCRIPT_A });
+    expect(verifyReceiptSignature(started, signer.publicKey)).toBe(true);
+  });
+
+  it("writes the new fingerprint on `script_changed`, whether the program changed while running or between runs", async () => {
+    await beat("start", SESSION, token, SCRIPT_A);
+    clock += MINUTE;
+    await beat("beat", SESSION, token, SCRIPT_B);
+    expect(program(store.readChain(SYSTEM).at(-1)!)?.sha256).toBe(SCRIPT_B);
+    await beat("stop", SESSION, token, SCRIPT_B);
+    clock += MINUTE;
+    // The last session started with A: a restart with B is a change between runs.
+    await beat("start", OTHER, token, SCRIPT_B);
+    const [start, changed] = store.readChain(SYSTEM).slice(-2);
+    expect([start!.action.name, changed!.action.name]).toEqual([CONNECTION.start, CONNECTION.scriptChanged]);
+    expect([program(start!)?.sha256, program(changed!)?.sha256]).toEqual([SCRIPT_B, SCRIPT_B]);
+  });
+
+  it("is written for an organization's agent too, where the script guard is not on", async () => {
+    await store.createOrganization("acme", "Acme", { actor: "cli test", ts: new Date(START).toISOString() }, { approved: true });
+    await store.createSystem("acme-bot", new Date(START).toISOString(), "acme");
+    const orgToken = keys.issue("acme-bot", new Date(START).toISOString()).token;
+    await beat("start", SESSION, orgToken, SCRIPT_A);
+    expect(program(store.readChain("acme-bot").at(-1)!)?.sha256).toBe(SCRIPT_A);
+  });
+
+  it("writes no program when the recorder sent none, or could not read it", async () => {
+    await beat("start");
+    expect(program(store.readChain(SYSTEM).at(-1)!)).toBeUndefined();
+    await beat("start", OTHER, token, null);
+    expect(program(store.readChain(SYSTEM).at(-1)!)).toBeUndefined();
   });
 });

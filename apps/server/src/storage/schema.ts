@@ -76,6 +76,24 @@ CREATE TABLE IF NOT EXISTS transfer_links (
 
 CREATE INDEX IF NOT EXISTS transfer_links_by_system ON transfer_links (system_id);
 
+-- Links that let an auditor see and download one system's evidence pack for
+-- one period, without an account (http/review.ts). As for transfer_links, only
+-- the SHA-256 of the secret in the link is stored. An extra table an earlier
+-- release does not read: no new schema version.
+CREATE TABLE IF NOT EXISTS review_links (
+  id          INTEGER PRIMARY KEY,
+  token_hash  TEXT NOT NULL UNIQUE,
+  system_id   TEXT NOT NULL REFERENCES systems (system_id),
+  period_from TEXT,
+  period_to   TEXT,
+  created_at  TEXT NOT NULL,
+  created_by  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL,
+  revoked_at  TEXT
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS review_links_by_system ON review_links (system_id);
+
 CREATE TABLE IF NOT EXISTS receipts (
   id          INTEGER PRIMARY KEY,
   system_id   TEXT    NOT NULL,

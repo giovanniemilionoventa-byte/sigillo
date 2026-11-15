@@ -8,6 +8,7 @@ import {
   canonicalJson,
   createZip,
   hashCanonicalJson,
+  PROGRAM_ARTIFACT_LABEL,
   readZip,
   signCheckpoint,
   TEXT_CANON_1,
@@ -20,6 +21,7 @@ import { createHash, generateKeyPairSync } from "node:crypto";
 import { buildArchive } from "../src/export/archive.js";
 import { requestTimestampWithRetry } from "../src/timestamp/rfc3161.js";
 import { ReceiptStore, type ChainEvent } from "../src/storage/store.js";
+import { ConnectionWatch } from "../src/connection/watch.js";
 import { createTestSigner, type TestSigner } from "./helpers/signer.js";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
@@ -791,4 +793,64 @@ describe("the sigillo-verify doc command", () => {
     const result = run(["doc", archivePath, join(directory, "does-not-exist.txt")]);
     expect(result.status).toBe(2);
   }, 30_000);
+
+  describe("program", () => {
+    const AGENT = "import sigillo\nprint('the agent that paid')\n";
+    const OTHER_AGENT = "import sigillo\nprint('a similar agent')\n";
+    const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
+
+    async function archiveWithPrograms(): Promise<string> {
+      let clock = Date.parse("2026-03-29T15:00:00.000Z");
+      const watch = new ConnectionWatch({ store, now: () => new Date(clock) });
+      await watch.heartbeat(SYSTEM, "a".repeat(32), "start", { hash: sha(AGENT) }, { program: sha(AGENT) });
+      await store.append(event(12));
+      clock += 3_600_000;
+      await watch.heartbeat(SYSTEM, "a".repeat(32), "stop");
+      await watch.heartbeat(SYSTEM, "b".repeat(32), "start", { hash: sha(OTHER_AGENT) }, { program: sha(OTHER_AGENT) });
+      const archivePath = join(directory, "fascicolo.zip");
+      writeFileSync(archivePath, (await build()).zip);
+      return archivePath;
+    }
+
+    it("says when the program with a given fingerprint ran, from the fingerprint alone", async () => {
+      const result = run(["program", await archiveWithPrograms(), sha(AGENT)]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(`MATCH  this program is the one ${SYSTEM} recorded`);
+      expect(result.stdout).toMatch(/from 2026-03-29T15:00:00\.000Z \(seq \d+\) until 2026-03-29T16:00:00\.000Z/);
+    }, 30_000);
+
+    it("takes the program file too, and uses only its fingerprint", async () => {
+      const archivePath = await archiveWithPrograms();
+      const file = join(directory, "agente.py");
+      writeFileSync(file, OTHER_AGENT);
+      const result = run(["program", archivePath, file]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("until the end of this archive");
+    }, 30_000);
+
+    it("reports no match, and the programs it did record, for a program that never ran here", async () => {
+      const result = run(["program", await archiveWithPrograms(), sha("print('someone else')\n")]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("NO MATCH");
+      expect(result.stdout).toContain(sha(AGENT));
+      expect(result.stdout).toContain(sha(OTHER_AGENT));
+    }, 30_000);
+
+    it("ignores a program fingerprint an agent put on an ordinary action", async () => {
+      await store.append({
+        ...event(12),
+        artifacts: [{ role: "input", label: PROGRAM_ARTIFACT_LABEL, media_type: "text/x-python", sha256: sha(AGENT) }],
+      });
+      const archivePath = join(directory, "fascicolo.zip");
+      writeFileSync(archivePath, (await build()).zip);
+      const result = run(["program", archivePath, sha(AGENT)]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("No receipt in this archive records an agent program");
+    }, 30_000);
+
+    it("exits 2 for something that is neither a fingerprint nor a file", async () => {
+      const result = run(["program", await archiveWithPrograms(), "not-a-fingerprint"]);
+      expect(result.status).toBe(2);
+    }, 30_000);
+  });
 });

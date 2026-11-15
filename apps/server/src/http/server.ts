@@ -568,7 +568,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         parsed.data.session,
         parsed.data.event,
         watched ? { hash: sdkHash === undefined ? (scriptHash ?? null) : guardHash(scriptHash, sdkHash) } : undefined,
-        { boot: parsed.data.boot, gap: parsed.data.gap, alarm: parsed.data.alarm },
+        { boot: parsed.data.boot, gap: parsed.data.gap, alarm: parsed.data.alarm, program: scriptHash },
       );
       if (watched && parsed.data.event !== "stop") {
         return reply.code(200).send({

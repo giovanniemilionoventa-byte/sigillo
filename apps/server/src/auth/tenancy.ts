@@ -107,6 +107,9 @@ export function storeFor(store: ReceiptStore, viewer: Viewer): ReceiptStore {
     createTransfer: bySystem(store.createTransfer),
     hasOpenTransfer: bySystem(store.hasOpenTransfer),
     revokeTransfers: bySystem(store.revokeTransfers),
+    createReviewLink: bySystem(store.createReviewLink),
+    reviewLinks: bySystem(store.reviewLinks),
+    revokeReviewLink: bySystem(store.revokeReviewLink),
     readTimestamps: (checkpointId: number) => {
       const systemId = store.checkpointSystemId(checkpointId);
       if (systemId === null || !visible(systemId)) throw new NotVisibleError(`checkpoint ${checkpointId}`);

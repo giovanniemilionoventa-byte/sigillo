@@ -213,6 +213,19 @@ export const transferHash = (secret: string): string => createHash("sha256").upd
 
 /** How long a transfer link works, from the moment it is made. */
 export const TRANSFER_TTL_MS = 7 * 24 * 60 * 60_000;
+/** How long an auditor's link (http/review.ts) works. */
+export const REVIEW_TTL_MS = 30 * 24 * 60 * 60_000;
+
+/** One auditor's link, as the console lists it and the public page reads it. Never the secret. */
+export interface ReviewLink {
+  id: number;
+  system_id: string;
+  period_from: string | null;
+  period_to: string | null;
+  created_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+}
 
 /**
  * A deletion refused because the chain holds more than its genesis. Never a
@@ -360,7 +373,11 @@ export type AdminAction =
   /** A system was given to an organization, moved to another, or taken back by the operator. */
   | "system.assign"
   /** A link was made that hands a system to whoever accepts it (transfers). */
-  | "system.transfer.create";
+  | "system.transfer.create"
+  /** A link was made that shows an auditor one period of a system's evidence (http/review.ts). */
+  | "system.review.create"
+  /** Such a link was taken back before it expired. */
+  | "system.review.revoke";
 
 /** One line of the administrative log: something done to a system outside its chain. */
 export interface AdminLogEntry {
@@ -991,6 +1008,68 @@ export class ReceiptStore {
     return row ?? null;
   }
 
+  /**
+   * Makes a link that shows an auditor this system's evidence for one period
+   * (http/review.ts). Returns the secret, which is not kept anywhere: the
+   * database holds its hash. Other links of the system stay as they are.
+   */
+  async createReviewLink(
+    systemId: string,
+    period: { from?: string; to?: string },
+    request: AdminRequest,
+  ): Promise<{ secret: string; expiresAt: string }> {
+    const secret = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(Date.parse(request.ts) + REVIEW_TTL_MS).toISOString();
+    await this.administer(systemId, () => {
+      this.write
+        .prepare(
+          `INSERT INTO review_links (token_hash, system_id, period_from, period_to, created_at, created_by, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(transferHash(secret), systemId, period.from ?? null, period.to ?? null, request.ts, request.actor, expiresAt);
+      this.logAdmin("system.review.create", systemId, request, {
+        from: period.from ?? null,
+        to: period.to ?? null,
+        expires_at: expiresAt,
+      });
+    });
+    return { secret, expiresAt };
+  }
+
+  /** What a link shows, while it still works; null for one that is unknown, expired or taken back. */
+  reviewLink(secret: string, now: string): (ReviewLink & { display_name: string | null; organization_id: string | null }) | null {
+    const row = this.read
+      .prepare(
+        `SELECT l.id, l.system_id, l.period_from, l.period_to, l.created_at, l.expires_at, l.revoked_at,
+                s.display_name, s.organization_id
+           FROM review_links l JOIN systems s ON s.system_id = l.system_id
+          WHERE l.token_hash = ? AND l.revoked_at IS NULL AND l.expires_at > ?`,
+      )
+      .get(transferHash(secret), now) as (ReviewLink & { display_name: string | null; organization_id: string | null }) | undefined;
+    return row ?? null;
+  }
+
+  /** A system's links that still work, newest first. */
+  reviewLinks(systemId: string, now: string): ReviewLink[] {
+    return this.read
+      .prepare(
+        `SELECT id, system_id, period_from, period_to, created_at, expires_at, revoked_at FROM review_links
+          WHERE system_id = ? AND revoked_at IS NULL AND expires_at > ? ORDER BY id DESC`,
+      )
+      .all(systemId, now) as ReviewLink[];
+  }
+
+  /** Takes back one of a system's links. Returns whether there was one to take back. */
+  async revokeReviewLink(systemId: string, id: number, request: AdminRequest): Promise<boolean> {
+    return this.administer(systemId, () => {
+      const changed = this.write
+        .prepare("UPDATE review_links SET revoked_at = ? WHERE system_id = ? AND id = ? AND revoked_at IS NULL")
+        .run(request.ts, systemId, id).changes;
+      if (changed > 0) this.logAdmin("system.review.revoke", systemId, request, { id });
+      return changed > 0;
+    });
+  }
+
   /** Whether a system has a link that can still be used. */
   hasOpenTransfer(systemId: string, now: string): boolean {
     return (
@@ -1136,6 +1215,8 @@ export class ReceiptStore {
       this.write.prepare("DELETE FROM receipts WHERE system_id = ? AND seq = 0").run(systemId);
       this.write.prepare("DELETE FROM api_keys WHERE system_id = ?").run(systemId);
       this.write.prepare("DELETE FROM transfer_links WHERE system_id = ?").run(systemId);
+      this.write.prepare("DELETE FROM review_links WHERE system_id = ?").run(systemId);
+    this.write.prepare("DELETE FROM review_links WHERE system_id = ?").run(systemId);
       this.write.prepare("DELETE FROM connections WHERE system_id = ?").run(systemId);
       this.write.prepare("DELETE FROM provider_keys WHERE system_id = ?").run(systemId);
       this.write.prepare("DELETE FROM systems WHERE system_id = ?").run(systemId);
@@ -1269,6 +1350,7 @@ export class ReceiptStore {
     this.write.prepare("DELETE FROM export_register WHERE system_id = ?").run(systemId);
     this.write.prepare("DELETE FROM api_keys WHERE system_id = ?").run(systemId);
     this.write.prepare("DELETE FROM transfer_links WHERE system_id = ?").run(systemId);
+    this.write.prepare("DELETE FROM review_links WHERE system_id = ?").run(systemId);
     this.write.prepare("DELETE FROM connections WHERE system_id = ?").run(systemId);
     this.write.prepare("DELETE FROM provider_keys WHERE system_id = ?").run(systemId);
     this.write.prepare("DELETE FROM systems WHERE system_id = ?").run(systemId);

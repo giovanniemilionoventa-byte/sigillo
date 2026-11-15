@@ -3,7 +3,8 @@ import type { ChainStatus } from "../health/chain-health.js";
 import type { ExportRegisterEntry, ReceiptStore, SystemRecord } from "../storage/store.js";
 import { connectionStatus } from "../connection/watch.js";
 import { capital, escape, kindIcon, languageSwitch, STATE_ICON, systemPath, type SystemRow } from "./layout.js";
-import { italianOffered } from "./locale.js";
+import { currentLanguage, italianOffered } from "./locale.js";
+import { shareButton } from "./review.js";
 import { atFirstSteps, firstSteps, quotaNotice, receiptPath, type FirstStepsOffer, type Quota } from "./pages.js";
 import { isSampleSystem } from "./sample-system.js";
 import {
@@ -409,7 +410,7 @@ ${scope}
 ${reveal}
 ${view.advanced === true ? view.disclose : ""}
 <div class="np"><h3>${escape(t.notProven)}</h3><ul>${t.notProvenLines().map((line) => `<li>${escape(line)}</li>`).join("")}</ul></div>
-<div><button type="submit" class="primary">${PROOF_ICONS.full.replace("<svg ", '<svg width="18" height="18" ')}${escape(t.download)}</button></div>
+<div><button type="submit" class="primary">${PROOF_ICONS.full.replace("<svg ", '<svg width="18" height="18" ')}${escape(t.download)}</button>${view.run === undefined ? ` ${shareButton(currentLanguage())}` : ""}</div>
 <p class="sign ink">${escape(t.contents)}</p>
 </form>
 </section>`;

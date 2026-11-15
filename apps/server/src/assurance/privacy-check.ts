@@ -112,6 +112,21 @@ export const STORAGE_INVENTORY: Record<string, TableEntry> = {
       revoked_at: ["time", ""],
     },
   },
+  review_links: {
+    purpose: "links that let an auditor see and download one system's evidence pack",
+    kept: "as a record of who was shown what",
+    columns: {
+      id: ["operational", ""],
+      token_hash: ["credential-hash", "SHA-256 of the secret in the link"],
+      system_id: ["identifier", ""],
+      period_from: ["time", ""],
+      period_to: ["time", ""],
+      created_at: ["time", ""],
+      created_by: ["recorded-as-sent", "who made the link: 'web <address>' or 'web <email> (<account>)'"],
+      expires_at: ["time", ""],
+      revoked_at: ["time", ""],
+    },
+  },
   receipts: {
     purpose: "the signed, chained record of each agent action (the evidence)",
     kept: RECEIPT_KEPT,

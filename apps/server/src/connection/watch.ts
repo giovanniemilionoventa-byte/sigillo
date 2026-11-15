@@ -1,4 +1,4 @@
-import type { Outcome, Receipt, SourceType } from "@sigillo/core";
+import { PROGRAM_ARTIFACT_LABEL, type ArtifactEntryV3, type Outcome, type Receipt, type SourceType } from "@sigillo/core";
 import type { ConnectionRow, ReceiptStore } from "../storage/store.js";
 import { CONNECTION_PREFIX } from "./names.js";
 
@@ -61,6 +61,14 @@ import { CONNECTION_PREFIX } from "./names.js";
  * (SIGILLO_SCRIPT_GUARD, CLAUDE.md rule 11): for any other system the server
  * calls this without a hash and the beats are as they were.
  *
+ * The agent's program. Whatever the guard setting, a start receipt (and a
+ * script_changed one) carries the SHA-256 of the main script the recorder
+ * sent, as an `agent program` artifact: an auditor holding the file from the
+ * agent's computer, or only its fingerprint, finds which chain and which
+ * period it ran in. The fingerprint is the recorder's own word, like every
+ * hash it sends: it ties a chain to a program, it does not prove the program
+ * was not lied about by a recorder rebuilt to lie.
+ *
  * What this does not tell: what happened while the agent was silent, nor why
  * it was silent. A program that rebuilds the heartbeat by hand, or keeps it
  * and switches the recording off, goes unseen (docs/SECURITY.md).
@@ -106,6 +114,13 @@ export interface HeartbeatExtras {
   boot?: string | null | undefined;
   gap?: Gap | undefined;
   alarm?: GuardAlarm | undefined;
+  /**
+   * The SHA-256 of the agent's main script, exactly as the recorder read it
+   * (null: unreadable). Written on the start and script_changed receipts as the
+   * `agent program` artifact, for every account: it is what ties a chain to
+   * the program that wrote it (`sigillo-verify program`).
+   */
+  program?: string | null | undefined;
 }
 
 /** Two boot times closer than this are the same boot: clocks drift and are adjusted. */
@@ -227,21 +242,30 @@ export class ConnectionWatch {
         // The latest session before this one, to see whether the computer was
         // switched off in between (read before this one is saved).
         const previous = extras.boot == null ? undefined : this.store.connectionsOf(systemId).find((s) => s.boot_at !== null);
-        const started = await this.store.recordConnection(row("open"), receiptOf(systemId, CONNECTION.start, at, at, "ok", "sdk"));
+        const started = await this.store.recordConnection(
+          row("open"),
+          withProgram(receiptOf(systemId, CONNECTION.start, at, at, "ok", "sdk"), extras.program),
+        );
         if (previous !== undefined && previous.state !== "closed" && extras.boot != null && previous.boot_at !== null) {
           if (Math.abs(Date.parse(extras.boot) - Date.parse(previous.boot_at)) > SAME_BOOT_MS) {
             await this.store.recordConnection(row("open"), receiptOf(systemId, CONNECTION.powerOff, previous.last_beat_at, at, "ok", "sdk"));
           }
         }
         if (before === undefined || guard === undefined || before.script_hash === guard.hash) return started;
-        return this.store.recordConnection(row("open"), receiptOf(systemId, CONNECTION.scriptChanged, at, at, "error", "sdk"));
+        return this.store.recordConnection(
+          row("open"),
+          withProgram(receiptOf(systemId, CONNECTION.scriptChanged, at, at, "error", "sdk"), extras.program),
+        );
       }
       let written: Receipt | null = null;
       if (known.state !== "open") {
         written = await this.store.recordConnection(row("open"), receiptOf(systemId, CONNECTION.restored, at, at, "ok", "sdk"));
       }
       if (guard !== undefined && known.script_hash !== null && known.script_changed === 0 && guard.hash !== known.script_hash) {
-        return this.store.recordConnection(row("open", 1), receiptOf(systemId, CONNECTION.scriptChanged, at, at, "error", "sdk"));
+        return this.store.recordConnection(
+          row("open", 1),
+          withProgram(receiptOf(systemId, CONNECTION.scriptChanged, at, at, "error", "sdk"), extras.program),
+        );
       }
       return written ?? (await this.store.recordConnection(row("open"), null));
     });
@@ -361,5 +385,17 @@ function receiptOf(systemId: string, name: string, tsEvent: string, tsReceived: 
     output_hash: null,
     outcome,
     source: { type: source },
+  };
+}
+
+/** The receipt with the agent's program attached, when the recorder sent a readable one. */
+function withProgram<T extends ReturnType<typeof receiptOf>>(
+  receipt: T,
+  program: string | null | undefined,
+): T & { artifacts?: ArtifactEntryV3[] } {
+  if (program === undefined || program === null || !/^[0-9a-f]{64}$/.test(program)) return receipt;
+  return {
+    ...receipt,
+    artifacts: [{ role: "input", label: PROGRAM_ARTIFACT_LABEL, media_type: "text/x-python", sha256: program }],
   };
 }
